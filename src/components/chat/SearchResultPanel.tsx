@@ -1,5 +1,7 @@
+'use client';
+
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { mockCodePreview } from '@/lib/mockData';
@@ -65,7 +67,7 @@ export function SearchResultPanel() {
 
       {/* Action */}
       <div className="border-t border-border p-4">
-        <Link to="/practice">
+        <Link href="/practice">
           <Button className="w-full" size="lg">
             <Play className="mr-2 h-4 w-4" />
             Start Practice

@@ -14,9 +14,13 @@ const intensityColors = {
   4: 'bg-grass-4',
 };
 
-export function GrassHeatmap() {
-  const [viewMode, setViewMode] = useState<ViewMode>('yearly');
-  const activityData = useMemo(() => generateMockActivityData(365), []);
+interface GrassHeatmapProps {
+  compact?: boolean;
+}
+
+export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
+  const [viewMode, setViewMode] = useState<ViewMode>(compact ? 'weekly' : 'yearly');
+  const activityData = useMemo(() => generateMockActivityData(compact ? 90 : 365), [compact]);
 
   const getDisplayData = () => {
     switch (viewMode) {
@@ -33,35 +37,53 @@ export function GrassHeatmap() {
   const displayData = getDisplayData();
   const weeks = Math.ceil(displayData.length / 7);
 
+  // For compact mode, calculate total contributions
+  const totalContributions = displayData.reduce((sum, day) => sum + day.count, 0);
+  const streak = displayData.filter(day => day.count > 0).length;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="rounded-xl border border-border bg-card p-5"
+      className={cn(
+        "rounded-xl border border-border bg-card",
+        compact ? "p-4" : "p-5"
+      )}
     >
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Activity</h3>
-        <div className="flex rounded-lg bg-secondary p-1">
-          {(['daily', 'weekly', 'yearly'] as ViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors',
-                viewMode === mode
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {mode}
-            </button>
-          ))}
+      <div className={cn("flex items-center justify-between", compact ? "mb-3" : "mb-4")}>
+        <div>
+          <h3 className={cn("font-semibold", compact ? "text-sm" : "text-lg")}>
+            {compact ? '학습 활동' : 'Activity'}
+          </h3>
+          {compact && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              최근 {streak}일 연속 학습
+            </p>
+          )}
         </div>
+        {!compact && (
+          <div className="flex rounded-lg bg-secondary p-1">
+            {(['daily', 'weekly', 'yearly'] as ViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors',
+                  viewMode === mode
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto">
         <div
-          className="grid gap-1"
+          className={cn("grid", compact ? "gap-0.5" : "gap-1")}
           style={{
             gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))`,
             gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
@@ -75,13 +97,14 @@ export function GrassHeatmap() {
                   animate={{ scale: 1 }}
                   transition={{ delay: index * 0.002 }}
                   className={cn(
-                    'h-3 w-3 rounded-sm transition-transform hover:scale-125',
+                    'rounded-sm transition-transform hover:scale-125',
+                    compact ? 'h-2.5 w-2.5' : 'h-3 w-3',
                     intensityColors[day.intensity]
                   )}
                 />
               </TooltipTrigger>
               <TooltipContent>
-                <p className="font-medium">{day.count} contributions</p>
+                <p className="font-medium">{day.count} 문제 해결</p>
                 <p className="text-xs text-muted-foreground">{day.date}</p>
               </TooltipContent>
             </Tooltip>
@@ -89,15 +112,29 @@ export function GrassHeatmap() {
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-        <span>Less</span>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className={cn('h-3 w-3 rounded-sm', intensityColors[i as 0 | 1 | 2 | 3 | 4])}
-          />
-        ))}
-        <span>More</span>
+      <div className={cn(
+        "flex items-center justify-between text-xs text-muted-foreground",
+        compact ? "mt-3" : "mt-4"
+      )}>
+        {compact ? (
+          <span>총 {totalContributions}문제</span>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-2">
+          <span>Less</span>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className={cn(
+                'rounded-sm',
+                compact ? 'h-2.5 w-2.5' : 'h-3 w-3',
+                intensityColors[i as 0 | 1 | 2 | 3 | 4]
+              )}
+            />
+          ))}
+          <span>More</span>
+        </div>
       </div>
     </motion.div>
   );

@@ -1,27 +1,29 @@
-import { NavLink, useLocation } from 'react-router-dom';
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Home, FileCode, MessageCircle, Play } from 'lucide-react';
+import { Home, FileCode, MessageCircle } from 'lucide-react';
 
 const navItems = [
-  { to: '/', label: 'Home', icon: Home },
-  { to: '/problems', label: 'Problems', icon: FileCode },
-  { to: '/chat', label: 'Chat', icon: MessageCircle },
-  { to: '/practice', label: 'Practice', icon: Play },
+  { href: '/', label: 'Home', icon: Home },
+  { href: '/problems', label: 'Problems', icon: FileCode },
+  { href: '/chat', label: 'Chat', icon: MessageCircle },
 ];
 
 export function TopNav() {
-  const location = useLocation();
+  const pathname = usePathname();
 
   return (
     <nav className="border-b border-border bg-card/50">
       <div className="flex gap-1 px-6 py-2">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.to;
+          const isActive = pathname === item.href;
           const Icon = item.icon;
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
+            <Link
+              key={item.href}
+              href={item.href}
               className={cn(
                 'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
                 isActive
@@ -31,7 +33,7 @@ export function TopNav() {
             >
               <Icon className="h-4 w-4" />
               {item.label}
-            </NavLink>
+            </Link>
           );
         })}
       </div>

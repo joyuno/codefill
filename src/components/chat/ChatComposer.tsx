@@ -1,18 +1,30 @@
+'use client';
+
 import { useState } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
 
-export function ChatComposer() {
+interface ChatComposerProps {
+  onSend: (message: string) => void;
+  disabled?: boolean;
+}
+
+export function ChatComposer({ onSend, disabled = false }: ChatComposerProps) {
   const [message, setMessage] = useState('');
-  const { toast } = useToast();
 
   const handleSend = () => {
-    toast({
-      title: 'Prototype Only',
-      description: 'Chat functionality is not available in this prototype.',
-    });
+    if (message.trim() && !disabled) {
+      onSend(message.trim());
+      setMessage('');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   return (
@@ -21,16 +33,17 @@ export function ChatComposer() {
         <Input
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type your message..."
+          placeholder="메시지를 입력하세요..."
           className="flex-1 bg-secondary"
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
         />
-        <Button onClick={handleSend} size="icon">
+        <Button onClick={handleSend} size="icon" disabled={disabled || !message.trim()}>
           <Send className="h-4 w-4" />
         </Button>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        Press Enter to send • This is a prototype
+        Enter를 눌러 전송
       </p>
     </div>
   );

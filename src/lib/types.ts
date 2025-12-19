@@ -23,6 +23,43 @@ export interface Badge {
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
 }
 
+export type ProblemType = 'blank' | 'puzzle' | 'guided' | 'implementation';
+
+export interface PuzzleBlock {
+  id: string;
+  code: string;
+  indentation: number;
+}
+
+// Guided (1대1 대화형) problem types
+export interface GuidedStep {
+  stepNumber: number;
+  aiMessage: string;
+  responseType: 'text' | 'choice' | 'code';
+  choices?: string[];
+  correctChoice?: number;
+  codeTemplate?: string;
+  correctCode?: string;
+  hint?: string;
+}
+
+export interface GuidedProblemData {
+  steps: GuidedStep[];
+  finalCode: string;
+}
+
+// Implementation problem types
+export interface TestCase {
+  input: any[];
+  expected: any;
+  isHidden?: boolean;
+}
+
+export interface ImplementationProblemData {
+  functionSignature: string;
+  testCases: TestCase[];
+}
+
 export interface Problem {
   id: string;
   title: string;
@@ -36,6 +73,13 @@ export interface Problem {
   blanks: Blank[];
   relatedDocs: RelatedDoc[];
   keyConcepts: string[];
+  problemType?: ProblemType;
+  // For puzzle type (Parsons Problems)
+  puzzleBlocks?: PuzzleBlock[];
+  // For guided type (1대1 대화형)
+  guidedData?: GuidedProblemData;
+  // For implementation type
+  implementationData?: ImplementationProblemData;
 }
 
 export interface Blank {
@@ -50,7 +94,7 @@ export interface RelatedDoc {
   url: string;
 }
 
-export type Framework = 'react' | 'vue' | 'angular' | 'svelte' | 'vanilla';
+export type Framework = 'python' | 'java' | 'cpp' | 'javascript';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export interface Message {
@@ -64,7 +108,7 @@ export interface Message {
 export interface QuickChip {
   label: string;
   value: string;
-  category: 'framework' | 'difficulty' | 'topic';
+  category: 'framework' | 'difficulty' | 'topic' | 'action';
 }
 
 export interface ActivityDay {

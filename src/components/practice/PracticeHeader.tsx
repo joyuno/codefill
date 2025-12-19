@@ -1,9 +1,11 @@
+'use client';
+
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Play, Send, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
 
 interface PracticeHeaderProps {
   title: string;
@@ -30,7 +32,7 @@ export function PracticeHeader({ title, blanksFileld, totalBlanks }: PracticeHea
     >
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link to="/problems">
+          <Link href="/problems">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-4 w-4" />
             </Button>

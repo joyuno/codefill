@@ -1,8 +1,10 @@
+'use client';
+
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Problem } from '@/lib/types';
+import { Problem, ProblemType } from '@/lib/types';
 import { Clock, Users, Eye, Play } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -19,11 +21,20 @@ const difficultyColors = {
 };
 
 const frameworkIcons: Record<string, string> = {
-  react: '⚛️',
-  vue: '💚',
-  angular: '🅰️',
-  svelte: '🔥',
-  vanilla: '📦',
+  python: '🐍',
+  java: '☕',
+  cpp: '⚡',
+  javascript: '📦',
+};
+
+const problemTypeLabels: Record<ProblemType, string> = {
+  blank: '빈칸 채우기',
+  puzzle: '퍼즐 (코드 정렬)',
+};
+
+const problemTypeColors: Record<ProblemType, string> = {
+  blank: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+  puzzle: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
 };
 
 export function ProblemCard({ problem, index }: ProblemCardProps) {
@@ -58,7 +69,15 @@ export function ProblemCard({ problem, index }: ProblemCardProps) {
             >
               {problem.difficulty}
             </Badge>
-            {problem.topics.slice(0, 3).map((topic) => (
+            {problem.problemType && (
+              <Badge
+                variant="outline"
+                className={cn(problemTypeColors[problem.problemType])}
+              >
+                {problemTypeLabels[problem.problemType]}
+              </Badge>
+            )}
+            {problem.topics.slice(0, 2).map((topic) => (
               <Badge key={topic} variant="secondary" className="text-xs">
                 {topic}
               </Badge>
@@ -82,7 +101,7 @@ export function ProblemCard({ problem, index }: ProblemCardProps) {
             <Eye className="mr-1.5 h-3.5 w-3.5" />
             Preview
           </Button>
-          <Link to={`/practice?id=${problem.id}`}>
+          <Link href={`/practice?id=${problem.id}&type=${problem.problemType || 'blank'}`}>
             <Button size="sm">
               <Play className="mr-1.5 h-3.5 w-3.5" />
               Start

@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeFill LangGraph Architecture</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #4ade80;
+            margin-bottom: 10px;
+            font-size: 2.5rem;
+        }
+        .subtitle {
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 40px;
+            font-size: 1.1rem;
+        }
+        .diagram-section {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 35px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+        }
+        .diagram-section h2 {
+            color: #60a5fa;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .diagram-section h2::before {
+            content: '';
+            display: inline-block;
+            width: 5px;
+            height: 28px;
+            background: linear-gradient(180deg, #60a5fa, #3b82f6);
+            border-radius: 3px;
+        }
+        .mermaid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+            overflow-x: auto;
+        }
+        .schema-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .schema-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .schema-card h4 {
+            color: #4ade80;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .schema-card pre {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
+        .schema-card .field {
+            color: #f472b6;
+        }
+        .schema-card .type {
+            color: #60a5fa;
+        }
+        .schema-card .comment {
+            color: #6b7280;
+        }
+        .legend {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-top: 30px;
+            padding: 25px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .legend-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+        .legend-text {
+            font-size: 0.9rem;
+            color: #cbd5e1;
+        }
+        .notes {
+            margin-top: 25px;
+            padding: 25px;
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(59, 130, 246, 0.1));
+            border-radius: 16px;
+            border-left: 5px solid #4ade80;
+        }
+        .notes h3 {
+            color: #4ade80;
+            margin-bottom: 18px;
+            font-size: 1.2rem;
+        }
+        .notes ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .notes li {
+            padding: 10px 0;
+            padding-left: 25px;
+            position: relative;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+        .notes li::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #4ade80;
+            font-weight: bold;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .badge-future {
+            background: rgba(139, 92, 246, 0.3);
+            color: #a78bfa;
+            border: 1px solid rgba(139, 92, 246, 0.5);
+        }
+        .badge-mvp {
+            background: rgba(34, 197, 94, 0.3);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.5);
+        }
+        .flow-description {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        .flow-description p {
+            color: #94a3b8;
+            line-height: 1.8;
+        }
+        .flow-description code {
+            background: rgba(139, 92, 246, 0.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: #a78bfa;
+        }
+        .state-box {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .state-box h4 {
+            color: #fbbf24;
+            margin-bottom: 15px;
+        }
+        .state-box pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #fde68a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌱 CodeFill LangGraph Architecture</h1>
+        <p class="subtitle">Python LangGraph 기반 Multi-Agent LLM 라우팅 시스템 v3.1</p>
+
+        <!-- 메인 LangGraph 플로우 -->
+        <div class="diagram-section">
+            <h2>1. LangGraph 메인 플로우 <span class="badge badge-mvp">MVP</span></h2>
+            
+            <div class="flow-description">
+                <p>
+                    <code>START</code> → <strong>문제 정보 수집 챗봇</strong> → <strong>문제 생성 에이전트</strong> (빈칸/퍼즐/1대1) → 
+                    <strong>문제 풀이</strong> → <strong>힌트 챗봇</strong> or <strong>답체크 + 피드백 챗봇</strong> → <code>END</code>
+                </p>
+            </div>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#22c55e', 'primaryTextColor': '#fff', 'lineColor': '#64748b', 'tertiaryColor': '#1e293b'}}}%%
+flowchart TB
+    subgraph LangGraph["🔄 LangGraph StateGraph"]
+        direction TB
+        
+        START((START))
+        END((END))
+        
+        subgraph Collect["📋 정보 수집 Phase"]
+            InfoBot["💬 문제 정보 수집 챗봇<br/><small>- 문제명/유형 파악<br/>- 언어/난이도 확인<br/>- Multi-turn 대화</small>"]
+            InfoRouter{{"📊 Info Router"}}
+        end
+        
+        subgraph RAGPhase["📚 RAG Phase"]
+            RAGSearch["🔍 RAG 검색<br/><small>Vector Search<br/>Top-K Retrieval</small>"]
+            RAGRouter{{"🔀 RAG Router"}}
+        end
+        
+        subgraph Generate["⚙️ 문제 생성 Phase"]
+            TypeRouter{{"🎯 Type Router<br/><small>conditional_edge</small>"}}
+            
+            BlankAgent["📝 빈칸 생성 Agent<br/><small>핵심 로직 마스킹<br/>난이도별 빈칸 수</small>"]
+            PuzzleAgent["🧩 퍼즐 생성 Agent<br/><small>코드 블록 분리<br/>순서 셔플</small>"]
+            DialogAgent["💬 1대1 대화형 Agent<br/><small>단계별 질문 생성<br/>힌트 시퀀스</small>"]
+            
+            CodeGenAgent["🤖 Code Gen Agent<br/><small>RAG 미검색 시<br/>LLM으로 코드 생성</small>"]
+        end
+        
+        subgraph Solve["✏️ 풀이 Phase (Sandpack)"]
+            SolveNode["🎮 문제 풀이<br/><small>Sandpack Editor<br/>사용자 코드 작성</small>"]
+            
+            TriggerRouter{{"⚡ Trigger Router<br/><small>사용자 액션 감지</small>"}}
+            
+            HintBot["💡 힌트 챗봇<br/><small>단계별 힌트 제공<br/>Lv.1→2→3 점진적</small>"]
+            
+            subgraph ExecuteBlock["▶️ 실행 버튼 트리거"]
+                CheckBot["✅ 답체크 + 피드백 챗봇<br/><small>- 코드 실행 & 검증<br/>- 에러 분석 & 디버깅<br/>- 해결책 제시<br/>- 오답 시 재시도 유도</small>"]
+            end
+        end
+        
+        subgraph Result["📊 결과 Phase"]
+            CorrectEnd["🎉 정답 처리<br/><small>XP/골드 지급<br/>Progress 저장</small>"]
+        end
+        
+        START --> InfoBot
+        InfoBot --> InfoRouter
+        InfoRouter -->|"✅ 정보 충분"| RAGSearch
+        InfoRouter -->|"❌ 정보 부족"| InfoBot
+        
+        RAGSearch --> RAGRouter
+        RAGRouter -->|"✅ 검색 성공"| TypeRouter
+        RAGRouter -->|"❌ 검색 실패"| CodeGenAgent
+        
+        CodeGenAgent --> TypeRouter
+        
+        TypeRouter -->|"type=blank"| BlankAgent
+        TypeRouter -->|"type=puzzle"| PuzzleAgent
+        TypeRouter -->|"type=dialog"| DialogAgent
+        
+        BlankAgent --> SolveNode
+        PuzzleAgent --> SolveNode
+        DialogAgent --> SolveNode
+        
+        SolveNode --> TriggerRouter
+        
+        TriggerRouter -->|"💬 힌트 요청"| HintBot
+        TriggerRouter -->|"▶️ 실행 버튼"| CheckBot
+        
+        HintBot <-->|"유기적 전환"| CheckBot
+        
+        HintBot --> SolveNode
+        CheckBot -->|"❌ 오답/에러"| SolveNode
+        CheckBot -->|"✅ 정답"| CorrectEnd
+        
+        CorrectEnd --> END
+    end
+
+    style START fill:#22c55e,stroke:#22c55e,color:#000
+    style END fill:#ef4444,stroke:#ef4444,color:#fff
+    style InfoBot fill:#3b82f6,stroke:#3b82f6,color:#fff
+    style InfoRouter fill:#f59e0b,stroke:#f59e0b,color:#000
+    style RAGSearch fill:#8b5cf6,stroke:#8b5cf6,color:#fff
+    style RAGRouter fill:#f59e0b,stroke:#f59e0b,color:#000
+    style TypeRouter fill:#f59e0b,stroke:#f59e0b,color:#000
+    style BlankAgent fill:#22c55e,stroke:#22c55e,color:#fff
+    style PuzzleAgent fill:#22c55e,stroke:#22c55e,color:#fff
+    style DialogAgent fill:#22c55e,stroke:#22c55e,color:#fff
+    style CodeGenAgent fill:#10b981,stroke:#10b981,color:#fff
+    style TriggerRouter fill:#f59e0b,stroke:#f59e0b,color:#000
+    style HintBot fill:#06b6d4,stroke:#06b6d4,color:#fff
+    style CheckBot fill:#ec4899,stroke:#ec4899,color:#fff
+    style CorrectEnd fill:#22c55e,stroke:#22c55e,color:#fff
+            </div>
+
+            <div class="state-box">
+                <h4>📦 LangGraph State Schema</h4>
+                <pre>
+class CodeFillState(TypedDict):
+    # 사용자 정보
+    user_id: str
+    session_id: str
+    
+    # 대화 히스토리
+    messages: List[BaseMessage]
+    
+    # 문제 정보 (수집 단계에서 채워짐)
+    problem_name: Optional[str]
+    problem_type: Literal["blank", "puzzle", "dialog"]
+    language: str
+    difficulty: str
+    info_complete: bool  # 정보 수집 완료 여부
+    
+    # RAG 결과
+    retrieved_context: Optional[str]
+    original_problem_id: Optional[str]
+    rag_success: bool  # RAG 검색 성공 여부
+    
+    # 생성된 문제
+    generated_problem: Optional[dict]
+    
+    # Sandpack 풀이 상태
+    user_code: Optional[str]  # 사용자 작성 코드
+    trigger_type: Literal["hint", "execute", None]  # 트리거 유형
+    
+    # 실행 결과 (답체크 + 디버깅 통합)
+    execution_result: Optional[dict]  # {success, output, error}
+    error_type: Optional[str]  # syntax/runtime/logic/none
+    error_analysis: Optional[str]  # LLM 에러 분석 결과
+    test_passed: int  # 통과한 테스트 수
+    test_total: int  # 전체 테스트 수
+    
+    # 힌트 상태 (힌트봇 ↔ 답체크봇 동기화)
+    hint_level: int  # 0, 1, 2, 3
+    hint_history: List[str]  # 제공된 힌트 목록
+    
+    # 결과
+    is_correct: Optional[bool]
+    feedback: Optional[str]
+    xp_earned: int
+    gold_earned: int
+                </pre>
+            </div>
+        </div>
+
+        <!-- 커리큘럼 & 튜터 통합 (v3.2+) -->
+        <div class="diagram-section">
+            <h2>2. 커리큘럼 & 튜터 통합 아키텍처 <span class="badge badge-future">v3.2+</span></h2>
+            
+            <div class="flow-description">
+                <p>
+                    문제 생성 에이전트와 분류기를 <strong>커리큘럼 시스템</strong> 및 <strong>AI 튜터</strong>와 통합하여 
+                    개인화된 학습 경로를 제공합니다.
+                </p>
+            </div>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark'}}%%
+flowchart TB
+    subgraph Curriculum["📚 커리큘럼 시스템 (v3.2+)"]
+        CurriculumAgent["🎓 커리큘럼 Agent<br/><small>- 목표 설정<br/>- 주차별 계획<br/>- 마일스톤 관리</small>"]
+        
+        WeaknessAnalyzer["📊 약점 분석기<br/><small>- 풀이 기록 분석<br/>- 취약 알고리즘 식별</small>"]
+        
+        RecommendEngine["🎯 추천 엔진<br/><small>- 다음 문제 추천<br/>- 난이도 조절</small>"]
+    end
+    
+    subgraph Tutor["🤖 AI 튜터 시스템 (v3.2+)"]
+        TutorAgent["👨‍🏫 튜터 Agent<br/><small>- 1대1 대화형 진행<br/>- 소크라테스식 문답</small>"]
+        
+        ConceptExplainer["📖 개념 설명기<br/><small>- 알고리즘 설명<br/>- 예시 제공</small>"]
+    end
+    
+    subgraph MVPCore["🌱 MVP Core (v3.1)"]
+        InfoBot2["💬 문제 정보 수집"]
+        
+        subgraph CodeGenAgent["⚙️ Code Gen Agent"]
+            Classifier["🏷️ 분류기<br/><small>intent + type</small>"]
+            Generator["🔧 생성기<br/><small>blank/puzzle/dialog</small>"]
+        end
+        
+        HintFeedback["💡 힌트/피드백"]
+    end
+    
+    subgraph Storage["💾 저장소"]
+        ProblemDB[(Problems DB)]
+        UserProgressDB[(User Progress)]
+        GeneratedDB[(Generated Problems)]
+    end
+
+    %% 커리큘럼 연동
+    CurriculumAgent -->|"학습 목표"| RecommendEngine
+    WeaknessAnalyzer -->|"취약점"| RecommendEngine
+    RecommendEngine -->|"추천 문제"| InfoBot2
+    
+    %% 튜터 연동
+    TutorAgent <-->|"대화형 진행"| Generator
+    ConceptExplainer -->|"설명 삽입"| HintFeedback
+    
+    %% MVP 플로우
+    InfoBot2 --> Classifier
+    Classifier --> Generator
+    Generator --> HintFeedback
+    
+    %% DB 연동
+    Generator --> ProblemDB
+    HintFeedback --> UserProgressDB
+    Generator --> GeneratedDB
+    UserProgressDB --> WeaknessAnalyzer
+
+    style CurriculumAgent fill:#8b5cf6,stroke:#8b5cf6,color:#fff
+    style TutorAgent fill:#8b5cf6,stroke:#8b5cf6,color:#fff
+    style WeaknessAnalyzer fill:#8b5cf6,stroke:#8b5cf6,color:#fff
+    style RecommendEngine fill:#8b5cf6,stroke:#8b5cf6,color:#fff
+    style ConceptExplainer fill:#8b5cf6,stroke:#8b5cf6,color:#fff
+    style InfoBot2 fill:#3b82f6,stroke:#3b82f6,color:#fff
+    style Classifier fill:#f59e0b,stroke:#f59e0b,color:#000
+    style Generator fill:#22c55e,stroke:#22c55e,color:#fff
+    style HintFeedback fill:#ec4899,stroke:#ec4899,color:#fff
+            </div>
+        </div>
+
+        <!-- 상세 노드별 플로우 -->
+        <div class="diagram-section">
+            <h2>3. LangGraph 노드 상세 플로우</h2>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark'}}%%
+sequenceDiagram
+    participant U as 👤 User
+    participant IB as 💬 InfoBot
+    participant RAG as 📚 RAG
+    participant CG as 🤖 CodeGen
+    participant GA as ⚙️ GenAgent
+    participant DB as 💾 DB
+    participant SP as ▶️ Sandpack
+    participant HB as 💡 HintBot
+    participant CB as ✅ CheckBot
+
+    Note over U,CB: Phase 1: 문제 정보 수집
+    U->>IB: "Two Sum 풀고 싶어요"
+    IB->>IB: intent 파악
+    IB-->>U: "어떤 유형으로 풀어볼까요?<br/>1.빈칸 2.퍼즐 3.1대1대화형"
+    U->>IB: "빈칸이요"
+    IB-->>U: "Python으로 할까요?"
+    U->>IB: "네"
+    IB->>IB: ✅ 정보 충분<br/>{name:"Two Sum", type:"blank", lang:"python"}
+
+    Note over U,CB: Phase 2: RAG + 문제 생성
+    IB->>RAG: query: "Two Sum python"
+    RAG->>DB: Vector Search
+    
+    alt RAG 검색 성공
+        DB-->>RAG: Top-K 결과
+        RAG-->>GA: context + state
+    else RAG 검색 실패
+        DB-->>RAG: 결과 없음
+        RAG->>CG: Code Gen 요청
+        CG-->>GA: LLM 생성 코드
+    end
+    
+    GA->>GA: 빈칸 생성 로직
+    GA->>DB: 생성된 문제 저장
+    GA-->>SP: 문제 출력 (Sandpack)
+
+    Note over U,CB: Phase 3: Sandpack 풀이 + 힌트/답체크 유기적 전환
+    
+    U->>HB: "힌트 주세요" (채팅)
+    HB->>DB: hint_level 확인 (현재: 0)
+    HB-->>U: "💡 Lv.1: 빈 딕셔너리를<br/>어떻게 초기화할까요?"
+    HB->>DB: hint_level = 1
+    
+    U->>SP: 코드 작성 후 ▶️ 실행 버튼
+    SP->>CB: 실행 트리거
+    CB->>CB: 코드 실행
+    
+    alt 런타임 에러 발생
+        CB-->>U: "❌ TypeError 발생<br/>💡 딕셔너리 초기화가 필요해요"
+        CB->>HB: 힌트 레벨 동기화
+        HB-->>U: "💡 Lv.2: {} 또는 dict()로<br/>초기화해보세요"
+    else 오답 (테스트 실패)
+        CB-->>U: "❌ 테스트 2/5 통과<br/>edge case를 확인해보세요"
+        CB->>CB: 오답 원인 분석
+        CB-->>U: "💡 중복 요소가 있을 때를<br/>고려해보세요"
+    else 정답
+        CB->>DB: progress 저장<br/>XP +15, Gold +50
+        CB-->>U: "🎉 정답! +15 XP"
+    end
+            </div>
+        </div>
+
+        <!-- DB 스키마 -->
+        <div class="diagram-section">
+            <h2>4. Database Schema (LLM 연동)</h2>
+
+            <div class="schema-grid">
+                <div class="schema-card">
+                    <h4>📚 problems (기존 문제 DB)</h4>
+                    <pre>
+<span class="field">id</span>: <span class="type">UUID</span> <span class="comment">-- PK</span>
+<span class="field">question</span>: <span class="type">TEXT</span> <span class="comment">-- 문제 설명</span>
+<span class="field">solutions</span>: <span class="type">TEXT[]</span> <span class="comment">-- 정답 코드들</span>
+<span class="field">input_output</span>: <span class="type">JSONB</span> <span class="comment">-- 테스트 케이스</span>
+<span class="field">difficulty</span>: <span class="type">VARCHAR</span> <span class="comment">-- easy/medium/hard</span>
+<span class="field">tags</span>: <span class="type">TEXT[]</span> <span class="comment">-- 알고리즘 태그</span>
+<span class="field">name</span>: <span class="type">VARCHAR</span> <span class="comment">-- 문제 제목</span>
+<span class="field">source</span>: <span class="type">VARCHAR</span> <span class="comment">-- leetcode/백준 등</span>
+<span class="field">url</span>: <span class="type">TEXT</span> <span class="comment">-- 원본 링크</span>
+<span class="field">starter_code</span>: <span class="type">TEXT</span> <span class="comment">-- 시작 코드</span>
+<span class="field">explanation</span>: <span class="type">TEXT</span> <span class="comment">-- 풀이 설명</span>
+<span class="field">language</span>: <span class="type">VARCHAR</span> <span class="comment">-- python/java 등</span>
+<span class="field">time_limit</span>: <span class="type">VARCHAR</span>
+<span class="field">memory_limit</span>: <span class="type">VARCHAR</span>
+<span class="field">original_id</span>: <span class="type">VARCHAR</span> <span class="comment">-- 원본 ID</span>
+<span class="field">embedding</span>: <span class="type">VECTOR(1536)</span> <span class="comment">-- RAG용</span>
+                    </pre>
+                </div>
+
+                <div class="schema-card">
+                    <h4>👤 user_generated_problems (유저별 생성 문제)</h4>
+                    <pre>
+<span class="field">id</span>: <span class="type">UUID</span> <span class="comment">-- PK</span>
+<span class="field">user_id</span>: <span class="type">UUID</span> <span class="comment">-- FK → users</span>
+<span class="field">original_problem_id</span>: <span class="type">UUID</span> <span class="comment">-- FK → problems</span>
+<span class="field">problem_type</span>: <span class="type">VARCHAR</span> <span class="comment">-- blank/puzzle/dialog</span>
+<span class="field">language</span>: <span class="type">VARCHAR</span>
+<span class="field">difficulty</span>: <span class="type">VARCHAR</span>
+<span class="field">generated_content</span>: <span class="type">JSONB</span> <span class="comment">-- 생성된 문제 내용</span>
+<span class="field">created_at</span>: <span class="type">TIMESTAMP</span>
+
+<span class="comment">-- 유저만 자신의 생성 문제 조회 가능</span>
+<span class="comment">-- RLS: user_id = auth.uid()</span>
+                    </pre>
+                </div>
+
+                <div class="schema-card">
+                    <h4>📝 generated_solutions_blank</h4>
+                    <pre>
+<span class="field">id</span>: <span class="type">UUID</span> <span class="comment">-- PK</span>
+<span class="field">user_generated_problem_id</span>: <span class="type">UUID</span> <span class="comment">-- FK</span>
+<span class="field">solutions_category</span>: <span class="type">VARCHAR</span> <span class="comment">-- 분류</span>
+<span class="field">solutions_blank</span>: <span class="type">JSONB</span>
+  <span class="comment">-- {</span>
+  <span class="comment">--   "code_template": "def solution(...):\n    ___ = {}",</span>
+  <span class="comment">--   "blanks": [</span>
+  <span class="comment">--     {"position": 1, "answer": "hash_map", "hint": "..."},</span>
+  <span class="comment">--   ]</span>
+  <span class="comment">-- }</span>
+<span class="field">original_id</span>: <span class="type">VARCHAR</span> <span class="comment">-- 원본 ID</span>
+                    </pre>
+                </div>
+
+                <div class="schema-card">
+                    <h4>🧩 generated_solutions_puzzle</h4>
+                    <pre>
+<span class="field">id</span>: <span class="type">UUID</span> <span class="comment">-- PK</span>
+<span class="field">user_generated_problem_id</span>: <span class="type">UUID</span> <span class="comment">-- FK</span>
+<span class="field">solutions_category</span>: <span class="type">VARCHAR</span> <span class="comment">-- 분류</span>
+<span class="field">solutions_puzzle</span>: <span class="type">JSONB</span>
+  <span class="comment">-- {</span>
+  <span class="comment">--   "blocks": [</span>
+  <span class="comment">--     {"id": 1, "code": "hash_map = {}"},</span>
+  <span class="comment">--     {"id": 2, "code": "for i, num in enumerate(nums):"},</span>
+  <span class="comment">--   ],</span>
+  <span class="comment">--   "correct_order": [1, 2, 3, 4],</span>
+  <span class="comment">--   "shuffled_order": [3, 1, 4, 2]</span>
+  <span class="comment">-- }</span>
+<span class="field">original_id</span>: <span class="type">VARCHAR</span> <span class="comment">-- 원본 ID</span>
+                    </pre>
+                </div>
+
+                <div class="schema-card">
+                    <h4>💬 generated_solutions_1vs1</h4>
+                    <pre>
+<span class="field">id</span>: <span class="type">UUID</span> <span class="comment">-- PK</span>
+<span class="field">user_generated_problem_id</span>: <span class="type">UUID</span> <span class="comment">-- FK</span>
+<span class="field">solutions_category</span>: <span class="type">VARCHAR</span> <span class="comment">-- 분류</span>
+<span class="field">solutions_1vs1</span>: <span class="type">JSONB</span>
+  <span class="comment">-- {</span>
+  <span class="comment">--   "learning_goal": "해시맵 활용법 이해",</span>
+  <span class="comment">--   "steps": [</span>
+  <span class="comment">--     {</span>
+  <span class="comment">--       "step": 1,</span>
+  <span class="comment">--       "question": "가장 단순한 방법은?",</span>
+  <span class="comment">--       "expected_answers": ["이중 for문", "brute force"],</span>
+  <span class="comment">--       "hints": ["시간복잡도를 생각해보세요"],</span>
+  <span class="comment">--       "next_on_correct": 2</span>
+  <span class="comment">--     },</span>
+  <span class="comment">--   ],</span>
+  <span class="comment">--   "final_code_blank": "hash_map = ___"</span>
+  <span class="comment">-- }</span>
+<span class="field">original_id</span>: <span class="type">VARCHAR</span> <span class="comment">-- 원본 ID</span>
+                    </pre>
+                </div>
+
+                <div class="schema-card">
+                    <h4>📊 user_problem_progress (풀이 기록)</h4>
+                    <pre>
+<span class="field">id</span>: <span class="type">UUID</span> <span class="comment">-- PK</span>
+<span class="field">user_id</span>: <span class="type">UUID</span> <span class="comment">-- FK → users</span>
+<span class="field">user_generated_problem_id</span>: <span class="type">UUID</span> <span class="comment">-- FK</span>
+<span class="field">status</span>: <span class="type">VARCHAR</span> <span class="comment">-- in_progress/completed</span>
+<span class="field">attempt_count</span>: <span class="type">INT</span>
+<span class="field">hint_used_count</span>: <span class="type">INT</span>
+<span class="field">max_hint_level</span>: <span class="type">INT</span> <span class="comment">-- 0~3</span>
+<span class="field">is_correct</span>: <span class="type">BOOLEAN</span>
+<span class="field">xp_earned</span>: <span class="type">INT</span>
+<span class="field">gold_earned</span>: <span class="type">INT</span>
+<span class="field">time_spent_seconds</span>: <span class="type">INT</span>
+<span class="field">completed_at</span>: <span class="type">TIMESTAMP</span>
+<span class="field">created_at</span>: <span class="type">TIMESTAMP</span>
+                    </pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- LangGraph 코드 구조 -->
+        <div class="diagram-section">
+            <h2>5. LangGraph Python 구조</h2>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark'}}%%
+flowchart LR
+    subgraph Nodes["📦 nodes/"]
+        N1["info_collector.py<br/><small>문제 정보 수집</small>"]
+        N2["rag_retriever.py<br/><small>RAG 검색</small>"]
+        N2b["code_generator.py<br/><small>RAG 실패 시 LLM 생성</small>"]
+        N3["problem_generator.py<br/><small>문제 생성</small>"]
+        N4["hint_provider.py<br/><small>힌트 제공</small>"]
+        N5["answer_checker.py<br/><small>실행+검증+디버깅+피드백</small>"]
+    end
+    
+    subgraph Edges["🔀 edges/"]
+        E0["info_router.py<br/><small>정보 충분/부족</small>"]
+        E1["rag_router.py<br/><small>검색 성공/실패</small>"]
+        E2["type_router.py<br/><small>blank/puzzle/dialog</small>"]
+        E3["trigger_router.py<br/><small>hint/execute</small>"]
+    end
+    
+    subgraph Core["🧠 core/"]
+        C1["state.py<br/><small>CodeFillState</small>"]
+        C2["graph.py<br/><small>StateGraph 정의</small>"]
+        C3["prompts.py<br/><small>프롬프트 템플릿</small>"]
+    end
+    
+    subgraph DB["💾 db/"]
+        D1["problems.py"]
+        D2["generated.py"]
+        D3["progress.py"]
+    end
+
+    Core --> Nodes
+    Core --> Edges
+    Nodes --> DB
+    Edges --> Nodes
+
+    style N1 fill:#3b82f6,stroke:#3b82f6,color:#fff
+    style N2 fill:#8b5cf6,stroke:#8b5cf6,color:#fff
+    style N2b fill:#10b981,stroke:#10b981,color:#fff
+    style N3 fill:#22c55e,stroke:#22c55e,color:#fff
+    style N4 fill:#06b6d4,stroke:#06b6d4,color:#fff
+    style N5 fill:#ec4899,stroke:#ec4899,color:#fff
+    style E0 fill:#f59e0b,stroke:#f59e0b,color:#000
+    style E1 fill:#f59e0b,stroke:#f59e0b,color:#000
+    style E2 fill:#f59e0b,stroke:#f59e0b,color:#000
+    style E3 fill:#f59e0b,stroke:#f59e0b,color:#000
+            </div>
+
+            <div class="state-box">
+                <h4>📁 프로젝트 구조</h4>
+                <pre>
+codefill-llm/
+├── core/
+│   ├── state.py          # CodeFillState TypedDict
+│   ├── graph.py          # StateGraph 정의 & compile
+│   └── prompts.py        # 각 노드별 프롬프트 템플릿
+│
+├── nodes/
+│   ├── info_collector.py # 문제 정보 수집 챗봇
+│   ├── rag_retriever.py  # RAG 검색 (pgvector)
+│   ├── code_generator.py # RAG 실패 시 LLM 코드 생성
+│   ├── problem_generator/
+│   │   ├── blank.py      # 빈칸 생성
+│   │   ├── puzzle.py     # 퍼즐 생성
+│   │   └── dialog.py     # 1대1 대화형 생성
+│   ├── hint_provider.py  # 힌트 챗봇 (답체크와 동기화)
+│   └── answer_checker.py # Sandpack 실행 트리거
+│                         # - 코드 실행 & 검증
+│                         # - 에러 분석 & 디버깅
+│                         # - 피드백 & 재시도 유도
+│
+├── edges/
+│   ├── info_router.py    # 정보 충분/부족 분기
+│   ├── rag_router.py     # RAG 성공/실패 → CodeGen 분기
+│   ├── type_router.py    # blank/puzzle/dialog 분기
+│   └── trigger_router.py # hint 요청 / execute 버튼 분기
+│
+├── db/
+│   ├── problems.py       # problems 테이블 CRUD
+│   ├── generated.py      # user_generated_* 테이블
+│   └── progress.py       # user_problem_progress
+│
+└── main.py               # FastAPI 엔드포인트
+                </pre>
+            </div>
+        </div>
+
+        <!-- 범례 -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #3b82f6;"></div>
+                <span class="legend-text">정보 수집 챗봇</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #8b5cf6;"></div>
+                <span class="legend-text">RAG / Embedding</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #10b981;"></div>
+                <span class="legend-text">Code Gen Agent (RAG 실패 시)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #22c55e;"></div>
+                <span class="legend-text">문제 생성 Agent</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f59e0b;"></div>
+                <span class="legend-text">Router (conditional_edge)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #06b6d4;"></div>
+                <span class="legend-text">힌트 챗봇</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ec4899;"></div>
+                <span class="legend-text">답체크 + 디버깅 + 피드백</span>
+            </div>
+        </div>
+
+        <!-- 노트 -->
+        <div class="notes">
+            <h3>🔑 핵심 설계 포인트</h3>
+            <ul>
+                <li><strong>Info Router:</strong> 정보 충분 시 RAG, 부족 시 재질문 루프</li>
+                <li><strong>RAG Router:</strong> 검색 성공 시 Type Router, 실패 시 Code Gen Agent로 LLM 코드 생성</li>
+                <li><strong>Sandpack 트리거:</strong> 실행 버튼(▶️) 클릭 시 답체크 + 디버깅 챗봇 자동 트리거</li>
+                <li><strong>힌트 ↔ 답체크 동기화:</strong> hint_level 공유, 에러 분석 결과 기반 힌트 자동 제공</li>
+                <li><strong>답체크 통합:</strong> 실행/검증/에러분석/피드백/재시도유도를 하나의 노드에서 처리</li>
+                <li><strong>DB 분리:</strong> 기존 problems DB는 읽기 전용, 생성된 문제는 user별 테이블에 저장</li>
+                <li><strong>v3.2+ 확장:</strong> 커리큘럼 Agent, 튜터 Agent는 Info Collector 앞단에 연결</li>
+            </ul>
+        </div>
+
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#22c55e',
+                primaryTextColor: '#fff',
+                primaryBorderColor: '#22c55e',
+                lineColor: '#64748b',
+                secondaryColor: '#3b82f6',
+                tertiaryColor: '#1e293b',
+                background: '#0f172a',
+                mainBkg: '#1e293b',
+                nodeBorder: '#475569',
+                clusterBkg: 'rgba(255,255,255,0.03)',
+                clusterBorder: 'rgba(255,255,255,0.1)',
+                titleColor: '#e2e8f0',
+                edgeLabelBackground: '#1e293b',
+                actorBkg: '#1e293b',
+                actorBorder: '#64748b',
+                actorTextColor: '#e2e8f0',
+                signalColor: '#64748b',
+                signalTextColor: '#e2e8f0'
+            },
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 20
+            },
+            sequence: {
+                useMaxWidth: true,
+                actorMargin: 100,
+                noteMargin: 15,
+                mirrorActors: false
+            }
+        });
+    </script>
+</body>
+</html>
