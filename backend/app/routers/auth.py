@@ -1,7 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi.responses import RedirectResponse
 from typing import Optional
+import httpx
+import secrets
+import uuid
+from datetime import datetime, timedelta
+from jose import jwt
 
 from ..database import get_db
+from ..config import get_settings
 from ..models.auth import (
     SignupRequest,
     LoginRequest,
@@ -13,6 +20,11 @@ from ..models.auth import (
 )
 
 router = APIRouter()
+settings = get_settings()
+
+KAKAO_AUTH_URL = "https://kauth.kakao.com/oauth/authorize"
+KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token"
+KAKAO_USER_INFO_URL = "https://kapi.kakao.com/v2/user/me"
 
 
 @router.post("/signup", response_model=AuthResponse)
@@ -207,3 +219,115 @@ async def confirm_password_reset(request: PasswordResetConfirm, db=Depends(get_d
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"
         )
+
+
+# =====================================================
+# Kakao OAuth Endpoints
+# =====================================================
+
+@router.get("/kakao/login")
+async def kakao_login():
+    """
+    Redirect to Kakao OAuth authorization page.
+    """
+    state = secrets.token_urlsafe(32)
+    kakao_auth_url = (
+        f"{KAKAO_AUTH_URL}"
+        f"?client_id={settings.kakao_client_id}"
+        f"&redirect_uri={settings.kakao_redirect_uri}"
+        f"&response_type=code"
+        f"&state={state}"
+    )
+    return RedirectResponse(url=kakao_auth_url)
+
+
+@router.get("/kakao/callback")
+async def kakao_callback(
+    code: str,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
+    db=Depends(get_db)
+):
+    """
+    Handle Kakao OAuth callback.
+    Exchange authorization code for tokens, get user info, and redirect to frontend.
+    """
+    if error:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error={error}&message={error_description}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # 1. Exchange authorization code for tokens
+            token_response = await client.post(
+                KAKAO_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": settings.kakao_client_id,
+                    "client_secret": settings.kakao_client_secret,
+                    "redirect_uri": settings.kakao_redirect_uri,
+                    "code": code,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded;charset=utf-8"},
+            )
+            if token_response.status_code != 200:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to get Kakao token: {token_response.text}")
+            token_data = token_response.json()
+            kakao_access_token = token_data["access_token"]
+
+            # 2. Get user info from Kakao
+            user_response = await client.get(KAKAO_USER_INFO_URL, headers={"Authorization": f"Bearer {kakao_access_token}"})
+            if user_response.status_code != 200:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get Kakao user info")
+            kakao_user = user_response.json()
+
+        # 3. Extract user info
+        kakao_id = str(kakao_user["id"])
+        kakao_account = kakao_user.get("kakao_account", {})
+        profile = kakao_account.get("profile", {})
+        email = kakao_account.get("email")
+        nickname = profile.get("nickname", f"kakao_{kakao_id}")
+        profile_image = profile.get("profile_image_url")
+
+        # 4. Check if user exists in our database
+        existing_user = db.table("users").select("*").eq("provider", "kakao").eq("provider_id", kakao_id).execute()
+
+        if existing_user.data and len(existing_user.data) > 0:
+            user = existing_user.data[0]
+            user_id = user["id"]
+        else:
+            # Check if email already exists (link accounts)
+            if email:
+                email_user = db.table("users").select("*").eq("email", email).execute()
+                if email_user.data and len(email_user.data) > 0:
+                    user = email_user.data[0]
+                    user_id = user["id"]
+                    db.table("users").update({"provider": "kakao", "provider_id": kakao_id, "avatar_url": profile_image or user.get("avatar_url")}).eq("id", user_id).execute()
+                else:
+                    user_id = _create_kakao_user(db, kakao_id, email, nickname, profile_image)
+            else:
+                generated_email = f"kakao_{kakao_id}@codefill.local"
+                user_id = _create_kakao_user(db, kakao_id, generated_email, nickname, profile_image)
+
+        # 5. Generate JWT tokens
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
+
+        access_token = jwt.encode({"sub": str(user_id), "exp": datetime.utcnow() + access_token_expires, "type": "access"}, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+        refresh_token = jwt.encode({"sub": str(user_id), "exp": datetime.utcnow() + refresh_token_expires, "type": "refresh"}, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+        # 6. Redirect to frontend with tokens
+        redirect_url = f"{settings.frontend_url}/auth/callback?access_token={access_token}&refresh_token={refresh_token}&expires_in={int(access_token_expires.total_seconds())}"
+        return RedirectResponse(url=redirect_url)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=kakao_login_failed&message={str(e)}")
+
+
+def _create_kakao_user(db, kakao_id: str, email: str, nickname: str, profile_image: Optional[str]) -> str:
+    """Create a new user from Kakao OAuth data."""
+    user_id = str(uuid.uuid4())
+    db.table("users").insert({"id": user_id, "email": email, "name": nickname, "avatar_url": profile_image, "provider": "kakao", "provider_id": kakao_id}).execute()
+    return user_id

@@ -10,9 +10,11 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Code2, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Code2, Loader2, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { authApi } from '@/lib/api';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Validation schema
 const loginSchema = z.object({
@@ -156,6 +158,28 @@ export default function LoginPage() {
             ) : (
               '로그인'
             )}
+          </Button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">또는</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full bg-[#FEE500] text-[#000000] hover:bg-[#FDD835] border-[#FEE500] hover:border-[#FDD835]"
+            disabled={isLoading}
+            onClick={() => {
+              window.location.href = `${API_BASE_URL}/auth/kakao/login`;
+            }}
+          >
+            <MessageCircle className="mr-2 h-4 w-4" />
+            카카오로 로그인
           </Button>
         </form>
 

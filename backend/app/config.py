@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_per_minute: int = 60
 
+    # Kakao OAuth
+    kakao_client_id: str = ""
+    kakao_client_secret: str = ""
+    kakao_redirect_uri: str = "http://localhost:8000/auth/kakao/callback"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
