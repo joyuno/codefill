@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Resizer } from '@/components/ui/resizer';
 import {
   Play,
   Send,
@@ -60,7 +61,17 @@ export function UnifiedPractice({
   const [hintsUsed, setHintsUsed] = useState(0);
   const [output, setOutput] = useState<string>('');
   const [showSidebar, setShowSidebar] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
   const [activeTab, setActiveTab] = useState<'problem' | 'testcases'>('problem');
+
+  // 사이드바 리사이즈 핸들러
+  const handleSidebarResize = useCallback((delta: number) => {
+    setSidebarWidth((prev) => {
+      const minWidth = 200;
+      const maxWidth = 500;
+      return Math.min(Math.max(prev + delta, minWidth), maxWidth);
+    });
+  }, []);
 
   // Blank 모드 상태
   const [blankAnswers, setBlankAnswers] = useState<Record<string, string>>({});
@@ -313,10 +324,10 @@ export function UnifiedPractice({
         {showSidebar && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 320, opacity: 1 }}
+            animate={{ width: sidebarWidth, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="shrink-0 flex flex-col border-r border-border bg-card overflow-hidden"
+            transition={{ duration: 0.15 }}
+            className="shrink-0 flex flex-col bg-card overflow-hidden"
           >
             {/* Tabs */}
             <div className="flex border-b border-border">
@@ -344,6 +355,13 @@ export function UnifiedPractice({
                 <Badge variant="secondary" className="ml-1 text-xs">
                   {visibleTestCases.length}
                 </Badge>
+              </button>
+              <button
+                onClick={() => setShowSidebar(false)}
+                className="shrink-0 px-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                title="사이드바 닫기"
+              >
+                <ChevronLeft className="h-4 w-4" />
               </button>
             </div>
 
@@ -458,17 +476,21 @@ export function UnifiedPractice({
         )}
       </AnimatePresence>
 
-      {/* Toggle Button */}
-      <button
-        onClick={() => setShowSidebar(!showSidebar)}
-        className="shrink-0 w-6 flex items-center justify-center bg-secondary/50 hover:bg-secondary border-r border-border transition-colors"
-      >
-        {showSidebar ? (
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-        ) : (
+      {/* Resize Handle / Toggle Button */}
+      {showSidebar ? (
+        <Resizer
+          direction="horizontal"
+          onResize={handleSidebarResize}
+          className="bg-border hover:bg-primary/50"
+        />
+      ) : (
+        <button
+          onClick={() => setShowSidebar(true)}
+          className="shrink-0 w-6 flex items-center justify-center bg-secondary/50 hover:bg-secondary border-r border-border transition-colors"
+        >
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
+        </button>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">

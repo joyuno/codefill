@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Resizer } from '@/components/ui/resizer';
 import { ArrowLeft, PanelRightClose, PanelRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +39,26 @@ export default function ChatPage() {
 
   // Layout state
   const [showChat, setShowChat] = useState(true);
+  const [chatWidth, setChatWidth] = useState(400); // 40% of 1000px default
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Initialize chat width based on container size (40%)
+  useEffect(() => {
+    if (containerRef.current) {
+      const containerWidth = containerRef.current.offsetWidth;
+      setChatWidth(Math.round(containerWidth * 0.4));
+    }
+  }, []);
+
+  // Handle chat panel resize
+  const handleChatResize = useCallback((delta: number) => {
+    setChatWidth((prev) => {
+      const containerWidth = containerRef.current?.offsetWidth || 1000;
+      const minWidth = 280;
+      const maxWidth = Math.round(containerWidth * 0.6); // Max 60%
+      return Math.min(Math.max(prev - delta, minWidth), maxWidth);
+    });
+  }, []);
 
   // Handle problem selection from chat
   const handleProblemSelect = useCallback((selectedProblem: Problem) => {
@@ -265,32 +286,40 @@ export default function ChatPage() {
         </div>
       </motion.div>
 
-      {/* Main Content - 60/40 Split */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Panel - Practice Area (60% or 100% when chat hidden) */}
-        <main className="flex flex-1 flex-col overflow-hidden">
+      {/* Main Content - Resizable Split */}
+      <div ref={containerRef} className="flex flex-1 overflow-hidden">
+        {/* Left Panel - Practice Area */}
+        <main className="flex flex-1 flex-col overflow-hidden min-w-0">
           <div className="flex-1 overflow-auto p-4">{renderPracticeComponent()}</div>
         </main>
 
-        {/* Right Panel - ChatBot (40%) */}
+        {/* Right Panel - ChatBot (Resizable) */}
         <AnimatePresence>
           {showChat && (
-            <motion.aside
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: '40%', opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="shrink-0 overflow-hidden border-l border-border"
-            >
-              <div className="h-full p-3">
-                <PracticeChatPanel
-                  problem={problem}
-                  onHintRequest={handleHintRequest}
-                  onProblemSelect={handleProblemSelect}
-                  hints={hints}
-                />
-              </div>
-            </motion.aside>
+            <>
+              {/* Resize Handle */}
+              <Resizer
+                direction="horizontal"
+                onResize={handleChatResize}
+                className="bg-border hover:bg-primary/50"
+              />
+              <motion.aside
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: chatWidth, opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="shrink-0 overflow-hidden"
+              >
+                <div className="h-full p-3">
+                  <PracticeChatPanel
+                    problem={problem}
+                    onHintRequest={handleHintRequest}
+                    onProblemSelect={handleProblemSelect}
+                    hints={hints}
+                  />
+                </div>
+              </motion.aside>
+            </>
           )}
         </AnimatePresence>
       </div>
