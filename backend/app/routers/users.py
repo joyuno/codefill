@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Header
 from typing import Optional, List
 from uuid import UUID
+from jose import jwt, JWTError
 
 from ..database import get_db
+from ..config import get_settings
 from ..models.user import (
     User,
     UserProfile,
@@ -15,19 +17,52 @@ from ..models.user import (
 )
 
 router = APIRouter()
+settings = get_settings()
 
 
 async def get_current_user_id(authorization: str = Header(...), db=Depends(get_db)) -> UUID:
-    """Extract and verify user ID from authorization header."""
+    """Extract and verify user ID from authorization header.
+
+    Supports both:
+    - Supabase Auth tokens (for email/password login)
+    - Self-generated JWT tokens (for Kakao OAuth login)
+    """
     try:
         token = authorization.replace("Bearer ", "")
-        user = db.auth.get_user(token)
-        if user is None or user.user is None:
+
+        # First, try Supabase Auth token verification
+        try:
+            user = db.auth.get_user(token)
+            if user is not None and user.user is not None:
+                return UUID(user.user.id)
+        except Exception:
+            pass  # Not a Supabase token, try self-generated JWT
+
+        # Second, try self-generated JWT verification (for Kakao OAuth)
+        try:
+            payload = jwt.decode(
+                token,
+                settings.jwt_secret,
+                algorithms=[settings.jwt_algorithm]
+            )
+            token_type = payload.get("type")
+            user_id = payload.get("sub")
+
+            if token_type != "access" or not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type"
+                )
+
+            return UUID(user_id)
+        except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token"
             )
-        return UUID(user.user.id)
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

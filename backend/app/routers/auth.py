@@ -26,6 +26,10 @@ KAKAO_AUTH_URL = "https://kauth.kakao.com/oauth/authorize"
 KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token"
 KAKAO_USER_INFO_URL = "https://kapi.kakao.com/v2/user/me"
 
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USER_INFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
 
 @router.post("/signup", response_model=AuthResponse)
 async def signup(request: SignupRequest, db=Depends(get_db)):
@@ -160,24 +164,71 @@ async def logout(db=Depends(get_db)):
 async def refresh_token(request: RefreshTokenRequest, db=Depends(get_db)):
     """
     Refresh access token using refresh token.
+
+    Supports both:
+    - Supabase Auth refresh tokens (for email/password login)
+    - Self-generated JWT refresh tokens (for Kakao OAuth login)
     """
+    # First, try Supabase Auth refresh
     try:
         auth_response = db.auth.refresh_session(request.refresh_token)
-
-        if auth_response.session is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
+        if auth_response.session is not None:
+            return TokenResponse(
+                access_token=auth_response.session.access_token,
+                refresh_token=auth_response.session.refresh_token,
+                token_type="bearer",
+                expires_in=auth_response.session.expires_in or 3600,
             )
+    except Exception:
+        pass  # Not a Supabase token, try self-generated JWT
 
-        return TokenResponse(
-            access_token=auth_response.session.access_token,
-            refresh_token=auth_response.session.refresh_token,
-            token_type="bearer",
-            expires_in=auth_response.session.expires_in or 3600,
+    # Second, try self-generated JWT refresh (for Kakao OAuth)
+    try:
+        from jose import JWTError
+        payload = jwt.decode(
+            request.refresh_token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm]
         )
 
-    except Exception as e:
+        token_type = payload.get("type")
+        user_id = payload.get("sub")
+
+        if token_type != "refresh" or not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token type"
+            )
+
+        # Generate new tokens
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
+
+        new_access_token = jwt.encode(
+            {"sub": user_id, "exp": datetime.utcnow() + access_token_expires, "type": "access"},
+            settings.jwt_secret,
+            algorithm=settings.jwt_algorithm
+        )
+        new_refresh_token = jwt.encode(
+            {"sub": user_id, "exp": datetime.utcnow() + refresh_token_expires, "type": "refresh"},
+            settings.jwt_secret,
+            algorithm=settings.jwt_algorithm
+        )
+
+        return TokenResponse(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+            token_type="bearer",
+            expires_in=int(access_token_expires.total_seconds()),
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token"
+        )
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token"
@@ -291,6 +342,7 @@ async def kakao_callback(
 
         # 4. Check if user exists in our database
         existing_user = db.table("users").select("*").eq("provider", "kakao").eq("provider_id", kakao_id).execute()
+        is_new_user = False
 
         if existing_user.data and len(existing_user.data) > 0:
             user = existing_user.data[0]
@@ -305,9 +357,11 @@ async def kakao_callback(
                     db.table("users").update({"provider": "kakao", "provider_id": kakao_id, "avatar_url": profile_image or user.get("avatar_url")}).eq("id", user_id).execute()
                 else:
                     user_id = _create_kakao_user(db, kakao_id, email, nickname, profile_image)
+                    is_new_user = True
             else:
                 generated_email = f"kakao_{kakao_id}@codefill.local"
                 user_id = _create_kakao_user(db, kakao_id, generated_email, nickname, profile_image)
+                is_new_user = True
 
         # 5. Generate JWT tokens
         access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
@@ -316,8 +370,8 @@ async def kakao_callback(
         access_token = jwt.encode({"sub": str(user_id), "exp": datetime.utcnow() + access_token_expires, "type": "access"}, settings.jwt_secret, algorithm=settings.jwt_algorithm)
         refresh_token = jwt.encode({"sub": str(user_id), "exp": datetime.utcnow() + refresh_token_expires, "type": "refresh"}, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
-        # 6. Redirect to frontend with tokens
-        redirect_url = f"{settings.frontend_url}/auth/callback?access_token={access_token}&refresh_token={refresh_token}&expires_in={int(access_token_expires.total_seconds())}"
+        # 6. Redirect to frontend with tokens (include is_new_user flag)
+        redirect_url = f"{settings.frontend_url}/auth/callback?access_token={access_token}&refresh_token={refresh_token}&expires_in={int(access_token_expires.total_seconds())}&is_new_user={str(is_new_user).lower()}"
         return RedirectResponse(url=redirect_url)
 
     except HTTPException:
@@ -330,4 +384,146 @@ def _create_kakao_user(db, kakao_id: str, email: str, nickname: str, profile_ima
     """Create a new user from Kakao OAuth data."""
     user_id = str(uuid.uuid4())
     db.table("users").insert({"id": user_id, "email": email, "name": nickname, "avatar_url": profile_image, "provider": "kakao", "provider_id": kakao_id}).execute()
+    return user_id
+
+
+# =====================================================
+# Google OAuth Endpoints
+# =====================================================
+
+@router.get("/google/login")
+async def google_login():
+    """
+    Redirect to Google OAuth authorization page.
+    """
+    state = secrets.token_urlsafe(32)
+    google_auth_url = (
+        f"{GOOGLE_AUTH_URL}"
+        f"?client_id={settings.google_client_id}"
+        f"&redirect_uri={settings.google_redirect_uri}"
+        f"&response_type=code"
+        f"&scope=openid email profile"
+        f"&access_type=offline"
+        f"&state={state}"
+    )
+    return RedirectResponse(url=google_auth_url)
+
+
+@router.get("/google/callback")
+async def google_callback(
+    code: str = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
+    db=Depends(get_db)
+):
+    """
+    Handle Google OAuth callback.
+    Exchange authorization code for tokens, get user info, and redirect to frontend.
+    """
+    if error:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error={error}&message={error_description}")
+
+    if not code:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=no_code&message=Authorization code not provided")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # 1. Exchange authorization code for tokens
+            token_response = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "redirect_uri": settings.google_redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            if token_response.status_code != 200:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to get Google token: {token_response.text}")
+            token_data = token_response.json()
+            google_access_token = token_data["access_token"]
+
+            # 2. Get user info from Google
+            user_response = await client.get(
+                GOOGLE_USER_INFO_URL,
+                headers={"Authorization": f"Bearer {google_access_token}"}
+            )
+            if user_response.status_code != 200:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get Google user info")
+            google_user = user_response.json()
+
+        # 3. Extract user info
+        google_id = str(google_user["id"])
+        email = google_user.get("email")
+        name = google_user.get("name", f"google_{google_id}")
+        profile_image = google_user.get("picture")
+
+        # 4. Check if user exists in our database
+        existing_user = db.table("users").select("*").eq("provider", "google").eq("provider_id", google_id).execute()
+        is_new_user = False
+
+        if existing_user.data and len(existing_user.data) > 0:
+            user = existing_user.data[0]
+            user_id = user["id"]
+        else:
+            # Check if email already exists (link accounts)
+            if email:
+                email_user = db.table("users").select("*").eq("email", email).execute()
+                if email_user.data and len(email_user.data) > 0:
+                    user = email_user.data[0]
+                    user_id = user["id"]
+                    # Update provider info
+                    db.table("users").update({
+                        "provider": "google",
+                        "provider_id": google_id,
+                        "avatar_url": profile_image or user.get("avatar_url")
+                    }).eq("id", user_id).execute()
+                else:
+                    user_id = _create_google_user(db, google_id, email, name, profile_image)
+                    is_new_user = True
+            else:
+                # Google should always provide email, but handle edge case
+                generated_email = f"google_{google_id}@codefill.local"
+                user_id = _create_google_user(db, google_id, generated_email, name, profile_image)
+                is_new_user = True
+
+        # 5. Generate JWT tokens
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        refresh_token_expires = timedelta(days=settings.refresh_token_expire_days)
+
+        access_token = jwt.encode(
+            {"sub": str(user_id), "exp": datetime.utcnow() + access_token_expires, "type": "access"},
+            settings.jwt_secret,
+            algorithm=settings.jwt_algorithm
+        )
+        refresh_token = jwt.encode(
+            {"sub": str(user_id), "exp": datetime.utcnow() + refresh_token_expires, "type": "refresh"},
+            settings.jwt_secret,
+            algorithm=settings.jwt_algorithm
+        )
+
+        # 6. Redirect to frontend with tokens (include is_new_user flag)
+        redirect_url = f"{settings.frontend_url}/auth/callback?access_token={access_token}&refresh_token={refresh_token}&expires_in={int(access_token_expires.total_seconds())}&is_new_user={str(is_new_user).lower()}"
+        return RedirectResponse(url=redirect_url)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=google_login_failed&message={str(e)}")
+
+
+def _create_google_user(db, google_id: str, email: str, name: str, profile_image: Optional[str]) -> str:
+    """Create a new user from Google OAuth data."""
+    user_id = str(uuid.uuid4())
+    db.table("users").insert({
+        "id": user_id,
+        "email": email,
+        "name": name,
+        "avatar_url": profile_image,
+        "provider": "google",
+        "provider_id": google_id
+    }).execute()
     return user_id

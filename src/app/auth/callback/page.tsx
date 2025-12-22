@@ -16,6 +16,7 @@ export default function AuthCallbackPage() {
     const handleCallback = async () => {
       const accessToken = searchParams.get('access_token');
       const refreshToken = searchParams.get('refresh_token');
+      const isNewUser = searchParams.get('is_new_user') === 'true';
       const error = searchParams.get('error');
       const errorMessage = searchParams.get('message');
 
@@ -32,13 +33,21 @@ export default function AuthCallbackPage() {
           apiClient.setTokens(accessToken, refreshToken);
 
           setStatus('success');
-          setMessage('로그인 성공! 홈으로 이동합니다...');
 
-          // Redirect to home
-          setTimeout(() => {
-            router.push('/');
-            router.refresh();
-          }, 1000);
+          if (isNewUser) {
+            // New user - redirect to onboarding
+            setMessage('환영합니다! 맞춤 설정을 진행합니다...');
+            setTimeout(() => {
+              router.push('/onboarding/social');
+            }, 1000);
+          } else {
+            // Existing user - redirect to home
+            setMessage('로그인 성공! 홈으로 이동합니다...');
+            setTimeout(() => {
+              router.push('/');
+              router.refresh();
+            }, 1000);
+          }
         } catch (err) {
           setStatus('error');
           setMessage('토큰 저장 중 오류가 발생했습니다.');

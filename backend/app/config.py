@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     kakao_client_secret: str = ""
     kakao_redirect_uri: str = "http://localhost:8000/auth/kakao/callback"
 
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
