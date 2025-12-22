@@ -37,6 +37,7 @@ interface SocialOnboardingData {
   level: 'beginner' | 'elementary' | 'intermediate' | 'advanced' | 'unknown' | null;
   solvedAcId?: string;
   strongAlgorithms: string[];
+  desiredJob?: string;
 }
 
 // Step 1 options
@@ -89,6 +90,7 @@ export default function SocialOnboardingPage() {
     level: null,
     solvedAcId: '',
     strongAlgorithms: [],
+    desiredJob: '',
   });
 
   // Check if user is authenticated
@@ -141,11 +143,27 @@ export default function SocialOnboardingPage() {
     setIsLoading(true);
 
     try {
-      // Update user preferences with onboarding data
-      const response = await apiClient.request('/users/me/preferences', {
+      // Save onboarding data to users table
+      const userUpdateResponse = await apiClient.request('/users/me', {
         method: 'PUT',
         body: {
-          // Map onboarding data to preferences
+          current_status: formData.status,
+          learning_goal: formData.goal,
+          experience_level: formData.level,
+          strong_algorithms: formData.strongAlgorithms.length > 0 ? formData.strongAlgorithms : null,
+          solved_ac_id: formData.solvedAcId || null,
+          desired_job: formData.desiredJob || null,
+        },
+      });
+
+      if (userUpdateResponse.error) {
+        console.warn('Failed to update user onboarding data:', userUpdateResponse.error);
+      }
+
+      // Update user preferences with difficulty based on level
+      const preferencesResponse = await apiClient.request('/users/me/preferences', {
+        method: 'PUT',
+        body: {
           preferred_difficulty: formData.level === 'beginner' ? 'easy' :
                                formData.level === 'elementary' ? 'easy' :
                                formData.level === 'intermediate' ? 'medium' :
@@ -153,8 +171,8 @@ export default function SocialOnboardingPage() {
         },
       });
 
-      if (response.error) {
-        console.warn('Failed to update preferences:', response.error);
+      if (preferencesResponse.error) {
+        console.warn('Failed to update preferences:', preferencesResponse.error);
       }
 
       toast({
@@ -365,6 +383,22 @@ export default function SocialOnboardingPage() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* 희망 직무 */}
+              <div className="space-y-2">
+                <Label htmlFor="desiredJob">희망 직무 (선택)</Label>
+                <Input
+                  id="desiredJob"
+                  placeholder="예: 백엔드 개발자"
+                  className="bg-secondary"
+                  maxLength={20}
+                  value={formData.desiredJob}
+                  onChange={(e) => setFormData({ ...formData, desiredJob: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  20자 이내로 입력해주세요
+                </p>
               </div>
             </div>
           </motion.div>

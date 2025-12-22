@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Play,
   Send,
@@ -12,9 +13,13 @@ import {
   Clock,
   Lightbulb,
   Terminal,
+  FileText,
+  TestTube,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import type { ImplementationProblemData, TestCase } from '@/lib/types';
-import { EditorMock } from '../EditorMock';
+import { CodeEditor } from '../CodeEditor';
 
 interface TestResult {
   testCase: TestCase;
@@ -45,6 +50,8 @@ export function ImplementationPractice({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [output, setOutput] = useState<string>('');
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [activeTab, setActiveTab] = useState<'problem' | 'testcases'>('problem');
 
   const visibleTestCases = data.testCases.filter((tc) => !tc.isHidden);
   const hiddenTestCases = data.testCases.filter((tc) => tc.isHidden);
@@ -101,171 +108,258 @@ export function ImplementationPractice({
   const allPassed = passedCount === totalTests;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header with problem info */}
-      <div className="mb-4 space-y-2">
-        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-          {description}
-        </p>
-        <div className="flex items-center gap-2 text-sm">
-          <Badge variant="outline">
-            테스트 케이스: {visibleTestCases.length}개 공개 / {hiddenTestCases.length}개 숨김
-          </Badge>
-        </div>
-      </div>
+    <div className="flex h-full gap-0">
+      {/* Left Sidebar - Problem & Test Cases */}
+      <AnimatePresence>
+        {showSidebar && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 320, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="shrink-0 flex flex-col border-r border-border bg-card overflow-hidden"
+          >
+            {/* Tabs */}
+            <div className="flex border-b border-border">
+              <button
+                onClick={() => setActiveTab('problem')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'problem'
+                    ? 'border-b-2 border-primary text-primary bg-primary/5'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                }`}
+              >
+                <FileText className="h-4 w-4" />
+                문제
+              </button>
+              <button
+                onClick={() => setActiveTab('testcases')}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'testcases'
+                    ? 'border-b-2 border-primary text-primary bg-primary/5'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                }`}
+              >
+                <TestTube className="h-4 w-4" />
+                테스트
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {visibleTestCases.length}
+                </Badge>
+              </button>
+            </div>
 
-      {/* Code Editor */}
-      <div className="flex-1 min-h-0 rounded-lg border border-border overflow-hidden">
-        <EditorMock
-          initialCode={code}
-          language="python"
-          onChange={setCode}
-          readOnly={isSubmitted}
-        />
-      </div>
-
-      {/* Test Cases & Output */}
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        {/* Test Cases */}
-        <div className="rounded-lg border border-border p-3">
-          <h4 className="text-sm font-medium mb-2">테스트 케이스</h4>
-          <div className="space-y-2 max-h-40 overflow-y-auto">
-            {visibleTestCases.map((tc, idx) => {
-              const result = testResults.find(
-                (r) => JSON.stringify(r.testCase) === JSON.stringify(tc)
-              );
-              return (
-                <div
-                  key={idx}
-                  className={`rounded p-2 text-xs font-mono ${
-                    result
-                      ? result.passed
-                        ? 'bg-green-500/10 border border-green-500/20'
-                        : 'bg-red-500/10 border border-red-500/20'
-                      : 'bg-secondary'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Case {idx + 1}</span>
-                    {result && (
-                      result.passed ? (
-                        <CheckCircle2 className="h-3 w-3 text-green-500" />
-                      ) : (
-                        <XCircle className="h-3 w-3 text-red-500" />
-                      )
+            {/* Tab Content */}
+            <ScrollArea className="flex-1">
+              <div className="p-4">
+                {activeTab === 'problem' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2">문제 설명</h4>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                        {description}
+                      </p>
+                    </div>
+                    <div className="pt-4 border-t border-border">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline" className="text-xs">
+                          공개 {visibleTestCases.length}개
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          숨김 {hiddenTestCases.length}개
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {visibleTestCases.map((tc, idx) => {
+                      const result = testResults.find(
+                        (r) => JSON.stringify(r.testCase) === JSON.stringify(tc)
+                      );
+                      return (
+                        <div
+                          key={idx}
+                          className={`rounded-lg p-3 text-xs font-mono border ${
+                            result
+                              ? result.passed
+                                ? 'bg-green-500/10 border-green-500/30'
+                                : 'bg-red-500/10 border-red-500/30'
+                              : 'bg-secondary/50 border-border'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-foreground">
+                              Case {idx + 1}
+                            </span>
+                            {result && (
+                              result.passed ? (
+                                <div className="flex items-center gap-1 text-green-500">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  <span className="text-xs">PASS</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-red-500">
+                                  <XCircle className="h-3.5 w-3.5" />
+                                  <span className="text-xs">FAIL</span>
+                                </div>
+                              )
+                            )}
+                          </div>
+                          <div className="space-y-1.5">
+                            <div>
+                              <span className="text-muted-foreground">Input: </span>
+                              <code className="text-foreground break-all">
+                                {JSON.stringify(tc.input)}
+                              </code>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Expected: </span>
+                              <code className="text-foreground">
+                                {JSON.stringify(tc.expected)}
+                              </code>
+                            </div>
+                            {result && !result.passed && (
+                              <div className="pt-1.5 border-t border-red-500/20">
+                                <span className="text-red-400">Actual: </span>
+                                <code className="text-red-500">
+                                  {JSON.stringify(result.actual)}
+                                </code>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {hiddenTestCases.length > 0 && (
+                      <div className="rounded-lg p-3 bg-secondary/30 border border-dashed border-border text-center">
+                        <p className="text-xs text-muted-foreground">
+                          + {hiddenTestCases.length}개의 숨겨진 테스트 케이스
+                        </p>
+                      </div>
                     )}
                   </div>
-                  <div className="mt-1">
-                    <span className="text-muted-foreground">Input: </span>
-                    <span>{JSON.stringify(tc.input)}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Expected: </span>
-                    <span>{JSON.stringify(tc.expected)}</span>
-                  </div>
-                  {result && !result.passed && (
-                    <div className="text-red-500">
-                      <span className="text-muted-foreground">Actual: </span>
-                      <span>{JSON.stringify(result.actual)}</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                )}
+              </div>
+            </ScrollArea>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toggle Button */}
+      <button
+        onClick={() => setShowSidebar(!showSidebar)}
+        className="shrink-0 w-6 flex items-center justify-center bg-secondary/50 hover:bg-secondary border-r border-border transition-colors"
+      >
+        {showSidebar ? (
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        )}
+      </button>
+
+      {/* Main Content - Code Editor & Output */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Code Editor */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <CodeEditor
+            initialCode={code}
+            language="python"
+            onChange={setCode}
+            readOnly={isSubmitted}
+          />
         </div>
 
         {/* Output Console */}
-        <div className="rounded-lg border border-border p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Terminal className="h-4 w-4" />
-            <h4 className="text-sm font-medium">Output</h4>
+        <div className="shrink-0 border-t border-border bg-[#1e1e1e]">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-[#333]">
+            <div className="flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-[#808080]" />
+              <span className="text-sm font-medium text-[#cccccc]">Output</span>
+            </div>
+            {testResults.length > 0 && (
+              <Badge
+                variant={allPassed ? 'default' : 'destructive'}
+                className="text-xs"
+              >
+                {passedCount}/{totalTests} Passed
+              </Badge>
+            )}
           </div>
-          <div className="bg-code-bg rounded p-2 h-32 overflow-y-auto">
+          <div className="h-28 overflow-y-auto p-3">
             {isRunning ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm text-[#808080]">
                 <Clock className="h-4 w-4 animate-spin" />
                 실행 중...
               </div>
             ) : output ? (
-              <pre className="text-xs font-mono text-code-variable whitespace-pre-wrap">
+              <pre className="text-xs font-mono text-[#4ec9b0] whitespace-pre-wrap">
                 {output}
               </pre>
             ) : (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-[#808080]">
                 코드를 실행하면 결과가 여기에 표시됩니다.
               </p>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Result summary after submit */}
-      {isSubmitted && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`mt-4 p-4 rounded-lg ${
-            allPassed
-              ? 'bg-green-500/10 border border-green-500/20'
-              : 'bg-red-500/10 border border-red-500/20'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            {allPassed ? (
-              <>
-                <CheckCircle2 className="h-6 w-6 text-green-500" />
-                <div>
-                  <p className="font-medium text-green-600">모든 테스트 통과!</p>
-                  <p className="text-sm text-muted-foreground">
-                    {passedCount}/{totalTests} 테스트 케이스 통과
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <XCircle className="h-6 w-6 text-red-500" />
-                <div>
-                  <p className="font-medium text-red-600">일부 테스트 실패</p>
-                  <p className="text-sm text-muted-foreground">
-                    {passedCount}/{totalTests} 테스트 케이스 통과
-                  </p>
-                </div>
-              </>
-            )}
+        {/* Result Banner */}
+        <AnimatePresence>
+          {isSubmitted && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className={`shrink-0 px-4 py-3 ${
+                allPassed ? 'bg-green-500/20' : 'bg-red-500/20'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                {allPassed ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-red-500" />
+                )}
+                <span className={`font-medium ${allPassed ? 'text-green-500' : 'text-red-500'}`}>
+                  {allPassed ? '모든 테스트 통과!' : '일부 테스트 실패'}
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Actions Bar */}
+        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-t border-border bg-card">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleHint}
+            disabled={isSubmitted || hintsUsed >= 3}
+            className="text-yellow-600 hover:text-yellow-500"
+          >
+            <Lightbulb className="mr-2 h-4 w-4" />
+            힌트 ({3 - hintsUsed}회 남음)
+          </Button>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runTests(false)}
+              disabled={isRunning || isSubmitted}
+            >
+              <Play className="mr-2 h-4 w-4" />
+              실행
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => runTests(true)}
+              disabled={isRunning || isSubmitted}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              제출
+            </Button>
           </div>
-        </motion.div>
-      )}
-
-      {/* Actions */}
-      <div className="mt-4 flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleHint}
-          disabled={isSubmitted || hintsUsed >= 3}
-          className="text-yellow-600"
-        >
-          <Lightbulb className="mr-2 h-4 w-4" />
-          힌트 ({3 - hintsUsed}회 남음)
-        </Button>
-
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => runTests(false)}
-            disabled={isRunning || isSubmitted}
-          >
-            <Play className="mr-2 h-4 w-4" />
-            실행하기
-          </Button>
-          <Button
-            onClick={() => runTests(true)}
-            disabled={isRunning || isSubmitted}
-          >
-            <Send className="mr-2 h-4 w-4" />
-            제출하기
-          </Button>
         </div>
       </div>
     </div>

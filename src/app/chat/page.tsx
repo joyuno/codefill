@@ -1,18 +1,17 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Resizer } from '@/components/ui/resizer';
+import { ArrowLeft, PanelRightClose, PanelRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
-import { BlankPractice } from '@/components/practice/types/BlankPractice';
-import { PuzzlePractice } from '@/components/practice/types/PuzzlePractice';
+import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { GuidedPractice } from '@/components/practice/types/GuidedPractice';
-import { ImplementationPractice } from '@/components/practice/types/ImplementationPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 
 import { practiceApi } from '@/lib/api';
@@ -40,6 +39,26 @@ export default function ChatPage() {
 
   // Layout state
   const [showChat, setShowChat] = useState(true);
+  const [chatWidth, setChatWidth] = useState(400); // 40% of 1000px default
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Initialize chat width based on container size (40%)
+  useEffect(() => {
+    if (containerRef.current) {
+      const containerWidth = containerRef.current.offsetWidth;
+      setChatWidth(Math.round(containerWidth * 0.4));
+    }
+  }, []);
+
+  // Handle chat panel resize
+  const handleChatResize = useCallback((delta: number) => {
+    setChatWidth((prev) => {
+      const containerWidth = containerRef.current?.offsetWidth || 1000;
+      const minWidth = 280;
+      const maxWidth = Math.round(containerWidth * 0.6); // Max 60%
+      return Math.min(Math.max(prev - delta, minWidth), maxWidth);
+    });
+  }, []);
 
   // Handle problem selection from chat
   const handleProblemSelect = useCallback((selectedProblem: Problem) => {
@@ -169,68 +188,44 @@ export default function ChatPage() {
         <div className="flex h-full items-center justify-center text-muted-foreground">
           <div className="text-center">
             <p className="text-lg font-medium">문제를 선택해주세요</p>
-            <p className="mt-2 text-sm">왼쪽 채팅에서 난이도와 유형을 선택하면<br />문제가 여기에 표시됩니다</p>
+            <p className="mt-2 text-sm">오른쪽 채팅에서 난이도와 유형을 선택하면<br />문제가 여기에 표시됩니다</p>
           </div>
         </div>
       );
     }
 
-    switch (problem.problemType) {
-      case 'blank':
-        return (
-          <BlankPractice
-            code={problem.codeSnippet}
-            blanks={problem.blanks || []}
-            onSubmit={handleBlankSubmit}
-            onHintRequest={(blankId, level) => handleHintRequest(level, blankId)}
-            results={blankResults}
-            isSubmitted={isSubmitted}
-          />
-        );
-      case 'puzzle':
-        return (
-          <PuzzlePractice
-            problemDescription={problem.description}
-            blocks={problem.puzzleBlocks || []}
-            onSubmit={handlePuzzleSubmit}
-            onHintRequest={(level) => handleHintRequest(level)}
-            hints={hints}
-            results={puzzleResults}
-            isSubmitted={isSubmitted}
-          />
-        );
-      case 'guided':
-        return problem.guidedData ? (
-          <GuidedPractice
-            data={problem.guidedData}
-            onComplete={handleGuidedComplete}
-            onHintRequest={(step) => handleHintRequest(step)}
-            onSkip={(step) => {
-              toast({
-                title: `Step ${step} 건너뜀`,
-                description: 'XP가 차감됩니다',
-              });
-            }}
-          />
-        ) : null;
-      case 'implementation':
-        return problem.implementationData ? (
-          <ImplementationPractice
-            data={problem.implementationData}
-            description={problem.description}
-            onSubmit={handleImplementationSubmit}
-            onRun={(code) => {
-              toast({
-                title: '코드 실행 중...',
-                description: '테스트를 실행합니다',
-              });
-            }}
-            onHintRequest={(level) => handleHintRequest(level)}
-          />
-        ) : null;
-      default:
-        return null;
+    // Guided는 별도 컴포넌트 유지
+    if (problem.problemType === 'guided') {
+      return problem.guidedData ? (
+        <GuidedPractice
+          data={problem.guidedData}
+          onComplete={handleGuidedComplete}
+          onHintRequest={(step) => handleHintRequest(step)}
+          onSkip={(step) => {
+            toast({
+              title: `Step ${step} 건너뜀`,
+              description: 'XP가 차감됩니다',
+            });
+          }}
+        />
+      ) : null;
     }
+
+    // Blank, Puzzle, Implementation은 통합 컴포넌트 사용
+    return (
+      <UnifiedPractice
+        problem={problem}
+        problemType={problem.problemType || 'implementation'}
+        onSubmit={handleImplementationSubmit}
+        onRun={(code) => {
+          toast({
+            title: '코드 실행 중...',
+            description: '테스트를 실행합니다',
+          });
+        }}
+        onHintRequest={(level) => handleHintRequest(level)}
+      />
+    );
   };
 
   return (
@@ -272,9 +267,9 @@ export default function ChatPage() {
               className="gap-1.5 h-8"
             >
               {showChat ? (
-                <PanelLeftClose className="h-4 w-4" />
+                <PanelRightClose className="h-4 w-4" />
               ) : (
-                <PanelLeft className="h-4 w-4" />
+                <PanelRight className="h-4 w-4" />
               )}
             </Button>
 
@@ -291,34 +286,42 @@ export default function ChatPage() {
         </div>
       </motion.div>
 
-      {/* Main Content - 40/60 Split */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Panel - ChatBot (40%) */}
-        <AnimatePresence>
-          {showChat && (
-            <motion.aside
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: '40%', opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="shrink-0 overflow-hidden border-r border-border"
-            >
-              <div className="h-full p-3">
-                <PracticeChatPanel
-                  problem={problem}
-                  onHintRequest={handleHintRequest}
-                  onProblemSelect={handleProblemSelect}
-                  hints={hints}
-                />
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        {/* Right Panel - Practice Area (60% or 100% when chat hidden) */}
-        <main className="flex flex-1 flex-col overflow-hidden">
+      {/* Main Content - Resizable Split */}
+      <div ref={containerRef} className="flex flex-1 overflow-hidden">
+        {/* Left Panel - Practice Area */}
+        <main className="flex flex-1 flex-col overflow-hidden min-w-0">
           <div className="flex-1 overflow-auto p-4">{renderPracticeComponent()}</div>
         </main>
+
+        {/* Right Panel - ChatBot (Resizable) */}
+        <AnimatePresence>
+          {showChat && (
+            <>
+              {/* Resize Handle */}
+              <Resizer
+                direction="horizontal"
+                onResize={handleChatResize}
+                className="bg-border hover:bg-primary/50"
+              />
+              <motion.aside
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: chatWidth, opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="shrink-0 overflow-hidden"
+              >
+                <div className="h-full p-3">
+                  <PracticeChatPanel
+                    problem={problem}
+                    onHintRequest={handleHintRequest}
+                    onProblemSelect={handleProblemSelect}
+                    hints={hints}
+                  />
+                </div>
+              </motion.aside>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

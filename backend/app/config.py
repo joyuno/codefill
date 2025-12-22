@@ -24,9 +24,13 @@ class Settings(BaseSettings):
     # CORS
     frontend_url: str = "http://localhost:3000"
 
-    # LLM (추후 활성화)
+    # LLM
     openrouter_api_key: str = ""
     openai_api_key: str = ""
+    groq_api_key: str = ""
+
+    # Frontend (Next.js에서 사용하지만 여기서도 허용)
+    next_public_api_url: str = "http://localhost:8000"
 
     # Rate Limiting
     rate_limit_per_minute: int = 60
