@@ -55,6 +55,7 @@ const onboardingSchema = z.object({
     .regex(/[0-9]/, '비밀번호에 숫자가 포함되어야 합니다'),
   confirmPassword: z.string(),
   nickname: z.string().min(2, '닉네임은 최소 2자 이상이어야 합니다').max(20),
+  desiredJob: z.string().max(20, '희망 직무는 20자 이내로 입력해주세요').optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: '비밀번호가 일치하지 않습니다',
   path: ['confirmPassword'],
@@ -181,6 +182,7 @@ export default function OnboardingPage() {
           level: data.level,
           solved_ac_id: data.solvedAcId,
           strong_algorithms: data.strongAlgorithms,
+          desired_job: data.desiredJob,
         },
       };
 
@@ -495,6 +497,20 @@ export default function OnboardingPage() {
                 />
                 {errors.nickname && (
                   <p className="text-sm text-destructive">{errors.nickname.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="desiredJob">희망 직무 (선택)</Label>
+                <Input
+                  id="desiredJob"
+                  placeholder="예: 백엔드 개발자"
+                  className="bg-secondary"
+                  disabled={isLoading}
+                  {...register('desiredJob')}
+                />
+                {errors.desiredJob && (
+                  <p className="text-sm text-destructive">{errors.desiredJob.message}</p>
                 )}
               </div>
             </div>

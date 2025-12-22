@@ -64,14 +64,33 @@ async def signup(request: SignupRequest, db=Depends(get_db)):
 
         user_id = auth_response.user.id
 
-        # Create user record in our users table
-        # Use upsert to handle cases where the record might already exist
-        db.table("users").upsert({
+        # Build user data for users table
+        user_data = {
             "id": user_id,
             "email": request.email,
             "name": request.name,
             "provider": "email",
-        }, on_conflict="id").execute()
+        }
+
+        # Add onboarding data if provided
+        if request.onboarding_data:
+            onboarding = request.onboarding_data
+            if onboarding.status:
+                user_data["current_status"] = onboarding.status.value
+            if onboarding.goal:
+                user_data["learning_goal"] = onboarding.goal.value
+            if onboarding.level:
+                user_data["experience_level"] = onboarding.level.value
+            if onboarding.strong_algorithms:
+                user_data["strong_algorithms"] = onboarding.strong_algorithms
+            if onboarding.solved_ac_id:
+                user_data["solved_ac_id"] = onboarding.solved_ac_id
+            if onboarding.desired_job:
+                user_data["desired_job"] = onboarding.desired_job
+
+        # Create user record in our users table
+        # Use upsert to handle cases where the record might already exist
+        db.table("users").upsert(user_data, on_conflict="id").execute()
 
         # Note: user_stats and user_preferences are created by database trigger
         # handle_new_user() - no need to create them manually

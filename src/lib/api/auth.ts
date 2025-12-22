@@ -11,6 +11,7 @@ export interface OnboardingData {
   level: 'beginner' | 'elementary' | 'intermediate' | 'advanced' | 'unknown';
   solved_ac_id?: string;
   strong_algorithms?: string[];
+  desired_job?: string;  // 희망 직무 (자유 텍스트)
 }
 
 export interface SignupData {
