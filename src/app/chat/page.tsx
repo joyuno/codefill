@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { ArrowLeft, PanelRightClose, PanelRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
@@ -272,9 +272,9 @@ export default function ChatPage() {
               className="gap-1.5 h-8"
             >
               {showChat ? (
-                <PanelLeftClose className="h-4 w-4" />
+                <PanelRightClose className="h-4 w-4" />
               ) : (
-                <PanelLeft className="h-4 w-4" />
+                <PanelRight className="h-4 w-4" />
               )}
             </Button>
 
@@ -291,9 +291,14 @@ export default function ChatPage() {
         </div>
       </motion.div>
 
-      {/* Main Content - 40/60 Split */}
+      {/* Main Content - 60/40 Split */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Panel - ChatBot (40%) */}
+        {/* Left Panel - Practice Area (60% or 100% when chat hidden) */}
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-auto p-4">{renderPracticeComponent()}</div>
+        </main>
+
+        {/* Right Panel - ChatBot (40%) */}
         <AnimatePresence>
           {showChat && (
             <motion.aside
@@ -301,7 +306,7 @@ export default function ChatPage() {
               animate={{ width: '40%', opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="shrink-0 overflow-hidden border-r border-border"
+              className="shrink-0 overflow-hidden border-l border-border"
             >
               <div className="h-full p-3">
                 <PracticeChatPanel
@@ -314,11 +319,6 @@ export default function ChatPage() {
             </motion.aside>
           )}
         </AnimatePresence>
-
-        {/* Right Panel - Practice Area (60% or 100% when chat hidden) */}
-        <main className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-auto p-4">{renderPracticeComponent()}</div>
-        </main>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import type { ImplementationProblemData, TestCase } from '@/lib/types';
-import { EditorMock } from '../EditorMock';
+import { CodeEditor } from '../CodeEditor';
 
 interface TestResult {
   testCase: TestCase;
@@ -116,7 +116,7 @@ export function ImplementationPractice({
 
       {/* Code Editor */}
       <div className="flex-1 min-h-0 rounded-lg border border-border overflow-hidden">
-        <EditorMock
+        <CodeEditor
           initialCode={code}
           language="python"
           onChange={setCode}
