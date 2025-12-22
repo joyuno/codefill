@@ -30,11 +30,15 @@ const frameworkIcons: Record<string, string> = {
 const problemTypeLabels: Record<ProblemType, string> = {
   blank: '빈칸 채우기',
   puzzle: '퍼즐 (코드 정렬)',
+  guided: '1대1 대화형',
+  implementation: '구현',
 };
 
 const problemTypeColors: Record<ProblemType, string> = {
   blank: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
   puzzle: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
+  guided: 'bg-orange-500/20 text-orange-500 border-orange-500/30',
+  implementation: 'bg-green-500/20 text-green-500 border-green-500/30',
 };
 
 export function ProblemCard({ problem, index }: ProblemCardProps) {
