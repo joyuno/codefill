@@ -74,11 +74,17 @@ export interface Problem {
   relatedDocs: RelatedDoc[];
   keyConcepts: string[];
   problemType?: ProblemType;
+
+  // Unified fields for all problem types (execution and testing)
+  testCases?: TestCase[];         // Test cases for code execution
+  solutionCode?: string;          // Correct solution code
+  functionSignature?: string;     // Function signature for execution
+
   // For puzzle type (Parsons Problems)
   puzzleBlocks?: PuzzleBlock[];
   // For guided type (1대1 대화형)
   guidedData?: GuidedProblemData;
-  // For implementation type
+  // For implementation type (legacy - use testCases instead)
   implementationData?: ImplementationProblemData;
 }
 

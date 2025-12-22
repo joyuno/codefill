@@ -41,8 +41,17 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import type { Problem, ProblemType, TestCase, Blank, PuzzleBlock } from '@/lib/types';
+import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
+import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
 import { CodeEditor } from './CodeEditor';
+
+// UI에서 사용하는 퍼즐 블록 (indentation 포함)
+interface UIPuzzleBlock {
+  id: string;
+  code: string;
+  indentation: number;
+  correctOrder: number;
+}
 
 // API Base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -77,21 +86,21 @@ async function executeCode(sourceCode: string, language: string, stdin: string =
 }
 
 interface TestResult {
-  testCase: TestCase;
+  testCase: ConvertedTestCase;
   passed: boolean;
   actual?: any;
   error?: string;
   time?: number;
 }
 
-interface CustomTestCase extends TestCase {
+interface CustomTestCase extends ConvertedTestCase {
   id: string;
   isCustom: true;
 }
 
 interface UnifiedPracticeProps {
-  problem: Problem;
-  problemType: ProblemType;
+  problem: ConvertedProblem;
+  problemType: ConvertedProblemType;
   onSubmit: (code: string, results: TestResult[]) => void;
   onRun: (code: string) => void;
   onHintRequest: (level: number) => void;
@@ -135,7 +144,7 @@ export function UnifiedPractice({
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
 
   // Puzzle 모드 상태
-  const [blocks, setBlocks] = useState<PuzzleBlock[]>([]);
+  const [blocks, setBlocks] = useState<UIPuzzleBlock[]>([]);
   const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
 
   // 문제/타입 변경 시 초기화
@@ -152,12 +161,20 @@ export function UnifiedPractice({
     if (problemType === 'blank') {
       setCode(problem.codeSnippet || '');
     } else if (problemType === 'puzzle') {
-      const shuffled = [...(problem.puzzleBlocks || [])].sort(() => Math.random() - 0.5);
+      // ConvertedPuzzleBlock을 UIPuzzleBlock으로 변환
+      const uiBlocks: UIPuzzleBlock[] = (problem.puzzleBlocks || []).map(b => ({
+        id: b.id,
+        code: b.code,
+        indentation: 0, // 기본 indentation
+        correctOrder: b.correctOrder,
+      }));
+      // 랜덤 셔플
+      const shuffled = [...uiBlocks].sort(() => Math.random() - 0.5);
       setBlocks(shuffled);
       setCode('# 블록을 올바른 순서로 정렬하세요');
     } else if (problemType === 'implementation') {
-      const signature = problem.functionSignature || problem.implementationData?.functionSignature || 'def solution():';
-      setCode(signature + '\n    # 여기에 코드를 작성하세요\n    pass');
+      // implementation 문제는 빈 코드로 시작
+      setCode('# 여기에 코드를 작성하세요\n');
     }
   }, [problem.id, problemType]);
 
@@ -172,11 +189,12 @@ export function UnifiedPractice({
   }, [blocks, problemType]);
 
   // 테스트 케이스 (타입별로 다름)
-  const baseTestCases = useMemo(() => {
+  const baseTestCases = useMemo((): ConvertedTestCase[] => {
     if (problemType === 'implementation') {
-      return problem.testCases || problem.implementationData?.testCases || [];
+      return problem.testCases || [];
     }
-    return [{ input: ['test'], expected: true }];
+    // blank, puzzle은 테스트 케이스가 있으면 사용, 없으면 더미
+    return problem.testCases?.length ? problem.testCases : [{ input: 'test', expected: 'test' }];
   }, [problem, problemType]);
 
   const allTestCases = useMemo(() => {
@@ -206,24 +224,20 @@ export function UnifiedPractice({
   const addCustomTestCase = () => {
     const newTestCase: CustomTestCase = {
       id: `custom-${Date.now()}`,
-      input: [],
-      expected: null,
+      input: '',
+      expected: '',
       isCustom: true,
     };
     setCustomTestCases(prev => [...prev, newTestCase]);
-    setExpandedTests(prev => new Set([...prev, visibleTestCases.length]));
+    setExpandedTests(prev => new Set([...Array.from(prev), visibleTestCases.length]));
   };
 
   // 커스텀 테스트 케이스 업데이트
   const updateCustomTestCase = (id: string, field: 'input' | 'expected', value: string) => {
     setCustomTestCases(prev => prev.map(tc => {
       if (tc.id !== id) return tc;
-      try {
-        const parsed = JSON.parse(value);
-        return { ...tc, [field]: parsed };
-      } catch {
-        return tc;
-      }
+      // 문자열로 저장
+      return { ...tc, [field]: value };
     }));
   };
 
@@ -248,7 +262,7 @@ export function UnifiedPractice({
   };
 
   // 단일 테스트 실행
-  const runSingleTest = async (testCase: TestCase, idx: number) => {
+  const runSingleTest = async (testCase: ConvertedTestCase, idx: number) => {
     setRunningTestId(`test-${idx}`);
 
     const executableCode = getExecutableCode();
@@ -314,19 +328,74 @@ export function UnifiedPractice({
     }
   };
 
-  // 테스트 실행
+  // 테스트 실행 / 정답 체크
   const runTests = async (isSubmit: boolean = false) => {
     setIsRunning(true);
     setOutput('');
 
-    const executableCode = getExecutableCode();
-    const language = problem.framework || 'python';
-
     try {
-      // 단순 실행 (테스트 케이스 없이 코드만 실행)
+      // Blank: 코드 실행 없이 정답만 체크
+      if (problemType === 'blank') {
+        const userAnswers = (problem.blanks || []).map(blank => blankAnswers[blank.id] || '');
+        const { correct, results } = checkBlankAnswers(problem, userAnswers);
+
+        const newBlankResults: Record<string, boolean> = {};
+        (problem.blanks || []).forEach((blank, idx) => {
+          newBlankResults[blank.id] = results[idx] || false;
+        });
+        setBlankResults(newBlankResults);
+
+        const correctCount = results.filter(r => r).length;
+        const totalCount = results.length;
+
+        if (isSubmit) {
+          setOutput(correct
+            ? `✓ 정답입니다! (${correctCount}/${totalCount})`
+            : `✗ 오답입니다. (${correctCount}/${totalCount})`
+          );
+          const testResults: TestResult[] = [{
+            testCase: { input: '', expected: 'correct', isHidden: false },
+            passed: correct,
+            actual: correct ? 'correct' : 'incorrect',
+          }];
+          onSubmit(getExecutableCode(), testResults);
+          setIsSubmitted(true);
+        } else {
+          // 실행 버튼 - 현재 상태만 보여줌
+          setOutput(`현재 입력 상태: ${correctCount}/${totalCount} 정답`);
+        }
+        return;
+      }
+
+      // Puzzle: 코드 실행 없이 순서만 체크
+      if (problemType === 'puzzle') {
+        const userOrder = blocks.map(b => b.id);
+        const { correct } = checkPuzzleOrder(problem, userOrder);
+
+        if (isSubmit) {
+          setOutput(correct
+            ? '✓ 정답입니다! 올바른 순서입니다.'
+            : '✗ 오답입니다. 순서를 다시 확인해주세요.'
+          );
+          const testResults: TestResult[] = [{
+            testCase: { input: '', expected: 'correct order', isHidden: false },
+            passed: correct,
+            actual: correct ? 'correct order' : 'wrong order',
+          }];
+          onSubmit(getExecutableCode(), testResults);
+          setIsSubmitted(true);
+        } else {
+          setOutput('블록을 올바른 순서로 정렬하고 제출해주세요.');
+        }
+        return;
+      }
+
+      // Implementation: 실제 코드 실행
+      const executableCode = getExecutableCode();
+      const language = problem.framework || 'python';
+
       const result = await executeCode(executableCode, language, '');
 
-      // 출력 구성
       let outputText = '';
 
       if (result.compile_output) {
@@ -345,7 +414,6 @@ export function UnifiedPractice({
         outputText = '(실행 완료 - 출력 없음)';
       }
 
-      // 실행 정보 추가
       if (result.time || result.memory) {
         outputText += `\n\n--- 실행 정보 ---`;
         if (result.time) outputText += `\n시간: ${result.time}s`;
@@ -355,25 +423,16 @@ export function UnifiedPractice({
 
       setOutput(outputText);
 
-      // Blank 결과 업데이트
-      if (problemType === 'blank' && isSubmit) {
-        const newBlankResults: Record<string, boolean> = {};
-        (problem.blanks || []).forEach((blank) => {
-          newBlankResults[blank.id] = blankAnswers[blank.id]?.trim() === blank.answer;
-        });
-        setBlankResults(newBlankResults);
-      }
-
       if (isSubmit) {
-        setIsSubmitted(true);
         onSubmit(executableCode, []);
+        setIsSubmitted(true);
       } else {
         onRun(executableCode);
       }
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
-      setOutput(`[실행 오류]\n${errorMessage}`);
+      setOutput(`[오류]\n${errorMessage}`);
     } finally {
       setIsRunning(false);
     }
@@ -461,7 +520,8 @@ export function UnifiedPractice({
                 placeholder="___"
                 disabled={isSubmitted}
               />
-              {!isSubmitted && blank.hints && blank.hints.length > 0 && (
+              {/* 힌트 버튼 - problem.keyConcepts 사용 */}
+              {!isSubmitted && problem.keyConcepts?.length > 0 && (
                 <Popover>
                   <PopoverTrigger asChild>
                     <button className="text-muted-foreground hover:text-primary">
@@ -469,7 +529,7 @@ export function UnifiedPractice({
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-48 p-2">
-                    <p className="text-xs text-muted-foreground">{blank.hints[0]}</p>
+                    <p className="text-xs text-muted-foreground">{problem.keyConcepts[0]}</p>
                   </PopoverContent>
                 </Popover>
               )}
@@ -511,7 +571,7 @@ export function UnifiedPractice({
   const totalBlanks = problem.blanks?.length || 0;
 
   // 테스트 케이스 카드 렌더링
-  const renderTestCaseCard = (tc: TestCase, idx: number) => {
+  const renderTestCaseCard = (tc: ConvertedTestCase | CustomTestCase, idx: number) => {
     const result = testResults.find(
       (r) => JSON.stringify(r.testCase) === JSON.stringify(tc)
     );

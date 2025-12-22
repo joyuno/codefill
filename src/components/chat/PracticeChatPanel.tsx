@@ -5,16 +5,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble } from './MessageBubble';
 import { ChatComposer } from './ChatComposer';
 import { chatApi } from '@/lib/api';
-import type { Message, QuickChip, Problem } from '@/lib/types';
+import type { Message, QuickChip } from '@/lib/types';
+import type { ConvertedProblem } from '@/lib/dataTypes';
+import { getProblems } from '@/lib/problemLoader';
 import { Loader2, Lightbulb, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { mockProblems } from '@/lib/mockData';
 
 interface PracticeChatPanelProps {
-  problem: Problem | null;
+  problem: ConvertedProblem | null;
   onHintRequest?: (level: number, blankId?: string) => void;
-  onProblemSelect?: (problem: Problem) => void;
+  onProblemSelect?: (problem: ConvertedProblem) => void;
   hints?: string[];
 }
 
@@ -65,7 +66,8 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       showKeyConcepts();
     } else if (chip.value.startsWith('problem-')) {
       const problemId = chip.value.replace('problem-', '');
-      const selectedProblem = mockProblems.find(p => p.id === problemId);
+      const problems = getProblems();
+      const selectedProblem = problems.find(p => p.id === problemId);
       if (selectedProblem && onProblemSelect) {
         onProblemSelect(selectedProblem);
         addProblemStartMessage(selectedProblem);
@@ -119,7 +121,8 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
     };
 
     // Find matching problems
-    const matchingProblems = mockProblems.filter(p =>
+    const problems = getProblems();
+    const matchingProblems = problems.filter(p =>
       p.problemType === type &&
       (!selectedDifficulty || p.difficulty === selectedDifficulty)
     );
@@ -140,7 +143,7 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       };
     } else {
       // Fallback: select first matching type problem
-      const fallbackProblem = mockProblems.find(p => p.problemType === type);
+      const fallbackProblem = problems.find(p => p.problemType === type);
       if (fallbackProblem && onProblemSelect) {
         onProblemSelect(fallbackProblem);
         assistantMessage = {
@@ -167,7 +170,7 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
   }, [selectedDifficulty, onProblemSelect]);
 
   // Add problem start message
-  const addProblemStartMessage = useCallback((selectedProblem: Problem) => {
+  const addProblemStartMessage = useCallback((selectedProblem: ConvertedProblem) => {
     const assistantMessage: Message = {
       id: `problem-start-${Date.now()}`,
       role: 'assistant',
