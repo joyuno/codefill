@@ -90,6 +90,13 @@ class UpdateUserRequest(BaseModel):
     """Request model for updating user info."""
     name: Optional[str] = Field(None, min_length=2, max_length=50)
     avatar_url: Optional[str] = None
+    # Onboarding fields
+    current_status: Optional[str] = None
+    learning_goal: Optional[str] = None
+    experience_level: Optional[str] = None
+    strong_algorithms: Optional[List[str]] = None
+    solved_ac_id: Optional[str] = None
+    desired_job: Optional[str] = Field(None, max_length=20)
 
 
 class UpdatePreferencesRequest(BaseModel):
