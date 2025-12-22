@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import Editor, { OnMount } from '@monaco-editor/react';
+import type { editor } from 'monaco-editor';
 
 interface CodeEditorProps {
   initialCode: string;
@@ -10,6 +12,16 @@ interface CodeEditorProps {
   readOnly?: boolean;
 }
 
+// 언어별 파일 확장자 매핑
+const languageExtensions: Record<string, string> = {
+  python: 'py',
+  javascript: 'js',
+  typescript: 'ts',
+  java: 'java',
+  cpp: 'cpp',
+  c: 'c',
+};
+
 export function CodeEditor({
   initialCode,
   language = 'python',
@@ -17,18 +29,36 @@ export function CodeEditor({
   readOnly = false,
 }: CodeEditorProps) {
   const [code, setCode] = useState(initialCode);
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   useEffect(() => {
     setCode(initialCode);
   }, [initialCode]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newCode = e.target.value;
+  const handleEditorChange = (value: string | undefined) => {
+    const newCode = value || '';
     setCode(newCode);
     onChange?.(newCode);
   };
 
-  const lines = code.split('\n');
+  const handleEditorMount: OnMount = (editor) => {
+    editorRef.current = editor;
+
+    // 커서 위치 변경 추적
+    editor.onDidChangeCursorPosition((e) => {
+      setCursorPosition({
+        line: e.position.lineNumber,
+        column: e.position.column,
+      });
+    });
+
+    // 에디터 포커스
+    editor.focus();
+  };
+
+  const lines = code.split('\n').length;
+  const fileExtension = languageExtensions[language] || language;
 
   return (
     <motion.div
@@ -44,33 +74,52 @@ export function CodeEditor({
           <div className="h-3 w-3 rounded-full bg-[#27ca40]" />
         </div>
         <span className="ml-2 text-xs text-[#808080]">
-          solution.{language === 'python' ? 'py' : language === 'javascript' ? 'js' : language}
+          solution.{fileExtension}
         </span>
       </div>
 
-      {/* Code area */}
-      <div className="relative flex flex-1 overflow-hidden">
-        {/* Line numbers */}
-        <div className="flex flex-col bg-[#1e1e1e] px-2 py-4 text-right font-mono text-sm text-[#858585] select-none">
-          {lines.map((_, i) => (
-            <div key={i} className="leading-6 h-6">
-              {i + 1}
-            </div>
-          ))}
-        </div>
-
-        {/* Text area */}
-        <textarea
+      {/* Monaco Editor */}
+      <div className="flex-1 min-h-0">
+        <Editor
+          height="100%"
+          language={language}
           value={code}
-          onChange={handleChange}
-          readOnly={readOnly}
-          spellCheck={false}
-          className={`flex-1 resize-none bg-transparent p-4 font-mono text-sm text-[#d4d4d4] leading-6 outline-none ${
-            readOnly ? 'cursor-not-allowed opacity-70' : ''
-          }`}
-          style={{
+          onChange={handleEditorChange}
+          onMount={handleEditorMount}
+          theme="vs-dark"
+          options={{
+            readOnly,
+            minimap: { enabled: false },
+            fontSize: 14,
+            lineHeight: 24,
+            padding: { top: 16, bottom: 16 },
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
             tabSize: 4,
-            minHeight: '100%',
+            wordWrap: 'on',
+            folding: true,
+            lineNumbers: 'on',
+            renderLineHighlight: 'line',
+            selectOnLineNumbers: true,
+            roundedSelection: true,
+            cursorStyle: 'line',
+            cursorBlinking: 'smooth',
+            smoothScrolling: true,
+            contextmenu: true,
+            fontFamily: "'Fira Code', 'Cascadia Code', Consolas, monospace",
+            fontLigatures: true,
+            bracketPairColorization: { enabled: true },
+            guides: {
+              indentation: true,
+              bracketPairs: true,
+            },
+            suggest: {
+              showKeywords: true,
+              showSnippets: true,
+              showClasses: true,
+              showFunctions: true,
+              showVariables: true,
+            },
           }}
         />
       </div>
@@ -82,7 +131,8 @@ export function CodeEditor({
           <span>UTF-8</span>
         </div>
         <div className="flex items-center gap-4">
-          <span>Ln {lines.length}, Col 1</span>
+          <span>Ln {cursorPosition.line}, Col {cursorPosition.column}</span>
+          <span>{lines} lines</span>
           <span>{readOnly ? '읽기 전용' : '편집 가능'}</span>
         </div>
       </div>
