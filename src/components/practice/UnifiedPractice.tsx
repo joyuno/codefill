@@ -146,6 +146,7 @@ export function UnifiedPractice({
   // Puzzle 모드 상태
   const [blocks, setBlocks] = useState<UIPuzzleBlock[]>([]);
   const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
+  const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
 
   // 문제/타입 변경 시 초기화
   useEffect(() => {
@@ -155,6 +156,7 @@ export function UnifiedPractice({
     setOutput('');
     setBlankAnswers({});
     setBlankResults({});
+    setPuzzleResults({});
     setCustomTestCases([]);
     setExpandedTests(new Set([0]));
 
@@ -373,12 +375,21 @@ export function UnifiedPractice({
       // Puzzle: 코드 실행 없이 순서만 체크
       if (problemType === 'puzzle') {
         const userOrder = blocks.map(b => b.id);
-        const { correct } = checkPuzzleOrder(problem, userOrder);
+        const { correct, results } = checkPuzzleOrder(problem, userOrder);
+
+        // 각 블록별 결과 저장
+        const newPuzzleResults: Record<string, boolean> = {};
+        blocks.forEach((block, idx) => {
+          newPuzzleResults[block.id] = results[idx] || false;
+        });
+        setPuzzleResults(newPuzzleResults);
+
+        const correctCount = results.filter(r => r).length;
 
         if (isSubmit) {
           setOutput(correct
             ? '✓ 정답입니다! 올바른 순서입니다.'
-            : '✗ 오답입니다. 순서를 다시 확인해주세요.'
+            : `✗ 오답입니다. (${correctCount}/${blocks.length}) - 순서를 다시 확인해주세요.`
           );
           const testResults: TestResult[] = [{
             testCase: { input: '', expected: 'correct order', isHidden: false },
@@ -945,24 +956,56 @@ export function UnifiedPractice({
               </Badge>
             </div>
             <div className="space-y-2">
-              {blocks.map((block) => (
-                <div
-                  key={block.id}
-                  draggable
-                  onDragStart={() => handleDragStart(block.id)}
-                  onDragOver={(e) => handleDragOver(e, block.id)}
-                  onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 p-2 rounded border cursor-move transition-colors ${
-                    draggedBlock === block.id
-                      ? 'bg-primary/20 border-primary'
-                      : 'bg-card border-border hover:border-primary/50'
-                  }`}
-                  style={{ marginLeft: block.indentation * 24 }}
-                >
-                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <code className="text-sm font-mono">{block.code}</code>
-                </div>
-              ))}
+              {blocks.map((block) => {
+                const hasResult = Object.keys(puzzleResults).length > 0;
+                const isCorrect = puzzleResults[block.id];
+
+                return (
+                  <div
+                    key={block.id}
+                    draggable={!isSubmitted}
+                    onDragStart={() => !isSubmitted && handleDragStart(block.id)}
+                    onDragOver={(e) => !isSubmitted && handleDragOver(e, block.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 p-2 rounded border transition-all ${
+                      isSubmitted
+                        ? 'cursor-default'
+                        : 'cursor-move'
+                    } ${
+                      draggedBlock === block.id
+                        ? 'bg-primary/20 border-primary'
+                        : hasResult
+                          ? isCorrect
+                            ? 'bg-green-500/10 border-green-500/50'
+                            : 'bg-red-500/10 border-red-500/50 animate-pulse'
+                          : 'bg-card border-border hover:border-primary/50'
+                    }`}
+                    style={{ marginLeft: block.indentation * 24 }}
+                  >
+                    <GripVertical className={`h-4 w-4 shrink-0 ${
+                      hasResult
+                        ? isCorrect
+                          ? 'text-green-500'
+                          : 'text-red-500'
+                        : 'text-muted-foreground'
+                    }`} />
+                    <code className={`text-sm font-mono flex-1 ${
+                      hasResult
+                        ? isCorrect
+                          ? 'text-green-400'
+                          : 'text-red-400'
+                        : ''
+                    }`}>{block.code}</code>
+                    {hasResult && (
+                      isCorrect ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                      )
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1044,7 +1087,7 @@ export function UnifiedPractice({
         {/* blank/puzzle: 결과가 있을 때 표시, implementation: 제출 후 표시 */}
         <AnimatePresence>
           {((problemType === 'blank' && Object.keys(blankResults).length > 0) ||
-            (problemType === 'puzzle' && testResults.length > 0) ||
+            (problemType === 'puzzle' && Object.keys(puzzleResults).length > 0) ||
             (problemType === 'implementation' && isSubmitted)) && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
@@ -1055,9 +1098,13 @@ export function UnifiedPractice({
                   ? Object.values(blankResults).every(r => r)
                     ? 'bg-green-500/20'
                     : 'bg-red-500/20'
-                  : allPassed
-                    ? 'bg-green-500/20'
-                    : 'bg-red-500/20'
+                  : problemType === 'puzzle'
+                    ? Object.values(puzzleResults).every(r => r)
+                      ? 'bg-green-500/20'
+                      : 'bg-red-500/20'
+                    : allPassed
+                      ? 'bg-green-500/20'
+                      : 'bg-red-500/20'
               }`}
             >
               <div className="flex items-center gap-3">
@@ -1088,20 +1135,22 @@ export function UnifiedPractice({
                 {/* Puzzle 결과 */}
                 {problemType === 'puzzle' && (
                   <>
-                    {allPassed ? (
+                    {Object.values(puzzleResults).every(r => r) ? (
                       <CheckCircle2 className="h-5 w-5 text-green-500" />
                     ) : (
                       <XCircle className="h-5 w-5 text-red-500" />
                     )}
                     <div className="flex flex-col">
-                      <span className={`font-medium ${allPassed ? 'text-green-500' : 'text-red-500'}`}>
-                        {allPassed
+                      <span className={`font-medium ${
+                        Object.values(puzzleResults).every(r => r) ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        {Object.values(puzzleResults).every(r => r)
                           ? '정답입니다! 올바른 순서입니다.'
                           : '오답입니다. 순서를 다시 확인해주세요.'
                         }
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {blocks.length}개 블록 정렬 완료
+                        {Object.values(puzzleResults).filter(r => r).length} / {blocks.length} 블록 정답
                       </span>
                     </div>
                   </>
