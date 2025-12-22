@@ -998,41 +998,43 @@ export function UnifiedPractice({
           </div>
         )}
 
-        {/* Output Console */}
-        <div className="shrink-0 border-t border-border bg-[#1e1e1e]">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-[#333]">
-            <div className="flex items-center gap-2">
-              <Terminal className="h-4 w-4 text-[#808080]" />
-              <span className="text-sm font-medium text-[#cccccc]">Output</span>
-            </div>
-            {testedCount > 0 && (
-              <Badge
-                variant={allPassed ? 'default' : 'destructive'}
-                className="text-xs"
-              >
-                {passedCount}/{testedCount} Passed
-              </Badge>
-            )}
-          </div>
-          <div className="h-28 overflow-y-auto p-3">
-            {isRunning ? (
-              <div className="flex items-center gap-2 text-sm text-[#808080]">
-                <Clock className="h-4 w-4 animate-spin" />
-                실행 중...
+        {/* Output Console - implementation에서만 표시 */}
+        {problemType === 'implementation' && (
+          <div className="shrink-0 border-t border-border bg-[#1e1e1e]">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-[#333]">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-[#808080]" />
+                <span className="text-sm font-medium text-[#cccccc]">Output</span>
               </div>
-            ) : output ? (
-              <pre className="text-xs font-mono text-[#4ec9b0] whitespace-pre-wrap">
-                {output}
-              </pre>
-            ) : (
-              <p className="text-xs text-[#808080]">
-                코드를 실행하면 결과가 여기에 표시됩니다.
-              </p>
-            )}
+              {testedCount > 0 && (
+                <Badge
+                  variant={allPassed ? 'default' : 'destructive'}
+                  className="text-xs"
+                >
+                  {passedCount}/{testedCount} Passed
+                </Badge>
+              )}
+            </div>
+            <div className="h-28 overflow-y-auto p-3">
+              {isRunning ? (
+                <div className="flex items-center gap-2 text-sm text-[#808080]">
+                  <Clock className="h-4 w-4 animate-spin" />
+                  실행 중...
+                </div>
+              ) : output ? (
+                <pre className="text-xs font-mono text-[#4ec9b0] whitespace-pre-wrap">
+                  {output}
+                </pre>
+              ) : (
+                <p className="text-xs text-[#808080]">
+                  코드를 실행하면 결과가 여기에 표시됩니다.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Result Banner */}
+        {/* Result Banner - 문제 타입별 결과 표시 */}
         <AnimatePresence>
           {isSubmitted && (
             <motion.div
@@ -1040,18 +1042,75 @@ export function UnifiedPractice({
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               className={`shrink-0 px-4 py-3 ${
-                allPassed ? 'bg-green-500/20' : 'bg-red-500/20'
+                problemType === 'blank'
+                  ? Object.values(blankResults).every(r => r)
+                    ? 'bg-green-500/20'
+                    : 'bg-red-500/20'
+                  : allPassed
+                    ? 'bg-green-500/20'
+                    : 'bg-red-500/20'
               }`}
             >
               <div className="flex items-center gap-3">
-                {allPassed ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-500" />
+                {/* Blank 결과 */}
+                {problemType === 'blank' && (
+                  <>
+                    {Object.values(blankResults).every(r => r) ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <div className="flex flex-col">
+                      <span className={`font-medium ${
+                        Object.values(blankResults).every(r => r) ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        {Object.values(blankResults).every(r => r)
+                          ? '정답입니다!'
+                          : '오답입니다. 다시 확인해주세요.'
+                        }
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {Object.values(blankResults).filter(r => r).length} / {Object.values(blankResults).length} 빈칸 정답
+                      </span>
+                    </div>
+                  </>
                 )}
-                <span className={`font-medium ${allPassed ? 'text-green-500' : 'text-red-500'}`}>
-                  {allPassed ? '모든 테스트 통과!' : '일부 테스트 실패'}
-                </span>
+
+                {/* Puzzle 결과 */}
+                {problemType === 'puzzle' && (
+                  <>
+                    {allPassed ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <div className="flex flex-col">
+                      <span className={`font-medium ${allPassed ? 'text-green-500' : 'text-red-500'}`}>
+                        {allPassed
+                          ? '정답입니다! 올바른 순서입니다.'
+                          : '오답입니다. 순서를 다시 확인해주세요.'
+                        }
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {blocks.length}개 블록 정렬 완료
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {/* Implementation 결과 */}
+                {problemType === 'implementation' && (
+                  <>
+                    {allPassed ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <span className={`font-medium ${allPassed ? 'text-green-500' : 'text-red-500'}`}>
+                      {allPassed ? '모든 테스트 통과!' : '일부 테스트 실패'}
+                    </span>
+                  </>
+                )}
               </div>
             </motion.div>
           )}
@@ -1071,22 +1130,34 @@ export function UnifiedPractice({
           </Button>
 
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => runTests(false)}
-              disabled={isRunning || isSubmitted}
-            >
-              <Play className="mr-2 h-4 w-4" />
-              실행
-            </Button>
+            {/* 실행 버튼 - implementation에서만 표시 */}
+            {problemType === 'implementation' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => runTests(false)}
+                disabled={isRunning || isSubmitted}
+              >
+                <Play className="mr-2 h-4 w-4" />
+                실행
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={() => runTests(true)}
               disabled={isRunning || isSubmitted || (problemType === 'blank' && filledCount < totalBlanks)}
             >
-              <Send className="mr-2 h-4 w-4" />
-              제출
+              {problemType === 'implementation' ? (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  제출
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  정답 확인
+                </>
+              )}
             </Button>
           </div>
         </div>
