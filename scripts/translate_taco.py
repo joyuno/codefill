@@ -78,8 +78,8 @@ def translate_taco_dataset(input_path, output_path, start_idx=0):
                     json.dump({"last_idx": i, "data": data}, f)
                 print(f"Checkpoint saved at {i+1}")
 
-            # Rate limit 방지 (분당 30 요청 제한)
-            time.sleep(2.5)
+            # Rate limit 방지 (분당 30 요청 제한) - 5초 딜레이
+            time.sleep(5)
 
         if (i + 1) % 100 == 0:
             print(f"Progress: {i+1}/{total} ({(i+1)/total*100:.1f}%)")
@@ -96,10 +96,13 @@ def translate_taco_dataset(input_path, output_path, start_idx=0):
     print("Done!")
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    # 기본: train.json 번역
-    input_file = sys.argv[1] if len(sys.argv) > 1 else "data/taco/train.json"
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "data/taco/train_ko.json"
+    parser = argparse.ArgumentParser(description="TACO 데이터셋 번역")
+    parser.add_argument("--input", default="data/taco/train.json", help="입력 파일")
+    parser.add_argument("--output", default="data/taco/train_ko.json", help="출력 파일")
+    parser.add_argument("--start", type=int, default=0, help="시작 인덱스")
 
-    translate_taco_dataset(input_file, output_file)
+    args = parser.parse_args()
+
+    translate_taco_dataset(args.input, args.output, start_idx=args.start)

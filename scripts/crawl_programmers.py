@@ -1,325 +1,473 @@
 #!/usr/bin/env python3
 """
-프로그래머스 코딩테스트 문제 크롤러
-https://programmers.co.kr
+프로그래머스 코딩테스트 문제 크롤러 (Playwright 버전)
+통일된 스키마로 저장 + 이미지 다운로드
 """
 
-import requests
-from bs4 import BeautifulSoup
 import json
 import time
 import re
+import hashlib
+import requests
 from pathlib import Path
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from typing import Optional, Dict, List
+from urllib.parse import urljoin, urlparse
 
 # 설정
 BASE_URL = "https://school.programmers.co.kr"
-API_URL = "https://school.programmers.co.kr/api/v1"
 OUTPUT_DIR = Path(__file__).parent.parent / "data" / "programmers"
+IMAGES_DIR = OUTPUT_DIR / "images"
 DELAY = 2.0
 
+# 이미지 다운로드용 헤더
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
 
-def get_problem_list_api(page: int = 1, per_page: int = 20) -> list:
-    """API로 문제 목록 가져오기"""
-    url = f"{API_URL}/school/challenges"
-    params = {
-        "page": page,
-        "perPage": per_page,
-        "order": "recent"
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Accept": "application/json"
-    }
 
+def download_image(url: str, save_dir: Path) -> Optional[str]:
+    """이미지 다운로드 후 로컬 경로 반환"""
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        if response.status_code == 200:
-            return response.json().get("challenges", [])
-    except Exception as e:
-        print(f"API 에러: {e}")
+        # URL 정규화
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith("/"):
+            url = urljoin(BASE_URL, url)
 
-    return []
+        # 파일명 생성 (URL 해시 + 확장자)
+        parsed = urlparse(url)
+        ext = Path(parsed.path).suffix or ".png"
+        if ext not in [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]:
+            ext = ".png"
 
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+        filename = f"{url_hash}{ext}"
+        save_path = save_dir / filename
 
-def setup_driver():
-    """Selenium 드라이버 설정"""
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+        # 이미 다운로드된 경우 스킵
+        if save_path.exists():
+            return filename
 
-    driver = webdriver.Chrome(options=options)
-    return driver
+        # 다운로드
+        response = requests.get(url, headers=HEADERS, timeout=15)
+        response.raise_for_status()
 
-
-def get_problem_with_selenium(driver, lesson_id: int) -> dict | None:
-    """Selenium으로 문제 상세 크롤링"""
-    url = f"{BASE_URL}/learn/courses/30/lessons/{lesson_id}"
-
-    try:
-        driver.get(url)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "guide-section"))
-        )
-        time.sleep(1)  # 추가 렌더링 대기
-
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-
-        # 문제 제목
-        title = ""
-        title_tag = soup.select_one(".challenge-title")
-        if title_tag:
-            title = title_tag.text.strip()
-
-        # 난이도
-        difficulty = ""
-        level_tag = soup.select_one(".level-badge, .problem-level")
-        if level_tag:
-            difficulty = level_tag.text.strip()
-
-        # 문제 설명
-        description = ""
-        desc_tag = soup.select_one(".guide-section-description")
-        if desc_tag:
-            description = desc_tag.get_text(separator="\n").strip()
-
-        # 제한사항
-        constraints = ""
-        constraint_section = soup.select_one(".guide-section:has(h5:-soup-contains('제한사항'))")
-        if constraint_section:
-            constraints = constraint_section.get_text(separator="\n").strip()
-
-        # 입출력 예
-        examples = []
-        example_table = soup.select_one(".guide-section table")
-        if example_table:
-            rows = example_table.select("tr")
-            headers = [th.text.strip() for th in rows[0].select("th")] if rows else []
-            for row in rows[1:]:
-                cells = [td.text.strip() for td in row.select("td")]
-                if cells:
-                    example = dict(zip(headers, cells))
-                    examples.append(example)
-
-        # 입출력 예 설명
-        example_desc = ""
-        example_section = soup.select(".guide-section")
-        for section in example_section:
-            h5 = section.select_one("h5")
-            if h5 and "입출력 예 설명" in h5.text:
-                example_desc = section.get_text(separator="\n").strip()
-                break
-
-        return {
-            "id": lesson_id,
-            "title": title,
-            "difficulty": difficulty,
-            "description": description,
-            "constraints": constraints,
-            "examples": examples,
-            "example_description": example_desc,
-            "url": url,
-            "source": "programmers"
-        }
+        save_path.write_bytes(response.content)
+        return filename
 
     except Exception as e:
-        print(f"  Error: {e}")
+        print(f"    이미지 다운로드 실패: {url[:50]}... ({e})")
         return None
 
 
-def get_problem_requests(lesson_id: int) -> dict | None:
-    """requests로 문제 크롤링 (로그인 불필요한 경우)"""
-    url = f"{BASE_URL}/learn/courses/30/lessons/{lesson_id}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    }
+def extract_and_download_images(html: str, lesson_id: int) -> tuple:
+    """
+    HTML에서 이미지 추출, 다운로드, URL 치환
+    Returns: (치환된 HTML, 이미지 목록)
+    """
+    # 문제별 이미지 폴더
+    img_dir = IMAGES_DIR / str(lesson_id)
+    img_dir.mkdir(parents=True, exist_ok=True)
+
+    images = []
+    modified_html = html
+
+    # img 태그에서 src 추출
+    img_pattern = r'<img[^>]+src=["\']([^"\']+)["\']'
+    matches = re.findall(img_pattern, html, re.IGNORECASE)
+
+    for original_url in matches:
+        # 이미지 다운로드
+        local_filename = download_image(original_url, img_dir)
+
+        if local_filename:
+            # 상대 경로로 치환 (images/{lesson_id}/{filename})
+            local_path = f"images/{lesson_id}/{local_filename}"
+            modified_html = modified_html.replace(original_url, local_path)
+            images.append({
+                "original_url": original_url,
+                "local_path": local_path
+            })
+
+    return modified_html, images
+
+
+def get_problem_list_from_page(page_num: int, browser_page) -> List[Dict]:
+    """한 페이지에서 문제 목록 추출 (Playwright)"""
+    url = f"{BASE_URL}/learn/challenges?order=recent&page={page_num}&languages=python3"
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return None
-
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # 문제 제목
-        title = ""
-        title_tag = soup.select_one("title")
-        if title_tag:
-            title = title_tag.text.replace("| 프로그래머스 스쿨", "").strip()
-
-        # JavaScript에서 데이터 추출
-        scripts = soup.select("script")
-        for script in scripts:
-            if script.string and "lesson" in str(script.string):
-                # JSON 데이터 추출 시도
-                match = re.search(r'lesson:\s*({.*?})\s*,', script.string, re.DOTALL)
-                if match:
-                    try:
-                        data = json.loads(match.group(1))
-                        return {
-                            "id": lesson_id,
-                            "title": data.get("title", title),
-                            "description": data.get("description", ""),
-                            "difficulty": data.get("level", ""),
-                            "url": url,
-                            "source": "programmers"
-                        }
-                    except:
-                        pass
-
-        return {
-            "id": lesson_id,
-            "title": title,
-            "url": url,
-            "source": "programmers"
-        }
-
+        browser_page.goto(url, wait_until="networkidle", timeout=30000)
+        time.sleep(1)
     except Exception as e:
-        print(f"  Error: {e}")
-        return None
+        print(f"  페이지 {page_num} 로드 실패: {e}")
+        return []
 
-
-def crawl_problem_list():
-    """문제 목록 페이지 크롤링"""
-    url = f"{BASE_URL}/learn/challenges"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    }
-
-    all_problems = []
-    page = 1
-
-    while True:
-        print(f"페이지 {page} 크롤링 중...")
-        response = requests.get(f"{url}?page={page}", headers=headers, timeout=10)
-
-        if response.status_code != 200:
-            break
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        problem_cards = soup.select(".challenge-item, .list-item")
-
-        if not problem_cards:
-            break
-
-        for card in problem_cards:
-            link = card.select_one("a")
-            if link:
-                href = link.get("href", "")
-                match = re.search(r"/lessons/(\d+)", href)
-                if match:
-                    lesson_id = int(match.group(1))
-                    title = card.select_one(".title, .challenge-title")
-                    level = card.select_one(".level, .badge")
-
-                    all_problems.append({
-                        "id": lesson_id,
-                        "title": title.text.strip() if title else "",
-                        "level": level.text.strip() if level else ""
-                    })
-
-        page += 1
-        time.sleep(DELAY)
-
-        if page > 50:  # 안전장치
-            break
-
-    return all_problems
-
-
-def crawl_with_selenium(lesson_ids: list):
-    """Selenium으로 상세 크롤링"""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    driver = setup_driver()
     problems = []
+    rows = browser_page.query_selector_all("tr")
 
-    print(f"프로그래머스 문제 크롤링 시작: {len(lesson_ids)}개")
-    print("=" * 50)
+    for row in rows:
+        try:
+            a_tag = row.query_selector("a[href*='lessons']")
+            if not a_tag:
+                continue
 
-    try:
-        for i, lesson_id in enumerate(lesson_ids, 1):
-            print(f"[{i}/{len(lesson_ids)}] {lesson_id} 크롤링 중...", end=" ")
+            href = a_tag.get_attribute("href")
+            if not href:
+                continue
 
-            problem = get_problem_with_selenium(driver, lesson_id)
-            if problem:
-                problems.append(problem)
-                print(f"✓ {problem.get('title', 'No title')}")
-            else:
-                print("✗ 실패")
+            match = re.search(r'/lessons/(\d+)', href)
+            if not match:
+                continue
 
-            # 10개마다 저장
-            if i % 10 == 0:
-                save_problems(problems, f"checkpoint_{i}")
+            lesson_id = int(match.group(1))
 
-            time.sleep(DELAY)
+            # level 추출
+            level = ""
+            level_elem = row.query_selector("td.level span, span.level")
+            if level_elem:
+                level = level_elem.text_content().strip()
 
-    finally:
-        driver.quit()
+            # title 추출
+            title = ""
+            title_elem = row.query_selector("td.title, div.title")
+            if title_elem:
+                title = title_elem.text_content().strip()
 
-    # 최종 저장
-    save_problems(problems, "all_problems")
+            problems.append({
+                "id": lesson_id,
+                "title": title,
+                "level": level,
+                "href": href
+            })
 
-    print("=" * 50)
-    print(f"완료! 총 {len(problems)}개 크롤링")
+        except Exception as e:
+            continue
 
     return problems
 
 
-def save_problems(problems: list, filename: str):
-    """문제 저장"""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    output_file = OUTPUT_DIR / f"{filename}.json"
+def create_browser_context(playwright):
+    """안티 디텍션 브라우저 컨텍스트 생성"""
+    browser = playwright.chromium.launch(
+        headless=True,
+        args=['--disable-blink-features=AutomationControlled']
+    )
+    context = browser.new_context(
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        viewport={'width': 1920, 'height': 1080},
+    )
+    page = context.new_page()
+    # Webdriver 감지 우회
+    page.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+    """)
+    return browser, context, page
 
+
+def get_all_problem_ids(max_pages: int = 28) -> List[Dict]:
+    """모든 페이지에서 문제 ID 수집"""
+    from playwright.sync_api import sync_playwright
+
+    all_problems = []
+
+    print(f"문제 목록 수집 중 (1~{max_pages} 페이지)...")
+    print("Playwright 브라우저 시작...")
+    print("=" * 50)
+
+    with sync_playwright() as p:
+        browser, context, page = create_browser_context(p)
+
+        for page_num in range(1, max_pages + 1):
+            print(f"[{page_num}/{max_pages}] 페이지 크롤링 중...", end=" ", flush=True)
+
+            problems = get_problem_list_from_page(page_num, page)
+            all_problems.extend(problems)
+
+            print(f"✓ {len(problems)}개 발견 (총: {len(all_problems)}개)")
+            time.sleep(DELAY)
+
+        browser.close()
+
+    print("=" * 50)
+    print(f"총 {len(all_problems)}개 문제 발견")
+
+    # 중복 제거
+    unique = {p["id"]: p for p in all_problems}
+    all_problems = list(unique.values())
+    print(f"중복 제거 후: {len(all_problems)}개")
+
+    return all_problems
+
+
+def level_to_difficulty(level: str) -> str:
+    """레벨을 difficulty로 변환
+    Lv0, Lv1 → easy
+    Lv2 → medium
+    Lv3 → medium_hard
+    Lv4 → hard
+    Lv5, Lv6+ → very_hard
+    """
+    level_clean = re.sub(r'[^\d]', '', level)
+    if not level_clean:
+        return "unknown"
+
+    level_num = int(level_clean)
+    if level_num <= 1:
+        return "easy"
+    elif level_num == 2:
+        return "medium"
+    elif level_num == 3:
+        return "medium_hard"
+    elif level_num == 4:
+        return "hard"
+    else:
+        return "very_hard"
+
+
+def get_problem_detail(lesson_id: int, list_info: Dict, browser_page) -> Optional[Dict]:
+    """문제 상세 크롤링 (Playwright로 description + 이미지 가져오기)"""
+    url = f"{BASE_URL}/learn/courses/30/lessons/{lesson_id}"
+
+    try:
+        browser_page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        time.sleep(3)  # 충분한 대기 시간
+    except Exception as e:
+        print(f"  페이지 로드 실패: {e}")
+        return None
+
+    # 제목 추출
+    title = list_info.get("title", "")
+    if not title:
+        title_elem = browser_page.query_selector("title")
+        if title_elem:
+            title = title_elem.text_content().replace("| 프로그래머스 스쿨", "").strip()
+            title = title.replace("코딩테스트 연습 - ", "")
+
+    # level
+    level = list_info.get("level", "")
+
+    # description - #tour2 (문제 설명 컨테이너)에서 HTML로 추출
+    description_html = ""
+    description_text = ""
+    images = []
+
+    desc_elem = browser_page.query_selector("#tour2")
+    if desc_elem:
+        # HTML과 텍스트 둘 다 추출
+        description_html = desc_elem.inner_html()
+        description_text = desc_elem.text_content().strip()
+
+        # 이미지 다운로드 및 URL 치환
+        if description_html:
+            description_html, images = extract_and_download_images(description_html, lesson_id)
+            if images:
+                print(f"({len(images)}개 이미지)", end=" ")
+
+    # 대안: .guide-section
+    if not description_text:
+        guide_elem = browser_page.query_selector(".guide-section")
+        if guide_elem:
+            description_html = guide_elem.inner_html()
+            description_text = guide_elem.text_content().strip()
+            if description_html:
+                description_html, images = extract_and_download_images(description_html, lesson_id)
+
+    # 입출력 예시 추출 - inputs/outputs 배열 형식
+    inputs = []
+    outputs = []
+    tables = browser_page.query_selector_all("#tour2 table, .guide-section table")
+    for table in tables:
+        headers = table.query_selector_all("th")
+        if headers:
+            header_texts = [h.text_content().strip().lower() for h in headers]
+            # 입출력 테이블인지 확인
+            has_input = any("입력" in h or "input" in h or "매개변수" in h or "parameter" in h for h in header_texts)
+            has_output = any("출력" in h or "output" in h or "result" in h or "return" in h for h in header_texts)
+
+            if has_input or has_output:
+                # 출력 컬럼 인덱스 찾기 (보통 마지막 컬럼)
+                output_idx = -1
+                for idx, h in enumerate(header_texts):
+                    if "출력" in h or "output" in h or "result" in h or "return" in h:
+                        output_idx = idx
+                        break
+
+                rows = table.query_selector_all("tbody tr")
+                for row in rows:
+                    cells = row.query_selector_all("td")
+                    if len(cells) >= 2:
+                        # 입력: 출력 컬럼 제외한 모든 컬럼 합치기
+                        input_parts = []
+                        for idx, cell in enumerate(cells):
+                            if idx != output_idx and idx != len(cells) - 1:
+                                # 헤더명과 값을 함께 저장
+                                if idx < len(headers):
+                                    header_name = headers[idx].text_content().strip()
+                                    input_parts.append(f"{header_name} = {cell.text_content().strip()}")
+                                else:
+                                    input_parts.append(cell.text_content().strip())
+
+                        if input_parts:
+                            inputs.append("\n".join(input_parts))
+                        else:
+                            inputs.append(cells[0].text_content().strip())
+
+                        # 출력: 마지막 컬럼 또는 output_idx
+                        if output_idx >= 0 and output_idx < len(cells):
+                            outputs.append(cells[output_idx].text_content().strip())
+                        else:
+                            outputs.append(cells[-1].text_content().strip())
+
+    # 제한사항 추출
+    constraints = ""
+    constraint_headers = browser_page.query_selector_all("h5")
+    for h5 in constraint_headers:
+        if "제한" in h5.text_content():
+            next_elem = h5.evaluate("el => el.nextElementSibling")
+            if next_elem:
+                constraints = browser_page.evaluate("el => el ? el.textContent : ''", next_elem)
+                break
+
+    # 태그 추출 (있다면)
+    tags = []
+    tag_elems = browser_page.query_selector_all(".algorithm-tag, .tag")
+    for tag in tag_elems:
+        tags.append(tag.text_content().strip())
+
+    # 통일된 스키마로 반환 (level 필드 제거)
+    return {
+        "id": f"programmers_{lesson_id}",
+        "question": description_text,  # 텍스트 버전
+        "question_html": description_html,  # HTML 버전 (이미지 위치 보존)
+        "images": images if images else None,  # 이미지 목록
+        "solutions": [],  # 프로그래머스는 솔루션 비공개
+        "input_output": json.dumps({"inputs": inputs, "outputs": outputs}, ensure_ascii=False) if inputs else None,
+        "difficulty": level_to_difficulty(level),
+        "tags": tags if tags else None,
+        "name": f"[프로그래머스 {lesson_id}] {title}",
+        "source": "programmers",
+        "url": url,
+        "starter_code": None,
+        "explanation": constraints if constraints else None,
+        "language": "python",
+        "time_limit": None,
+        "memory_limit": None,
+        "original_id": str(lesson_id)
+    }
+
+
+def crawl_problems(problem_list: List[Dict], skip_existing: bool = True):
+    """문제 상세 크롤링"""
+    from playwright.sync_api import sync_playwright
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    output_file = OUTPUT_DIR / "problems.json"
+    existing_problems = []
+    existing_ids = set()
+
+    if skip_existing and output_file.exists():
+        try:
+            with open(output_file, "r", encoding="utf-8") as f:
+                existing_problems = json.load(f)
+                existing_ids = {p.get("original_id") or str(p.get("id", "")).replace("programmers_", "") for p in existing_problems}
+                print(f"기존 크롤링된 문제: {len(existing_ids)}개")
+        except:
+            pass
+
+    # 스킵할 ID 제외
+    new_problems = [p for p in problem_list if str(p["id"]) not in existing_ids]
+    skipped = len(problem_list) - len(new_problems)
+
+    if skipped > 0:
+        print(f"스킵 (이미 크롤링됨): {skipped}개")
+
+    problems = existing_problems.copy()
+    failed = []
+    total_images = 0
+
+    print(f"프로그래머스 문제 상세 크롤링: {len(new_problems)}개")
+    print(f"이미지 저장 경로: {IMAGES_DIR}")
+    print("=" * 50)
+
+    with sync_playwright() as p:
+        browser, context, page = create_browser_context(p)
+
+        for i, prob in enumerate(new_problems, 1):
+            lesson_id = prob["id"]
+
+            print(f"[{i}/{len(new_problems)}] {lesson_id} 크롤링 중...", end=" ", flush=True)
+
+            detail = get_problem_detail(lesson_id, prob, page)
+            if detail and detail.get("question"):
+                problems.append(detail)
+                img_count = len(detail.get("images") or [])
+                total_images += img_count
+                print(f"✓ {detail['difficulty']} {detail['name'][:30]}")
+            else:
+                failed.append(lesson_id)
+                print("✗ 실패 (description 없음)")
+
+            # 10개마다 저장
+            if i % 10 == 0:
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(problems, f, ensure_ascii=False, indent=2)
+                print(f"  [저장됨: {len(problems)}개, 이미지: {total_images}개]")
+
+            time.sleep(DELAY)
+
+        browser.close()
+
+    # 최종 저장
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(problems, f, ensure_ascii=False, indent=2)
 
+    print("=" * 50)
+    print(f"완료! 총: {len(problems)}개 (신규: {len(new_problems)-len(failed)}, 기존: {len(existing_ids)}, 실패: {len(failed)})")
+    print(f"다운로드된 이미지: {total_images}개")
     print(f"저장: {output_file}")
 
+    return problems
 
-# 알려진 인기 문제 ID 목록
-POPULAR_LESSONS = [
-    # Level 1
-    12906, 12903, 12910, 12912, 12915, 12916, 12917, 12918, 12919, 12921,
-    12922, 12925, 12926, 12928, 12930, 12931, 12932, 12933, 12934, 12935,
-    # Level 2
-    12909, 12911, 12914, 12924, 12939, 12941, 12945, 12949, 12951, 12953,
-    42577, 42578, 42583, 42584, 42585, 42586, 42587, 42588, 42746, 42747,
-    # Level 3
-    42579, 42627, 42628, 42629, 42839, 42840, 42841, 42842, 42860, 42861,
-    42862, 42883, 42884, 42885, 42886, 42888, 42889, 42890, 42891, 42892,
-    # 카카오 기출
-    60057, 60058, 60059, 60060, 60061, 60062, 67256, 67257, 67258, 67259,
-    72410, 72411, 72412, 72413, 72414, 72415, 77484, 77485, 77486, 81301,
-]
+
+def save_problem_list(problem_list: List[Dict]):
+    """문제 목록 저장"""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_file = OUTPUT_DIR / "problem_list.json"
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(problem_list, f, ensure_ascii=False, indent=2)
+
+    print(f"문제 목록 저장: {output_file}")
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="프로그래머스 문제 크롤러")
-    parser.add_argument("--mode", choices=["list", "detail", "popular"], default="popular",
-                        help="크롤링 모드: list(목록), detail(상세), popular(인기문제)")
-    parser.add_argument("--ids", type=str, help="크롤링할 문제 ID들 (콤마 구분)")
+    parser.add_argument("--pages", type=int, default=28, help="크롤링할 페이지 수 (기본: 28)")
+    parser.add_argument("--list-only", action="store_true", help="문제 목록만 수집")
+    parser.add_argument("--detail-only", action="store_true", help="기존 목록으로 상세만 크롤링")
+    parser.add_argument("--no-skip", action="store_true", help="기존 문제도 다시 크롤링")
 
     args = parser.parse_args()
 
-    if args.mode == "list":
-        problems = crawl_problem_list()
-        save_problems(problems, "problem_list")
+    if args.detail_only:
+        list_file = OUTPUT_DIR / "problem_list.json"
+        if list_file.exists():
+            with open(list_file, "r") as f:
+                problem_list = json.load(f)
+            print(f"기존 목록 로드: {len(problem_list)}개")
+            crawl_problems(problem_list, skip_existing=not args.no_skip)
+        else:
+            print("문제 목록 파일이 없습니다. 먼저 목록을 수집하세요.")
+    else:
+        problem_list = get_all_problem_ids(args.pages)
+        save_problem_list(problem_list)
 
-    elif args.mode == "detail" and args.ids:
-        ids = [int(x.strip()) for x in args.ids.split(",")]
-        crawl_with_selenium(ids)
-
-    elif args.mode == "popular":
-        print("인기 문제 크롤링을 시작합니다...")
-        print("Selenium이 필요합니다. 설치: pip install selenium")
-        crawl_with_selenium(POPULAR_LESSONS)
+        if not args.list_only:
+            crawl_problems(problem_list, skip_existing=not args.no_skip)
