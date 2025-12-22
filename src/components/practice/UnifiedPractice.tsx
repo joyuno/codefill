@@ -21,14 +21,60 @@ import {
   ChevronRight,
   GripVertical,
   HelpCircle,
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  RotateCcw,
+  Zap,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import type { Problem, ProblemType, TestCase, Blank, PuzzleBlock } from '@/lib/types';
 import { CodeEditor } from './CodeEditor';
+
+// API Base URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+// 코드 실행 API 호출
+async function executeCode(sourceCode: string, language: string, stdin: string = ''): Promise<{
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  compile_output: string;
+  time: string | null;
+  memory: number | null;
+  status: { id: number; description: string };
+  error?: string;
+}> {
+  const response = await fetch(`${API_BASE_URL}/execute/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source_code: sourceCode,
+      language,
+      stdin,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`API Error: ${response.status} - ${error}`);
+  }
+
+  return response.json();
+}
 
 interface TestResult {
   testCase: TestCase;
@@ -36,6 +82,11 @@ interface TestResult {
   actual?: any;
   error?: string;
   time?: number;
+}
+
+interface CustomTestCase extends TestCase {
+  id: string;
+  isCustom: true;
 }
 
 interface UnifiedPracticeProps {
@@ -57,18 +108,24 @@ export function UnifiedPractice({
   const [code, setCode] = useState('');
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [runningTestId, setRunningTestId] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [output, setOutput] = useState<string>('');
   const [showSidebar, setShowSidebar] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [sidebarWidth, setSidebarWidth] = useState(360);
   const [activeTab, setActiveTab] = useState<'problem' | 'testcases'>('problem');
+
+  // 테스트 케이스 UI 상태
+  const [expandedTests, setExpandedTests] = useState<Set<number>>(new Set([0]));
+  const [customTestCases, setCustomTestCases] = useState<CustomTestCase[]>([]);
+  const [showCustomOnly, setShowCustomOnly] = useState(false);
 
   // 사이드바 리사이즈 핸들러
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth((prev) => {
-      const minWidth = 200;
-      const maxWidth = 500;
+      const minWidth = 280;
+      const maxWidth = 550;
       return Math.min(Math.max(prev + delta, minWidth), maxWidth);
     });
   }, []);
@@ -89,16 +146,17 @@ export function UnifiedPractice({
     setOutput('');
     setBlankAnswers({});
     setBlankResults({});
+    setCustomTestCases([]);
+    setExpandedTests(new Set([0]));
 
     if (problemType === 'blank') {
       setCode(problem.codeSnippet || '');
     } else if (problemType === 'puzzle') {
-      // 블록 섞기
       const shuffled = [...(problem.puzzleBlocks || [])].sort(() => Math.random() - 0.5);
       setBlocks(shuffled);
       setCode('# 블록을 올바른 순서로 정렬하세요');
     } else if (problemType === 'implementation') {
-      const signature = problem.implementationData?.functionSignature || 'def solution():';
+      const signature = problem.functionSignature || problem.implementationData?.functionSignature || 'def solution():';
       setCode(signature + '\n    # 여기에 코드를 작성하세요\n    pass');
     }
   }, [problem.id, problemType]);
@@ -114,24 +172,71 @@ export function UnifiedPractice({
   }, [blocks, problemType]);
 
   // 테스트 케이스 (타입별로 다름)
-  const testCases = useMemo(() => {
+  const baseTestCases = useMemo(() => {
     if (problemType === 'implementation') {
-      return problem.implementationData?.testCases || [];
+      return problem.testCases || problem.implementationData?.testCases || [];
     }
-    // blank/puzzle은 mock 테스트 케이스
-    return [
-      { input: ['test'], expected: true },
-    ];
+    return [{ input: ['test'], expected: true }];
   }, [problem, problemType]);
 
-  const visibleTestCases = testCases.filter((tc) => !tc.isHidden);
-  const hiddenTestCases = testCases.filter((tc) => tc.isHidden);
+  const allTestCases = useMemo(() => {
+    if (showCustomOnly) {
+      return customTestCases;
+    }
+    return [...baseTestCases, ...customTestCases];
+  }, [baseTestCases, customTestCases, showCustomOnly]);
+
+  const visibleTestCases = allTestCases.filter((tc) => !tc.isHidden);
+  const hiddenTestCases = baseTestCases.filter((tc) => tc.isHidden);
+
+  // 테스트 케이스 토글
+  const toggleTestExpand = (idx: number) => {
+    setExpandedTests(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(idx)) {
+        newSet.delete(idx);
+      } else {
+        newSet.add(idx);
+      }
+      return newSet;
+    });
+  };
+
+  // 커스텀 테스트 케이스 추가
+  const addCustomTestCase = () => {
+    const newTestCase: CustomTestCase = {
+      id: `custom-${Date.now()}`,
+      input: [],
+      expected: null,
+      isCustom: true,
+    };
+    setCustomTestCases(prev => [...prev, newTestCase]);
+    setExpandedTests(prev => new Set([...prev, visibleTestCases.length]));
+  };
+
+  // 커스텀 테스트 케이스 업데이트
+  const updateCustomTestCase = (id: string, field: 'input' | 'expected', value: string) => {
+    setCustomTestCases(prev => prev.map(tc => {
+      if (tc.id !== id) return tc;
+      try {
+        const parsed = JSON.parse(value);
+        return { ...tc, [field]: parsed };
+      } catch {
+        return tc;
+      }
+    }));
+  };
+
+  // 커스텀 테스트 케이스 삭제
+  const deleteCustomTestCase = (id: string) => {
+    setCustomTestCases(prev => prev.filter(tc => tc.id !== id));
+  };
 
   // 실행 가능한 코드 조립
   const getExecutableCode = (): string => {
     if (problemType === 'blank') {
       let execCode = problem.codeSnippet || '';
-      (problem.blanks || []).forEach((blank, idx) => {
+      (problem.blanks || []).forEach((blank) => {
         const answer = blankAnswers[blank.id] || '___';
         execCode = execCode.replace('___', answer);
       });
@@ -142,51 +247,136 @@ export function UnifiedPractice({
     return code;
   };
 
+  // 단일 테스트 실행
+  const runSingleTest = async (testCase: TestCase, idx: number) => {
+    setRunningTestId(`test-${idx}`);
+
+    const executableCode = getExecutableCode();
+    const language = problem.framework || 'python';
+
+    // input을 stdin으로 변환
+    let stdin = '';
+    if (Array.isArray(testCase.input)) {
+      stdin = testCase.input.map(v => JSON.stringify(v)).join('\n');
+    } else if (testCase.input !== undefined) {
+      stdin = String(testCase.input);
+    }
+
+    try {
+      const apiResult = await executeCode(executableCode, language, stdin);
+
+      const actualOutput = apiResult.stdout?.trim() || '';
+      const expectedStr = String(testCase.expected).trim();
+      const passed = actualOutput === expectedStr;
+
+      const result: TestResult = {
+        testCase,
+        passed,
+        actual: actualOutput || apiResult.stderr || apiResult.compile_output || '(출력 없음)',
+        error: apiResult.stderr || apiResult.compile_output || undefined,
+        time: apiResult.time ? parseFloat(apiResult.time) * 1000 : undefined,
+      };
+
+      setTestResults(prev => {
+        const existing = prev.findIndex(r => JSON.stringify(r.testCase) === JSON.stringify(testCase));
+        if (existing >= 0) {
+          const newResults = [...prev];
+          newResults[existing] = result;
+          return newResults;
+        }
+        return [...prev, result];
+      });
+
+      // 단일 테스트 결과도 Output에 표시
+      let outputText = `[Test ${idx + 1}] ${passed ? '✓ PASS' : '✗ FAIL'}`;
+      if (apiResult.stdout) outputText += `\n출력: ${apiResult.stdout}`;
+      if (apiResult.stderr) outputText += `\n에러: ${apiResult.stderr}`;
+      if (apiResult.time) outputText += `\n시간: ${apiResult.time}s`;
+      setOutput(outputText);
+
+      return result;
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '실행 오류';
+      const result: TestResult = {
+        testCase,
+        passed: false,
+        actual: errorMessage,
+        error: errorMessage,
+      };
+
+      setTestResults(prev => [...prev, result]);
+      setOutput(`[Test ${idx + 1}] ✗ ERROR\n${errorMessage}`);
+      return result;
+
+    } finally {
+      setRunningTestId(null);
+    }
+  };
+
   // 테스트 실행
   const runTests = async (isSubmit: boolean = false) => {
     setIsRunning(true);
     setOutput('');
 
     const executableCode = getExecutableCode();
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const language = problem.framework || 'python';
 
-    const casesToTest = isSubmit ? testCases : visibleTestCases;
-    const results: TestResult[] = [];
+    try {
+      // 단순 실행 (테스트 케이스 없이 코드만 실행)
+      const result = await executeCode(executableCode, language, '');
 
-    for (const testCase of casesToTest) {
-      const passed = Math.random() > 0.3;
-      results.push({
-        testCase,
-        passed,
-        actual: passed ? testCase.expected : 'Wrong answer',
-        time: Math.floor(Math.random() * 100) + 10,
-      });
+      // 출력 구성
+      let outputText = '';
+
+      if (result.compile_output) {
+        outputText += `[Compile]\n${result.compile_output}\n\n`;
+      }
+
+      if (result.stderr) {
+        outputText += `[Error]\n${result.stderr}\n\n`;
+      }
+
+      if (result.stdout) {
+        outputText += `[Output]\n${result.stdout}`;
+      }
+
+      if (!result.stdout && !result.stderr && !result.compile_output) {
+        outputText = '(실행 완료 - 출력 없음)';
+      }
+
+      // 실행 정보 추가
+      if (result.time || result.memory) {
+        outputText += `\n\n--- 실행 정보 ---`;
+        if (result.time) outputText += `\n시간: ${result.time}s`;
+        if (result.memory) outputText += `\n메모리: ${Math.round(result.memory / 1024)}MB`;
+        outputText += `\n상태: ${result.status.description}`;
+      }
+
+      setOutput(outputText);
+
+      // Blank 결과 업데이트
+      if (problemType === 'blank' && isSubmit) {
+        const newBlankResults: Record<string, boolean> = {};
+        (problem.blanks || []).forEach((blank) => {
+          newBlankResults[blank.id] = blankAnswers[blank.id]?.trim() === blank.answer;
+        });
+        setBlankResults(newBlankResults);
+      }
+
+      if (isSubmit) {
+        setIsSubmitted(true);
+        onSubmit(executableCode, []);
+      } else {
+        onRun(executableCode);
+      }
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
+      setOutput(`[실행 오류]\n${errorMessage}`);
+    } finally {
+      setIsRunning(false);
     }
-
-    setTestResults(results);
-    setIsRunning(false);
-
-    // Blank 결과 업데이트
-    if (problemType === 'blank' && isSubmit) {
-      const newBlankResults: Record<string, boolean> = {};
-      (problem.blanks || []).forEach((blank) => {
-        newBlankResults[blank.id] = blankAnswers[blank.id]?.trim() === blank.answer;
-      });
-      setBlankResults(newBlankResults);
-    }
-
-    if (isSubmit) {
-      setIsSubmitted(true);
-      onSubmit(executableCode, results);
-    } else {
-      onRun(executableCode);
-    }
-
-    const outputLines = results.map((r, i) => {
-      const status = r.passed ? '✓ PASS' : '✗ FAIL';
-      return `Test ${i + 1}: ${status} (${r.time}ms)`;
-    });
-    setOutput(outputLines.join('\n'));
   };
 
   const handleHint = () => {
@@ -217,9 +407,16 @@ export function UnifiedPractice({
     setDraggedBlock(null);
   };
 
+  // 결과 리셋
+  const resetResults = () => {
+    setTestResults([]);
+    setOutput('');
+  };
+
   const passedCount = testResults.filter((r) => r.passed).length;
-  const totalTests = testCases.length;
-  const allPassed = testResults.length > 0 && passedCount === totalTests;
+  const totalTests = baseTestCases.length;
+  const testedCount = testResults.length;
+  const allPassed = testedCount > 0 && passedCount === testedCount;
 
   // Blank 코드 렌더링
   const renderBlankCode = () => {
@@ -234,7 +431,6 @@ export function UnifiedPractice({
       const blankPattern = /___/g;
 
       while ((match = blankPattern.exec(line)) !== null) {
-        // 빈칸 앞 텍스트
         if (match.index > lastIndex) {
           parts.push(
             <span key={`text-${lineIdx}-${lastIndex}`} className="text-[#d4d4d4]">
@@ -243,7 +439,6 @@ export function UnifiedPractice({
           );
         }
 
-        // 빈칸 입력
         const blank = blanks[blankIndex];
         if (blank) {
           const isCorrect = blankResults[blank.id];
@@ -293,7 +488,6 @@ export function UnifiedPractice({
         lastIndex = match.index + 3;
       }
 
-      // 나머지 텍스트
       if (lastIndex < line.length) {
         parts.push(
           <span key={`text-${lineIdx}-end`} className="text-[#d4d4d4]">
@@ -313,9 +507,197 @@ export function UnifiedPractice({
     });
   };
 
-  // 채워진 빈칸 수
   const filledCount = Object.values(blankAnswers).filter((a) => a?.trim()).length;
   const totalBlanks = problem.blanks?.length || 0;
+
+  // 테스트 케이스 카드 렌더링
+  const renderTestCaseCard = (tc: TestCase, idx: number) => {
+    const result = testResults.find(
+      (r) => JSON.stringify(r.testCase) === JSON.stringify(tc)
+    );
+    const isExpanded = expandedTests.has(idx);
+    const isRunningThis = runningTestId === `test-${idx}`;
+    const isCustom = 'isCustom' in tc && tc.isCustom;
+    const customTc = isCustom ? (tc as CustomTestCase) : null;
+
+    return (
+      <Collapsible
+        key={customTc?.id || idx}
+        open={isExpanded}
+        onOpenChange={() => toggleTestExpand(idx)}
+      >
+        <div
+          className={`rounded-lg border transition-all ${
+            result
+              ? result.passed
+                ? 'bg-green-500/5 border-green-500/30'
+                : 'bg-red-500/5 border-red-500/30'
+              : 'bg-card border-border hover:border-primary/30'
+          }`}
+        >
+          {/* Header */}
+          <CollapsibleTrigger asChild>
+            <div className="flex items-center justify-between p-3 cursor-pointer group">
+              <div className="flex items-center gap-2">
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="text-sm font-medium">
+                  {isCustom ? (
+                    <span className="text-primary">Custom {idx - baseTestCases.filter(t => !t.isHidden).length + 1}</span>
+                  ) : (
+                    `Case ${idx + 1}`
+                  )}
+                </span>
+                {isCustom && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    사용자
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {isRunningThis && (
+                  <Clock className="h-3.5 w-3.5 text-primary animate-spin" />
+                )}
+                {result && !isRunningThis && (
+                  <>
+                    {result.passed ? (
+                      <div className="flex items-center gap-1.5 text-green-500">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="text-xs font-medium">{result.time}ms</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-red-500">
+                        <XCircle className="h-4 w-4" />
+                        <span className="text-xs font-medium">{result.time}ms</span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {!result && !isRunningThis && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        runSingleTest(tc, idx);
+                      }}
+                      disabled={isRunning || isSubmitted}
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CollapsibleTrigger>
+
+          {/* Content */}
+          <CollapsibleContent>
+            <div className="px-3 pb-3 pt-0 space-y-2">
+              {/* Input */}
+              <div className="rounded-md bg-secondary/50 p-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                    Input
+                  </span>
+                  {!isCustom && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => navigator.clipboard.writeText(JSON.stringify(tc.input))}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                {isCustom ? (
+                  <Input
+                    value={JSON.stringify(customTc!.input)}
+                    onChange={(e) => updateCustomTestCase(customTc!.id, 'input', e.target.value)}
+                    className="h-7 text-xs font-mono bg-background"
+                    placeholder='예: [[1,2,3], 5]'
+                  />
+                ) : (
+                  <code className="text-xs font-mono text-foreground block break-all">
+                    {JSON.stringify(tc.input)}
+                  </code>
+                )}
+              </div>
+
+              {/* Expected */}
+              <div className="rounded-md bg-secondary/50 p-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                    Expected
+                  </span>
+                </div>
+                {isCustom ? (
+                  <Input
+                    value={JSON.stringify(customTc!.expected)}
+                    onChange={(e) => updateCustomTestCase(customTc!.id, 'expected', e.target.value)}
+                    className="h-7 text-xs font-mono bg-background"
+                    placeholder='예: [0, 1]'
+                  />
+                ) : (
+                  <code className="text-xs font-mono text-foreground block">
+                    {JSON.stringify(tc.expected)}
+                  </code>
+                )}
+              </div>
+
+              {/* Actual (only if result exists and failed) */}
+              {result && !result.passed && (
+                <div className="rounded-md bg-red-500/10 border border-red-500/20 p-2">
+                  <span className="text-[10px] uppercase tracking-wider text-red-400 font-medium block mb-1">
+                    Actual
+                  </span>
+                  <code className="text-xs font-mono text-red-500 block">
+                    {JSON.stringify(result.actual)}
+                  </code>
+                  {result.error && (
+                    <p className="text-xs text-red-400 mt-1.5 whitespace-pre-wrap">
+                      {result.error}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Actions for custom test case */}
+              {isCustom && (
+                <div className="flex justify-between pt-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                    onClick={() => deleteCustomTestCase(customTc!.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    삭제
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => runSingleTest(tc, idx)}
+                    disabled={isRunning || isSubmitted}
+                  >
+                    <Play className="h-3.5 w-3.5 mr-1" />
+                    실행
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
+    );
+  };
 
   return (
     <div className="flex h-full gap-0">
@@ -352,9 +734,14 @@ export function UnifiedPractice({
               >
                 <TestTube className="h-4 w-4" />
                 테스트
-                <Badge variant="secondary" className="ml-1 text-xs">
-                  {visibleTestCases.length}
-                </Badge>
+                {testedCount > 0 && (
+                  <Badge
+                    variant={allPassed ? 'default' : 'destructive'}
+                    className="ml-1 text-[10px] px-1.5"
+                  >
+                    {passedCount}/{testedCount}
+                  </Badge>
+                )}
               </button>
               <button
                 onClick={() => setShowSidebar(false)}
@@ -393,78 +780,66 @@ export function UnifiedPractice({
                     <div className="pt-2">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Badge variant="outline" className="text-xs">
-                          공개 {visibleTestCases.length}개
+                          공개 {visibleTestCases.length - customTestCases.length}개
                         </Badge>
                         <Badge variant="outline" className="text-xs">
                           숨김 {hiddenTestCases.length}개
                         </Badge>
+                        {customTestCases.length > 0 && (
+                          <Badge variant="outline" className="text-xs text-primary border-primary/50">
+                            커스텀 {customTestCases.length}개
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {visibleTestCases.map((tc, idx) => {
-                      const result = testResults.find(
-                        (r) => JSON.stringify(r.testCase) === JSON.stringify(tc)
-                      );
-                      return (
-                        <div
-                          key={idx}
-                          className={`rounded-lg p-3 text-xs font-mono border ${
-                            result
-                              ? result.passed
-                                ? 'bg-green-500/10 border-green-500/30'
-                                : 'bg-red-500/10 border-red-500/30'
-                              : 'bg-secondary/50 border-border'
-                          }`}
+                    {/* Test Cases Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1.5"
+                          onClick={() => setShowCustomOnly(!showCustomOnly)}
                         >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-semibold text-foreground">
-                              Case {idx + 1}
-                            </span>
-                            {result && (
-                              result.passed ? (
-                                <div className="flex items-center gap-1 text-green-500">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  <span className="text-xs">PASS</span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1 text-red-500">
-                                  <XCircle className="h-3.5 w-3.5" />
-                                  <span className="text-xs">FAIL</span>
-                                </div>
-                              )
-                            )}
-                          </div>
-                          <div className="space-y-1.5">
-                            <div>
-                              <span className="text-muted-foreground">Input: </span>
-                              <code className="text-foreground break-all">
-                                {JSON.stringify(tc.input)}
-                              </code>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Expected: </span>
-                              <code className="text-foreground">
-                                {JSON.stringify(tc.expected)}
-                              </code>
-                            </div>
-                            {result && !result.passed && (
-                              <div className="pt-1.5 border-t border-red-500/20">
-                                <span className="text-red-400">Actual: </span>
-                                <code className="text-red-500">
-                                  {JSON.stringify(result.actual)}
-                                </code>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {hiddenTestCases.length > 0 && (
+                          {showCustomOnly ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                          {showCustomOnly ? '전체 보기' : '커스텀만'}
+                        </Button>
+                        {testResults.length > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs gap-1.5"
+                            onClick={resetResults}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            초기화
+                          </Button>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1.5"
+                        onClick={addCustomTestCase}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        추가
+                      </Button>
+                    </div>
+
+                    {/* Test Cases List */}
+                    <div className="space-y-2">
+                      {visibleTestCases.map((tc, idx) => renderTestCaseCard(tc, idx))}
+                    </div>
+
+                    {/* Hidden Test Cases */}
+                    {hiddenTestCases.length > 0 && !showCustomOnly && (
                       <div className="rounded-lg p-3 bg-secondary/30 border border-dashed border-border text-center">
                         <p className="text-xs text-muted-foreground">
-                          + {hiddenTestCases.length}개의 숨겨진 테스트 케이스
+                          + {hiddenTestCases.length}개의 숨겨진 테스트 (제출 시 실행)
                         </p>
                       </div>
                     )}
@@ -570,12 +945,12 @@ export function UnifiedPractice({
               <Terminal className="h-4 w-4 text-[#808080]" />
               <span className="text-sm font-medium text-[#cccccc]">Output</span>
             </div>
-            {testResults.length > 0 && (
+            {testedCount > 0 && (
               <Badge
                 variant={allPassed ? 'default' : 'destructive'}
                 className="text-xs"
               >
-                {passedCount}/{totalTests} Passed
+                {passedCount}/{testedCount} Passed
               </Badge>
             )}
           </div>

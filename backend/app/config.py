@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     groq_api_key: str = ""
 
+    # Judge0 (Code Execution)
+    judge0_url: str = "https://judge0-ce.p.rapidapi.com"
+    judge0_api_key: str = ""
+    judge0_api_host: str = "judge0-ce.p.rapidapi.com"
+
     # Frontend (Next.js에서 사용하지만 여기서도 허용)
     next_public_api_url: str = "http://localhost:8000"
 
