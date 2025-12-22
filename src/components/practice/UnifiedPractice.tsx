@@ -351,7 +351,7 @@ export function UnifiedPractice({
         if (isSubmit) {
           setOutput(correct
             ? `✓ 정답입니다! (${correctCount}/${totalCount})`
-            : `✗ 오답입니다. (${correctCount}/${totalCount})`
+            : `✗ 오답입니다. (${correctCount}/${totalCount}) - 다시 시도해주세요.`
           );
           const testResults: TestResult[] = [{
             testCase: { input: '', expected: 'correct', isHidden: false },
@@ -359,7 +359,10 @@ export function UnifiedPractice({
             actual: correct ? 'correct' : 'incorrect',
           }];
           onSubmit(getExecutableCode(), testResults);
-          setIsSubmitted(true);
+          // 정답일 때만 수정 불가 상태로 전환
+          if (correct) {
+            setIsSubmitted(true);
+          }
         } else {
           // 실행 버튼 - 현재 상태만 보여줌
           setOutput(`현재 입력 상태: ${correctCount}/${totalCount} 정답`);
@@ -383,7 +386,10 @@ export function UnifiedPractice({
             actual: correct ? 'correct order' : 'wrong order',
           }];
           onSubmit(getExecutableCode(), testResults);
-          setIsSubmitted(true);
+          // 정답일 때만 수정 불가 상태로 전환
+          if (correct) {
+            setIsSubmitted(true);
+          }
         } else {
           setOutput('블록을 올바른 순서로 정렬하고 제출해주세요.');
         }
@@ -1035,8 +1041,11 @@ export function UnifiedPractice({
         )}
 
         {/* Result Banner - 문제 타입별 결과 표시 */}
+        {/* blank/puzzle: 결과가 있을 때 표시, implementation: 제출 후 표시 */}
         <AnimatePresence>
-          {isSubmitted && (
+          {((problemType === 'blank' && Object.keys(blankResults).length > 0) ||
+            (problemType === 'puzzle' && testResults.length > 0) ||
+            (problemType === 'implementation' && isSubmitted)) && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
