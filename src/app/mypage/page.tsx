@@ -3,10 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Header } from '@/components/layout/Header';
 import { TopNav } from '@/components/layout/TopNav';
-import { mockUser, mockBadges, mockRecentActivity } from '@/lib/mockData';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User, Lock, CreditCard, Trash2, Check, X, Eye, EyeOff, BarChart3 } from 'lucide-react';
+import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User, Lock, CreditCard, Trash2, Check, X, Eye, EyeOff, BarChart3, AlertCircle } from 'lucide-react';
 import { usersApi, authApi, type UserProfile, type UserStats } from '@/lib/api';
 import type { Badge as BadgeType, RecentActivity } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -63,35 +62,7 @@ export default function MyPagePage() {
         setRecentActivity(activityData);
       } catch (err) {
         console.error('Failed to fetch user data:', err);
-        setError('Failed to load user data. Using demo data.');
-        // Use mock data as fallback for demo
-        setProfile({
-          id: mockUser.id,
-          email: mockUser.email,
-          username: mockUser.username,
-          avatarShape: mockUser.avatarShape,
-          avatarColor: mockUser.avatarColor,
-          level: mockUser.level,
-          currentXP: mockUser.currentXP,
-          requiredXP: mockUser.requiredXP,
-          totalXP: mockUser.currentXP + (mockUser.level - 1) * 3000,
-          solvedCount: mockUser.solvedCount,
-          streak: mockUser.streak,
-          maxStreak: mockUser.streak + 5,
-          joinedAt: mockUser.joinedAt,
-          subscription: mockUser.subscription,
-        });
-        setStats({
-          totalSolved: mockUser.solvedCount,
-          solvedByDifficulty: { easy: 50, medium: 60, hard: 32 },
-          solvedByType: { blank: 45, puzzle: 35 },
-          currentStreak: mockUser.streak,
-          maxStreak: mockUser.streak + 5,
-          totalXP: mockUser.currentXP + (mockUser.level - 1) * 3000,
-          level: mockUser.level,
-        });
-        setBadges(mockBadges);
-        setRecentActivity(mockRecentActivity);
+        setError('사용자 정보를 불러오는데 실패했습니다. 다시 시도해주세요.');
       } finally {
         setLoading(false);
       }
@@ -211,10 +182,30 @@ export default function MyPagePage() {
     );
   }
 
-  const displayUser = profile || mockUser;
+  if (error || !profile) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <TopNav />
+        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+          <AlertCircle className="h-12 w-12 text-destructive" />
+          <h2 className="text-xl font-semibold">정보를 불러올 수 없습니다</h2>
+          <p className="text-muted-foreground">{error || '로그인이 필요합니다.'}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const displayUser = profile;
   const displayStats = stats;
-  const displayBadges = badges.length > 0 ? badges : mockBadges;
-  const displayActivity = recentActivity.length > 0 ? recentActivity : mockRecentActivity;
+  const displayBadges = badges;
+  const displayActivity = recentActivity;
   const xpProgress = ((displayUser.currentXP || 0) / (displayUser.requiredXP || 3000)) * 100;
 
   return (
