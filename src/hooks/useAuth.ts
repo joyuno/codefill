@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -56,6 +56,15 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+// Supabase 클라이언트 싱글톤
+let supabaseClient: ReturnType<typeof createClient> | null = null;
+function getSupabaseClient() {
+  if (!supabaseClient) {
+    supabaseClient = createClient();
+  }
+  return supabaseClient;
+}
+
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
@@ -65,84 +74,40 @@ export function useAuth() {
     isAuthenticated: false,
   });
 
-  const supabase = createClient();
+  const initializedRef = useRef(false);
+  const supabase = getSupabaseClient();
 
-  // 사용자 프로필 조회 (Supabase 직접 조회)
-  const fetchProfileFromSupabase = useCallback(async (userId: string): Promise<UserProfile | null> => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        console.error('프로필 조회 오류:', error);
-        return null;
-      }
-
-      return {
-        id: data.id,
-        email: data.email,
-        username: data.username || data.name || data.email?.split('@')[0] || 'User',
-        avatar_url: data.avatar_url,
-        level: data.level || 1,
-        current_xp: data.current_xp || 0,
-        required_xp: data.required_xp || 100,
-        subscription_tier: data.subscription_tier || 'free',
-        subscription_expires_at: data.subscription_expires_at,
-        created_at: data.created_at,
-      };
-    } catch (error) {
-      console.error('프로필 조회 중 오류:', error);
-      return null;
-    }
-  }, [supabase]);
-
-  // 백엔드 API로 프로필 조회 (JWT 토큰 사용)
-  const fetchProfileFromBackend = useCallback(async (token: string): Promise<UserProfile | null> => {
-    try {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_BASE_URL}/users/me/profile`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        console.error('백엔드 프로필 조회 실패:', response.status);
-        return null;
-      }
-
-      const data = await response.json();
-      return {
-        id: data.id,
-        email: data.email,
-        username: data.username || data.name || data.email?.split('@')[0] || 'User',
-        avatar_url: data.avatar_url,
-        level: data.level || 1,
-        current_xp: data.current_xp || data.currentXP || 0,
-        required_xp: data.required_xp || data.requiredXP || 100,
-        subscription_tier: data.subscription_tier || data.subscription || 'free',
-        subscription_expires_at: data.subscription_expires_at,
-        created_at: data.created_at || data.joinedAt,
-      };
-    } catch (error) {
-      console.error('백엔드 프로필 조회 중 오류:', error);
-      return null;
-    }
-  }, []);
-
-  // 초기 세션 확인 및 세션 변경 감지
+  // 초기 세션 확인 (한 번만 실행)
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     const initializeAuth = async () => {
       try {
         // 1. Supabase 세션 확인
         const { data: { session } } = await supabase.auth.getSession();
 
         if (session?.user) {
-          const profile = await fetchProfileFromSupabase(session.user.id);
+          // Supabase에서 프로필 조회
+          const { data: profileData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          const profile = profileData ? {
+            id: profileData.id,
+            email: profileData.email,
+            username: profileData.username || profileData.name || profileData.email?.split('@')[0] || 'User',
+            avatar_url: profileData.avatar_url,
+            level: profileData.level || 1,
+            current_xp: profileData.current_xp || 0,
+            required_xp: profileData.required_xp || 100,
+            subscription_tier: profileData.subscription_tier || 'free',
+            subscription_expires_at: profileData.subscription_expires_at,
+            created_at: profileData.created_at,
+          } : null;
+
           setAuthState({
             user: session.user,
             profile,
@@ -159,24 +124,49 @@ export function useAuth() {
 
           if (accessToken && !isTokenExpired(accessToken)) {
             const userId = getUserIdFromToken(accessToken);
-            const profile = await fetchProfileFromBackend(accessToken);
 
-            if (profile) {
-              // JWT 기반 인증 상태 설정
-              setAuthState({
-                user: {
-                  id: userId || profile.id,
-                  email: profile.email,
-                  aud: 'authenticated',
-                  role: 'authenticated',
-                  created_at: profile.created_at,
-                } as User,
-                profile,
-                session: null,
-                isLoading: false,
-                isAuthenticated: true,
+            // 백엔드 API로 프로필 조회
+            try {
+              const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+              const response = await fetch(`${API_BASE_URL}/users/me/profile`, {
+                headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+                },
               });
-              return;
+
+              if (response.ok) {
+                const data = await response.json();
+                const profile = {
+                  id: data.id,
+                  email: data.email,
+                  username: data.username || data.name || data.email?.split('@')[0] || 'User',
+                  avatar_url: data.avatar_url,
+                  level: data.level || 1,
+                  current_xp: data.current_xp || data.currentXP || 0,
+                  required_xp: data.required_xp || data.requiredXP || 100,
+                  subscription_tier: data.subscription_tier || data.subscription || 'free',
+                  subscription_expires_at: data.subscription_expires_at,
+                  created_at: data.created_at || data.joinedAt,
+                };
+
+                setAuthState({
+                  user: {
+                    id: userId || profile.id,
+                    email: profile.email,
+                    aud: 'authenticated',
+                    role: 'authenticated',
+                    created_at: profile.created_at,
+                  } as User,
+                  profile,
+                  session: null,
+                  isLoading: false,
+                  isAuthenticated: true,
+                });
+                return;
+              }
+            } catch (error) {
+              console.error('백엔드 프로필 조회 실패:', error);
             }
           }
 
@@ -215,7 +205,25 @@ export function useAuth() {
         console.log('Auth state changed:', event);
 
         if (event === 'SIGNED_IN' && session?.user) {
-          const profile = await fetchProfileFromSupabase(session.user.id);
+          const { data: profileData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          const profile = profileData ? {
+            id: profileData.id,
+            email: profileData.email,
+            username: profileData.username || profileData.name || profileData.email?.split('@')[0] || 'User',
+            avatar_url: profileData.avatar_url,
+            level: profileData.level || 1,
+            current_xp: profileData.current_xp || 0,
+            required_xp: profileData.required_xp || 100,
+            subscription_tier: profileData.subscription_tier || 'free',
+            subscription_expires_at: profileData.subscription_expires_at,
+            created_at: profileData.created_at,
+          } : null;
+
           setAuthState({
             user: session.user,
             profile,
@@ -235,32 +243,16 @@ export function useAuth() {
       }
     );
 
-    // localStorage 변경 감지 (다른 탭에서 로그인/로그아웃 시)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'access_token') {
-        initializeAuth();
-      }
-    };
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('storage', handleStorageChange);
-    }
-
     return () => {
       subscription.unsubscribe();
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('storage', handleStorageChange);
-      }
     };
-  }, [supabase, fetchProfileFromSupabase, fetchProfileFromBackend]);
+  }, []); // 빈 의존성 배열 - 한 번만 실행
 
   // 로그아웃
   const signOut = useCallback(async () => {
     try {
-      // Supabase 로그아웃
       await supabase.auth.signOut();
 
-      // localStorage 토큰 삭제 (백엔드 JWT)
       if (typeof window !== 'undefined') {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
@@ -283,16 +275,31 @@ export function useAuth() {
   // 프로필 새로고침
   const refreshProfile = useCallback(async () => {
     if (authState.session?.user) {
-      const profile = await fetchProfileFromSupabase(authState.session.user.id);
-      setAuthState(prev => ({ ...prev, profile }));
-    } else if (typeof window !== 'undefined') {
-      const accessToken = localStorage.getItem('access_token');
-      if (accessToken) {
-        const profile = await fetchProfileFromBackend(accessToken);
-        setAuthState(prev => ({ ...prev, profile }));
+      const { data: profileData } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authState.session.user.id)
+        .single();
+
+      if (profileData) {
+        setAuthState(prev => ({
+          ...prev,
+          profile: {
+            id: profileData.id,
+            email: profileData.email,
+            username: profileData.username || profileData.name || profileData.email?.split('@')[0] || 'User',
+            avatar_url: profileData.avatar_url,
+            level: profileData.level || 1,
+            current_xp: profileData.current_xp || 0,
+            required_xp: profileData.required_xp || 100,
+            subscription_tier: profileData.subscription_tier || 'free',
+            subscription_expires_at: profileData.subscription_expires_at,
+            created_at: profileData.created_at,
+          },
+        }));
       }
     }
-  }, [authState.session, fetchProfileFromSupabase, fetchProfileFromBackend]);
+  }, [authState.session, supabase]);
 
   return {
     ...authState,
