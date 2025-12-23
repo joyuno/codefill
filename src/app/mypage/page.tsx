@@ -17,25 +17,28 @@ export default function MyPagePage() {
   const [badges, setBadges] = useState<BadgeType[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
+      setError(null);
       try {
-        // Try to fetch from API
+        // Fetch from API (uses mypage-optimized endpoints)
         const [profileData, statsData, badgesData, activityData] = await Promise.all([
           usersApi.getProfile(),
           usersApi.getStats(),
           usersApi.getBadges(),
           usersApi.getRecentActivity(),
         ]);
-        setProfile(profileData as UserProfile);
+        setProfile(profileData);
         setStats(statsData);
         setBadges(badgesData);
         setRecentActivity(activityData);
-      } catch (error) {
-        console.error('Failed to fetch user data, using mock data:', error);
-        // Use mock data as fallback
+      } catch (err) {
+        console.error('Failed to fetch user data:', err);
+        setError('Failed to load user data. Using demo data.');
+        // Use mock data as fallback for demo
         setProfile({
           id: mockUser.id,
           email: mockUser.email,

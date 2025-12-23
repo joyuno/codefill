@@ -121,3 +121,60 @@ class DailyActivity(BaseModel):
     bug_count: int = 0
     output_count: int = 0
     refactor_count: int = 0
+
+
+class RecentActivityType(str, Enum):
+    """Recent activity types."""
+    SOLVED = "solved"
+    BADGE = "badge"
+    STREAK = "streak"
+    LEVELUP = "levelup"
+
+
+class RecentActivity(BaseModel):
+    """Recent activity record for mypage."""
+    id: str
+    type: RecentActivityType
+    title: str
+    description: str
+    timestamp: datetime
+    xp_gained: Optional[int] = None
+
+
+class MypageProfile(BaseModel):
+    """Flattened user profile for mypage."""
+    id: str
+    email: str
+    username: str
+    avatarShape: str = "hexagon"
+    avatarColor: str = "hsl(142, 71%, 45%)"
+    level: int = 1
+    currentXP: int = 0
+    requiredXP: int = 100
+    totalXP: int = 0
+    solvedCount: int = 0
+    streak: int = 0
+    maxStreak: int = 0
+    joinedAt: str
+    subscription: str = "free"
+
+
+class MypageStats(BaseModel):
+    """User stats for mypage."""
+    totalSolved: int = 0
+    solvedByDifficulty: dict = {"easy": 0, "medium": 0, "hard": 0}
+    solvedByType: dict = {"blank": 0, "puzzle": 0}
+    currentStreak: int = 0
+    maxStreak: int = 0
+    totalXP: int = 0
+    level: int = 1
+
+
+class MypageBadge(BaseModel):
+    """Badge format for mypage."""
+    id: str
+    name: str
+    icon: str
+    description: str
+    earnedAt: str
+    rarity: str = "common"
