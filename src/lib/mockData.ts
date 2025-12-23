@@ -1,4 +1,84 @@
-import { User, Badge, Problem, Message, ActivityDay, RecentActivity, ProblemType, GuidedProblemData, ImplementationProblemData } from './types';
+import { User, Badge, Problem, Message, ActivityDay, RecentActivity, ProblemType, GuidedProblemData, ImplementationProblemData, BaseProblem, BlankProblem, PuzzleProblem, GuidedProblem } from './types';
+
+// =====================================================
+// 기본 문제 데이터 (example_problem.json 형식)
+// =====================================================
+export const baseProblems: BaseProblem[] = [
+  {
+    id: 'baekjoon_1001',
+    original_id: '1001',
+    name: '[백준 1001] A-B',
+    question: '두 정수 A와 B를 입력받은 다음, A-B를 출력하는 프로그램을 작성하시오.',
+    input_output: { inputs: ['3 2'], outputs: ['1'] },
+    difficulty: 'easy',
+    tags: ['implementation', 'arithmetic', 'math'],
+    source: 'baekjoon',
+    url: 'https://www.acmicpc.net/problem/1001',
+    time_limit: '2 초',
+    memory_limit: '128 MB',
+    solutions: [
+      { language: 'python', code: 'a, b = map(int, input().split())\nprint(a - b)' },
+      { language: 'java', code: 'import java.util.Scanner;\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.println(sc.nextInt() - sc.nextInt());\n    }\n}' },
+      { language: 'cpp', code: '#include <iostream>\nusing namespace std;\nint main() {\n    int a, b;\n    cin >> a >> b;\n    cout << a - b << endl;\n    return 0;\n}' }
+    ]
+  },
+  {
+    id: 'baekjoon_1003',
+    original_id: '1003',
+    name: '[백준 1003] 피보나치 함수',
+    question: 'fibonacci(N)을 호출했을 때, 0과 1이 각각 몇 번 출력되는지 구하세요.',
+    input_output: { inputs: ['3\n0\n1\n3'], outputs: ['1 0\n0 1\n1 2'] },
+    difficulty: 'medium',
+    tags: ['dp'],
+    source: 'baekjoon',
+    url: 'https://www.acmicpc.net/problem/1003',
+    solutions: [
+      { language: 'python', code: 'dp = [[0,0] for _ in range(41)]\ndp[0], dp[1] = [1,0], [0,1]\nfor i in range(2,41): dp[i] = [dp[i-1][0]+dp[i-2][0], dp[i-1][1]+dp[i-2][1]]\nfor _ in range(int(input())): n=int(input()); print(dp[n][0], dp[n][1])' }
+    ]
+  },
+  {
+    id: 'baekjoon_1004',
+    original_id: '1004',
+    name: '[백준 1004] 어린 왕자',
+    question: '출발점에서 도착점까지 필요한 최소 행성계 진입/이탈 횟수를 구하세요.',
+    input_output: { inputs: ['1\n-5 1 12 1\n1\n1 1 8'], outputs: ['2'] },
+    difficulty: 'medium',
+    tags: ['math', 'geometry'],
+    source: 'baekjoon',
+    url: 'https://www.acmicpc.net/problem/1004',
+    solutions: [
+      { language: 'python', code: 'def inside(x,y,cx,cy,r): return (x-cx)**2+(y-cy)**2<r**2\nfor _ in range(int(input())):\n  x1,y1,x2,y2=map(int,input().split());n=int(input());c=0\n  for _ in range(n): cx,cy,r=map(int,input().split()); c+=inside(x1,y1,cx,cy,r)!=inside(x2,y2,cx,cy,r)\n  print(c)' }
+    ]
+  }
+];
+
+// =====================================================
+// 빈칸 문제 (problems_blank.json 형식)
+// =====================================================
+export const blankProblems: BlankProblem[] = [
+  { original_id: '1001', language: 'python', code_template: 'a, b = map(_0_, input()._1_)\nprint(_2_)', answers: ['int', 'split()', 'a - b'] },
+  { original_id: '1001', language: 'java', code_template: 'import java.util.Scanner;\npublic class Main {\n  public static void main(String[] args) {\n    _0_ sc = new Scanner(System.in);\n    System.out.println(sc._1_ - sc._2_);\n  }\n}', answers: ['Scanner', 'nextInt()', 'nextInt()'] },
+  { original_id: '1003', language: 'python', code_template: 'dp = [[0,0] for _ in range(41)]\ndp[0] = _0_\ndp[1] = _1_\nfor i in range(2,41): dp[i] = [_2_, dp[i-1][1]+dp[i-2][1]]', answers: ['[1,0]', '[0,1]', 'dp[i-1][0]+dp[i-2][0]'] },
+  { original_id: '1004', language: 'python', code_template: 'def inside(x,y,cx,cy,r): return _0_\n# ...\nif _1_: count += 1', answers: ['(x-cx)**2+(y-cy)**2<r**2', 'inside(x1,y1,cx,cy,r)!=inside(x2,y2,cx,cy,r)'] }
+];
+
+// =====================================================
+// 퍼즐 문제 (problems_puzzle.json 형식)
+// =====================================================
+export const puzzleProblems: PuzzleProblem[] = [
+  { original_id: '1001', language: 'python', blocks: [{ id: 1, code: 'a, b = map(int, input().split())' }, { id: 2, code: 'print(a - b)' }] },
+  { original_id: '1001', language: 'java', fixed_start: 'import java.util.Scanner;\npublic class Main {\n  public static void main(String[] args) {', fixed_end: '  }\n}', blocks: [{ id: 1, code: 'Scanner sc = new Scanner(System.in);' }, { id: 2, code: 'int a = sc.nextInt();' }, { id: 3, code: 'int b = sc.nextInt();' }, { id: 4, code: 'System.out.println(a - b);' }] },
+  { original_id: '1003', language: 'python', fixed_start: 'dp = [[0,0] for _ in range(41)]', fixed_end: 'for _ in range(int(input())): print(dp[int(input())][0], dp[int(input())][1])', blocks: [{ id: 1, code: 'dp[0] = [1, 0]' }, { id: 2, code: 'dp[1] = [0, 1]' }, { id: 3, code: 'for i in range(2,41): dp[i] = [dp[i-1][0]+dp[i-2][0], dp[i-1][1]+dp[i-2][1]]' }] }
+];
+
+// =====================================================
+// 대화형 문제 (problems_guided.json 형식)
+// =====================================================
+export const guidedProblemsData: GuidedProblem[] = [
+  { original_id: '1001', language: 'python', concepts: ['input().split()', 'map(int, ...)', 'print()'], flow: ['입력 방법', '형변환', '출력'], checkpoints: ['공백 구분 입력', 'int 변환', '뺄셈 출력'] },
+  { original_id: '1003', language: 'python', concepts: ['재귀의 비효율성', 'DP', '점화식'], flow: ['재귀 문제점 파악', 'DP 접근', '초기값 설정'], checkpoints: ['시간초과 이해', 'dp[0]=[1,0]', 'dp[i]=dp[i-1]+dp[i-2]'] },
+  { original_id: '1004', language: 'python', concepts: ['점과 원의 관계', 'XOR 조건', '카운팅'], flow: ['원 안/밖 판별', '출발/도착 비교', '카운트'], checkpoints: ['거리^2 < r^2', 'in_start != in_end', 'count++'] }
+];
 
 export const mockUser: User = {
   id: '1',
@@ -28,6 +108,7 @@ export const mockProblems: Problem[] = [
   // Blank fill type - Two Sum
   {
     id: '1',
+    original_id: 'twosum_001',
     title: 'Two Sum',
     description: '주어진 배열에서 두 수의 합이 target이 되는 인덱스를 찾으세요. 해시맵을 사용해 O(n) 시간복잡도로 해결할 수 있습니다.',
     framework: 'python',
@@ -102,14 +183,14 @@ export const mockProblems: Problem[] = [
     codeSnippet: '# 피보나치 수를 계산하는 코드 블록을 올바른 순서로 배열하세요',
     blanks: [],
     puzzleBlocks: [
-      { id: 'b1', code: 'def fibonacci(n):', indentation: 0 },
-      { id: 'b2', code: 'if n <= 1:', indentation: 1 },
-      { id: 'b3', code: 'return n', indentation: 2 },
-      { id: 'b4', code: 'dp = [0] * (n + 1)', indentation: 1 },
-      { id: 'b5', code: 'dp[1] = 1', indentation: 1 },
-      { id: 'b6', code: 'for i in range(2, n + 1):', indentation: 1 },
-      { id: 'b7', code: 'dp[i] = dp[i-1] + dp[i-2]', indentation: 2 },
-      { id: 'b8', code: 'return dp[n]', indentation: 1 },
+      { id: 1, code: 'def fibonacci(n):', indentation: 0 },
+      { id: 2, code: 'if n <= 1:', indentation: 1 },
+      { id: 3, code: 'return n', indentation: 2 },
+      { id: 4, code: 'dp = [0] * (n + 1)', indentation: 1 },
+      { id: 5, code: 'dp[1] = 1', indentation: 1 },
+      { id: 6, code: 'for i in range(2, n + 1):', indentation: 1 },
+      { id: 7, code: 'dp[i] = dp[i-1] + dp[i-2]', indentation: 2 },
+      { id: 8, code: 'return dp[n]', indentation: 1 },
     ],
     relatedDocs: [
       { title: 'Dynamic Programming', url: 'https://en.wikipedia.org/wiki/Dynamic_programming' },
@@ -130,19 +211,19 @@ export const mockProblems: Problem[] = [
     codeSnippet: '# merge 함수의 코드 블록을 올바른 순서로 배열하세요',
     blanks: [],
     puzzleBlocks: [
-      { id: 'b1', code: 'def merge(left, right):', indentation: 0 },
-      { id: 'b2', code: 'result = []', indentation: 1 },
-      { id: 'b3', code: 'i = j = 0', indentation: 1 },
-      { id: 'b4', code: 'while i < len(left) and j < len(right):', indentation: 1 },
-      { id: 'b5', code: 'if left[i] <= right[j]:', indentation: 2 },
-      { id: 'b6', code: 'result.append(left[i])', indentation: 3 },
-      { id: 'b7', code: 'i += 1', indentation: 3 },
-      { id: 'b8', code: 'else:', indentation: 2 },
-      { id: 'b9', code: 'result.append(right[j])', indentation: 3 },
-      { id: 'b10', code: 'j += 1', indentation: 3 },
-      { id: 'b11', code: 'result.extend(left[i:])', indentation: 1 },
-      { id: 'b12', code: 'result.extend(right[j:])', indentation: 1 },
-      { id: 'b13', code: 'return result', indentation: 1 },
+      { id: 1, code: 'def merge(left, right):', indentation: 0 },
+      { id: 2, code: 'result = []', indentation: 1 },
+      { id: 3, code: 'i = j = 0', indentation: 1 },
+      { id: 4, code: 'while i < len(left) and j < len(right):', indentation: 1 },
+      { id: 5, code: 'if left[i] <= right[j]:', indentation: 2 },
+      { id: 6, code: 'result.append(left[i])', indentation: 3 },
+      { id: 7, code: 'i += 1', indentation: 3 },
+      { id: 8, code: 'else:', indentation: 2 },
+      { id: 9, code: 'result.append(right[j])', indentation: 3 },
+      { id: 10, code: 'j += 1', indentation: 3 },
+      { id: 11, code: 'result.extend(left[i:])', indentation: 1 },
+      { id: 12, code: 'result.extend(right[j:])', indentation: 1 },
+      { id: 13, code: 'return result', indentation: 1 },
     ],
     relatedDocs: [
       { title: 'Merge Sort', url: 'https://en.wikipedia.org/wiki/Merge_sort' },

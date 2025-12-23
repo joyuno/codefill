@@ -184,7 +184,7 @@ export function UnifiedPractice({
   useEffect(() => {
     if (problemType === 'puzzle' && blocks.length > 0) {
       const assembledCode = blocks
-        .map(b => '    '.repeat(b.indentation) + b.code)
+        .map(b => '    '.repeat(b.indentation || 0) + b.code)
         .join('\n');
       setCode(assembledCode);
     }
@@ -462,16 +462,17 @@ export function UnifiedPractice({
   };
 
   // 블록 드래그 핸들러
-  const handleDragStart = (blockId: string) => {
-    setDraggedBlock(blockId);
+  const handleDragStart = (blockId: number) => {
+    setDraggedBlock(String(blockId));
   };
 
-  const handleDragOver = (e: React.DragEvent, targetId: string) => {
+  const handleDragOver = (e: React.DragEvent, targetId: number) => {
     e.preventDefault();
-    if (!draggedBlock || draggedBlock === targetId) return;
+    const targetIdStr = String(targetId);
+    if (!draggedBlock || draggedBlock === targetIdStr) return;
 
-    const dragIndex = blocks.findIndex(b => b.id === draggedBlock);
-    const targetIndex = blocks.findIndex(b => b.id === targetId);
+    const dragIndex = blocks.findIndex(b => String(b.id) === draggedBlock);
+    const targetIndex = blocks.findIndex(b => String(b.id) === targetIdStr);
 
     const newBlocks = [...blocks];
     const [removed] = newBlocks.splice(dragIndex, 1);

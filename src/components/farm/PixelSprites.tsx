@@ -21,15 +21,35 @@ interface PixelSpriteProps {
 
 interface CropPixelProps extends PixelSpriteProps {
   stage: 0 | 1 | 2 | 3 | 4; // 빈땅, 씨앗, 새싹, 성장, 수확
-  type?: 'tomato' | 'wheat' | 'corn' | 'carrot' | 'turnip';
+  type?: CropType;
 }
 
-const CROP_COLORS = {
+export type CropType = 'tomato' | 'wheat' | 'corn' | 'carrot' | 'turnip' | 'strawberry' | 'grape' | 'potato' | 'pumpkin' | 'watermelon';
+
+export const CROP_INFO: Record<CropType, { name: string; emoji: string; growTime: number; sellPrice: number; buyPrice: number }> = {
+  tomato: { name: '토마토', emoji: '🍅', growTime: 4, sellPrice: 25, buyPrice: 10 },
+  wheat: { name: '밀', emoji: '🌾', growTime: 3, sellPrice: 15, buyPrice: 5 },
+  corn: { name: '옥수수', emoji: '🌽', growTime: 5, sellPrice: 35, buyPrice: 15 },
+  carrot: { name: '당근', emoji: '🥕', growTime: 3, sellPrice: 20, buyPrice: 8 },
+  turnip: { name: '순무', emoji: '🥔', growTime: 2, sellPrice: 12, buyPrice: 4 },
+  strawberry: { name: '딸기', emoji: '🍓', growTime: 4, sellPrice: 30, buyPrice: 12 },
+  grape: { name: '포도', emoji: '🍇', growTime: 6, sellPrice: 50, buyPrice: 25 },
+  potato: { name: '감자', emoji: '🥔', growTime: 3, sellPrice: 18, buyPrice: 6 },
+  pumpkin: { name: '호박', emoji: '🎃', growTime: 7, sellPrice: 60, buyPrice: 30 },
+  watermelon: { name: '수박', emoji: '🍉', growTime: 8, sellPrice: 80, buyPrice: 40 },
+};
+
+const CROP_COLORS: Record<CropType, { fruit: string; leaf: string }> = {
   tomato: { fruit: '#e74c3c', leaf: '#27ae60' },
   wheat: { fruit: '#f1c40f', leaf: '#8b7355' },
   corn: { fruit: '#f39c12', leaf: '#27ae60' },
   carrot: { fruit: '#e67e22', leaf: '#27ae60' },
   turnip: { fruit: '#ecf0f1', leaf: '#27ae60' },
+  strawberry: { fruit: '#ff6b6b', leaf: '#27ae60' },
+  grape: { fruit: '#8e44ad', leaf: '#27ae60' },
+  potato: { fruit: '#d4a574', leaf: '#27ae60' },
+  pumpkin: { fruit: '#ff8c00', leaf: '#27ae60' },
+  watermelon: { fruit: '#2ecc71', leaf: '#27ae60' },
 };
 
 export function CropPixel({ stage, type = 'tomato', size = 48, className, onClick }: CropPixelProps) {

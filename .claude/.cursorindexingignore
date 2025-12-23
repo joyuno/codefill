@@ -1,0 +1,4 @@
+# .cursorindexingignore - Cursor 인덱싱에서만 제외
+node_modules/
+.next/
+data/
