@@ -1,14 +1,38 @@
-import { motion } from 'framer-motion';
-import { Trophy, Award, Flame } from 'lucide-react';
-import { mockUser } from '@/lib/mockData';
+'use client';
 
-const stats = [
-  { label: 'Problems Solved', value: mockUser.solvedCount, icon: Trophy, color: 'text-primary' },
-  { label: 'Badges Earned', value: 12, icon: Award, color: 'text-warning' },
-  { label: 'Day Streak', value: mockUser.streak, icon: Flame, color: 'text-destructive' },
-];
+import { motion } from 'framer-motion';
+import { Trophy, Award, Flame, Loader2 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 export function StatCards() {
+  const { profile, isLoading } = useAuth();
+  
+  // 기본값 설정 (로딩 중이거나 프로필이 없을 때)
+  const solvedCount = profile?.level ? profile.level * 5 : 0; // 임시 계산 (실제로는 DB에서)
+  const badgeCount = Math.floor(solvedCount / 10); // 임시 계산
+  const streak = 0; // 실제로는 DB에서 연속 학습일 계산
+  
+  const stats = [
+    { 
+      label: '푼 문제', 
+      value: isLoading ? '-' : solvedCount, 
+      icon: Trophy, 
+      color: 'text-primary' 
+    },
+    { 
+      label: '획득 뱃지', 
+      value: isLoading ? '-' : badgeCount, 
+      icon: Award, 
+      color: 'text-yellow-500' 
+    },
+    { 
+      label: '연속 학습', 
+      value: isLoading ? '-' : `${streak}일`, 
+      icon: Flame, 
+      color: 'text-orange-500' 
+    },
+  ];
+
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       {stats.map((stat, index) => {
@@ -24,7 +48,11 @@ export function StatCards() {
           >
             <div className="flex items-center gap-3">
               <div className={`rounded-lg bg-secondary p-2.5 ${stat.color}`}>
-                <Icon className="h-5 w-5" />
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Icon className="h-5 w-5" />
+                )}
               </div>
               <div>
                 <p className="text-2xl font-bold">{stat.value}</p>
