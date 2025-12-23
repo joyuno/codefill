@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Code2, Loader2, Eye, EyeOff, MessageCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { authApi } from '@/lib/api';
+import { createClient } from '@/lib/supabase/client';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -42,15 +42,27 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const result = await authApi.login({
+      const supabase = createClient();
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
       });
 
-      if (result.error) {
+      if (error) {
         toast({
           title: '로그인 실패',
-          description: result.error.message,
+          description: error.message === 'Invalid login credentials'
+            ? '이메일 또는 비밀번호가 올바르지 않습니다.'
+            : error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!authData.session) {
+        toast({
+          title: '로그인 실패',
+          description: '세션을 생성할 수 없습니다.',
           variant: 'destructive',
         });
         return;
