@@ -99,7 +99,7 @@ export default function MyPagePage() {
     fetchData();
   }, []);
 
-  // 닉네임 변경 핸들러
+  // 닉네임 변경 핸들러 (30일에 1회 제한)
   const handleNicknameChange = async () => {
     if (!newNickname.trim()) {
       setNicknameError('닉네임을 입력해주세요');
@@ -114,10 +114,19 @@ export default function MyPagePage() {
     setNicknameError('');
 
     try {
-      const updatedProfile = await usersApi.updateProfile({ username: newNickname });
-      setProfile(updatedProfile);
-      setEditingNickname(false);
-      setNewNickname('');
+      // Use the new changeNickname API with 30-day limit
+      const result = await usersApi.changeNickname(newNickname);
+
+      if (result.success) {
+        // Update profile with new nickname
+        if (profile) {
+          setProfile({ ...profile, username: newNickname });
+        }
+        setEditingNickname(false);
+        setNewNickname('');
+      } else {
+        setNicknameError(result.message);
+      }
     } catch (error) {
       setNicknameError(error instanceof Error ? error.message : '닉네임 변경에 실패했습니다');
     } finally {

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Header
 from fastapi.responses import RedirectResponse
 from typing import Optional
 import httpx
@@ -17,6 +17,10 @@ from ..models.auth import (
     PasswordResetRequest,
     PasswordResetConfirm,
     AuthResponse,
+    CheckEmailRequest,
+    CheckNicknameRequest,
+    CheckResponse,
+    ChangePasswordRequest,
 )
 
 router = APIRouter()
@@ -288,6 +292,137 @@ async def confirm_password_reset(request: PasswordResetConfirm, db=Depends(get_d
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"
+        )
+
+
+# =====================================================
+# Duplicate Check Endpoints
+# =====================================================
+
+@router.post("/check-email", response_model=CheckResponse)
+async def check_email_availability(request: CheckEmailRequest, db=Depends(get_db)):
+    """
+    Check if email is available for registration.
+    """
+    email = request.email.lower()
+
+    # Check if email already exists (exclude soft-deleted users)
+    existing = db.table("users").select("id").ilike("email", email).is_("deleted_at", "null").execute()
+    if existing.data and len(existing.data) > 0:
+        return CheckResponse(available=False, message="이미 사용 중인 이메일입니다.")
+
+    return CheckResponse(available=True, message="사용 가능한 이메일입니다.")
+
+
+@router.post("/check-nickname", response_model=CheckResponse)
+async def check_nickname_availability(request: CheckNicknameRequest, db=Depends(get_db)):
+    """
+    Check if nickname is available.
+    """
+    nickname = request.nickname.strip()
+
+    # Check if nickname already exists (case-insensitive, exclude soft-deleted users)
+    existing = db.table("users").select("id").ilike("name", nickname).is_("deleted_at", "null").execute()
+    if existing.data and len(existing.data) > 0:
+        return CheckResponse(available=False, message="이미 사용 중인 닉네임입니다.")
+
+    return CheckResponse(available=True, message="사용 가능한 닉네임입니다.")
+
+
+# =====================================================
+# Password Change Endpoint
+# =====================================================
+
+@router.put("/password/change", response_model=AuthResponse)
+async def change_password(
+    request: ChangePasswordRequest,
+    authorization: str = Header(...),
+    db=Depends(get_db)
+):
+    """
+    Change password for email/password users.
+    OAuth users (Kakao, Google) cannot use this endpoint.
+    """
+    from jose import JWTError
+
+    # Get token from Authorization header
+    token = authorization.replace("Bearer ", "") if authorization else None
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="인증이 필요합니다."
+        )
+
+    # Get user ID from token
+    user_id = None
+
+    # Try Supabase Auth token first
+    try:
+        user = db.auth.get_user(token)
+        if user is not None and user.user is not None:
+            user_id = str(user.user.id)
+    except Exception:
+        pass
+
+    # Try self-generated JWT (for OAuth users)
+    if not user_id:
+        try:
+            payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+            token_type = payload.get("type")
+            if token_type == "access":
+                user_id = payload.get("sub")
+        except JWTError:
+            pass
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 토큰입니다."
+        )
+
+    # Get user to check provider
+    user_result = db.table("users").select("provider, email").eq("id", user_id).single().execute()
+    if not user_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다."
+        )
+
+    user = user_result.data
+
+    if user["provider"] != "email":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="소셜 로그인 사용자는 비밀번호를 변경할 수 없습니다."
+        )
+
+    # Verify current password by attempting login
+    try:
+        verify_response = db.auth.sign_in_with_password({
+            "email": user["email"],
+            "password": request.current_password,
+        })
+        if verify_response.session is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="현재 비밀번호가 올바르지 않습니다."
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="현재 비밀번호가 올바르지 않습니다."
+        )
+
+    # Update password using Supabase Admin API
+    try:
+        db.auth.admin.update_user_by_id(user_id, {"password": request.new_password})
+        return AuthResponse(success=True, message="비밀번호가 변경되었습니다.")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="비밀번호 변경에 실패했습니다."
         )
 
 

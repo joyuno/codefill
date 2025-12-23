@@ -111,3 +111,33 @@ class AuthResponse(BaseModel):
     success: bool
     message: str
     data: Optional[dict] = None
+
+
+# =====================================================
+# Duplicate Check Models
+# =====================================================
+
+class CheckEmailRequest(BaseModel):
+    """Request model for email duplicate check."""
+    email: EmailStr
+
+
+class CheckNicknameRequest(BaseModel):
+    """Request model for nickname duplicate check."""
+    nickname: str = Field(..., min_length=2, max_length=50)
+
+
+class CheckResponse(BaseModel):
+    """Response model for duplicate checks."""
+    available: bool
+    message: str
+
+
+# =====================================================
+# Password Change Models
+# =====================================================
+
+class ChangePasswordRequest(BaseModel):
+    """Request model for password change."""
+    current_password: str
+    new_password: str = Field(..., min_length=8)

@@ -18,6 +18,8 @@ from ..models.user import (
     MypageProfile,
     MypageStats,
     MypageBadge,
+    ChangeNicknameRequest,
+    ChangeNicknameResponse,
 )
 
 router = APIRouter()
@@ -541,3 +543,78 @@ async def get_mypage_badges(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get badges: {str(e)}"
         )
+
+
+# =====================================================
+# Nickname Change Endpoint
+# =====================================================
+
+@router.put("/me/nickname", response_model=ChangeNicknameResponse)
+async def change_nickname(
+    request: ChangeNicknameRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    Change user's nickname. Limited to once per 30 days.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Get user's last nickname change date
+    user_result = db.table("users").select("name, nickname_last_changed_at").eq("id", str(user_id)).single().execute()
+    if not user_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다."
+        )
+
+    user = user_result.data
+
+    # Check 30-day limit
+    last_changed = user.get("nickname_last_changed_at")
+    if last_changed:
+        # Parse the timestamp
+        if isinstance(last_changed, str):
+            last_changed_dt = datetime.fromisoformat(last_changed.replace('Z', '+00:00'))
+        else:
+            last_changed_dt = last_changed
+
+        next_available = last_changed_dt + timedelta(days=30)
+        now = datetime.now(timezone.utc)
+
+        if now < next_available:
+            days_remaining = (next_available - now).days
+            return ChangeNicknameResponse(
+                success=False,
+                message=f"닉네임은 30일에 한 번만 변경할 수 있습니다. {days_remaining}일 후에 변경 가능합니다.",
+                next_change_available_at=next_available
+            )
+
+    # Check nickname availability (case-insensitive, exclude current user)
+    new_nickname = request.new_nickname.strip()
+    existing = db.table("users")\
+        .select("id")\
+        .ilike("name", new_nickname)\
+        .neq("id", str(user_id))\
+        .is_("deleted_at", "null")\
+        .execute()
+
+    if existing.data and len(existing.data) > 0:
+        return ChangeNicknameResponse(
+            success=False,
+            message="이미 사용 중인 닉네임입니다."
+        )
+
+    # Update nickname and timestamp
+    now = datetime.now(timezone.utc)
+    db.table("users").update({
+        "name": new_nickname,
+        "nickname_last_changed_at": now.isoformat()
+    }).eq("id", str(user_id)).execute()
+
+    next_available = now + timedelta(days=30)
+    return ChangeNicknameResponse(
+        success=True,
+        message="닉네임이 변경되었습니다.",
+        next_change_available_at=next_available
+    )

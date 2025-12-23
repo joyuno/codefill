@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -31,8 +31,11 @@ import {
   TreeDeciduous,
   Trophy,
   Link as LinkIcon,
+  Check,
+  X,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useDebounce } from '@/hooks/useDebounce';
 import { authApi, type SignupData } from '@/lib/api';
 
 // Onboarding data schema
@@ -108,6 +111,14 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const totalSteps = 5;
 
+  // Email/Nickname availability check states
+  const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailMessage, setEmailMessage] = useState('');
+  const [nicknameAvailable, setNicknameAvailable] = useState<boolean | null>(null);
+  const [nicknameChecking, setNicknameChecking] = useState(false);
+  const [nicknameMessage, setNicknameMessage] = useState('');
+
   const {
     register,
     handleSubmit,
@@ -123,6 +134,64 @@ export default function OnboardingPage() {
   });
 
   const watchedFields = watch();
+
+  // Debounced values for API calls
+  const debouncedEmail = useDebounce(watchedFields.email || '', 500);
+  const debouncedNickname = useDebounce(watchedFields.nickname || '', 500);
+
+  // Check email availability
+  useEffect(() => {
+    const checkEmail = async () => {
+      if (!debouncedEmail || !debouncedEmail.includes('@')) {
+        setEmailAvailable(null);
+        setEmailMessage('');
+        return;
+      }
+
+      setEmailChecking(true);
+      try {
+        const result = await authApi.checkEmail(debouncedEmail);
+        if (result.data) {
+          setEmailAvailable(result.data.available);
+          setEmailMessage(result.data.message);
+        }
+      } catch (error) {
+        setEmailAvailable(null);
+        setEmailMessage('');
+      } finally {
+        setEmailChecking(false);
+      }
+    };
+
+    checkEmail();
+  }, [debouncedEmail]);
+
+  // Check nickname availability
+  useEffect(() => {
+    const checkNickname = async () => {
+      if (!debouncedNickname || debouncedNickname.length < 2) {
+        setNicknameAvailable(null);
+        setNicknameMessage('');
+        return;
+      }
+
+      setNicknameChecking(true);
+      try {
+        const result = await authApi.checkNickname(debouncedNickname);
+        if (result.data) {
+          setNicknameAvailable(result.data.available);
+          setNicknameMessage(result.data.message);
+        }
+      } catch (error) {
+        setNicknameAvailable(null);
+        setNicknameMessage('');
+      } finally {
+        setNicknameChecking(false);
+      }
+    };
+
+    checkNickname();
+  }, [debouncedNickname]);
 
   const canProceed = () => {
     switch (step) {
@@ -434,16 +503,35 @@ export default function OnboardingPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">이메일</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  className="bg-secondary"
-                  disabled={isLoading}
-                  {...register('email')}
-                />
+                <div className="relative">
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    className={`bg-secondary pr-10 ${
+                      emailAvailable === true ? 'border-green-500' :
+                      emailAvailable === false ? 'border-destructive' : ''
+                    }`}
+                    disabled={isLoading}
+                    {...register('email')}
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    {emailChecking ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : emailAvailable === true ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : emailAvailable === false ? (
+                      <X className="h-4 w-4 text-destructive" />
+                    ) : null}
+                  </div>
+                </div>
                 {errors.email && (
                   <p className="text-sm text-destructive">{errors.email.message}</p>
+                )}
+                {!errors.email && emailMessage && (
+                  <p className={`text-sm ${emailAvailable ? 'text-green-500' : 'text-destructive'}`}>
+                    {emailMessage}
+                  </p>
                 )}
               </div>
 
@@ -488,15 +576,34 @@ export default function OnboardingPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="nickname">닉네임</Label>
-                <Input
-                  id="nickname"
-                  placeholder="닉네임을 입력해주세요"
-                  className="bg-secondary"
-                  disabled={isLoading}
-                  {...register('nickname')}
-                />
+                <div className="relative">
+                  <Input
+                    id="nickname"
+                    placeholder="닉네임을 입력해주세요"
+                    className={`bg-secondary pr-10 ${
+                      nicknameAvailable === true ? 'border-green-500' :
+                      nicknameAvailable === false ? 'border-destructive' : ''
+                    }`}
+                    disabled={isLoading}
+                    {...register('nickname')}
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    {nicknameChecking ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : nicknameAvailable === true ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : nicknameAvailable === false ? (
+                      <X className="h-4 w-4 text-destructive" />
+                    ) : null}
+                  </div>
+                </div>
                 {errors.nickname && (
                   <p className="text-sm text-destructive">{errors.nickname.message}</p>
+                )}
+                {!errors.nickname && nicknameMessage && (
+                  <p className={`text-sm ${nicknameAvailable ? 'text-green-500' : 'text-destructive'}`}>
+                    {nicknameMessage}
+                  </p>
                 )}
               </div>
 

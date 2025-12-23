@@ -71,6 +71,12 @@ interface BackendBadge {
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
 }
 
+export interface ChangeNicknameResponse {
+  success: boolean;
+  message: string;
+  next_change_available_at?: string;
+}
+
 export const usersApi = {
   /**
    * Get current user profile (mypage optimized)
@@ -151,6 +157,17 @@ export const usersApi = {
     preferences: UserProfile['preferences']
   ): Promise<UserProfile> {
     const response = await api.put<UserProfile>('/users/me/preferences', preferences);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Change nickname (once per 30 days)
+   */
+  async changeNickname(newNickname: string): Promise<ChangeNicknameResponse> {
+    const response = await api.put<ChangeNicknameResponse>('/users/me/nickname', {
+      new_nickname: newNickname,
+    });
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

@@ -178,3 +178,19 @@ class MypageBadge(BaseModel):
     description: str
     earnedAt: str
     rarity: str = "common"
+
+
+# =====================================================
+# Nickname Change Models
+# =====================================================
+
+class ChangeNicknameRequest(BaseModel):
+    """Request model for nickname change."""
+    new_nickname: str = Field(..., min_length=2, max_length=50)
+
+
+class ChangeNicknameResponse(BaseModel):
+    """Response model for nickname change."""
+    success: bool
+    message: str
+    next_change_available_at: Optional[datetime] = None

@@ -47,6 +47,11 @@ export interface TokenResponse {
   expires_in: number;
 }
 
+export interface CheckResponse {
+  available: boolean;
+  message: string;
+}
+
 // API Functions
 export const authApi = {
   /**
@@ -129,5 +134,19 @@ export const authApi = {
       apiClient.clearTokens();
     }
     return result;
+  },
+
+  /**
+   * Check email availability (for signup)
+   */
+  checkEmail: async (email: string): Promise<{ data?: CheckResponse; error?: { code: string; message: string } }> => {
+    return api.post<CheckResponse>('/auth/check-email', { email }, false);
+  },
+
+  /**
+   * Check nickname availability
+   */
+  checkNickname: async (nickname: string): Promise<{ data?: CheckResponse; error?: { code: string; message: string } }> => {
+    return api.post<CheckResponse>('/auth/check-nickname', { nickname }, false);
   },
 };
