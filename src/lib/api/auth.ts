@@ -109,4 +109,25 @@ export const authApi = {
   getToken: (): string | null => {
     return apiClient.getAccessToken();
   },
+
+  /**
+   * Change password (for logged-in user)
+   */
+  changePassword: async (currentPassword: string, newPassword: string): Promise<{ data?: AuthResponse; error?: { code: string; message: string } }> => {
+    return api.put<AuthResponse>('/auth/password/change', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }, true);
+  },
+
+  /**
+   * Delete account (회원 탈퇴)
+   */
+  deleteAccount: async (password: string): Promise<{ data?: AuthResponse; error?: { code: string; message: string } }> => {
+    const result = await api.delete<AuthResponse>('/auth/account', { password }, true);
+    if (result.data) {
+      apiClient.clearTokens();
+    }
+    return result;
+  },
 };

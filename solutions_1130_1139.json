@@ -1,0 +1,196 @@
+
+Processing Problem 1130: [백준 1130] 종이 레이싱
+
+Processing Problem 1131: [백준 1131] 숫자
+
+Processing Problem 1132: [백준 1132] 합
+
+Processing Problem 1133: [백준 1133] 반복되지 않는 단어
+
+Processing Problem 1134: [백준 1134] 식
+
+Processing Problem 1135: [백준 1135] 뉴스 전하기
+
+Processing Problem 1136: [백준 1136] 조각 놓기
+
+Processing Problem 1137: [백준 1137] 로봇 레이스
+
+Processing Problem 1138: [백준 1138] 한 줄로 서기
+
+Processing Problem 1139: [백준 1139] 울타리
+
+================================================================================
+GENERATED SOLUTIONS JSON:
+================================================================================
+[
+  {
+    "original_id": "1130",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "from collections import deque\n\nR, C = map(int, input().split())\ngrid = [input().strip() for _ in range(R)]\nvx, vy = map(int, input().split())\n\n# Find start and finish\nstart = finish = None\nfor i in range(R):\n    for j in range(C):\n        if grid[i][j] == 'S':\n            start = (i, j)\n        elif grid[i][j] == 'F':\n            finish = (i, j)\n\n# BFS with state (row, col, velocity_x, velocity_y)\nqueue = deque([(start[0], start[1], vx, vy, 0)])\nvisited = set()\nvisited.add((start[0], start[1], vx, vy))\n\nwhile queue:\n    r, c, dx, dy, dist = queue.popleft()\n\n    if (r, c) == finish:\n        print(dist)\n        exit()\n\n    # Try 9 possible acceleration changes (-1, 0, +1 in each direction)\n    for ax in [-1, 0, 1]:\n        for ay in [-1, 0, 1]:\n            new_dx = dx + ax\n            new_dy = dy + ay\n            new_r = r + new_dx\n            new_c = c + new_dy\n\n            if 0 <= new_r < R and 0 <= new_c < C and grid[new_r][new_c] != 'X':\n                state = (new_r, new_c, new_dx, new_dy)\n                if state not in visited:\n                    visited.add(state)\n                    queue.append((new_r, new_c, new_dx, new_dy, dist + 1))\n\nprint(-1)\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    static class State {\n        int r, c, dx, dy, dist;\n        State(int r, int c, int dx, int dy, int dist) {\n            this.r = r; this.c = c; this.dx = dx; this.dy = dy; this.dist = dist;\n        }\n    }\n\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        String[] line = br.readLine().split(\" \");\n        int R = Integer.parseInt(line[0]);\n        int C = Integer.parseInt(line[1]);\n\n        char[][] grid = new char[R][C];\n        int sr = 0, sc = 0, fr = 0, fc = 0;\n\n        for (int i = 0; i < R; i++) {\n            grid[i] = br.readLine().toCharArray();\n            for (int j = 0; j < C; j++) {\n                if (grid[i][j] == 'S') { sr = i; sc = j; }\n                if (grid[i][j] == 'F') { fr = i; fc = j; }\n            }\n        }\n\n        line = br.readLine().split(\" \");\n        int vx = Integer.parseInt(line[0]);\n        int vy = Integer.parseInt(line[1]);\n\n        Queue<State> queue = new LinkedList<>();\n        Set<String> visited = new HashSet<>();\n\n        queue.offer(new State(sr, sc, vx, vy, 0));\n        visited.add(sr + \",\" + sc + \",\" + vx + \",\" + vy);\n\n        while (!queue.isEmpty()) {\n            State s = queue.poll();\n\n            if (s.r == fr && s.c == fc) {\n                System.out.println(s.dist);\n                return;\n            }\n\n            for (int ax = -1; ax <= 1; ax++) {\n                for (int ay = -1; ay <= 1; ay++) {\n                    int ndx = s.dx + ax;\n                    int ndy = s.dy + ay;\n                    int nr = s.r + ndx;\n                    int nc = s.c + ndy;\n\n                    if (nr >= 0 && nr < R && nc >= 0 && nc < C && grid[nr][nc] != 'X') {\n                        String key = nr + \",\" + nc + \",\" + ndx + \",\" + ndy;\n                        if (!visited.contains(key)) {\n                            visited.add(key);\n                            queue.offer(new State(nr, nc, ndx, ndy, s.dist + 1));\n                        }\n                    }\n                }\n            }\n        }\n\n        System.out.println(-1);\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <queue>\n#include <set>\n#include <vector>\nusing namespace std;\n\nstruct State {\n    int r, c, dx, dy, dist;\n};\n\nint main() {\n    int R, C;\n    cin >> R >> C;\n\n    vector<string> grid(R);\n    int sr, sc, fr, fc, vx, vy;\n\n    for (int i = 0; i < R; i++) {\n        cin >> grid[i];\n        for (int j = 0; j < C; j++) {\n            if (grid[i][j] == 'S') { sr = i; sc = j; }\n            if (grid[i][j] == 'F') { fr = i; fc = j; }\n        }\n    }\n\n    cin >> vx >> vy;\n\n    queue<State> q;\n    set<tuple<int,int,int,int>> visited;\n\n    q.push({sr, sc, vx, vy, 0});\n    visited.insert({sr, sc, vx, vy});\n\n    while (!q.empty()) {\n        State s = q.front();\n        q.pop();\n\n        if (s.r == fr && s.c == fc) {\n            cout << s.dist << endl;\n            return 0;\n        }\n\n        for (int ax = -1; ax <= 1; ax++) {\n            for (int ay = -1; ay <= 1; ay++) {\n                int ndx = s.dx + ax;\n                int ndy = s.dy + ay;\n                int nr = s.r + ndx;\n                int nc = s.c + ndy;\n\n                if (nr >= 0 && nr < R && nc >= 0 && nc < C && grid[nr][nc] != 'X') {\n                    auto key = make_tuple(nr, nc, ndx, ndy);\n                    if (visited.find(key) == visited.end()) {\n                        visited.insert(key);\n                        q.push({nr, nc, ndx, ndy, s.dist + 1});\n                    }\n                }\n            }\n        }\n    }\n\n    cout << -1 << endl;\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1131",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "def S_k(n, k):\n    result = 0\n    while n > 0:\n        digit = n % 10\n        result += digit ** k\n        n //= 10\n    return result\n\ndef find_min_in_sequence(n, k):\n    visited = set()\n    current = n\n    min_val = current\n\n    while current not in visited:\n        visited.add(current)\n        min_val = min(min_val, current)\n        current = S_k(current, k)\n\n    # After cycle detected, find minimum in cycle\n    cycle_start = current\n    cycle = [current]\n    current = S_k(current, k)\n\n    while current != cycle_start:\n        cycle.append(current)\n        current = S_k(current, k)\n\n    return min(min_val, min(cycle))\n\nA, B, K = map(int, input().split())\ntotal = 0\n\nfor n in range(A, B + 1):\n    total += find_min_in_sequence(n, K)\n\nprint(total)\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    static int S_k(int n, int k) {\n        int result = 0;\n        while (n > 0) {\n            int digit = n % 10;\n            result += (int)Math.pow(digit, k);\n            n /= 10;\n        }\n        return result;\n    }\n\n    static int findMinInSequence(int n, int k) {\n        Set<Integer> visited = new HashSet<>();\n        int current = n;\n        int minVal = current;\n\n        while (!visited.contains(current)) {\n            visited.add(current);\n            minVal = Math.min(minVal, current);\n            current = S_k(current, k);\n        }\n\n        int cycleStart = current;\n        List<Integer> cycle = new ArrayList<>();\n        cycle.add(current);\n        current = S_k(current, k);\n\n        while (current != cycleStart) {\n            cycle.add(current);\n            current = S_k(current, k);\n        }\n\n        for (int val : cycle) {\n            minVal = Math.min(minVal, val);\n        }\n\n        return minVal;\n    }\n\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        String[] line = br.readLine().split(\" \");\n        int A = Integer.parseInt(line[0]);\n        int B = Integer.parseInt(line[1]);\n        int K = Integer.parseInt(line[2]);\n\n        long total = 0;\n        for (int n = A; n <= B; n++) {\n            total += findMinInSequence(n, K);\n        }\n\n        System.out.println(total);\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <set>\n#include <vector>\n#include <cmath>\n#include <algorithm>\nusing namespace std;\n\nint S_k(int n, int k) {\n    int result = 0;\n    while (n > 0) {\n        int digit = n % 10;\n        result += pow(digit, k);\n        n /= 10;\n    }\n    return result;\n}\n\nint findMinInSequence(int n, int k) {\n    set<int> visited;\n    int current = n;\n    int minVal = current;\n\n    while (visited.find(current) == visited.end()) {\n        visited.insert(current);\n        minVal = min(minVal, current);\n        current = S_k(current, k);\n    }\n\n    int cycleStart = current;\n    vector<int> cycle;\n    cycle.push_back(current);\n    current = S_k(current, k);\n\n    while (current != cycleStart) {\n        cycle.push_back(current);\n        current = S_k(current, k);\n    }\n\n    for (int val : cycle) {\n        minVal = min(minVal, val);\n    }\n\n    return minVal;\n}\n\nint main() {\n    int A, B, K;\n    cin >> A >> B >> K;\n\n    long long total = 0;\n    for (int n = A; n <= B; n++) {\n        total += findMinInSequence(n, K);\n    }\n\n    cout << total << endl;\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1132",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "N = int(input())\nwords = [input().strip() for _ in range(N)]\n\n# Track weight of each letter and which can't be 0\nweights = [0] * 10\ncant_be_zero = [False] * 10\n\nfor word in words:\n    for i, ch in enumerate(word):\n        idx = ord(ch) - ord('A')\n        weights[idx] += 10 ** (len(word) - 1 - i)\n        if i == 0 and len(word) > 1:\n            cant_be_zero[idx] = True\n\n# Create list of (weight, idx, cant_be_zero)\nletters = [(weights[i], i, cant_be_zero[i]) for i in range(10) if weights[i] > 0]\nletters.sort(reverse=True)\n\n# Assign digits 9, 8, 7, ... to letters by weight\n# But save 0 for the smallest weight that can be 0\nassignment = [-1] * 10\ndigit = 9\n\n# First assign all letters that can't be zero\nfor w, idx, cbz in letters:\n    if cbz:\n        assignment[idx] = digit\n        digit -= 1\n\n# Then assign remaining letters (those that can be zero)\nfor w, idx, cbz in letters:\n    if not cbz:\n        assignment[idx] = digit\n        digit -= 1\n\n# Calculate total\ntotal = 0\nfor i in range(10):\n    if assignment[i] != -1:\n        total += weights[i] * assignment[i]\n\nprint(total)\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    static class Letter implements Comparable<Letter> {\n        long weight;\n        int idx;\n        boolean cantBeZero;\n\n        Letter(long w, int i, boolean c) {\n            weight = w; idx = i; cantBeZero = c;\n        }\n\n        public int compareTo(Letter o) {\n            return Long.compare(o.weight, this.weight);\n        }\n    }\n\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        int N = Integer.parseInt(br.readLine());\n        String[] words = new String[N];\n\n        for (int i = 0; i < N; i++) {\n            words[i] = br.readLine();\n        }\n\n        long[] weights = new long[10];\n        boolean[] cantBeZero = new boolean[10];\n\n        for (String word : words) {\n            for (int i = 0; i < word.length(); i++) {\n                int idx = word.charAt(i) - 'A';\n                weights[idx] += Math.pow(10, word.length() - 1 - i);\n                if (i == 0 && word.length() > 1) {\n                    cantBeZero[idx] = true;\n                }\n            }\n        }\n\n        List<Letter> letters = new ArrayList<>();\n        for (int i = 0; i < 10; i++) {\n            if (weights[i] > 0) {\n                letters.add(new Letter(weights[i], i, cantBeZero[i]));\n            }\n        }\n        Collections.sort(letters);\n\n        int[] assignment = new int[10];\n        Arrays.fill(assignment, -1);\n        int digit = 9;\n\n        for (Letter l : letters) {\n            if (l.cantBeZero) {\n                assignment[l.idx] = digit--;\n            }\n        }\n\n        for (Letter l : letters) {\n            if (!l.cantBeZero) {\n                assignment[l.idx] = digit--;\n            }\n        }\n\n        long total = 0;\n        for (int i = 0; i < 10; i++) {\n            if (assignment[i] != -1) {\n                total += weights[i] * assignment[i];\n            }\n        }\n\n        System.out.println(total);\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <cmath>\nusing namespace std;\n\nstruct Letter {\n    long long weight;\n    int idx;\n    bool cantBeZero;\n\n    bool operator<(const Letter& o) const {\n        return weight > o.weight;\n    }\n};\n\nint main() {\n    int N;\n    cin >> N;\n\n    vector<string> words(N);\n    for (int i = 0; i < N; i++) {\n        cin >> words[i];\n    }\n\n    long long weights[10] = {0};\n    bool cantBeZero[10] = {false};\n\n    for (const string& word : words) {\n        for (int i = 0; i < word.length(); i++) {\n            int idx = word[i] - 'A';\n            weights[idx] += pow(10, word.length() - 1 - i);\n            if (i == 0 && word.length() > 1) {\n                cantBeZero[idx] = true;\n            }\n        }\n    }\n\n    vector<Letter> letters;\n    for (int i = 0; i < 10; i++) {\n        if (weights[i] > 0) {\n            letters.push_back({weights[i], i, cantBeZero[i]});\n        }\n    }\n    sort(letters.begin(), letters.end());\n\n    int assignment[10];\n    fill(assignment, assignment + 10, -1);\n    int digit = 9;\n\n    for (const Letter& l : letters) {\n        if (l.cantBeZero) {\n            assignment[l.idx] = digit--;\n        }\n    }\n\n    for (const Letter& l : letters) {\n        if (!l.cantBeZero) {\n            assignment[l.idx] = digit--;\n        }\n    }\n\n    long long total = 0;\n    for (int i = 0; i < 10; i++) {\n        if (assignment[i] != -1) {\n            total += weights[i] * assignment[i];\n        }\n    }\n\n    cout << total << endl;\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1133",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "def solve():\n    N, M = map(int, input().split())\n\n    def backtrack(word, used):\n        if len(word) == M:\n            print(word)\n            return True\n\n        for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[:N]:\n            # Check if placing c here violates non-repeating constraint\n            valid = True\n            for length in range(1, len(word) + 1):\n                if len(word) >= length and word[-length:] == (word + c)[len(word) - length + 1:len(word) + 1]:\n                    valid = False\n                    break\n\n            if valid:\n                if backtrack(word + c, used | {c}):\n                    return True\n\n        return False\n\n    if backtrack('', set()):\n        pass\n    else:\n        print('NONE')\n\nsolve()\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    static int N, M;\n\n    static boolean backtrack(StringBuilder word) {\n        if (word.length() == M) {\n            System.out.println(word);\n            return true;\n        }\n\n        for (char c = 'A'; c < 'A' + N; c++) {\n            boolean valid = true;\n\n            for (int len = 1; len <= word.length(); len++) {\n                if (word.length() >= len) {\n                    String suffix = word.substring(word.length() - len);\n                    String check = word.substring(word.length() - len + 1) + c;\n                    if (suffix.equals(check)) {\n                        valid = false;\n                        break;\n                    }\n                }\n            }\n\n            if (valid) {\n                word.append(c);\n                if (backtrack(word)) return true;\n                word.deleteCharAt(word.length() - 1);\n            }\n        }\n\n        return false;\n    }\n\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        String[] line = br.readLine().split(\" \");\n        N = Integer.parseInt(line[0]);\n        M = Integer.parseInt(line[1]);\n\n        if (!backtrack(new StringBuilder())) {\n            System.out.println(\"NONE\");\n        }\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <string>\nusing namespace std;\n\nint N, M;\n\nbool backtrack(string word) {\n    if (word.length() == M) {\n        cout << word << endl;\n        return true;\n    }\n\n    for (char c = 'A'; c < 'A' + N; c++) {\n        bool valid = true;\n\n        for (int len = 1; len <= word.length(); len++) {\n            if (word.length() >= len) {\n                string suffix = word.substr(word.length() - len);\n                string check = word.substr(word.length() - len + 1) + c;\n                if (suffix == check) {\n                    valid = false;\n                    break;\n                }\n            }\n        }\n\n        if (valid) {\n            if (backtrack(word + c)) return true;\n        }\n    }\n\n    return false;\n}\n\nint main() {\n    cin >> N >> M;\n\n    if (!backtrack(\"\")) {\n        cout << \"NONE\" << endl;\n    }\n\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1134",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "def solve():\n    expr = input().strip()\n    target = int(input())\n\n    # Parse numbers from expression\n    nums = []\n    i = 0\n    while i < len(expr):\n        if expr[i].isdigit():\n            j = i\n            while j < len(expr) and expr[j].isdigit():\n                j += 1\n            nums.append(int(expr[i:j]))\n            i = j\n        else:\n            i += 1\n\n    n = len(nums)\n    if n == 1:\n        print(1 if nums[0] == target else 0)\n        return\n\n    # Try all combinations of operators\n    from itertools import product\n    count = 0\n\n    for ops in product(['+', '-', '*'], repeat=n-1):\n        # Evaluate expression\n        result = nums[0]\n        for i, op in enumerate(ops):\n            if op == '+':\n                result += nums[i+1]\n            elif op == '-':\n                result -= nums[i+1]\n            else:  # '*'\n                result *= nums[i+1]\n\n        if result == target:\n            count += 1\n\n    print(count)\n\nsolve()\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    static int count = 0;\n    static int target;\n    static int[] nums;\n    static int n;\n\n    static void solve(int idx, int result) {\n        if (idx == n) {\n            if (result == target) count++;\n            return;\n        }\n\n        solve(idx + 1, result + nums[idx]);\n        solve(idx + 1, result - nums[idx]);\n        solve(idx + 1, result * nums[idx]);\n    }\n\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        String expr = br.readLine();\n        target = Integer.parseInt(br.readLine());\n\n        List<Integer> numList = new ArrayList<>();\n        int i = 0;\n        while (i < expr.length()) {\n            if (Character.isDigit(expr.charAt(i))) {\n                int j = i;\n                while (j < expr.length() && Character.isDigit(expr.charAt(j))) {\n                    j++;\n                }\n                numList.add(Integer.parseInt(expr.substring(i, j)));\n                i = j;\n            } else {\n                i++;\n            }\n        }\n\n        nums = new int[numList.size()];\n        for (i = 0; i < numList.size(); i++) {\n            nums[i] = numList.get(i);\n        }\n        n = nums.length;\n\n        if (n == 1) {\n            System.out.println(nums[0] == target ? 1 : 0);\n        } else {\n            solve(1, nums[0]);\n            System.out.println(count);\n        }\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <vector>\n#include <string>\n#include <cctype>\nusing namespace std;\n\nint cnt = 0;\nint target;\nvector<int> nums;\nint n;\n\nvoid solve(int idx, int result) {\n    if (idx == n) {\n        if (result == target) cnt++;\n        return;\n    }\n\n    solve(idx + 1, result + nums[idx]);\n    solve(idx + 1, result - nums[idx]);\n    solve(idx + 1, result * nums[idx]);\n}\n\nint main() {\n    string expr;\n    getline(cin, expr);\n    cin >> target;\n\n    int i = 0;\n    while (i < expr.length()) {\n        if (isdigit(expr[i])) {\n            int j = i;\n            while (j < expr.length() && isdigit(expr[j])) {\n                j++;\n            }\n            nums.push_back(stoi(expr.substr(i, j - i)));\n            i = j;\n        } else {\n            i++;\n        }\n    }\n\n    n = nums.size();\n\n    if (n == 1) {\n        cout << (nums[0] == target ? 1 : 0) << endl;\n    } else {\n        solve(1, nums[0]);\n        cout << cnt << endl;\n    }\n\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1135",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "import sys\nsys.setrecursionlimit(100000)\n\nN = int(input())\nparent = list(map(int, input().split()))\n\n# Build adjacency list for children\nchildren = [[] for _ in range(N)]\nfor i in range(1, N):\n    children[parent[i]].append(i)\n\ndef dfs(node):\n    if not children[node]:\n        return 0\n\n    # Get time for each child subtree\n    child_times = []\n    for child in children[node]:\n        child_times.append(dfs(child))\n\n    # Sort in descending order - call employees who take longer first\n    child_times.sort(reverse=True)\n\n    # Calculate total time\n    max_time = 0\n    for i, time in enumerate(child_times):\n        # Each call takes 1 minute, plus the time for that subtree\n        # i-th call happens at minute i+1\n        max_time = max(max_time, (i + 1) + time)\n\n    return max_time\n\nprint(dfs(0))\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    static List<Integer>[] children;\n\n    static int dfs(int node) {\n        if (children[node].isEmpty()) {\n            return 0;\n        }\n\n        List<Integer> childTimes = new ArrayList<>();\n        for (int child : children[node]) {\n            childTimes.add(dfs(child));\n        }\n\n        Collections.sort(childTimes, Collections.reverseOrder());\n\n        int maxTime = 0;\n        for (int i = 0; i < childTimes.size(); i++) {\n            maxTime = Math.max(maxTime, (i + 1) + childTimes.get(i));\n        }\n\n        return maxTime;\n    }\n\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        int N = Integer.parseInt(br.readLine());\n        String[] line = br.readLine().split(\" \");\n\n        children = new ArrayList[N];\n        for (int i = 0; i < N; i++) {\n            children[i] = new ArrayList<>();\n        }\n\n        for (int i = 0; i < N; i++) {\n            int p = Integer.parseInt(line[i]);\n            if (p != -1) {\n                children[p].add(i);\n            }\n        }\n\n        System.out.println(dfs(0));\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\nvector<int> children[50];\n\nint dfs(int node) {\n    if (children[node].empty()) {\n        return 0;\n    }\n\n    vector<int> childTimes;\n    for (int child : children[node]) {\n        childTimes.push_back(dfs(child));\n    }\n\n    sort(childTimes.rbegin(), childTimes.rend());\n\n    int maxTime = 0;\n    for (int i = 0; i < childTimes.size(); i++) {\n        maxTime = max(maxTime, (i + 1) + childTimes[i]);\n    }\n\n    return maxTime;\n}\n\nint main() {\n    int N;\n    cin >> N;\n\n    for (int i = 0; i < N; i++) {\n        int p;\n        cin >> p;\n        if (p != -1) {\n            children[p].push_back(i);\n        }\n    }\n\n    cout << dfs(0) << endl;\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1136",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "N, K = map(int, input().split())\npieces = []\nfor _ in range(N):\n    a, b = map(int, input().split())\n    pieces.append((a, b))\n\n# DP: dp[i][j] = max value using first i pieces with exactly j weight\nINF = float('-inf')\ndp = [[INF] * (K + 1) for _ in range(N + 1)]\ndp[0][0] = 0\n\nfor i in range(N):\n    a, b = pieces[i]\n    for j in range(K + 1):\n        if dp[i][j] == INF:\n            continue\n        # Don't use this piece\n        dp[i + 1][j] = max(dp[i + 1][j], dp[i][j])\n        # Use this piece\n        if j + a <= K:\n            dp[i + 1][j + a] = max(dp[i + 1][j + a], dp[i][j] + b)\n\nresult = max(dp[N])\nprint(result if result != INF else -1)\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        String[] line = br.readLine().split(\" \");\n        int N = Integer.parseInt(line[0]);\n        int K = Integer.parseInt(line[1]);\n\n        int[][] pieces = new int[N][2];\n        for (int i = 0; i < N; i++) {\n            line = br.readLine().split(\" \");\n            pieces[i][0] = Integer.parseInt(line[0]);\n            pieces[i][1] = Integer.parseInt(line[1]);\n        }\n\n        final int INF = Integer.MIN_VALUE / 2;\n        int[][] dp = new int[N + 1][K + 1];\n        for (int i = 0; i <= N; i++) {\n            Arrays.fill(dp[i], INF);\n        }\n        dp[0][0] = 0;\n\n        for (int i = 0; i < N; i++) {\n            int a = pieces[i][0];\n            int b = pieces[i][1];\n            for (int j = 0; j <= K; j++) {\n                if (dp[i][j] == INF) continue;\n                dp[i + 1][j] = Math.max(dp[i + 1][j], dp[i][j]);\n                if (j + a <= K) {\n                    dp[i + 1][j + a] = Math.max(dp[i + 1][j + a], dp[i][j] + b);\n                }\n            }\n        }\n\n        int result = INF;\n        for (int j = 0; j <= K; j++) {\n            result = Math.max(result, dp[N][j]);\n        }\n\n        System.out.println(result == INF ? -1 : result);\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\nconst int INF = -1e9;\n\nint main() {\n    int N, K;\n    cin >> N >> K;\n\n    vector<pair<int,int>> pieces(N);\n    for (int i = 0; i < N; i++) {\n        cin >> pieces[i].first >> pieces[i].second;\n    }\n\n    vector<vector<int>> dp(N + 1, vector<int>(K + 1, INF));\n    dp[0][0] = 0;\n\n    for (int i = 0; i < N; i++) {\n        int a = pieces[i].first;\n        int b = pieces[i].second;\n        for (int j = 0; j <= K; j++) {\n            if (dp[i][j] == INF) continue;\n            dp[i + 1][j] = max(dp[i + 1][j], dp[i][j]);\n            if (j + a <= K) {\n                dp[i + 1][j + a] = max(dp[i + 1][j + a], dp[i][j] + b);\n            }\n        }\n    }\n\n    int result = INF;\n    for (int j = 0; j <= K; j++) {\n        result = max(result, dp[N][j]);\n    }\n\n    cout << (result == INF ? -1 : result) << endl;\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1137",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "N = int(input())\nobstacles = []\nfor _ in range(N):\n    x, y = map(int, input().split())\n    obstacles.append((x, y))\n\n# Sort by x coordinate\nobstacles.sort()\n\n# DP: for each obstacle, find longest path ending there\ndp = [1] * N\n\nfor i in range(N):\n    for j in range(i):\n        # Can go from j to i if j is to the left and below\n        if obstacles[j][0] < obstacles[i][0] and obstacles[j][1] < obstacles[i][1]:\n            dp[i] = max(dp[i], dp[j] + 1)\n\nprint(max(dp) if dp else 0)\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        int N = Integer.parseInt(br.readLine());\n\n        int[][] obstacles = new int[N][2];\n        for (int i = 0; i < N; i++) {\n            String[] line = br.readLine().split(\" \");\n            obstacles[i][0] = Integer.parseInt(line[0]);\n            obstacles[i][1] = Integer.parseInt(line[1]);\n        }\n\n        Arrays.sort(obstacles, (a, b) -> a[0] - b[0]);\n\n        int[] dp = new int[N];\n        Arrays.fill(dp, 1);\n\n        for (int i = 0; i < N; i++) {\n            for (int j = 0; j < i; j++) {\n                if (obstacles[j][0] < obstacles[i][0] && obstacles[j][1] < obstacles[i][1]) {\n                    dp[i] = Math.max(dp[i], dp[j] + 1);\n                }\n            }\n        }\n\n        int result = 0;\n        for (int x : dp) {\n            result = Math.max(result, x);\n        }\n\n        System.out.println(result);\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\nint main() {\n    int N;\n    cin >> N;\n\n    vector<pair<int,int>> obstacles(N);\n    for (int i = 0; i < N; i++) {\n        cin >> obstacles[i].first >> obstacles[i].second;\n    }\n\n    sort(obstacles.begin(), obstacles.end());\n\n    vector<int> dp(N, 1);\n\n    for (int i = 0; i < N; i++) {\n        for (int j = 0; j < i; j++) {\n            if (obstacles[j].first < obstacles[i].first && obstacles[j].second < obstacles[i].second) {\n                dp[i] = max(dp[i], dp[j] + 1);\n            }\n        }\n    }\n\n    int result = 0;\n    for (int x : dp) {\n        result = max(result, x);\n    }\n\n    cout << result << endl;\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1138",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "N = int(input())\ntaller = list(map(int, input().split()))\n\n# Result array\nresult = [0] * N\n\n# Place people from tallest to shortest (N down to 1)\nfor person in range(N, 0, -1):\n    count = taller[person - 1]\n\n    # Find the (count+1)-th empty position from left\n    empty_count = 0\n    for i in range(N):\n        if result[i] == 0:\n            if empty_count == count:\n                result[i] = person\n                break\n            empty_count += 1\n\nprint(' '.join(map(str, result)))\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        int N = Integer.parseInt(br.readLine());\n        String[] line = br.readLine().split(\" \");\n\n        int[] taller = new int[N];\n        for (int i = 0; i < N; i++) {\n            taller[i] = Integer.parseInt(line[i]);\n        }\n\n        int[] result = new int[N];\n\n        for (int person = N; person >= 1; person--) {\n            int count = taller[person - 1];\n            int emptyCount = 0;\n\n            for (int i = 0; i < N; i++) {\n                if (result[i] == 0) {\n                    if (emptyCount == count) {\n                        result[i] = person;\n                        break;\n                    }\n                    emptyCount++;\n                }\n            }\n        }\n\n        StringBuilder sb = new StringBuilder();\n        for (int i = 0; i < N; i++) {\n            sb.append(result[i]);\n            if (i < N - 1) sb.append(\" \");\n        }\n        System.out.println(sb);\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <vector>\nusing namespace std;\n\nint main() {\n    int N;\n    cin >> N;\n\n    vector<int> taller(N);\n    for (int i = 0; i < N; i++) {\n        cin >> taller[i];\n    }\n\n    vector<int> result(N, 0);\n\n    for (int person = N; person >= 1; person--) {\n        int count = taller[person - 1];\n        int emptyCount = 0;\n\n        for (int i = 0; i < N; i++) {\n            if (result[i] == 0) {\n                if (emptyCount == count) {\n                    result[i] = person;\n                    break;\n                }\n                emptyCount++;\n            }\n        }\n    }\n\n    for (int i = 0; i < N; i++) {\n        cout << result[i];\n        if (i < N - 1) cout << \" \";\n    }\n    cout << endl;\n\n    return 0;\n}\n"
+      }
+    ]
+  },
+  {
+    "original_id": "1139",
+    "solutions": [
+      {
+        "language": "python",
+        "code": "def solve():\n    N = int(input())\n    fence = []\n    for _ in range(N):\n        fence.append(int(input()))\n\n    # DP with bitmask: dp[mask] = min cost to paint posts in mask\n    INF = float('inf')\n    dp = [INF] * (1 << N)\n    dp[0] = 0\n\n    for mask in range(1 << N):\n        if dp[mask] == INF:\n            continue\n\n        # Find first unpainted post\n        first = -1\n        for i in range(N):\n            if not (mask & (1 << i)):\n                first = i\n                break\n\n        if first == -1:\n            continue\n\n        # Try painting consecutive posts starting from first\n        cost = 0\n        for length in range(1, N - first + 1):\n            if first + length - 1 >= N:\n                break\n\n            # Check if all posts in range are unpainted\n            valid = True\n            for j in range(first, first + length):\n                if mask & (1 << j):\n                    valid = False\n                    break\n\n            if not valid:\n                break\n\n            cost += fence[first + length - 1]\n            new_mask = mask\n            for j in range(first, first + length):\n                new_mask |= (1 << j)\n\n            dp[new_mask] = min(dp[new_mask], dp[mask] + cost)\n\n    print(dp[(1 << N) - 1])\n\nsolve()\n"
+      },
+      {
+        "language": "java",
+        "code": "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        int N = Integer.parseInt(br.readLine());\n\n        int[] fence = new int[N];\n        for (int i = 0; i < N; i++) {\n            fence[i] = Integer.parseInt(br.readLine());\n        }\n\n        final int INF = Integer.MAX_VALUE / 2;\n        int[] dp = new int[1 << N];\n        Arrays.fill(dp, INF);\n        dp[0] = 0;\n\n        for (int mask = 0; mask < (1 << N); mask++) {\n            if (dp[mask] == INF) continue;\n\n            int first = -1;\n            for (int i = 0; i < N; i++) {\n                if ((mask & (1 << i)) == 0) {\n                    first = i;\n                    break;\n                }\n            }\n\n            if (first == -1) continue;\n\n            int cost = 0;\n            for (int length = 1; length <= N - first; length++) {\n                if (first + length - 1 >= N) break;\n\n                boolean valid = true;\n                for (int j = first; j < first + length; j++) {\n                    if ((mask & (1 << j)) != 0) {\n                        valid = false;\n                        break;\n                    }\n                }\n\n                if (!valid) break;\n\n                cost += fence[first + length - 1];\n                int newMask = mask;\n                for (int j = first; j < first + length; j++) {\n                    newMask |= (1 << j);\n                }\n\n                dp[newMask] = Math.min(dp[newMask], dp[mask] + cost);\n            }\n        }\n\n        System.out.println(dp[(1 << N) - 1]);\n    }\n}\n"
+      },
+      {
+        "language": "cpp",
+        "code": "#include <iostream>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\nconst int INF = 1e9;\n\nint main() {\n    int N;\n    cin >> N;\n\n    vector<int> fence(N);\n    for (int i = 0; i < N; i++) {\n        cin >> fence[i];\n    }\n\n    vector<int> dp(1 << N, INF);\n    dp[0] = 0;\n\n    for (int mask = 0; mask < (1 << N); mask++) {\n        if (dp[mask] == INF) continue;\n\n        int first = -1;\n        for (int i = 0; i < N; i++) {\n            if ((mask & (1 << i)) == 0) {\n                first = i;\n                break;\n            }\n        }\n\n        if (first == -1) continue;\n\n        int cost = 0;\n        for (int length = 1; length <= N - first; length++) {\n            if (first + length - 1 >= N) break;\n\n            bool valid = true;\n            for (int j = first; j < first + length; j++) {\n                if (mask & (1 << j)) {\n                    valid = false;\n                    break;\n                }\n            }\n\n            if (!valid) break;\n\n            cost += fence[first + length - 1];\n            int newMask = mask;\n            for (int j = first; j < first + length; j++) {\n                newMask |= (1 << j);\n            }\n\n            dp[newMask] = min(dp[newMask], dp[mask] + cost);\n        }\n    }\n\n    cout << dp[(1 << N) - 1] << endl;\n    return 0;\n}\n"
+      }
+    ]
+  }
+]

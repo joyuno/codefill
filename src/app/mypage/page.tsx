@@ -6,17 +6,43 @@ import { TopNav } from '@/components/layout/TopNav';
 import { mockUser, mockBadges, mockRecentActivity } from '@/lib/mockData';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2 } from 'lucide-react';
-import { usersApi, type UserProfile, type UserStats } from '@/lib/api';
+import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User, Lock, CreditCard, Trash2, Check, X, Eye, EyeOff, BarChart3 } from 'lucide-react';
+import { usersApi, authApi, type UserProfile, type UserStats } from '@/lib/api';
 import type { Badge as BadgeType, RecentActivity } from '@/lib/types';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
+
+type TabType = 'profile' | 'settings';
 
 export default function MyPagePage() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [badges, setBadges] = useState<BadgeType[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Settings states
+  const [editingNickname, setEditingNickname] = useState(false);
+  const [newNickname, setNewNickname] = useState('');
+  const [nicknameLoading, setNicknameLoading] = useState(false);
+  const [nicknameError, setNicknameError] = useState('');
+
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     async function fetchData() {
@@ -70,6 +96,97 @@ export default function MyPagePage() {
     fetchData();
   }, []);
 
+  // 닉네임 변경 핸들러
+  const handleNicknameChange = async () => {
+    if (!newNickname.trim()) {
+      setNicknameError('닉네임을 입력해주세요');
+      return;
+    }
+    if (newNickname.length < 2 || newNickname.length > 20) {
+      setNicknameError('닉네임은 2-20자 사이여야 합니다');
+      return;
+    }
+
+    setNicknameLoading(true);
+    setNicknameError('');
+
+    try {
+      const updatedProfile = await usersApi.updateProfile({ username: newNickname });
+      setProfile(updatedProfile);
+      setEditingNickname(false);
+      setNewNickname('');
+    } catch (error) {
+      setNicknameError(error instanceof Error ? error.message : '닉네임 변경에 실패했습니다');
+    } finally {
+      setNicknameLoading(false);
+    }
+  };
+
+  // 비밀번호 변경 핸들러
+  const handlePasswordChange = async () => {
+    setPasswordError('');
+    setPasswordSuccess(false);
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('모든 필드를 입력해주세요');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError('새 비밀번호는 8자 이상이어야 합니다');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('새 비밀번호가 일치하지 않습니다');
+      return;
+    }
+
+    setPasswordLoading(true);
+
+    try {
+      const result = await authApi.changePassword(currentPassword, newPassword);
+      if (result.error) {
+        setPasswordError(result.error.message);
+      } else {
+        setPasswordSuccess(true);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setTimeout(() => {
+          setShowPasswordForm(false);
+          setPasswordSuccess(false);
+        }, 2000);
+      }
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : '비밀번호 변경에 실패했습니다');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  // 회원 탈퇴 핸들러
+  const handleDeleteAccount = async () => {
+    if (!deletePassword) {
+      setDeleteError('비밀번호를 입력해주세요');
+      return;
+    }
+
+    setDeleteLoading(true);
+    setDeleteError('');
+
+    try {
+      const result = await authApi.deleteAccount(deletePassword);
+      if (result.error) {
+        setDeleteError(result.error.message);
+      } else {
+        router.push('/');
+      }
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : '회원 탈퇴에 실패했습니다');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -93,6 +210,41 @@ export default function MyPagePage() {
       <Header />
       <TopNav />
       <main className="mx-auto max-w-4xl space-y-6 p-6">
+        {/* Tab Navigation */}
+        <div className="flex gap-2 border-b border-border pb-2">
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'profile'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            <User className="h-4 w-4" />
+            프로필
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'settings'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            <Settings className="h-4 w-4" />
+            설정
+          </button>
+        </div>
+
+        <AnimatePresence mode="wait">
+        {activeTab === 'profile' ? (
+          <motion.div
+            key="profile"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-6"
+          >
         {/* Profile Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -303,6 +455,271 @@ export default function MyPagePage() {
             ))}
           </div>
         </motion.div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="settings"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-6"
+          >
+            {/* 학습 통계 */}
+            <div className="rounded-xl border border-border bg-card p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-semibold">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                학습 통계
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-sm text-muted-foreground">총 푼 문제</p>
+                  <p className="text-2xl font-bold">{displayStats?.totalSolved || displayUser.solvedCount || 0}</p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-sm text-muted-foreground">정답률</p>
+                  <p className="text-2xl font-bold">
+                    {displayStats?.totalSolved && displayStats.totalSolved > 0
+                      ? Math.round((displayStats.totalSolved / (displayStats.totalSolved + 10)) * 100)
+                      : 0}%
+                  </p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-sm text-muted-foreground">현재 스트릭</p>
+                  <p className="text-2xl font-bold">{displayStats?.currentStreak || displayUser.streak || 0}일</p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-sm text-muted-foreground">최고 스트릭</p>
+                  <p className="text-2xl font-bold">{displayStats?.maxStreak || 0}일</p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-sm text-muted-foreground">쉬운 문제</p>
+                  <p className="text-2xl font-bold text-green-500">{displayStats?.solvedByDifficulty?.easy || 0}</p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <p className="text-sm text-muted-foreground">어려운 문제</p>
+                  <p className="text-2xl font-bold text-red-500">{displayStats?.solvedByDifficulty?.hard || 0}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 구독 상태 */}
+            <div className="rounded-xl border border-border bg-card p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-semibold">
+                <CreditCard className="h-5 w-5 text-primary" />
+                구독 상태
+              </h2>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={displayUser.subscription === 'pro' ? 'default' : 'secondary'} className="capitalize">
+                      {displayUser.subscription} Plan
+                    </Badge>
+                    {displayUser.subscription === 'free' && (
+                      <span className="text-sm text-muted-foreground">무료 플랜 사용 중</span>
+                    )}
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {displayUser.subscription === 'free'
+                      ? 'Pro 플랜으로 업그레이드하면 모든 문제와 기능을 이용할 수 있습니다.'
+                      : displayUser.subscription === 'pro'
+                      ? '모든 문제와 기능을 이용할 수 있습니다.'
+                      : '팀 기능과 함께 모든 기능을 이용할 수 있습니다.'}
+                  </p>
+                </div>
+                {displayUser.subscription === 'free' && (
+                  <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                    업그레이드
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 닉네임 변경 */}
+            <div className="rounded-xl border border-border bg-card p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-semibold">
+                <User className="h-5 w-5 text-primary" />
+                닉네임 변경
+              </h2>
+              {editingNickname ? (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={newNickname}
+                    onChange={(e) => setNewNickname(e.target.value)}
+                    placeholder="새 닉네임 (2-20자)"
+                    className="w-full rounded-lg border border-border bg-background px-4 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  {nicknameError && <p className="text-sm text-destructive">{nicknameError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleNicknameChange}
+                      disabled={nicknameLoading}
+                      className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {nicknameLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      저장
+                    </button>
+                    <button
+                      onClick={() => { setEditingNickname(false); setNewNickname(''); setNicknameError(''); }}
+                      className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                    >
+                      <X className="h-4 w-4" />
+                      취소
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground">현재 닉네임: <span className="font-medium text-foreground">{displayUser.username}</span></p>
+                  <button
+                    onClick={() => { setEditingNickname(true); setNewNickname(displayUser.username); }}
+                    className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                  >
+                    변경
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 비밀번호 변경 */}
+            <div className="rounded-xl border border-border bg-card p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-semibold">
+                <Lock className="h-5 w-5 text-primary" />
+                비밀번호 변경
+              </h2>
+              {showPasswordForm ? (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="현재 비밀번호"
+                      className="w-full rounded-lg border border-border bg-background px-4 py-2 pr-10 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="새 비밀번호 (8자 이상)"
+                      className="w-full rounded-lg border border-border bg-background px-4 py-2 pr-10 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="새 비밀번호 확인"
+                    className="w-full rounded-lg border border-border bg-background px-4 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
+                  {passwordSuccess && <p className="text-sm text-green-500">비밀번호가 변경되었습니다!</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handlePasswordChange}
+                      disabled={passwordLoading}
+                      className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {passwordLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      변경
+                    </button>
+                    <button
+                      onClick={() => { setShowPasswordForm(false); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordError(''); }}
+                      className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                    >
+                      <X className="h-4 w-4" />
+                      취소
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground">비밀번호를 변경하려면 버튼을 클릭하세요</p>
+                  <button
+                    onClick={() => setShowPasswordForm(true)}
+                    className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                  >
+                    변경
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 회원 탈퇴 */}
+            <div className="rounded-xl border border-destructive/50 bg-card p-6">
+              <h2 className="mb-4 flex items-center gap-2 font-semibold text-destructive">
+                <Trash2 className="h-5 w-5" />
+                회원 탈퇴
+              </h2>
+              <p className="mb-4 text-sm text-muted-foreground">
+                회원 탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다. 신중하게 결정해주세요.
+              </p>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90"
+              >
+                회원 탈퇴
+              </button>
+            </div>
+          </motion.div>
+        )}
+        </AnimatePresence>
+
+        {/* Delete Account Modal */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="mx-4 w-full max-w-md rounded-xl border border-border bg-card p-6"
+            >
+              <h3 className="mb-4 text-lg font-semibold text-destructive">회원 탈퇴</h3>
+              <p className="mb-4 text-sm text-muted-foreground">
+                정말로 탈퇴하시겠습니까? 모든 데이터가 영구적으로 삭제됩니다.
+              </p>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="비밀번호 확인"
+                className="mb-3 w-full rounded-lg border border-border bg-background px-4 py-2 focus:border-destructive focus:outline-none focus:ring-1 focus:ring-destructive"
+              />
+              {deleteError && <p className="mb-3 text-sm text-destructive">{deleteError}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => { setShowDeleteModal(false); setDeletePassword(''); setDeleteError(''); }}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleteLoading}
+                  className="flex items-center gap-2 rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                >
+                  {deleteLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  탈퇴하기
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </main>
     </div>
   );
