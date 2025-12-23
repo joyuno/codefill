@@ -41,8 +41,17 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import type { Problem, ProblemType, TestCase, Blank, PuzzleBlock } from '@/lib/types';
+import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
+import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
 import { CodeEditor } from './CodeEditor';
+
+// UI에서 사용하는 퍼즐 블록 (indentation 포함)
+interface UIPuzzleBlock {
+  id: string;
+  code: string;
+  indentation: number;
+  correctOrder: number;
+}
 
 // API Base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -77,21 +86,21 @@ async function executeCode(sourceCode: string, language: string, stdin: string =
 }
 
 interface TestResult {
-  testCase: TestCase;
+  testCase: ConvertedTestCase;
   passed: boolean;
   actual?: any;
   error?: string;
   time?: number;
 }
 
-interface CustomTestCase extends TestCase {
+interface CustomTestCase extends ConvertedTestCase {
   id: string;
   isCustom: true;
 }
 
 interface UnifiedPracticeProps {
-  problem: Problem;
-  problemType: ProblemType;
+  problem: ConvertedProblem;
+  problemType: ConvertedProblemType;
   onSubmit: (code: string, results: TestResult[]) => void;
   onRun: (code: string) => void;
   onHintRequest: (level: number) => void;
@@ -135,8 +144,9 @@ export function UnifiedPractice({
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
 
   // Puzzle 모드 상태
-  const [blocks, setBlocks] = useState<PuzzleBlock[]>([]);
+  const [blocks, setBlocks] = useState<UIPuzzleBlock[]>([]);
   const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
+  const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
 
   // 문제/타입 변경 시 초기화
   useEffect(() => {
@@ -146,18 +156,27 @@ export function UnifiedPractice({
     setOutput('');
     setBlankAnswers({});
     setBlankResults({});
+    setPuzzleResults({});
     setCustomTestCases([]);
     setExpandedTests(new Set([0]));
 
     if (problemType === 'blank') {
       setCode(problem.codeSnippet || '');
     } else if (problemType === 'puzzle') {
-      const shuffled = [...(problem.puzzleBlocks || [])].sort(() => Math.random() - 0.5);
+      // ConvertedPuzzleBlock을 UIPuzzleBlock으로 변환
+      const uiBlocks: UIPuzzleBlock[] = (problem.puzzleBlocks || []).map(b => ({
+        id: b.id,
+        code: b.code,
+        indentation: 0, // 기본 indentation
+        correctOrder: b.correctOrder,
+      }));
+      // 랜덤 셔플
+      const shuffled = [...uiBlocks].sort(() => Math.random() - 0.5);
       setBlocks(shuffled);
       setCode('# 블록을 올바른 순서로 정렬하세요');
     } else if (problemType === 'implementation') {
-      const signature = problem.functionSignature || problem.implementationData?.functionSignature || 'def solution():';
-      setCode(signature + '\n    # 여기에 코드를 작성하세요\n    pass');
+      // implementation 문제는 빈 코드로 시작
+      setCode('# 여기에 코드를 작성하세요\n');
     }
   }, [problem.id, problemType]);
 
@@ -165,18 +184,19 @@ export function UnifiedPractice({
   useEffect(() => {
     if (problemType === 'puzzle' && blocks.length > 0) {
       const assembledCode = blocks
-        .map(b => '    '.repeat(b.indentation) + b.code)
+        .map(b => '    '.repeat(b.indentation || 0) + b.code)
         .join('\n');
       setCode(assembledCode);
     }
   }, [blocks, problemType]);
 
   // 테스트 케이스 (타입별로 다름)
-  const baseTestCases = useMemo(() => {
+  const baseTestCases = useMemo((): ConvertedTestCase[] => {
     if (problemType === 'implementation') {
-      return problem.testCases || problem.implementationData?.testCases || [];
+      return problem.testCases || [];
     }
-    return [{ input: ['test'], expected: true }];
+    // blank, puzzle은 테스트 케이스가 있으면 사용, 없으면 더미
+    return problem.testCases?.length ? problem.testCases : [{ input: 'test', expected: 'test' }];
   }, [problem, problemType]);
 
   const allTestCases = useMemo(() => {
@@ -206,24 +226,20 @@ export function UnifiedPractice({
   const addCustomTestCase = () => {
     const newTestCase: CustomTestCase = {
       id: `custom-${Date.now()}`,
-      input: [],
-      expected: null,
+      input: '',
+      expected: '',
       isCustom: true,
     };
     setCustomTestCases(prev => [...prev, newTestCase]);
-    setExpandedTests(prev => new Set([...prev, visibleTestCases.length]));
+    setExpandedTests(prev => new Set([...Array.from(prev), visibleTestCases.length]));
   };
 
   // 커스텀 테스트 케이스 업데이트
   const updateCustomTestCase = (id: string, field: 'input' | 'expected', value: string) => {
     setCustomTestCases(prev => prev.map(tc => {
       if (tc.id !== id) return tc;
-      try {
-        const parsed = JSON.parse(value);
-        return { ...tc, [field]: parsed };
-      } catch {
-        return tc;
-      }
+      // 문자열로 저장
+      return { ...tc, [field]: value };
     }));
   };
 
@@ -248,7 +264,7 @@ export function UnifiedPractice({
   };
 
   // 단일 테스트 실행
-  const runSingleTest = async (testCase: TestCase, idx: number) => {
+  const runSingleTest = async (testCase: ConvertedTestCase, idx: number) => {
     setRunningTestId(`test-${idx}`);
 
     const executableCode = getExecutableCode();
@@ -314,19 +330,89 @@ export function UnifiedPractice({
     }
   };
 
-  // 테스트 실행
+  // 테스트 실행 / 정답 체크
   const runTests = async (isSubmit: boolean = false) => {
     setIsRunning(true);
     setOutput('');
 
-    const executableCode = getExecutableCode();
-    const language = problem.framework || 'python';
-
     try {
-      // 단순 실행 (테스트 케이스 없이 코드만 실행)
+      // Blank: 코드 실행 없이 정답만 체크
+      if (problemType === 'blank') {
+        const userAnswers = (problem.blanks || []).map(blank => blankAnswers[blank.id] || '');
+        const { correct, results } = checkBlankAnswers(problem, userAnswers);
+
+        const newBlankResults: Record<string, boolean> = {};
+        (problem.blanks || []).forEach((blank, idx) => {
+          newBlankResults[blank.id] = results[idx] || false;
+        });
+        setBlankResults(newBlankResults);
+
+        const correctCount = results.filter(r => r).length;
+        const totalCount = results.length;
+
+        if (isSubmit) {
+          setOutput(correct
+            ? `✓ 정답입니다! (${correctCount}/${totalCount})`
+            : `✗ 오답입니다. (${correctCount}/${totalCount}) - 다시 시도해주세요.`
+          );
+          const testResults: TestResult[] = [{
+            testCase: { input: '', expected: 'correct', isHidden: false },
+            passed: correct,
+            actual: correct ? 'correct' : 'incorrect',
+          }];
+          onSubmit(getExecutableCode(), testResults);
+          // 정답일 때만 수정 불가 상태로 전환
+          if (correct) {
+            setIsSubmitted(true);
+          }
+        } else {
+          // 실행 버튼 - 현재 상태만 보여줌
+          setOutput(`현재 입력 상태: ${correctCount}/${totalCount} 정답`);
+        }
+        return;
+      }
+
+      // Puzzle: 코드 실행 없이 순서만 체크
+      if (problemType === 'puzzle') {
+        const userOrder = blocks.map(b => b.id);
+        const { correct, results } = checkPuzzleOrder(problem, userOrder);
+
+        // 각 블록별 결과 저장
+        const newPuzzleResults: Record<string, boolean> = {};
+        blocks.forEach((block, idx) => {
+          newPuzzleResults[block.id] = results[idx] || false;
+        });
+        setPuzzleResults(newPuzzleResults);
+
+        const correctCount = results.filter(r => r).length;
+
+        if (isSubmit) {
+          setOutput(correct
+            ? '✓ 정답입니다! 올바른 순서입니다.'
+            : `✗ 오답입니다. (${correctCount}/${blocks.length}) - 순서를 다시 확인해주세요.`
+          );
+          const testResults: TestResult[] = [{
+            testCase: { input: '', expected: 'correct order', isHidden: false },
+            passed: correct,
+            actual: correct ? 'correct order' : 'wrong order',
+          }];
+          onSubmit(getExecutableCode(), testResults);
+          // 정답일 때만 수정 불가 상태로 전환
+          if (correct) {
+            setIsSubmitted(true);
+          }
+        } else {
+          setOutput('블록을 올바른 순서로 정렬하고 제출해주세요.');
+        }
+        return;
+      }
+
+      // Implementation: 실제 코드 실행
+      const executableCode = getExecutableCode();
+      const language = problem.framework || 'python';
+
       const result = await executeCode(executableCode, language, '');
 
-      // 출력 구성
       let outputText = '';
 
       if (result.compile_output) {
@@ -345,7 +431,6 @@ export function UnifiedPractice({
         outputText = '(실행 완료 - 출력 없음)';
       }
 
-      // 실행 정보 추가
       if (result.time || result.memory) {
         outputText += `\n\n--- 실행 정보 ---`;
         if (result.time) outputText += `\n시간: ${result.time}s`;
@@ -355,25 +440,16 @@ export function UnifiedPractice({
 
       setOutput(outputText);
 
-      // Blank 결과 업데이트
-      if (problemType === 'blank' && isSubmit) {
-        const newBlankResults: Record<string, boolean> = {};
-        (problem.blanks || []).forEach((blank) => {
-          newBlankResults[blank.id] = blankAnswers[blank.id]?.trim() === blank.answer;
-        });
-        setBlankResults(newBlankResults);
-      }
-
       if (isSubmit) {
-        setIsSubmitted(true);
         onSubmit(executableCode, []);
+        setIsSubmitted(true);
       } else {
         onRun(executableCode);
       }
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
-      setOutput(`[실행 오류]\n${errorMessage}`);
+      setOutput(`[오류]\n${errorMessage}`);
     } finally {
       setIsRunning(false);
     }
@@ -386,16 +462,17 @@ export function UnifiedPractice({
   };
 
   // 블록 드래그 핸들러
-  const handleDragStart = (blockId: string) => {
-    setDraggedBlock(blockId);
+  const handleDragStart = (blockId: number) => {
+    setDraggedBlock(String(blockId));
   };
 
-  const handleDragOver = (e: React.DragEvent, targetId: string) => {
+  const handleDragOver = (e: React.DragEvent, targetId: number) => {
     e.preventDefault();
-    if (!draggedBlock || draggedBlock === targetId) return;
+    const targetIdStr = String(targetId);
+    if (!draggedBlock || draggedBlock === targetIdStr) return;
 
-    const dragIndex = blocks.findIndex(b => b.id === draggedBlock);
-    const targetIndex = blocks.findIndex(b => b.id === targetId);
+    const dragIndex = blocks.findIndex(b => String(b.id) === draggedBlock);
+    const targetIndex = blocks.findIndex(b => String(b.id) === targetIdStr);
 
     const newBlocks = [...blocks];
     const [removed] = newBlocks.splice(dragIndex, 1);
@@ -461,7 +538,8 @@ export function UnifiedPractice({
                 placeholder="___"
                 disabled={isSubmitted}
               />
-              {!isSubmitted && blank.hints && blank.hints.length > 0 && (
+              {/* 힌트 버튼 - problem.keyConcepts 사용 */}
+              {!isSubmitted && problem.keyConcepts?.length > 0 && (
                 <Popover>
                   <PopoverTrigger asChild>
                     <button className="text-muted-foreground hover:text-primary">
@@ -469,7 +547,7 @@ export function UnifiedPractice({
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-48 p-2">
-                    <p className="text-xs text-muted-foreground">{blank.hints[0]}</p>
+                    <p className="text-xs text-muted-foreground">{problem.keyConcepts[0]}</p>
                   </PopoverContent>
                 </Popover>
               )}
@@ -511,7 +589,7 @@ export function UnifiedPractice({
   const totalBlanks = problem.blanks?.length || 0;
 
   // 테스트 케이스 카드 렌더링
-  const renderTestCaseCard = (tc: TestCase, idx: number) => {
+  const renderTestCaseCard = (tc: ConvertedTestCase | CustomTestCase, idx: number) => {
     const result = testResults.find(
       (r) => JSON.stringify(r.testCase) === JSON.stringify(tc)
     );
@@ -879,24 +957,56 @@ export function UnifiedPractice({
               </Badge>
             </div>
             <div className="space-y-2">
-              {blocks.map((block) => (
-                <div
-                  key={block.id}
-                  draggable
-                  onDragStart={() => handleDragStart(block.id)}
-                  onDragOver={(e) => handleDragOver(e, block.id)}
-                  onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 p-2 rounded border cursor-move transition-colors ${
-                    draggedBlock === block.id
-                      ? 'bg-primary/20 border-primary'
-                      : 'bg-card border-border hover:border-primary/50'
-                  }`}
-                  style={{ marginLeft: block.indentation * 24 }}
-                >
-                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <code className="text-sm font-mono">{block.code}</code>
-                </div>
-              ))}
+              {blocks.map((block) => {
+                const hasResult = Object.keys(puzzleResults).length > 0;
+                const isCorrect = puzzleResults[block.id];
+
+                return (
+                  <div
+                    key={block.id}
+                    draggable={!isSubmitted}
+                    onDragStart={() => !isSubmitted && handleDragStart(block.id)}
+                    onDragOver={(e) => !isSubmitted && handleDragOver(e, block.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 p-2 rounded border transition-all ${
+                      isSubmitted
+                        ? 'cursor-default'
+                        : 'cursor-move'
+                    } ${
+                      draggedBlock === block.id
+                        ? 'bg-primary/20 border-primary'
+                        : hasResult
+                          ? isCorrect
+                            ? 'bg-green-500/10 border-green-500/50'
+                            : 'bg-red-500/10 border-red-500/50 animate-pulse'
+                          : 'bg-card border-border hover:border-primary/50'
+                    }`}
+                    style={{ marginLeft: block.indentation * 24 }}
+                  >
+                    <GripVertical className={`h-4 w-4 shrink-0 ${
+                      hasResult
+                        ? isCorrect
+                          ? 'text-green-500'
+                          : 'text-red-500'
+                        : 'text-muted-foreground'
+                    }`} />
+                    <code className={`text-sm font-mono flex-1 ${
+                      hasResult
+                        ? isCorrect
+                          ? 'text-green-400'
+                          : 'text-red-400'
+                        : ''
+                    }`}>{block.code}</code>
+                    {hasResult && (
+                      isCorrect ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                      )
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -938,60 +1048,128 @@ export function UnifiedPractice({
           </div>
         )}
 
-        {/* Output Console */}
-        <div className="shrink-0 border-t border-border bg-[#1e1e1e]">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-[#333]">
-            <div className="flex items-center gap-2">
-              <Terminal className="h-4 w-4 text-[#808080]" />
-              <span className="text-sm font-medium text-[#cccccc]">Output</span>
-            </div>
-            {testedCount > 0 && (
-              <Badge
-                variant={allPassed ? 'default' : 'destructive'}
-                className="text-xs"
-              >
-                {passedCount}/{testedCount} Passed
-              </Badge>
-            )}
-          </div>
-          <div className="h-28 overflow-y-auto p-3">
-            {isRunning ? (
-              <div className="flex items-center gap-2 text-sm text-[#808080]">
-                <Clock className="h-4 w-4 animate-spin" />
-                실행 중...
+        {/* Output Console - implementation에서만 표시 */}
+        {problemType === 'implementation' && (
+          <div className="shrink-0 border-t border-border bg-[#1e1e1e]">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-[#333]">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-[#808080]" />
+                <span className="text-sm font-medium text-[#cccccc]">Output</span>
               </div>
-            ) : output ? (
-              <pre className="text-xs font-mono text-[#4ec9b0] whitespace-pre-wrap">
-                {output}
-              </pre>
-            ) : (
-              <p className="text-xs text-[#808080]">
-                코드를 실행하면 결과가 여기에 표시됩니다.
-              </p>
-            )}
+              {testedCount > 0 && (
+                <Badge
+                  variant={allPassed ? 'default' : 'destructive'}
+                  className="text-xs"
+                >
+                  {passedCount}/{testedCount} Passed
+                </Badge>
+              )}
+            </div>
+            <div className="h-28 overflow-y-auto p-3">
+              {isRunning ? (
+                <div className="flex items-center gap-2 text-sm text-[#808080]">
+                  <Clock className="h-4 w-4 animate-spin" />
+                  실행 중...
+                </div>
+              ) : output ? (
+                <pre className="text-xs font-mono text-[#4ec9b0] whitespace-pre-wrap">
+                  {output}
+                </pre>
+              ) : (
+                <p className="text-xs text-[#808080]">
+                  코드를 실행하면 결과가 여기에 표시됩니다.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Result Banner */}
+        {/* Result Banner - 문제 타입별 결과 표시 */}
+        {/* blank/puzzle: 결과가 있을 때 표시, implementation: 제출 후 표시 */}
         <AnimatePresence>
-          {isSubmitted && (
+          {((problemType === 'blank' && Object.keys(blankResults).length > 0) ||
+            (problemType === 'puzzle' && Object.keys(puzzleResults).length > 0) ||
+            (problemType === 'implementation' && isSubmitted)) && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               className={`shrink-0 px-4 py-3 ${
-                allPassed ? 'bg-green-500/20' : 'bg-red-500/20'
+                problemType === 'blank'
+                  ? Object.values(blankResults).every(r => r)
+                    ? 'bg-green-500/20'
+                    : 'bg-red-500/20'
+                  : problemType === 'puzzle'
+                    ? Object.values(puzzleResults).every(r => r)
+                      ? 'bg-green-500/20'
+                      : 'bg-red-500/20'
+                    : allPassed
+                      ? 'bg-green-500/20'
+                      : 'bg-red-500/20'
               }`}
             >
               <div className="flex items-center gap-3">
-                {allPassed ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-500" />
+                {/* Blank 결과 */}
+                {problemType === 'blank' && (
+                  <>
+                    {Object.values(blankResults).every(r => r) ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <div className="flex flex-col">
+                      <span className={`font-medium ${
+                        Object.values(blankResults).every(r => r) ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        {Object.values(blankResults).every(r => r)
+                          ? '정답입니다!'
+                          : '오답입니다. 다시 확인해주세요.'
+                        }
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {Object.values(blankResults).filter(r => r).length} / {Object.values(blankResults).length} 빈칸 정답
+                      </span>
+                    </div>
+                  </>
                 )}
-                <span className={`font-medium ${allPassed ? 'text-green-500' : 'text-red-500'}`}>
-                  {allPassed ? '모든 테스트 통과!' : '일부 테스트 실패'}
-                </span>
+
+                {/* Puzzle 결과 */}
+                {problemType === 'puzzle' && (
+                  <>
+                    {Object.values(puzzleResults).every(r => r) ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <div className="flex flex-col">
+                      <span className={`font-medium ${
+                        Object.values(puzzleResults).every(r => r) ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        {Object.values(puzzleResults).every(r => r)
+                          ? '정답입니다! 올바른 순서입니다.'
+                          : '오답입니다. 순서를 다시 확인해주세요.'
+                        }
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {Object.values(puzzleResults).filter(r => r).length} / {blocks.length} 블록 정답
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {/* Implementation 결과 */}
+                {problemType === 'implementation' && (
+                  <>
+                    {allPassed ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    <span className={`font-medium ${allPassed ? 'text-green-500' : 'text-red-500'}`}>
+                      {allPassed ? '모든 테스트 통과!' : '일부 테스트 실패'}
+                    </span>
+                  </>
+                )}
               </div>
             </motion.div>
           )}
@@ -1011,22 +1189,34 @@ export function UnifiedPractice({
           </Button>
 
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => runTests(false)}
-              disabled={isRunning || isSubmitted}
-            >
-              <Play className="mr-2 h-4 w-4" />
-              실행
-            </Button>
+            {/* 실행 버튼 - implementation에서만 표시 */}
+            {problemType === 'implementation' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => runTests(false)}
+                disabled={isRunning || isSubmitted}
+              >
+                <Play className="mr-2 h-4 w-4" />
+                실행
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={() => runTests(true)}
               disabled={isRunning || isSubmitted || (problemType === 'blank' && filledCount < totalBlanks)}
             >
-              <Send className="mr-2 h-4 w-4" />
-              제출
+              {problemType === 'implementation' ? (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  제출
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  정답 확인
+                </>
+              )}
             </Button>
           </div>
         </div>

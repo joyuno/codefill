@@ -3,7 +3,7 @@
  */
 
 import { api } from './client';
-import type { User, Badge, ActivityDay, RecentActivity } from '../types';
+import type { Badge, ActivityDay, RecentActivity } from '../types';
 
 export interface UserProfile {
   id: string;
@@ -52,12 +52,31 @@ export interface ActivityData {
   totalDays: number;
 }
 
+// Backend response types (for transformation)
+interface BackendRecentActivity {
+  id: string;
+  type: 'solved' | 'badge' | 'streak' | 'levelup';
+  title: string;
+  description: string;
+  timestamp: string;
+  xp_gained?: number;
+}
+
+interface BackendBadge {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  earnedAt: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+}
+
 export const usersApi = {
   /**
-   * Get current user profile
+   * Get current user profile (mypage optimized)
    */
   async getProfile(): Promise<UserProfile> {
-    const response = await api.get<UserProfile>('/users/me');
+    const response = await api.get<UserProfile>('/users/me/profile');
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -72,21 +91,30 @@ export const usersApi = {
   },
 
   /**
-   * Get user statistics
+   * Get user statistics (mypage optimized)
    */
   async getStats(): Promise<UserStats> {
-    const response = await api.get<UserStats>('/users/me/stats');
+    const response = await api.get<UserStats>('/users/me/mypage-stats');
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
 
   /**
-   * Get user badges
+   * Get user badges (mypage optimized)
    */
   async getBadges(): Promise<Badge[]> {
-    const response = await api.get<Badge[]>('/users/me/badges');
+    const response = await api.get<BackendBadge[]>('/users/me/mypage-badges');
     if (response.error) throw new Error(response.error.message);
-    return response.data!;
+
+    // Transform backend response to frontend Badge type
+    return (response.data || []).map((badge) => ({
+      id: badge.id,
+      name: badge.name,
+      icon: badge.icon,
+      description: badge.description,
+      earnedAt: badge.earnedAt,
+      rarity: badge.rarity,
+    }));
   },
 
   /**
@@ -102,9 +130,18 @@ export const usersApi = {
    * Get recent activity
    */
   async getRecentActivity(limit: number = 10): Promise<RecentActivity[]> {
-    const response = await api.get<RecentActivity[]>(`/users/me/recent?limit=${limit}`);
+    const response = await api.get<BackendRecentActivity[]>(`/users/me/recent?limit=${limit}`);
     if (response.error) throw new Error(response.error.message);
-    return response.data!;
+
+    // Transform backend response to frontend RecentActivity type
+    return (response.data || []).map((activity) => ({
+      id: activity.id,
+      type: activity.type,
+      title: activity.title,
+      description: activity.description,
+      timestamp: activity.timestamp,
+      xpGained: activity.xp_gained,
+    }));
   },
 
   /**

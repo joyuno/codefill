@@ -11,12 +11,10 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
-import { GuidedPractice } from '@/components/practice/types/GuidedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 
 import { practiceApi } from '@/lib/api';
-import type { Problem, ProblemType } from '@/lib/types';
-import { mockProblems } from '@/lib/mockData';
+import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 
 const difficultyColors = {
   easy: 'bg-primary/20 text-primary border-primary/30',
@@ -28,7 +26,7 @@ export default function ChatPage() {
   const { toast } = useToast();
 
   // Current problem state
-  const [problem, setProblem] = useState<Problem | null>(null);
+  const [problem, setProblem] = useState<ConvertedProblem | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [xpEarned, setXpEarned] = useState(0);
 
@@ -61,13 +59,14 @@ export default function ChatPage() {
   }, []);
 
   // Handle problem selection from chat
-  const handleProblemSelect = useCallback((selectedProblem: Problem) => {
+  const handleProblemSelect = useCallback((selectedProblem: ConvertedProblem) => {
     setProblem(selectedProblem);
     setIsSubmitted(false);
     setXpEarned(0);
     setBlankResults({});
     setPuzzleResults({});
-    setHints(selectedProblem.blanks?.[0]?.hints || []);
+    // keyConcepts를 힌트로 사용
+    setHints(selectedProblem.keyConcepts || []);
   }, []);
 
   // Hint request handler
@@ -147,23 +146,6 @@ export default function ChatPage() {
     [problem, toast]
   );
 
-  // Guided complete handler
-  const handleGuidedComplete = useCallback(
-    (responses: any[]) => {
-      const correctCount = responses.filter((r) => r.correct).length;
-      const score = Math.round((correctCount / responses.length) * 100);
-      const baseXp = 100;
-      const earned = Math.round((score / 100) * baseXp);
-      setXpEarned(earned);
-      setIsSubmitted(true);
-      toast({
-        title: '1대1 대화형 학습 완료!',
-        description: `+${earned} XP`,
-      });
-    },
-    [toast]
-  );
-
   // Implementation submit handler
   const handleImplementationSubmit = useCallback(
     (code: string, results: any[]) => {
@@ -194,24 +176,7 @@ export default function ChatPage() {
       );
     }
 
-    // Guided는 별도 컴포넌트 유지
-    if (problem.problemType === 'guided') {
-      return problem.guidedData ? (
-        <GuidedPractice
-          data={problem.guidedData}
-          onComplete={handleGuidedComplete}
-          onHintRequest={(step) => handleHintRequest(step)}
-          onSkip={(step) => {
-            toast({
-              title: `Step ${step} 건너뜀`,
-              description: 'XP가 차감됩니다',
-            });
-          }}
-        />
-      ) : null;
-    }
-
-    // Blank, Puzzle, Implementation은 통합 컴포넌트 사용
+    // Blank, Puzzle, Implementation - 통합 컴포넌트 사용
     return (
       <UnifiedPractice
         problem={problem}

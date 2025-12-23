@@ -14,6 +14,8 @@ import {
   CharacterPixel,
   ItemPixel,
   TilePixel,
+  CropType,
+  CROP_INFO,
 } from '@/components/farm/PixelSprites';
 import {
   Leaf,
@@ -23,6 +25,13 @@ import {
   Package,
   ChevronRight,
   ArrowLeft,
+  TrendingUp,
+  X,
+  Plus,
+  Minus,
+  Home,
+  Coins,
+  Expand,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -42,8 +51,14 @@ interface CharacterData {
 interface Crop {
   id: string;
   stage: 0 | 1 | 2 | 3 | 4;
-  type: 'tomato' | 'wheat' | 'corn' | 'carrot' | 'turnip';
+  type: CropType;
   harvestXp?: number;
+  plantedAt?: number;
+}
+
+// Seed inventory
+interface SeedInventory {
+  [key: string]: number;
 }
 
 // Farm state
@@ -53,13 +68,14 @@ interface FarmState {
   houseLevel: 1 | 2 | 3 | 4;
   totalXp: number;
   level: number;
-  inventory: {
-    seeds: number;
-    fertilizer: number;
-    harvested: number;
-    coins: number;
-  };
+  gold: number;
+  seeds: SeedInventory;
+  farmSize: number; // Number of plots unlocked
+  harvested: { [key: string]: number }; // Harvested crops count
 }
+
+type BottomTab = 'seeds' | 'market' | 'shop';
+type ModalType = 'none' | 'seeds' | 'market' | 'shop' | 'expand';
 
 const HOUSE_LEVELS = [
   { level: 1, name: '초가집', xpRequired: 0 },
@@ -70,18 +86,36 @@ const HOUSE_LEVELS = [
 
 const STAGE_LABELS = ['빈 땅', '씨앗', '새싹', '성장 중', '수확!'];
 
-const CROP_TYPES: Array<'tomato' | 'wheat' | 'corn' | 'carrot' | 'turnip'> = [
-  'tomato', 'wheat', 'corn', 'carrot', 'turnip'
+const ALL_CROP_TYPES: CropType[] = [
+  'carrot', 'tomato', 'corn', 'strawberry', 'grape', 'potato', 'wheat', 'turnip', 'pumpkin', 'watermelon'
 ];
 
-const initialCrops: Crop[] = Array(9)
-  .fill(null)
-  .map((_, i) => ({
-    id: `crop-${i}`,
-    stage: (i < 3 ? 4 : i < 5 ? 3 : i < 7 ? 2 : 0) as 0 | 1 | 2 | 3 | 4,
-    type: CROP_TYPES[i % CROP_TYPES.length],
-    harvestXp: i < 3 ? 50 : undefined,
-  }));
+// Market price fluctuation (random multiplier)
+const getMarketMultiplier = () => {
+  const multipliers = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5];
+  return multipliers[Math.floor(Math.random() * multipliers.length)];
+};
+
+// Initial crops setup
+const createInitialCrops = (size: number): Crop[] => {
+  return Array(size)
+    .fill(null)
+    .map((_, i) => ({
+      id: `crop-${i}`,
+      stage: (i < 3 ? 4 : i < 5 ? 3 : i < 7 ? 2 : 0) as 0 | 1 | 2 | 3 | 4,
+      type: ALL_CROP_TYPES[i % ALL_CROP_TYPES.length],
+      harvestXp: i < 3 ? 50 : undefined,
+    }));
+};
+
+// Initial seeds
+const createInitialSeeds = (): SeedInventory => {
+  const seeds: SeedInventory = {};
+  ALL_CROP_TYPES.forEach(type => {
+    seeds[type] = Math.floor(Math.random() * 5) + 2;
+  });
+  return seeds;
+};
 
 // Hair color mapping
 const HAIR_COLORS: Record<string, string> = {
@@ -103,23 +137,43 @@ const CLOTHES_COLORS: Record<string, string> = {
   pink: '#e91e8a',
 };
 
+// Farm expansion costs
+const EXPANSION_COSTS = [
+  { size: 9, cost: 0, name: '기본 농장' },
+  { size: 12, cost: 500, name: '작은 확장' },
+  { size: 16, cost: 1500, name: '중간 확장' },
+  { size: 20, cost: 3000, name: '큰 확장' },
+  { size: 25, cost: 6000, name: '최대 확장' },
+];
+
 export default function FarmPage() {
   const router = useRouter();
   const [farmState, setFarmState] = useState<FarmState>({
     character: null,
-    crops: initialCrops,
+    crops: createInitialCrops(9),
     houseLevel: 1,
     totalXp: 450,
-    level: 5,
-    inventory: {
-      seeds: 10,
-      fertilizer: 3,
-      harvested: 25,
-      coins: 150,
-    },
+    level: 15,
+    gold: 1250,
+    seeds: createInitialSeeds(),
+    farmSize: 9,
+    harvested: {},
   });
   const [harvestAnimation, setHarvestAnimation] = useState<string | null>(null);
   const [selectedCrop, setSelectedCrop] = useState<string | null>(null);
+  const [activeModal, setActiveModal] = useState<ModalType>('none');
+  const [selectedSeedType, setSelectedSeedType] = useState<CropType>('carrot');
+  const [marketPrices, setMarketPrices] = useState<Record<CropType, number>>({} as Record<CropType, number>);
+  const [shopQuantity, setShopQuantity] = useState(1);
+
+  // Initialize market prices
+  useEffect(() => {
+    const prices: Record<CropType, number> = {} as Record<CropType, number>;
+    ALL_CROP_TYPES.forEach(type => {
+      prices[type] = Math.round(CROP_INFO[type].sellPrice * getMarketMultiplier());
+    });
+    setMarketPrices(prices);
+  }, []);
 
   // Check if character exists
   useEffect(() => {
@@ -140,6 +194,8 @@ export default function FarmPage() {
     const crop = farmState.crops.find((c) => c.id === cropId);
     if (!crop || crop.stage !== 4) return;
 
+    const sellPrice = marketPrices[crop.type] || CROP_INFO[crop.type].sellPrice;
+
     setHarvestAnimation(cropId);
     setTimeout(() => {
       setHarvestAnimation(null);
@@ -149,30 +205,68 @@ export default function FarmPage() {
           c.id === cropId ? { ...c, stage: 0 as const } : c
         ),
         totalXp: prev.totalXp + (crop.harvestXp || 50),
-        inventory: {
-          ...prev.inventory,
-          harvested: prev.inventory.harvested + 1,
-          coins: prev.inventory.coins + 10,
+        gold: prev.gold + sellPrice,
+        harvested: {
+          ...prev.harvested,
+          [crop.type]: (prev.harvested[crop.type] || 0) + 1,
         },
       }));
     }, 600);
   };
 
   const handlePlant = (cropId: string) => {
-    if (farmState.inventory.seeds <= 0) return;
+    if (!farmState.seeds[selectedSeedType] || farmState.seeds[selectedSeedType] <= 0) return;
 
     setFarmState((prev) => ({
       ...prev,
       crops: prev.crops.map((c) =>
         c.id === cropId && c.stage === 0
-          ? { ...c, stage: 1 as const, type: CROP_TYPES[Math.floor(Math.random() * CROP_TYPES.length)] }
+          ? { ...c, stage: 1 as const, type: selectedSeedType, plantedAt: Date.now() }
           : c
       ),
-      inventory: {
-        ...prev.inventory,
-        seeds: prev.inventory.seeds - 1,
+      seeds: {
+        ...prev.seeds,
+        [selectedSeedType]: prev.seeds[selectedSeedType] - 1,
       },
     }));
+  };
+
+  const handleBuySeed = (type: CropType, quantity: number) => {
+    const cost = CROP_INFO[type].buyPrice * quantity;
+    if (farmState.gold < cost) return;
+
+    setFarmState((prev) => ({
+      ...prev,
+      gold: prev.gold - cost,
+      seeds: {
+        ...prev.seeds,
+        [type]: (prev.seeds[type] || 0) + quantity,
+      },
+    }));
+  };
+
+  const handleExpandFarm = () => {
+    const currentExpansion = EXPANSION_COSTS.find(e => e.size === farmState.farmSize);
+    const nextExpansion = EXPANSION_COSTS.find(e => e.size > farmState.farmSize);
+
+    if (!nextExpansion || farmState.gold < nextExpansion.cost) return;
+
+    setFarmState((prev) => ({
+      ...prev,
+      gold: prev.gold - nextExpansion.cost,
+      farmSize: nextExpansion.size,
+      crops: [
+        ...prev.crops,
+        ...Array(nextExpansion.size - prev.crops.length)
+          .fill(null)
+          .map((_, i) => ({
+            id: `crop-${prev.crops.length + i}`,
+            stage: 0 as const,
+            type: ALL_CROP_TYPES[i % ALL_CROP_TYPES.length],
+          })),
+      ],
+    }));
+    setActiveModal('none');
   };
 
   const currentHouse = HOUSE_LEVELS.find((h) => h.level === farmState.houseLevel) || HOUSE_LEVELS[0];
@@ -184,6 +278,8 @@ export default function FarmPage() {
     : 100;
 
   const readyCrops = farmState.crops.filter((c) => c.stage === 4).length;
+  const totalSeeds = Object.values(farmState.seeds).reduce((a, b) => a + b, 0);
+  const nextExpansion = EXPANSION_COSTS.find(e => e.size > farmState.farmSize);
 
   // Loading state
   if (!farmState.character) {
@@ -202,8 +298,15 @@ export default function FarmPage() {
   const hairColor = HAIR_COLORS[farmState.character.appearance.color] || HAIR_COLORS.brown;
   const clothesColor = CLOTHES_COLORS[farmState.character.appearance.color] || CLOTHES_COLORS.blue;
 
+  // Calculate grid columns based on farm size
+  const getGridCols = () => {
+    if (farmState.farmSize <= 9) return 3;
+    if (farmState.farmSize <= 16) return 4;
+    return 5;
+  };
+
   return (
-    <div className="min-h-screen bg-[#5a9f4a]">
+    <div className="min-h-screen bg-[#5a9f4a] pb-24">
       <Header />
       <TopNav />
 
@@ -235,7 +338,7 @@ export default function FarmPage() {
           ))}
         </div>
 
-        <div className="container mx-auto max-w-5xl p-4 md:p-6 relative z-10">
+        <div className="container mx-auto max-w-4xl p-4 md:p-6 relative z-10">
           {/* Back Button */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -279,7 +382,7 @@ export default function FarmPage() {
                   whileHover={{ scale: 1.05 }}
                 >
                   <CharacterPixel
-                    hairStyle={farmState.character.appearance.hair as any}
+                    hairStyle={farmState.character.appearance.hair as 'short' | 'long' | 'curly' | 'spiky'}
                     hairColor={hairColor}
                     clothesColor={clothesColor}
                     size={56}
@@ -287,290 +390,464 @@ export default function FarmPage() {
                 </motion.div>
                 <div>
                   <h1 className="text-xl md:text-2xl font-bold text-amber-900">
-                    {farmState.character.farmName}
+                    나의 농장
                   </h1>
                   <div className="flex items-center gap-3 text-sm text-amber-800">
                     <span className="flex items-center gap-1 font-medium">
+                      <Coins className="h-4 w-4 text-yellow-600" />
+                      <span className="font-bold text-yellow-700">{farmState.gold.toLocaleString()}G</span>
+                    </span>
+                    <span className="text-amber-600">|</span>
+                    <span className="flex items-center gap-1">
                       <Leaf className="h-4 w-4 text-green-600" />
-                      Lv.{farmState.level} 농부
-                    </span>
-                    <span className="text-amber-600">|</span>
-                    <span className="flex items-center gap-1">
-                      <ItemPixel type="coin" size={16} />
-                      <span className="font-bold text-yellow-700">{farmState.inventory.coins}</span>
-                    </span>
-                    <span className="text-amber-600">|</span>
-                    <span className="flex items-center gap-1">
-                      <Sparkles className="h-4 w-4 text-purple-500" />
-                      <span className="font-bold text-purple-700">{farmState.totalXp} XP</span>
+                      <span className="font-bold text-green-700">Lv.{farmState.level}</span>
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Quick Actions */}
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    'bg-green-100 hover:bg-green-200 text-green-900',
-                    'border-3 border-green-700 shadow-[2px_2px_0_0_#166534]',
-                    'transition-transform hover:translate-y-[-1px]'
-                  )}
-                >
-                  <ShoppingBag className="h-4 w-4 mr-1" />
-                  상점
-                </Button>
-              </div>
+              {/* House */}
+              <motion.div
+                className="flex flex-col items-center"
+                whileHover={{ scale: 1.05 }}
+              >
+                <HousePixel level={farmState.houseLevel} size={64} />
+                <span className="text-xs font-bold text-amber-800 mt-1">{currentHouse.name}</span>
+              </motion.div>
             </div>
           </motion.div>
 
-          <div className="grid gap-6 lg:grid-cols-3">
-            {/* Main Farm Area */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* House Display */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className={cn(
-                  'p-6 rounded-lg text-center',
-                  'bg-gradient-to-b from-sky-300 to-sky-400',
-                  'border-4 border-sky-700',
-                  'shadow-[4px_4px_0_0_#0369a1]'
+          {/* Main Farm Grid */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className={cn(
+              'p-4 rounded-lg relative',
+              'bg-gradient-to-b from-amber-700 to-amber-800',
+              'border-4 border-amber-900',
+              'shadow-[4px_4px_0_0_#451a03]'
+            )}
+          >
+            {/* Farm Grid Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="flex items-center gap-2 font-bold text-amber-100 text-lg">
+                <Sprout className="h-5 w-5" />
+                농작물
+              </h2>
+              <div className="flex gap-2">
+                {readyCrops > 0 && (
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                  >
+                    <Badge className="bg-yellow-400 text-yellow-900 border-2 border-yellow-600 gap-1 font-bold">
+                      <Sparkles className="h-3 w-3" />
+                      {readyCrops}개 수확 가능!
+                    </Badge>
+                  </motion.div>
                 )}
-              >
-                {/* Sky background decoration */}
-                <div className="absolute top-2 left-4 w-8 h-4 bg-white/50 rounded-full" />
-                <div className="absolute top-4 right-8 w-12 h-5 bg-white/40 rounded-full" />
+                {nextExpansion && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveModal('expand')}
+                    className="bg-green-100 hover:bg-green-200 text-green-900 border-2 border-green-700"
+                  >
+                    <Expand className="h-3 w-3 mr-1" />
+                    확장
+                  </Button>
+                )}
+              </div>
+            </div>
 
+            {/* Crop Grid */}
+            <div
+              className="grid gap-2"
+              style={{ gridTemplateColumns: `repeat(${getGridCols()}, 1fr)` }}
+            >
+              {farmState.crops.map((crop, index) => (
                 <motion.div
-                  initial={{ scale: 0, rotate: -10 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
-                  className="mb-4 flex justify-center"
+                  key={crop.id}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.03 * index }}
+                  className="relative"
                 >
-                  <HousePixel level={farmState.houseLevel} size={120} />
-                </motion.div>
-                <p className="font-bold text-sky-900 text-lg">{currentHouse.name}</p>
+                  <motion.button
+                    type="button"
+                    onClick={() => {
+                      if (crop.stage === 4) handleHarvest(crop.id);
+                      else if (crop.stage === 0) handlePlant(crop.id);
+                    }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={cn(
+                      'w-full aspect-square rounded-lg flex flex-col items-center justify-center',
+                      'border-4 transition-all relative overflow-hidden',
+                      crop.stage === 4
+                        ? 'bg-gradient-to-b from-yellow-200 to-yellow-300 border-yellow-500 cursor-pointer shadow-[3px_3px_0_0_#854d0e]'
+                        : crop.stage === 0
+                          ? 'bg-amber-600/80 border-amber-700 border-dashed hover:bg-amber-500 cursor-pointer'
+                          : 'bg-amber-600 border-amber-700'
+                    )}
+                  >
+                    {/* Show emoji for crops */}
+                    <span className="text-2xl md:text-3xl">
+                      {crop.stage === 0 ? '🌱' : CROP_INFO[crop.type].emoji}
+                    </span>
+                    <span className={cn(
+                      'text-[10px] md:text-xs font-bold mt-1',
+                      crop.stage === 4 ? 'text-yellow-800' : 'text-amber-200'
+                    )}>
+                      {crop.stage === 0 ? '심기' : crop.stage === 4 ? `+${marketPrices[crop.type] || CROP_INFO[crop.type].sellPrice}G` : STAGE_LABELS[crop.stage]}
+                    </span>
+                  </motion.button>
 
-                {/* Upgrade Progress */}
-                {nextHouse && (
-                  <div className="mt-4 mx-auto max-w-xs">
-                    <div className="flex items-center justify-between text-xs text-sky-800 mb-1 font-medium">
-                      <span>다음: {nextHouse.name}</span>
-                      <span>
-                        {farmState.totalXp} / {nextHouse.xpRequired} XP
-                      </span>
-                    </div>
-                    <div className="h-4 bg-sky-200 rounded-lg border-2 border-sky-600 overflow-hidden">
+                  {/* Harvest animation */}
+                  <AnimatePresence>
+                    {harvestAnimation === crop.id && (
                       <motion.div
-                        className="h-full bg-gradient-to-r from-yellow-400 to-yellow-500"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${xpProgress}%` }}
-                        transition={{ duration: 0.5, delay: 0.5 }}
-                      />
+                        initial={{ opacity: 1, y: 0, scale: 1 }}
+                        animate={{ opacity: 0, y: -40, scale: 1.5 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                      >
+                        <span className="text-2xl font-bold text-yellow-400 drop-shadow-lg">
+                          +{marketPrices[crop.type] || CROP_INFO[crop.type].sellPrice}G!
+                        </span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              ))}
+
+              {/* Expansion placeholder slots */}
+              {nextExpansion && Array(Math.min(4, nextExpansion.size - farmState.farmSize)).fill(null).map((_, i) => (
+                <motion.button
+                  key={`expand-${i}`}
+                  onClick={() => setActiveModal('expand')}
+                  className={cn(
+                    'w-full aspect-square rounded-lg flex flex-col items-center justify-center',
+                    'border-4 border-dashed border-amber-500/50 bg-amber-700/30',
+                    'hover:bg-amber-600/50 cursor-pointer transition-all'
+                  )}
+                  whileHover={{ scale: 1.05 }}
+                >
+                  <Plus className="h-6 w-6 text-amber-300/70" />
+                  <span className="text-[10px] text-amber-300/70 mt-1">확장</span>
+                </motion.button>
+              ))}
+            </div>
+
+            <p className="mt-4 text-xs text-center text-amber-200">
+              선택된 씨앗: {CROP_INFO[selectedSeedType].emoji} {CROP_INFO[selectedSeedType].name} ({farmState.seeds[selectedSeedType] || 0}개)
+            </p>
+          </motion.div>
+
+          {/* Character on farm */}
+          <motion.div
+            className="absolute bottom-32 right-8 md:right-16"
+            animate={{ y: [0, -5, 0] }}
+            transition={{ repeat: Infinity, duration: 2 }}
+          >
+            <div className="text-4xl md:text-5xl">👨‍🌾</div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Bottom Tab Bar */}
+      <motion.div
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        className={cn(
+          'fixed bottom-0 left-0 right-0 z-50',
+          'bg-amber-100 border-t-4 border-amber-800',
+          'shadow-[0_-4px_0_0_#78350f]'
+        )}
+      >
+        <div className="container mx-auto max-w-4xl">
+          <div className="grid grid-cols-3 gap-1 p-2">
+            {/* Seeds Tab */}
+            <motion.button
+              onClick={() => setActiveModal('seeds')}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className={cn(
+                'flex flex-col items-center gap-1 py-3 px-4 rounded-lg',
+                'bg-green-100 hover:bg-green-200 border-3 border-green-700',
+                'shadow-[2px_2px_0_0_#166534] transition-all'
+              )}
+            >
+              <span className="text-xl">🌱</span>
+              <span className="text-xs font-bold text-green-900">씨앗</span>
+              <Badge className="text-[10px] bg-green-600 text-white px-1.5">{totalSeeds}</Badge>
+            </motion.button>
+
+            {/* Market Tab */}
+            <motion.button
+              onClick={() => setActiveModal('market')}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className={cn(
+                'flex flex-col items-center gap-1 py-3 px-4 rounded-lg',
+                'bg-blue-100 hover:bg-blue-200 border-3 border-blue-700',
+                'shadow-[2px_2px_0_0_#1d4ed8] transition-all'
+              )}
+            >
+              <TrendingUp className="h-5 w-5 text-blue-700" />
+              <span className="text-xs font-bold text-blue-900">시세</span>
+            </motion.button>
+
+            {/* Shop Tab */}
+            <motion.button
+              onClick={() => setActiveModal('shop')}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className={cn(
+                'flex flex-col items-center gap-1 py-3 px-4 rounded-lg',
+                'bg-yellow-100 hover:bg-yellow-200 border-3 border-yellow-700',
+                'shadow-[2px_2px_0_0_#a16207] transition-all'
+              )}
+            >
+              <ShoppingBag className="h-5 w-5 text-yellow-700" />
+              <span className="text-xs font-bold text-yellow-900">상점</span>
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Modal Overlays */}
+      <AnimatePresence>
+        {activeModal !== 'none' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center"
+            onClick={() => setActiveModal('none')}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25 }}
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                'w-full max-w-2xl max-h-[70vh] overflow-y-auto',
+                'bg-amber-50 rounded-t-2xl border-t-4 border-x-4 border-amber-800',
+                'shadow-[0_-4px_0_0_#78350f]'
+              )}
+            >
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-amber-100 p-4 border-b-2 border-amber-300 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-amber-900 flex items-center gap-2">
+                  {activeModal === 'seeds' && <><span className="text-xl">🌱</span> 씨앗 보관함</>}
+                  {activeModal === 'market' && <><TrendingUp className="h-5 w-5" /> 시장 시세</>}
+                  {activeModal === 'shop' && <><ShoppingBag className="h-5 w-5" /> 상점</>}
+                  {activeModal === 'expand' && <><Expand className="h-5 w-5" /> 농장 확장</>}
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setActiveModal('none')}
+                  className="text-amber-700 hover:text-amber-900"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-4">
+                {/* Seeds Modal */}
+                {activeModal === 'seeds' && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {ALL_CROP_TYPES.map((type) => (
+                      <motion.button
+                        key={type}
+                        onClick={() => {
+                          setSelectedSeedType(type);
+                          setActiveModal('none');
+                        }}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={cn(
+                          'p-3 rounded-lg border-3 flex items-center gap-3',
+                          selectedSeedType === type
+                            ? 'bg-green-100 border-green-600'
+                            : 'bg-white border-amber-300 hover:border-amber-500'
+                        )}
+                      >
+                        <span className="text-2xl">{CROP_INFO[type].emoji}</span>
+                        <div className="text-left">
+                          <p className="font-bold text-amber-900">{CROP_INFO[type].name}</p>
+                          <p className="text-xs text-amber-600">{farmState.seeds[type] || 0}개</p>
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Market Modal */}
+                {activeModal === 'market' && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-amber-700 mb-4">시장 시세는 매일 변동됩니다!</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {ALL_CROP_TYPES.map((type) => {
+                        const basePrice = CROP_INFO[type].sellPrice;
+                        const currentPrice = marketPrices[type] || basePrice;
+                        const change = ((currentPrice - basePrice) / basePrice) * 100;
+                        const isUp = change > 0;
+                        const isDown = change < 0;
+
+                        return (
+                          <div
+                            key={type}
+                            className={cn(
+                              'p-3 rounded-lg border-3 flex items-center justify-between',
+                              isUp ? 'bg-red-50 border-red-300' : isDown ? 'bg-blue-50 border-blue-300' : 'bg-white border-amber-300'
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">{CROP_INFO[type].emoji}</span>
+                              <span className="font-bold text-amber-900">{CROP_INFO[type].name}</span>
+                            </div>
+                            <div className="text-right">
+                              <p className={cn(
+                                'font-bold',
+                                isUp ? 'text-red-600' : isDown ? 'text-blue-600' : 'text-amber-900'
+                              )}>
+                                {currentPrice}G
+                              </p>
+                              {change !== 0 && (
+                                <p className={cn(
+                                  'text-xs',
+                                  isUp ? 'text-red-500' : 'text-blue-500'
+                                )}>
+                                  {isUp ? '▲' : '▼'} {Math.abs(change).toFixed(0)}%
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
-              </motion.div>
 
-              {/* Crop Grid */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className={cn(
-                  'p-4 rounded-lg',
-                  'bg-gradient-to-b from-amber-700 to-amber-800',
-                  'border-4 border-amber-900',
-                  'shadow-[4px_4px_0_0_#451a03]'
+                {/* Shop Modal */}
+                {activeModal === 'shop' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3 bg-yellow-100 rounded-lg border-2 border-yellow-400">
+                      <span className="font-bold text-yellow-900">보유 골드</span>
+                      <span className="font-bold text-yellow-700 text-lg">{farmState.gold.toLocaleString()}G</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {ALL_CROP_TYPES.map((type) => (
+                        <div
+                          key={type}
+                          className="p-3 rounded-lg border-3 bg-white border-amber-300"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xl">{CROP_INFO[type].emoji}</span>
+                              <div>
+                                <p className="font-bold text-amber-900">{CROP_INFO[type].name} 씨앗</p>
+                                <p className="text-xs text-amber-600">{CROP_INFO[type].buyPrice}G / 개</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleBuySeed(type, 1)}
+                              disabled={farmState.gold < CROP_INFO[type].buyPrice}
+                              className="flex-1 border-2 border-green-600 text-green-700 hover:bg-green-100"
+                            >
+                              1개 구매
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleBuySeed(type, 5)}
+                              disabled={farmState.gold < CROP_INFO[type].buyPrice * 5}
+                              className="flex-1 border-2 border-green-600 text-green-700 hover:bg-green-100"
+                            >
+                              5개 구매
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="flex items-center gap-2 font-bold text-amber-100 text-lg">
-                    <Sprout className="h-5 w-5" />
-                    농작물
-                  </h2>
-                  {readyCrops > 0 && (
-                    <motion.div
-                      animate={{ scale: [1, 1.1, 1] }}
-                      transition={{ repeat: Infinity, duration: 1.5 }}
-                    >
-                      <Badge className="bg-yellow-400 text-yellow-900 border-2 border-yellow-600 gap-1 font-bold">
-                        <Sparkles className="h-3 w-3" />
-                        {readyCrops}개 수확 가능!
-                      </Badge>
-                    </motion.div>
-                  )}
-                </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  {farmState.crops.map((crop, index) => (
-                    <motion.div
-                      key={crop.id}
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.05 * index }}
-                      className="relative"
-                    >
-                      <motion.button
-                        type="button"
-                        onClick={() => {
-                          if (crop.stage === 4) handleHarvest(crop.id);
-                          else if (crop.stage === 0) handlePlant(crop.id);
-                        }}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                {/* Expand Modal */}
+                {activeModal === 'expand' && nextExpansion && (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-50 rounded-lg border-2 border-green-300">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <p className="font-bold text-green-900">{nextExpansion.name}</p>
+                          <p className="text-sm text-green-700">농장 크기: {farmState.farmSize} → {nextExpansion.size} 칸</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-yellow-700 text-lg">{nextExpansion.cost.toLocaleString()}G</p>
+                          <p className="text-xs text-amber-600">필요 골드</p>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleExpandFarm}
+                        disabled={farmState.gold < nextExpansion.cost}
                         className={cn(
-                          'w-full aspect-square rounded-lg flex flex-col items-center justify-center gap-1',
-                          'border-4 transition-all',
-                          crop.stage === 4
-                            ? 'bg-gradient-to-b from-yellow-200 to-yellow-300 border-yellow-500 cursor-pointer shadow-[3px_3px_0_0_#854d0e]'
-                            : crop.stage === 0
-                              ? 'bg-amber-600/80 border-amber-700 border-dashed hover:bg-amber-500 cursor-pointer'
-                              : 'bg-amber-600 border-amber-700'
+                          'w-full',
+                          farmState.gold >= nextExpansion.cost
+                            ? 'bg-green-600 hover:bg-green-700 text-white'
+                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         )}
                       >
-                        <CropPixel
-                          stage={crop.stage}
-                          type={crop.type}
-                          size={48}
-                        />
-                        <span className={cn(
-                          'text-xs font-bold',
-                          crop.stage === 4 ? 'text-yellow-800' : 'text-amber-200'
-                        )}>
-                          {STAGE_LABELS[crop.stage]}
-                        </span>
-                        {crop.stage === 4 && (
-                          <span className="text-xs font-bold text-green-700 flex items-center gap-1">
-                            +50 XP
-                          </span>
-                        )}
-                      </motion.button>
-
-                      {/* Harvest animation */}
-                      <AnimatePresence>
-                        {harvestAnimation === crop.id && (
-                          <motion.div
-                            initial={{ opacity: 1, y: 0, scale: 1 }}
-                            animate={{ opacity: 0, y: -40, scale: 1.5 }}
-                            exit={{ opacity: 0 }}
-                            className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                          >
-                            <span className="text-2xl font-bold text-yellow-400 drop-shadow-lg">
-                              +50!
-                            </span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  ))}
-                </div>
-
-                <p className="mt-4 text-xs text-center text-amber-200">
-                  문제를 풀면 작물이 자라요! 수확하면 XP와 코인을 얻을 수 있어요.
-                </p>
-              </motion.div>
-            </div>
-
-            {/* Sidebar */}
-            <div className="space-y-6">
-              {/* Inventory */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3 }}
-                className={cn(
-                  'p-4 rounded-lg',
-                  'bg-stone-100 border-4 border-stone-600',
-                  'shadow-[4px_4px_0_0_#44403c]'
-                )}
-              >
-                <h3 className="flex items-center gap-2 font-bold text-stone-800 mb-3">
-                  <Package className="h-4 w-4" />
-                  인벤토리
-                </h3>
-                <div className="space-y-2">
-                  {[
-                    { type: 'seed' as const, label: '씨앗', count: farmState.inventory.seeds },
-                    { type: 'fertilizer' as const, label: '비료', count: farmState.inventory.fertilizer },
-                    { type: 'harvest' as const, label: '수확물', count: farmState.inventory.harvested },
-                    { type: 'coin' as const, label: '코인', count: farmState.inventory.coins },
-                  ].map((item) => (
-                    <div
-                      key={item.type}
-                      className="flex items-center justify-between p-2 bg-white rounded-lg border-2 border-stone-300"
-                    >
-                      <span className="flex items-center gap-2">
-                        <ItemPixel type={item.type} size={24} />
-                        <span className="text-sm font-medium text-stone-700">{item.label}</span>
-                      </span>
-                      <span className="font-bold text-stone-800 bg-stone-200 px-2 py-0.5 rounded">
-                        {item.count}
-                      </span>
+                        {farmState.gold >= nextExpansion.cost ? '확장하기' : '골드 부족'}
+                      </Button>
                     </div>
-                  ))}
-                </div>
-              </motion.div>
 
-              {/* Quick Actions */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.4 }}
-                className={cn(
-                  'p-4 rounded-lg',
-                  'bg-green-100 border-4 border-green-700',
-                  'shadow-[4px_4px_0_0_#166534]'
+                    <div className="space-y-2">
+                      <p className="text-sm font-bold text-amber-800">확장 단계</p>
+                      {EXPANSION_COSTS.map((exp, i) => (
+                        <div
+                          key={exp.size}
+                          className={cn(
+                            'p-2 rounded-lg border-2 flex items-center justify-between',
+                            exp.size <= farmState.farmSize
+                              ? 'bg-green-100 border-green-400'
+                              : exp.size === nextExpansion.size
+                                ? 'bg-yellow-50 border-yellow-400'
+                                : 'bg-gray-50 border-gray-300'
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            {exp.size <= farmState.farmSize && <span className="text-green-600">✓</span>}
+                            <span className={cn(
+                              'font-medium',
+                              exp.size <= farmState.farmSize ? 'text-green-800' : 'text-gray-600'
+                            )}>
+                              {exp.name}
+                            </span>
+                          </div>
+                          <span className="text-sm text-amber-600">
+                            {exp.size}칸 {exp.cost > 0 && `(${exp.cost.toLocaleString()}G)`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-              >
-                <h3 className="font-bold text-green-900 mb-3">빠른 행동</h3>
-                <Link href="/chat">
-                  <Button
-                    className={cn(
-                      'w-full justify-between',
-                      'bg-green-500 hover:bg-green-600 text-white',
-                      'border-4 border-green-700 shadow-[3px_3px_0_0_#15803d]',
-                      'transition-transform hover:translate-y-[-2px]'
-                    )}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4" />
-                      문제 풀러 가기
-                    </span>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </Link>
-              </motion.div>
-
-              {/* Tips */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.5 }}
-                className={cn(
-                  'p-4 rounded-lg',
-                  'bg-blue-100 border-4 border-blue-600',
-                  'shadow-[4px_4px_0_0_#1d4ed8]'
-                )}
-              >
-                <p className="text-sm font-bold mb-2 flex items-center gap-2 text-blue-900">
-                  <Leaf className="h-4 w-4" />
-                  농장 팁
-                </p>
-                <ul className="text-xs text-blue-800 space-y-1">
-                  <li>• 문제를 풀면 작물이 한 단계씩 성장해요</li>
-                  <li>• 연속으로 문제를 풀면 보너스 성장!</li>
-                  <li>• XP를 모아 집을 업그레이드하세요</li>
-                </ul>
-              </motion.div>
-            </div>
-          </div>
-        </div>
-      </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

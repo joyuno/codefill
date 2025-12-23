@@ -14,6 +14,10 @@ from ..models.user import (
     UpdateUserRequest,
     UpdatePreferencesRequest,
     DailyActivity,
+    RecentActivity,
+    MypageProfile,
+    MypageStats,
+    MypageBadge,
 )
 
 router = APIRouter()
@@ -312,4 +316,228 @@ async def get_user_activity(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get activity: {str(e)}"
+        )
+
+
+@router.get("/me/recent", response_model=List[RecentActivity])
+async def get_recent_activity(
+    limit: int = 10,
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """Get current user's recent activity for mypage."""
+    try:
+        from datetime import datetime
+        activities = []
+
+        # 1. Get recent solved problems from attempts
+        attempts_result = db.table("attempts")\
+            .select("id, problem_id, is_correct, xp_earned, submitted_at, problems(code_id, problem_type, codes(title))")\
+            .eq("user_id", str(user_id))\
+            .eq("is_correct", True)\
+            .order("submitted_at", desc=True)\
+            .limit(limit)\
+            .execute()
+
+        for attempt in (attempts_result.data or []):
+            problem = attempt.get("problems", {})
+            code = problem.get("codes", {}) if problem else {}
+            title = code.get("title", "Problem") if code else "Problem"
+            problem_type = problem.get("problem_type", "blank") if problem else "blank"
+
+            activities.append(RecentActivity(
+                id=attempt["id"],
+                type="solved",
+                title=f"Solved: {title}",
+                description=f"{problem_type.capitalize()} problem completed",
+                timestamp=attempt["submitted_at"],
+                xp_gained=attempt.get("xp_earned", 0),
+            ))
+
+        # 2. Get recently earned badges
+        badges_result = db.table("user_badges")\
+            .select("id, earned_at, badges(name, description)")\
+            .eq("user_id", str(user_id))\
+            .order("earned_at", desc=True)\
+            .limit(5)\
+            .execute()
+
+        for badge_entry in (badges_result.data or []):
+            badge = badge_entry.get("badges", {})
+            activities.append(RecentActivity(
+                id=badge_entry["id"],
+                type="badge",
+                title=f"New Badge: {badge.get('name', 'Badge')}",
+                description=badge.get("description", ""),
+                timestamp=badge_entry["earned_at"],
+            ))
+
+        # Sort by timestamp descending and limit
+        activities.sort(key=lambda x: x.timestamp, reverse=True)
+        return activities[:limit]
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get recent activity: {str(e)}"
+        )
+
+
+def calculate_required_xp(level: int) -> int:
+    """Calculate required XP for next level."""
+    # 100 XP for level 1, increasing by 50 each level
+    return level * 100 + (level - 1) * 50
+
+
+def calculate_current_xp(total_xp: int, level: int) -> int:
+    """Calculate current XP within the level."""
+    xp_for_current_level = 0
+    for l in range(1, level):
+        xp_for_current_level += calculate_required_xp(l)
+    return total_xp - xp_for_current_level
+
+
+@router.get("/me/profile", response_model=MypageProfile)
+async def get_mypage_profile(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """Get flattened user profile for mypage."""
+    try:
+        # Get user
+        user_result = db.table("users").select("*").eq("id", str(user_id)).single().execute()
+        user_data = user_result.data
+
+        # Get stats
+        stats_result = db.table("user_stats").select("*").eq("user_id", str(user_id)).single().execute()
+        stats_data = stats_result.data or {}
+
+        # Get subscription
+        sub_result = db.table("subscriptions")\
+            .select("*, plans(*)")\
+            .eq("user_id", str(user_id))\
+            .eq("status", "active")\
+            .single()\
+            .execute()
+
+        subscription = "free"
+        if sub_result.data and sub_result.data.get("plans"):
+            subscription = sub_result.data["plans"].get("code", "free")
+
+        level = stats_data.get("level", 1)
+        total_xp = stats_data.get("total_xp", 0)
+
+        return MypageProfile(
+            id=str(user_data["id"]),
+            email=user_data.get("email", ""),
+            username=user_data.get("name", "User"),
+            avatarShape="hexagon",
+            avatarColor=user_data.get("avatar_url") or "hsl(142, 71%, 45%)",
+            level=level,
+            currentXP=calculate_current_xp(total_xp, level),
+            requiredXP=calculate_required_xp(level),
+            totalXP=total_xp,
+            solvedCount=stats_data.get("problems_solved", 0),
+            streak=stats_data.get("current_streak", 0),
+            maxStreak=stats_data.get("longest_streak", 0),
+            joinedAt=user_data.get("created_at", ""),
+            subscription=subscription,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get profile: {str(e)}"
+        )
+
+
+@router.get("/me/mypage-stats", response_model=MypageStats)
+async def get_mypage_stats(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """Get user stats formatted for mypage."""
+    try:
+        # Get stats
+        stats_result = db.table("user_stats").select("*").eq("user_id", str(user_id)).single().execute()
+        stats_data = stats_result.data or {}
+
+        # Get solved counts by difficulty (from attempts + problems)
+        difficulty_result = db.table("attempts")\
+            .select("problems(difficulty)")\
+            .eq("user_id", str(user_id))\
+            .eq("is_correct", True)\
+            .execute()
+
+        solved_by_difficulty = {"easy": 0, "medium": 0, "hard": 0}
+        for attempt in (difficulty_result.data or []):
+            problem = attempt.get("problems", {})
+            difficulty = problem.get("difficulty", "medium") if problem else "medium"
+            if difficulty in solved_by_difficulty:
+                solved_by_difficulty[difficulty] += 1
+
+        return MypageStats(
+            totalSolved=stats_data.get("problems_solved", 0),
+            solvedByDifficulty=solved_by_difficulty,
+            solvedByType={
+                "blank": stats_data.get("blank_solved", 0),
+                "puzzle": stats_data.get("bug_solved", 0) + stats_data.get("output_solved", 0),
+            },
+            currentStreak=stats_data.get("current_streak", 0),
+            maxStreak=stats_data.get("longest_streak", 0),
+            totalXP=stats_data.get("total_xp", 0),
+            level=stats_data.get("level", 1),
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get stats: {str(e)}"
+        )
+
+
+@router.get("/me/mypage-badges", response_model=List[MypageBadge])
+async def get_mypage_badges(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """Get user badges formatted for mypage."""
+    try:
+        result = db.table("user_badges")\
+            .select("*, badges(*)")\
+            .eq("user_id", str(user_id))\
+            .execute()
+
+        badges = []
+        # Default icon mapping for badges
+        icon_map = {
+            "first_problem": "🎯",
+            "streak_7": "🔥",
+            "streak_30": "🏆",
+            "streak_100": "👑",
+            "problems_50": "💪",
+            "problems_100": "🎖️",
+            "level_10": "⭐",
+            "level_50": "🌟",
+        }
+
+        if result.data:
+            for badge_entry in result.data:
+                badge_data = badge_entry.get("badges", {})
+                code = badge_data.get("code", "")
+                badges.append(MypageBadge(
+                    id=str(badge_data.get("id", "")),
+                    name=badge_data.get("name", "Badge"),
+                    icon=icon_map.get(code, "🏅"),
+                    description=badge_data.get("description", ""),
+                    earnedAt=badge_entry.get("earned_at", ""),
+                    rarity=badge_data.get("rarity", "common"),
+                ))
+
+        return badges
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get badges: {str(e)}"
         )
