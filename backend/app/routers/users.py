@@ -301,7 +301,7 @@ async def get_recent_activity(
 
         # 1. Get recent solved problems from attempts
         attempts_result = db.table("attempts")\
-            .select("id, problem_id, is_correct, xp_earned, submitted_at, problems(code_id, problem_type, codes(title))")\
+            .select("id, base_problem_id, problem_type, is_correct, xp_earned, submitted_at, base_problems(name, difficulty)")\
             .eq("user_id", str(user_id))\
             .eq("is_correct", True)\
             .order("submitted_at", desc=True)\
@@ -309,10 +309,9 @@ async def get_recent_activity(
             .execute()
 
         for attempt in (attempts_result.data or []):
-            problem = attempt.get("problems", {})
-            code = problem.get("codes", {}) if problem else {}
-            title = code.get("title", "Problem") if code else "Problem"
-            problem_type = problem.get("problem_type", "blank") if problem else "blank"
+            base_problem = attempt.get("base_problems", {}) or {}
+            title = base_problem.get("name", "Problem")
+            problem_type = attempt.get("problem_type", "blank") or "blank"
 
             activities.append(RecentActivity(
                 id=attempt["id"],
@@ -431,17 +430,17 @@ async def get_mypage_stats(
         stats_result = db.table("user_stats").select("*").eq("user_id", str(user_id)).single().execute()
         stats_data = stats_result.data or {}
 
-        # Get solved counts by difficulty (from attempts + problems)
+        # Get solved counts by difficulty (from attempts + base_problems)
         difficulty_result = db.table("attempts")\
-            .select("problems(difficulty)")\
+            .select("base_problems(difficulty)")\
             .eq("user_id", str(user_id))\
             .eq("is_correct", True)\
             .execute()
 
         solved_by_difficulty = {"easy": 0, "medium": 0, "hard": 0}
         for attempt in (difficulty_result.data or []):
-            problem = attempt.get("problems", {})
-            difficulty = problem.get("difficulty", "medium") if problem else "medium"
+            base_problem = attempt.get("base_problems", {}) or {}
+            difficulty = base_problem.get("difficulty", "medium")
             if difficulty in solved_by_difficulty:
                 solved_by_difficulty[difficulty] += 1
 

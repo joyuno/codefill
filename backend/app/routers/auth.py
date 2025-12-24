@@ -19,10 +19,15 @@ from ..models.auth import (
     CheckNicknameRequest,
     CheckResponse,
     ChangePasswordRequest,
+    WithdrawRequest,
+    RecoveryRequiredResponse,
+    RecoverAccountRequest,
 )
 
 router = APIRouter()
 settings = get_settings()
+
+REJOIN_RESTRICTION_DAYS = 30  # 재가입 제한 일수
 
 KAKAO_AUTH_URL = "https://kauth.kakao.com/oauth/authorize"
 KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token"
@@ -126,44 +131,147 @@ async def signup(request: SignupRequest, db=Depends(get_db)):
         )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 async def login(request: LoginRequest, db=Depends(get_db)):
     """
     Authenticate user with email and password.
     Uses bcrypt password verification and returns JWT tokens.
+
+    If user is soft-deleted (within 30 days), returns recovery_required response.
+    User must confirm recovery via /auth/recover endpoint.
     """
     from ..utils.security import verify_password, create_access_token, create_refresh_token
+    from datetime import datetime, timedelta, timezone
 
     email = request.email.lower()
 
     try:
-        # Fetch user from database
+        # 1. First, check for active users (deleted_at IS NULL)
         result = db.table("users").select("id, password_hash").ilike("email", email).is_("deleted_at", "null").execute()
 
-        if not result.data or len(result.data) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+        if result.data and len(result.data) > 0:
+            user = result.data[0]
+
+            # Verify password
+            if not user.get("password_hash") or not verify_password(request.password, user["password_hash"]):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="이메일 또는 비밀번호가 올바르지 않습니다."
+                )
+
+            # Generate JWT tokens (normal login)
+            access_token = create_access_token(user["id"])
+            refresh_token = create_refresh_token(user["id"])
+
+            return TokenResponse(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_type="bearer",
+                expires_in=settings.access_token_expire_minutes * 60,
             )
 
-        user = result.data[0]
+        # 2. Check for soft-deleted users within 30 days (recovery eligible)
+        deleted_result = db.table("users").select("id, email, password_hash, deleted_at").ilike("email", email).not_.is_("deleted_at", "null").order("deleted_at", desc=True).limit(1).execute()
 
-        # Verify password_hash
-        if not user.get("password_hash"):
+        if deleted_result.data and len(deleted_result.data) > 0:
+            deleted_user = deleted_result.data[0]
+            deleted_at_str = deleted_user.get("deleted_at")
+
+            if deleted_at_str:
+                if isinstance(deleted_at_str, str):
+                    deleted_at = datetime.fromisoformat(deleted_at_str.replace('Z', '+00:00'))
+                else:
+                    deleted_at = deleted_at_str
+
+                recovery_deadline = deleted_at + timedelta(days=REJOIN_RESTRICTION_DAYS)
+                now = datetime.now(timezone.utc)
+
+                if now < recovery_deadline:
+                    # Verify password before offering recovery
+                    if not deleted_user.get("password_hash") or not verify_password(request.password, deleted_user["password_hash"]):
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="이메일 또는 비밀번호가 올바르지 않습니다."
+                        )
+
+                    # Return recovery required response (don't auto-recover)
+                    days_remaining = (recovery_deadline - now).days + 1
+                    return RecoveryRequiredResponse(
+                        recovery_required=True,
+                        message="탈퇴한 계정입니다. 계정을 복구하시겠습니까?",
+                        email=deleted_user.get("email", email),
+                        deleted_at=deleted_at_str if isinstance(deleted_at_str, str) else deleted_at.isoformat(),
+                        days_remaining=days_remaining,
+                    )
+
+        # No user found
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="이메일 또는 비밀번호가 올바르지 않습니다."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}"
+        )
+
+
+@router.post("/recover", response_model=TokenResponse)
+async def recover_account(request: RecoverAccountRequest, db=Depends(get_db)):
+    """
+    Recover a soft-deleted account and login.
+    Called after user confirms they want to recover their account.
+    """
+    from ..utils.security import verify_password, create_access_token, create_refresh_token
+    from datetime import datetime, timedelta, timezone
+
+    email = request.email.lower()
+
+    try:
+        # Find soft-deleted user
+        deleted_result = db.table("users").select("id, password_hash, deleted_at").ilike("email", email).not_.is_("deleted_at", "null").order("deleted_at", desc=True).limit(1).execute()
+
+        if not deleted_result.data or len(deleted_result.data) == 0:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="복구할 계정을 찾을 수 없습니다."
             )
 
-        if not verify_password(request.password, user["password_hash"]):
+        deleted_user = deleted_result.data[0]
+        deleted_at_str = deleted_user.get("deleted_at")
+
+        # Check if within recovery period
+        if deleted_at_str:
+            if isinstance(deleted_at_str, str):
+                deleted_at = datetime.fromisoformat(deleted_at_str.replace('Z', '+00:00'))
+            else:
+                deleted_at = deleted_at_str
+
+            recovery_deadline = deleted_at + timedelta(days=REJOIN_RESTRICTION_DAYS)
+            now = datetime.now(timezone.utc)
+
+            if now >= recovery_deadline:
+                raise HTTPException(
+                    status_code=status.HTTP_410_GONE,
+                    detail="복구 가능 기간(30일)이 지났습니다."
+                )
+
+        # Verify password
+        if not deleted_user.get("password_hash") or not verify_password(request.password, deleted_user["password_hash"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="비밀번호가 올바르지 않습니다."
             )
+
+        # Recover the account
+        db.table("users").update({"deleted_at": None}).eq("id", deleted_user["id"]).execute()
 
         # Generate JWT tokens
-        access_token = create_access_token(user["id"])
-        refresh_token = create_refresh_token(user["id"])
+        access_token = create_access_token(deleted_user["id"])
+        refresh_token = create_refresh_token(deleted_user["id"])
 
         return TokenResponse(
             access_token=access_token,
@@ -177,7 +285,73 @@ async def login(request: LoginRequest, db=Depends(get_db)):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed: {str(e)}"
+            detail=f"Recovery failed: {str(e)}"
+        )
+
+
+@router.post("/recover-oauth", response_model=TokenResponse)
+async def recover_oauth_account(
+    provider: str,
+    provider_id: str,
+    db=Depends(get_db)
+):
+    """
+    Recover a soft-deleted OAuth account.
+    Called after user confirms they want to recover via OAuth provider.
+    No password needed - OAuth provider already verified identity.
+    """
+    from ..utils.security import create_access_token, create_refresh_token
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        # Find soft-deleted user by provider
+        deleted_result = db.table("users").select("id, deleted_at").eq("provider", provider).eq("provider_id", provider_id).not_.is_("deleted_at", "null").order("deleted_at", desc=True).limit(1).execute()
+
+        if not deleted_result.data or len(deleted_result.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="복구할 계정을 찾을 수 없습니다."
+            )
+
+        deleted_user = deleted_result.data[0]
+        deleted_at_str = deleted_user.get("deleted_at")
+
+        # Check if within recovery period
+        if deleted_at_str:
+            if isinstance(deleted_at_str, str):
+                deleted_at = datetime.fromisoformat(deleted_at_str.replace('Z', '+00:00'))
+            else:
+                deleted_at = deleted_at_str
+
+            recovery_deadline = deleted_at + timedelta(days=REJOIN_RESTRICTION_DAYS)
+            now = datetime.now(timezone.utc)
+
+            if now >= recovery_deadline:
+                raise HTTPException(
+                    status_code=status.HTTP_410_GONE,
+                    detail="복구 가능 기간(30일)이 지났습니다."
+                )
+
+        # Recover the account
+        db.table("users").update({"deleted_at": None}).eq("id", deleted_user["id"]).execute()
+
+        # Generate JWT tokens
+        access_token = create_access_token(deleted_user["id"])
+        refresh_token = create_refresh_token(deleted_user["id"])
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            expires_in=settings.access_token_expire_minutes * 60,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Recovery failed: {str(e)}"
         )
 
 
@@ -256,13 +430,39 @@ async def confirm_password_reset(request: PasswordResetConfirm):
 async def check_email_availability(request: CheckEmailRequest, db=Depends(get_db)):
     """
     Check if email is available for registration.
+    - Active user: "이미 사용 중인 이메일"
+    - Withdrawn user (within 30 days): "로그인하여 계정 복구" 안내
+    - Withdrawn user (after 30 days) or no user: "사용 가능한 이메일"
     """
+    from datetime import datetime, timedelta, timezone
+
     email = request.email.lower()
 
-    # Check if email already exists (exclude soft-deleted users)
-    existing = db.table("users").select("id").ilike("email", email).is_("deleted_at", "null").execute()
-    if existing.data and len(existing.data) > 0:
+    # 1. Check active users (deleted_at is NULL)
+    active_user = db.table("users").select("id").ilike("email", email).is_("deleted_at", "null").execute()
+    if active_user.data and len(active_user.data) > 0:
         return CheckResponse(available=False, message="이미 사용 중인 이메일입니다.")
+
+    # 2. Check withdrawn users (deleted_at is NOT NULL, within 30 days)
+    withdrawn_user = db.table("users").select("id, deleted_at").ilike("email", email).not_.is_("deleted_at", "null").order("deleted_at", desc=True).limit(1).execute()
+    if withdrawn_user.data and len(withdrawn_user.data) > 0:
+        deleted_at_str = withdrawn_user.data[0].get("deleted_at")
+        if deleted_at_str:
+            if isinstance(deleted_at_str, str):
+                deleted_at = datetime.fromisoformat(deleted_at_str.replace('Z', '+00:00'))
+            else:
+                deleted_at = deleted_at_str
+
+            recovery_deadline = deleted_at + timedelta(days=REJOIN_RESTRICTION_DAYS)
+            now = datetime.now(timezone.utc)
+
+            if now < recovery_deadline:
+                # User can recover their account by logging in
+                return CheckResponse(
+                    available=False,
+                    message="탈퇴 처리 중인 계정입니다. 로그인하시면 계정을 복구할 수 있습니다."
+                )
+            # else: 30 days passed, user data will be deleted, can signup fresh
 
     return CheckResponse(available=True, message="사용 가능한 이메일입니다.")
 
@@ -352,6 +552,149 @@ async def change_password(
 
 
 # =====================================================
+# Account Withdrawal Endpoint (회원탈퇴)
+# =====================================================
+
+@router.delete("/withdraw", response_model=AuthResponse)
+async def withdraw_account(
+    request: WithdrawRequest,
+    authorization: str = Header(...),
+    db=Depends(get_db)
+):
+    """
+    회원탈퇴 (Soft Delete).
+
+    - 일반 가입자, 소셜 가입자 모두 동일하게 탈퇴 가능
+    - '탈퇴합니다' 확인 문구 입력 필요
+    - TODO: 이메일 인증 기능 추가 예정
+
+    Soft delete 방식:
+    - users.deleted_at에 현재 시간 설정
+    - 관련 데이터는 FK 설정에 따라 자동 처리됨
+    """
+    from datetime import datetime, timezone
+    from ..utils.security import verify_token
+
+    # Verify confirmation text
+    if request.confirmation != "탈퇴합니다":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="확인 문구가 일치하지 않습니다. '탈퇴합니다'를 정확히 입력해주세요."
+        )
+
+    # Get token from Authorization header
+    token = authorization.replace("Bearer ", "") if authorization else None
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="인증이 필요합니다."
+        )
+
+    # Verify JWT token
+    payload = verify_token(token)
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 토큰입니다."
+        )
+
+    user_id = payload.get("sub")
+
+    # Check if user exists
+    user_result = db.table("users").select("id, email").eq("id", user_id).is_("deleted_at", "null").single().execute()
+    if not user_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다."
+        )
+
+    # TODO: 이메일 인증 검증 (나중에 구현)
+    # if request.email_verification_token:
+    #     verify_email_token(request.email_verification_token, user_result.data["email"])
+
+    # Soft delete: Set deleted_at timestamp
+    now = datetime.now(timezone.utc)
+    db.table("users").update({
+        "deleted_at": now.isoformat()
+    }).eq("id", user_id).execute()
+
+    return AuthResponse(
+        success=True,
+        message="회원탈퇴가 완료되었습니다. 30일 이내에 로그인하시면 계정을 복구할 수 있습니다. 30일 후에는 모든 데이터가 영구 삭제됩니다."
+    )
+
+
+# =====================================================
+# OAuth Helper Functions
+# =====================================================
+
+def _check_withdrawn_user_for_recovery(db, email: str = None, provider: str = None, provider_id: str = None) -> Optional[dict]:
+    """
+    Check if user is withdrawn and within recovery period (30 days).
+    Does NOT auto-recover - returns info for confirmation page.
+
+    Returns:
+        dict with user_id, days_remaining if recovery eligible, None otherwise
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Check by provider_id first (for returning social users)
+    if provider and provider_id:
+        withdrawn = db.table("users").select("id, email, deleted_at").eq("provider", provider).eq("provider_id", provider_id).not_.is_("deleted_at", "null").order("deleted_at", desc=True).limit(1).execute()
+        if withdrawn.data and len(withdrawn.data) > 0:
+            deleted_at_str = withdrawn.data[0].get("deleted_at")
+            user_id = withdrawn.data[0].get("id")
+            user_email = withdrawn.data[0].get("email")
+            if deleted_at_str and user_id:
+                if isinstance(deleted_at_str, str):
+                    deleted_at = datetime.fromisoformat(deleted_at_str.replace('Z', '+00:00'))
+                else:
+                    deleted_at = deleted_at_str
+                recovery_deadline = deleted_at + timedelta(days=REJOIN_RESTRICTION_DAYS)
+                now = datetime.now(timezone.utc)
+                if now < recovery_deadline:
+                    days_remaining = (recovery_deadline - now).days + 1
+                    return {
+                        "user_id": user_id,
+                        "email": user_email,
+                        "days_remaining": days_remaining,
+                        "provider": provider,
+                        "provider_id": provider_id,
+                    }
+
+    # Check by email (for email-linked accounts)
+    if email:
+        withdrawn = db.table("users").select("id, email, deleted_at, provider, provider_id").ilike("email", email).not_.is_("deleted_at", "null").order("deleted_at", desc=True).limit(1).execute()
+        if withdrawn.data and len(withdrawn.data) > 0:
+            deleted_at_str = withdrawn.data[0].get("deleted_at")
+            user_id = withdrawn.data[0].get("id")
+            user_email = withdrawn.data[0].get("email")
+            if deleted_at_str and user_id:
+                if isinstance(deleted_at_str, str):
+                    deleted_at = datetime.fromisoformat(deleted_at_str.replace('Z', '+00:00'))
+                else:
+                    deleted_at = deleted_at_str
+                recovery_deadline = deleted_at + timedelta(days=REJOIN_RESTRICTION_DAYS)
+                now = datetime.now(timezone.utc)
+                if now < recovery_deadline:
+                    days_remaining = (recovery_deadline - now).days + 1
+                    return {
+                        "user_id": user_id,
+                        "email": user_email,
+                        "days_remaining": days_remaining,
+                        "provider": withdrawn.data[0].get("provider"),
+                        "provider_id": withdrawn.data[0].get("provider_id"),
+                    }
+
+    return None
+
+
+def _recover_user(db, user_id: str) -> None:
+    """Recover a soft-deleted user by clearing deleted_at."""
+    db.table("users").update({"deleted_at": None}).eq("id", user_id).execute()
+
+
+# =====================================================
 # Kakao OAuth Endpoints
 # =====================================================
 
@@ -419,17 +762,31 @@ async def kakao_callback(
         nickname = profile.get("nickname", f"kakao_{kakao_id}")
         profile_image = profile.get("profile_image_url")
 
-        # 4. Check if user exists in our database
-        existing_user = db.table("users").select("*").eq("provider", "kakao").eq("provider_id", kakao_id).execute()
+        # 3.5. Check for withdrawn user - redirect to recovery confirmation page
+        recovery_info = _check_withdrawn_user_for_recovery(db, email=email, provider="kakao", provider_id=kakao_id)
+        if recovery_info:
+            # Redirect to recovery confirmation page
+            from urllib.parse import quote
+            redirect_url = (
+                f"{settings.frontend_url}/auth/recover"
+                f"?provider=kakao"
+                f"&provider_id={kakao_id}"
+                f"&email={quote(recovery_info.get('email', ''))}"
+                f"&days={recovery_info['days_remaining']}"
+            )
+            return RedirectResponse(url=redirect_url)
+
+        # 4. Check if user exists in our database (exclude soft-deleted users)
+        existing_user = db.table("users").select("*").eq("provider", "kakao").eq("provider_id", kakao_id).is_("deleted_at", "null").execute()
         is_new_user = False
 
         if existing_user.data and len(existing_user.data) > 0:
             user = existing_user.data[0]
             user_id = user["id"]
         else:
-            # Check if email already exists (link accounts)
+            # Check if email already exists (link accounts, exclude soft-deleted)
             if email:
-                email_user = db.table("users").select("*").eq("email", email).execute()
+                email_user = db.table("users").select("*").ilike("email", email).is_("deleted_at", "null").execute()
                 if email_user.data and len(email_user.data) > 0:
                     user = email_user.data[0]
                     user_id = user["id"]
@@ -538,17 +895,31 @@ async def google_callback(
         name = google_user.get("name", f"google_{google_id}")
         profile_image = google_user.get("picture")
 
-        # 4. Check if user exists in our database
-        existing_user = db.table("users").select("*").eq("provider", "google").eq("provider_id", google_id).execute()
+        # 3.5. Check for withdrawn user - redirect to recovery confirmation page
+        recovery_info = _check_withdrawn_user_for_recovery(db, email=email, provider="google", provider_id=google_id)
+        if recovery_info:
+            # Redirect to recovery confirmation page
+            from urllib.parse import quote
+            redirect_url = (
+                f"{settings.frontend_url}/auth/recover"
+                f"?provider=google"
+                f"&provider_id={google_id}"
+                f"&email={quote(recovery_info.get('email', ''))}"
+                f"&days={recovery_info['days_remaining']}"
+            )
+            return RedirectResponse(url=redirect_url)
+
+        # 4. Check if user exists in our database (exclude soft-deleted users)
+        existing_user = db.table("users").select("*").eq("provider", "google").eq("provider_id", google_id).is_("deleted_at", "null").execute()
         is_new_user = False
 
         if existing_user.data and len(existing_user.data) > 0:
             user = existing_user.data[0]
             user_id = user["id"]
         else:
-            # Check if email already exists (link accounts)
+            # Check if email already exists (link accounts, exclude soft-deleted)
             if email:
-                email_user = db.table("users").select("*").eq("email", email).execute()
+                email_user = db.table("users").select("*").ilike("email", email).is_("deleted_at", "null").execute()
                 if email_user.data and len(email_user.data) > 0:
                     user = email_user.data[0]
                     user_id = user["id"]

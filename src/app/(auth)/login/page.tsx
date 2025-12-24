@@ -1,18 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Code2, Loader2, Eye, EyeOff, MessageCircle } from 'lucide-react';
+import { Code2, Loader2, Eye, EyeOff, MessageCircle, RefreshCcw, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { authApi } from '@/lib/api';
+import { authApi, RecoveryRequiredResponse } from '@/lib/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -26,9 +26,13 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [recoveryInfo, setRecoveryInfo] = useState<RecoveryRequiredResponse | null>(null);
+  const [recoveryCredentials, setRecoveryCredentials] = useState<{ email: string; password: string } | null>(null);
 
   const {
     register,
@@ -37,6 +41,36 @@ export default function LoginPage() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
+
+  // Check for OAuth error from URL params (e.g., withdrawn user)
+  useEffect(() => {
+    const error = searchParams.get('error');
+    const message = searchParams.get('message');
+
+    if (error) {
+      const decodedMessage = message ? decodeURIComponent(message) : '';
+
+      if (error === 'withdrawn') {
+        // Withdrawn user trying to login via social
+        toast({
+          title: '재가입 제한',
+          description: decodedMessage || '탈퇴한 계정입니다. 일정 기간 후 재가입이 가능합니다.',
+          variant: 'destructive',
+          duration: 5000,
+        });
+      } else {
+        // Other OAuth errors
+        toast({
+          title: '로그인 실패',
+          description: decodedMessage || '소셜 로그인 중 문제가 발생했습니다.',
+          variant: 'destructive',
+        });
+      }
+
+      // Clean up URL params
+      router.replace('/login');
+    }
+  }, [searchParams, toast, router]);
 
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
@@ -53,6 +87,14 @@ export default function LoginPage() {
           description: result.error.message,
           variant: 'destructive',
         });
+        return;
+      }
+
+      // Check if recovery is required
+      if (result.data && 'recovery_required' in result.data) {
+        // Show recovery confirmation modal
+        setRecoveryInfo(result.data as RecoveryRequiredResponse);
+        setRecoveryCredentials({ email: data.email, password: data.password });
         return;
       }
 
@@ -73,6 +115,51 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleRecover = async () => {
+    if (!recoveryCredentials) return;
+
+    setIsRecovering(true);
+
+    try {
+      const result = await authApi.recover({
+        email: recoveryCredentials.email,
+        password: recoveryCredentials.password,
+      });
+
+      if (result.error) {
+        toast({
+          title: '복구 실패',
+          description: result.error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      toast({
+        title: '계정이 복구되었습니다',
+        description: '다시 돌아오신 것을 환영합니다!',
+      });
+
+      setRecoveryInfo(null);
+      setRecoveryCredentials(null);
+      router.push('/');
+      router.refresh();
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '계정 복구 중 문제가 발생했습니다. 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
+  const handleCancelRecovery = () => {
+    setRecoveryInfo(null);
+    setRecoveryCredentials(null);
   };
 
   return (
@@ -220,6 +307,86 @@ export default function LoginPage() {
           </Link>
         </p>
       </motion.div>
+
+      {/* Recovery Confirmation Modal */}
+      <AnimatePresence>
+        {recoveryInfo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={handleCancelRecovery}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-sm rounded-xl border border-border bg-card p-6 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                  <RefreshCcw className="h-8 w-8 text-primary" />
+                </div>
+              </div>
+
+              <h2 className="text-xl font-semibold text-center">계정 복구</h2>
+
+              <div className="text-center text-muted-foreground text-sm space-y-2">
+                <p>탈퇴한 계정이 발견되었습니다.</p>
+                {recoveryInfo.email && (
+                  <p className="font-medium text-foreground">
+                    {recoveryInfo.email}
+                  </p>
+                )}
+                <p>이 계정을 복구하시겠습니까?</p>
+              </div>
+
+              <div className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                <p>
+                  복구 가능 기간: <span className="font-semibold text-primary">{recoveryInfo.days_remaining}일</span> 남음
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleCancelRecovery}
+                  disabled={isRecovering}
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  취소
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={handleRecover}
+                  disabled={isRecovering}
+                >
+                  {isRecovering ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      복구 중...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                      복구하기
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <p className="text-xs text-center text-muted-foreground">
+                취소하면 로그인이 취소됩니다.
+                <br />
+                30일이 지나면 계정이 영구 삭제됩니다.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

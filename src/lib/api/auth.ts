@@ -52,6 +52,24 @@ export interface CheckResponse {
   message: string;
 }
 
+export interface RecoveryRequiredResponse {
+  recovery_required: boolean;
+  message: string;
+  email: string;
+  deleted_at: string;
+  days_remaining: number;
+}
+
+export interface RecoverData {
+  email: string;
+  password: string;
+}
+
+export interface RecoverOAuthData {
+  provider: string;
+  provider_id: string;
+}
+
 // API Functions
 export const authApi = {
   /**
@@ -71,12 +89,16 @@ export const authApi = {
 
   /**
    * Login with email and password
+   * Returns TokenResponse on success, or RecoveryRequiredResponse if account needs recovery
    */
-  login: async (data: LoginData): Promise<{ data?: TokenResponse; error?: { code: string; message: string } }> => {
-    const result = await api.post<TokenResponse>('/auth/login', data, false);
+  login: async (data: LoginData): Promise<{
+    data?: TokenResponse | RecoveryRequiredResponse;
+    error?: { code: string; message: string }
+  }> => {
+    const result = await api.post<TokenResponse | RecoveryRequiredResponse>('/auth/login', data, false);
 
-    if (result.data) {
-      // Store tokens on successful login
+    if (result.data && 'access_token' in result.data) {
+      // Store tokens on successful login (not recovery required)
       apiClient.setTokens(result.data.access_token, result.data.refresh_token);
     }
 
@@ -133,11 +155,26 @@ export const authApi = {
   },
 
   /**
-   * Delete account (회원 탈퇴)
+   * Delete account (회원 탈퇴) - Legacy, 비밀번호 방식
+   * @deprecated Use withdraw() instead
    */
   deleteAccount: async (password: string): Promise<{ data?: AuthResponse; error?: { code: string; message: string } }> => {
     const result = await api.delete<AuthResponse>('/auth/account', { password }, true);
     if (result.data) {
+      apiClient.clearTokens();
+    }
+    return result;
+  },
+
+  /**
+   * 회원탈퇴 (확인 문구 방식)
+   * - 일반 가입자, 소셜 가입자 모두 동일하게 사용
+   * - '탈퇴합니다' 확인 문구 입력 필요
+   * - TODO: 이메일 인증 기능 추가 예정
+   */
+  withdraw: async (confirmation: string): Promise<{ data?: AuthResponse; error?: { code: string; message: string } }> => {
+    const result = await api.delete<AuthResponse>('/auth/withdraw', { confirmation }, true);
+    if (result.data?.success) {
       apiClient.clearTokens();
     }
     return result;
@@ -155,5 +192,37 @@ export const authApi = {
    */
   checkNickname: async (nickname: string): Promise<{ data?: CheckResponse; error?: { code: string; message: string } }> => {
     return api.post<CheckResponse>('/auth/check-nickname', { nickname }, false);
+  },
+
+  /**
+   * Recover withdrawn account (email login)
+   * - For users who signed up with email/password
+   * - Requires password verification
+   */
+  recover: async (data: RecoverData): Promise<{ data?: TokenResponse; error?: { code: string; message: string } }> => {
+    const result = await api.post<TokenResponse>('/auth/recover', data, false);
+
+    if (result.data) {
+      // Store tokens on successful recovery
+      apiClient.setTokens(result.data.access_token, result.data.refresh_token);
+    }
+
+    return result;
+  },
+
+  /**
+   * Recover withdrawn account (OAuth login)
+   * - For users who signed up with Kakao/Google
+   * - No password required, verified by OAuth provider
+   */
+  recoverOAuth: async (data: RecoverOAuthData): Promise<{ data?: TokenResponse; error?: { code: string; message: string } }> => {
+    const result = await api.post<TokenResponse>('/auth/recover-oauth', data, false);
+
+    if (result.data) {
+      // Store tokens on successful recovery
+      apiClient.setTokens(result.data.access_token, result.data.refresh_token);
+    }
+
+    return result;
   },
 };

@@ -3,7 +3,17 @@
  */
 
 export { api, apiClient } from './client';
-export { authApi, type SignupData, type LoginData, type AuthResponse, type TokenResponse, type OnboardingData } from './auth';
+export {
+  authApi,
+  type SignupData,
+  type LoginData,
+  type AuthResponse,
+  type TokenResponse,
+  type OnboardingData,
+  type RecoveryRequiredResponse,
+  type RecoverData,
+  type RecoverOAuthData,
+} from './auth';
 export { problemsApi, type ProblemFilters, type ProblemListResponse, type HintResponse } from './problems';
 export {
   practiceApi,
