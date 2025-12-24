@@ -18,22 +18,22 @@ from ..models.problem import ProblemType
 router = APIRouter()
 
 
-async def get_user_id_from_token(authorization: str = Header(...), db=Depends(get_db)) -> UUID:
-    """Extract user ID from authorization header."""
-    try:
-        token = authorization.replace("Bearer ", "")
-        user = db.auth.get_user(token)
-        if user is None or user.user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-        return UUID(user.user.id)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
+async def get_user_id_from_token(authorization: str = Header(...)) -> UUID:
+    """Extract user ID from JWT authorization header."""
+    from ..utils.security import verify_token
+
+    token = authorization.replace("Bearer ", "")
+
+    payload = verify_token(token)
+    if payload and payload.get("type") == "access":
+        user_id = payload.get("sub")
+        if user_id:
+            return UUID(user_id)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired token"
+    )
 
 
 def check_blank_answers(submitted: dict, correct: list) -> tuple[bool, dict]:

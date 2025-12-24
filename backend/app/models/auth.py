@@ -141,3 +141,36 @@ class ChangePasswordRequest(BaseModel):
     """Request model for password change."""
     current_password: str
     new_password: str = Field(..., min_length=8)
+
+
+# =====================================================
+# Account Withdrawal Models
+# =====================================================
+
+class WithdrawRequest(BaseModel):
+    """Request model for account withdrawal (회원탈퇴)."""
+    confirmation: str = Field(
+        ...,
+        description="User must type '탈퇴합니다' to confirm withdrawal"
+    )
+    # TODO: 이메일 인증 토큰 추가 (나중에 구현)
+    # email_verification_token: Optional[str] = None
+
+
+# =====================================================
+# Account Recovery Models
+# =====================================================
+
+class RecoveryRequiredResponse(BaseModel):
+    """Response when account recovery confirmation is needed."""
+    recovery_required: bool = True
+    message: str
+    email: str
+    deleted_at: str
+    days_remaining: int
+
+
+class RecoverAccountRequest(BaseModel):
+    """Request model for account recovery with login."""
+    email: EmailStr
+    password: str

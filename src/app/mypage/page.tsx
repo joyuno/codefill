@@ -40,7 +40,7 @@ export default function MyPagePage() {
   const [passwordSuccess, setPasswordSuccess] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
@@ -148,8 +148,8 @@ export default function MyPagePage() {
 
   // 회원 탈퇴 핸들러
   const handleDeleteAccount = async () => {
-    if (!deletePassword) {
-      setDeleteError('비밀번호를 입력해주세요');
+    if (deleteConfirmation !== '탈퇴합니다') {
+      setDeleteError("'탈퇴합니다'를 정확히 입력해주세요");
       return;
     }
 
@@ -157,7 +157,7 @@ export default function MyPagePage() {
     setDeleteError('');
 
     try {
-      const result = await authApi.deleteAccount(deletePassword);
+      const result = await authApi.withdraw(deleteConfirmation);
       if (result.error) {
         setDeleteError(result.error.message);
       } else {
@@ -693,27 +693,34 @@ export default function MyPagePage() {
               className="mx-4 w-full max-w-md rounded-xl border border-border bg-card p-6"
             >
               <h3 className="mb-4 text-lg font-semibold text-destructive">회원 탈퇴</h3>
+              <p className="mb-2 text-sm text-muted-foreground">
+                정말로 탈퇴하시겠습니까?
+              </p>
+              <div className="mb-4 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                <p className="mb-1">• 탈퇴 후 <span className="font-semibold text-primary">30일 이내</span>에 로그인하시면 계정을 복구할 수 있습니다.</p>
+                <p>• 30일이 지나면 모든 데이터가 <span className="font-semibold text-destructive">영구 삭제</span>됩니다.</p>
+              </div>
               <p className="mb-4 text-sm text-muted-foreground">
-                정말로 탈퇴하시겠습니까? 모든 데이터가 영구적으로 삭제됩니다.
+                탈퇴를 원하시면 아래에 <span className="font-semibold text-destructive">'탈퇴합니다'</span>를 입력해주세요.
               </p>
               <input
-                type="password"
-                value={deletePassword}
-                onChange={(e) => setDeletePassword(e.target.value)}
-                placeholder="비밀번호 확인"
+                type="text"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                placeholder="탈퇴합니다"
                 className="mb-3 w-full rounded-lg border border-border bg-background px-4 py-2 focus:border-destructive focus:outline-none focus:ring-1 focus:ring-destructive"
               />
               {deleteError && <p className="mb-3 text-sm text-destructive">{deleteError}</p>}
               <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => { setShowDeleteModal(false); setDeletePassword(''); setDeleteError(''); }}
+                  onClick={() => { setShowDeleteModal(false); setDeleteConfirmation(''); setDeleteError(''); }}
                   className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
                 >
                   취소
                 </button>
                 <button
                   onClick={handleDeleteAccount}
-                  disabled={deleteLoading}
+                  disabled={deleteLoading || deleteConfirmation !== '탈퇴합니다'}
                   className="flex items-center gap-2 rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
                 >
                   {deleteLoading && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -1,15 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import type { User, Session } from '@supabase/supabase-js';
 
 /**
  * 인증 상태를 관리하는 커스텀 훅
- * - Supabase 세션 상태 실시간 감지
- * - 백엔드 JWT 토큰 지원 (카카오/구글 OAuth)
+ * - localStorage JWT 토큰 기반 인증
+ * - 백엔드 API를 통한 프로필 조회
  * - 로그인/로그아웃 함수 제공
- * - 사용자 정보 제공
  */
 
 interface UserProfile {
@@ -26,9 +23,14 @@ interface UserProfile {
 }
 
 interface AuthState {
-  user: User | null;
+  user: {
+    id: string;
+    email: string;
+    aud?: string;
+    role?: string;
+    created_at?: string;
+  } | null;
   profile: UserProfile | null;
-  session: Session | null;
   isLoading: boolean;
   isAuthenticated: boolean;
 }
@@ -56,141 +58,106 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-// Supabase 클라이언트 싱글톤
-let supabaseClient: ReturnType<typeof createClient> | null = null;
-function getSupabaseClient() {
-  if (!supabaseClient) {
-    supabaseClient = createClient();
-  }
-  return supabaseClient;
-}
-
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     profile: null,
-    session: null,
     isLoading: true,
     isAuthenticated: false,
   });
 
   const initializedRef = useRef(false);
-  const supabase = getSupabaseClient();
 
-  // 초기 세션 확인 (한 번만 실행)
+  // 백엔드 API로 프로필 조회 (JWT 토큰 사용)
+  const fetchProfileFromBackend = useCallback(async (token: string): Promise<UserProfile | null> => {
+    try {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE_URL}/users/me/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        console.error('프로필 조회 실패:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      return {
+        id: data.id,
+        email: data.email,
+        username: data.username || data.name || data.email?.split('@')[0] || 'User',
+        avatar_url: data.avatar_url,
+        level: data.level || 1,
+        current_xp: data.current_xp || data.currentXP || 0,
+        required_xp: data.required_xp || data.requiredXP || 100,
+        subscription_tier: data.subscription_tier || data.subscription || 'free',
+        subscription_expires_at: data.subscription_expires_at,
+        created_at: data.created_at || data.joinedAt,
+      };
+    } catch (error) {
+      console.error('프로필 조회 중 오류:', error);
+      return null;
+    }
+  }, []);
+
+  // 인증 초기화
   useEffect(() => {
+    // 중복 실행 방지
     if (initializedRef.current) return;
     initializedRef.current = true;
 
     const initializeAuth = async () => {
-      try {
-        // 1. Supabase 세션 확인
-        const { data: { session } } = await supabase.auth.getSession();
+      // 브라우저 환경 체크
+      if (typeof window === 'undefined') {
+        setAuthState(prev => ({ ...prev, isLoading: false }));
+        return;
+      }
 
-        if (session?.user) {
-          // Supabase에서 프로필 조회
-          const { data: profileData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
+      const accessToken = localStorage.getItem('access_token');
 
-          const profile = profileData ? {
-            id: profileData.id,
-            email: profileData.email,
-            username: profileData.username || profileData.name || profileData.email?.split('@')[0] || 'User',
-            avatar_url: profileData.avatar_url,
-            level: profileData.level || 1,
-            current_xp: profileData.current_xp || 0,
-            required_xp: profileData.required_xp || 100,
-            subscription_tier: profileData.subscription_tier || 'free',
-            subscription_expires_at: profileData.subscription_expires_at,
-            created_at: profileData.created_at,
-          } : null;
-
-          setAuthState({
-            user: session.user,
-            profile,
-            session,
-            isLoading: false,
-            isAuthenticated: true,
-          });
-          return;
+      // 토큰 없거나 만료됨
+      if (!accessToken || isTokenExpired(accessToken)) {
+        // 만료된 토큰 정리
+        if (accessToken) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
         }
-
-        // 2. localStorage JWT 토큰 확인 (카카오/구글 로그인)
-        if (typeof window !== 'undefined') {
-          const accessToken = localStorage.getItem('access_token');
-
-          if (accessToken && !isTokenExpired(accessToken)) {
-            const userId = getUserIdFromToken(accessToken);
-
-            // 백엔드 API로 프로필 조회
-            try {
-              const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-              const response = await fetch(`${API_BASE_URL}/users/me/profile`, {
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Content-Type': 'application/json',
-                },
-              });
-
-              if (response.ok) {
-                const data = await response.json();
-                const profile = {
-                  id: data.id,
-                  email: data.email,
-                  username: data.username || data.name || data.email?.split('@')[0] || 'User',
-                  avatar_url: data.avatar_url,
-                  level: data.level || 1,
-                  current_xp: data.current_xp || data.currentXP || 0,
-                  required_xp: data.required_xp || data.requiredXP || 100,
-                  subscription_tier: data.subscription_tier || data.subscription || 'free',
-                  subscription_expires_at: data.subscription_expires_at,
-                  created_at: data.created_at || data.joinedAt,
-                };
-
-                setAuthState({
-                  user: {
-                    id: userId || profile.id,
-                    email: profile.email,
-                    aud: 'authenticated',
-                    role: 'authenticated',
-                    created_at: profile.created_at,
-                  } as User,
-                  profile,
-                  session: null,
-                  isLoading: false,
-                  isAuthenticated: true,
-                });
-                return;
-              }
-            } catch (error) {
-              console.error('백엔드 프로필 조회 실패:', error);
-            }
-          }
-
-          // 만료된 토큰 정리
-          if (accessToken && isTokenExpired(accessToken)) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-          }
-        }
-
-        // 인증되지 않음
         setAuthState({
           user: null,
           profile: null,
-          session: null,
           isLoading: false,
           isAuthenticated: false,
         });
-      } catch (error) {
-        console.error('인증 초기화 오류:', error);
+        return;
+      }
+
+      // 프로필 조회
+      const userId = getUserIdFromToken(accessToken);
+      const profile = await fetchProfileFromBackend(accessToken);
+
+      if (profile) {
+        setAuthState({
+          user: {
+            id: userId || profile.id,
+            email: profile.email,
+            aud: 'authenticated',
+            role: 'authenticated',
+            created_at: profile.created_at,
+          },
+          profile,
+          isLoading: false,
+          isAuthenticated: true,
+        });
+      } else {
+        // 프로필 조회 실패 시 토큰 정리
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         setAuthState({
           user: null,
           profile: null,
-          session: null,
           isLoading: false,
           isAuthenticated: false,
         });
@@ -199,60 +166,25 @@ export function useAuth() {
 
     initializeAuth();
 
-    // Supabase 세션 변경 리스너
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event);
-
-        if (event === 'SIGNED_IN' && session?.user) {
-          const { data: profileData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-          const profile = profileData ? {
-            id: profileData.id,
-            email: profileData.email,
-            username: profileData.username || profileData.name || profileData.email?.split('@')[0] || 'User',
-            avatar_url: profileData.avatar_url,
-            level: profileData.level || 1,
-            current_xp: profileData.current_xp || 0,
-            required_xp: profileData.required_xp || 100,
-            subscription_tier: profileData.subscription_tier || 'free',
-            subscription_expires_at: profileData.subscription_expires_at,
-            created_at: profileData.created_at,
-          } : null;
-
-          setAuthState({
-            user: session.user,
-            profile,
-            session,
-            isLoading: false,
-            isAuthenticated: true,
-          });
-        } else if (event === 'SIGNED_OUT') {
-          setAuthState({
-            user: null,
-            profile: null,
-            session: null,
-            isLoading: false,
-            isAuthenticated: false,
-          });
-        }
+    // localStorage 변경 감지 (다른 탭에서 로그인/로그아웃 시)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'access_token') {
+        initializedRef.current = false;
+        initializeAuth();
       }
-    );
+    };
+
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
-      subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
     };
-  }, []); // 빈 의존성 배열 - 한 번만 실행
+  }, [fetchProfileFromBackend]);
 
   // 로그아웃
   const signOut = useCallback(async () => {
     try {
-      await supabase.auth.signOut();
-
+      // localStorage 토큰 삭제
       if (typeof window !== 'undefined') {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
@@ -263,43 +195,26 @@ export function useAuth() {
       setAuthState({
         user: null,
         profile: null,
-        session: null,
         isLoading: false,
         isAuthenticated: false,
       });
     } catch (error) {
       console.error('로그아웃 오류:', error);
     }
-  }, [supabase]);
+  }, []);
 
   // 프로필 새로고침
   const refreshProfile = useCallback(async () => {
-    if (authState.session?.user) {
-      const { data: profileData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authState.session.user.id)
-        .single();
-
-      if (profileData) {
-        setAuthState(prev => ({
-          ...prev,
-          profile: {
-            id: profileData.id,
-            email: profileData.email,
-            username: profileData.username || profileData.name || profileData.email?.split('@')[0] || 'User',
-            avatar_url: profileData.avatar_url,
-            level: profileData.level || 1,
-            current_xp: profileData.current_xp || 0,
-            required_xp: profileData.required_xp || 100,
-            subscription_tier: profileData.subscription_tier || 'free',
-            subscription_expires_at: profileData.subscription_expires_at,
-            created_at: profileData.created_at,
-          },
-        }));
+    if (typeof window !== 'undefined') {
+      const accessToken = localStorage.getItem('access_token');
+      if (accessToken && !isTokenExpired(accessToken)) {
+        const profile = await fetchProfileFromBackend(accessToken);
+        if (profile) {
+          setAuthState(prev => ({ ...prev, profile }));
+        }
       }
     }
-  }, [authState.session, supabase]);
+  }, [fetchProfileFromBackend]);
 
   return {
     ...authState,

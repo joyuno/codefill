@@ -266,12 +266,23 @@ export default function OnboardingPage() {
         return;
       }
 
-      toast({
-        title: '회원가입 완료!',
-        description: 'CodeFill에 오신 것을 환영합니다!',
-      });
+      // 회원가입 성공 시 토큰이 자동으로 저장됨 (authApi.signup 내부에서 처리)
+      if (result.data?.access_token) {
+        toast({
+          title: '회원가입 완료!',
+          description: 'CodeFill에 오신 것을 환영합니다!',
+        });
 
-      router.push('/');
+        // 자동 로그인되어 대시보드로 이동
+        router.push('/');
+      } else {
+        // 예외 상황: 토큰이 없는 경우
+        toast({
+          title: '회원가입 완료',
+          description: '로그인 페이지에서 로그인해주세요.',
+        });
+        router.push('/login');
+      }
     } catch (error) {
       toast({
         title: '오류 발생',

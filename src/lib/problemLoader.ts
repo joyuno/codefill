@@ -16,9 +16,9 @@ import type {
 } from './dataTypes';
 
 // JSON 데이터 import (빌드 시점에 포함)
-import exampleProblems from '../../data/example/example_problem.json';
-import blankProblems from '../../data/example/problems_blank.json';
-import puzzleProblems from '../../data/example/problems_puzzle.json';
+import exampleProblems from '../../data/examples/example_problem.json';
+import blankProblems from '../../data/examples/problems_blank.json';
+import puzzleProblems from '../../data/examples/problems_puzzle.json';
 
 // 타입 캐스팅
 const rawProblems = exampleProblems as RawProblem[];
