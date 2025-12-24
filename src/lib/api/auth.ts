@@ -56,9 +56,16 @@ export interface CheckResponse {
 export const authApi = {
   /**
    * Register a new user
+   * Returns JWT tokens for automatic login after signup
    */
-  signup: async (data: SignupData): Promise<{ data?: AuthResponse; error?: { code: string; message: string } }> => {
-    const result = await api.post<AuthResponse>('/auth/signup', data, false);
+  signup: async (data: SignupData): Promise<{ data?: TokenResponse; error?: { code: string; message: string } }> => {
+    const result = await api.post<TokenResponse>('/auth/signup', data, false);
+
+    if (result.data) {
+      // Store tokens on successful signup (auto-login)
+      apiClient.setTokens(result.data.access_token, result.data.refresh_token);
+    }
+
     return result;
   },
 
