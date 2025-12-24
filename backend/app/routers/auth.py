@@ -22,6 +22,7 @@ from ..models.auth import (
     WithdrawRequest,
     RecoveryRequiredResponse,
     RecoverAccountRequest,
+    RecoverOAuthRequest,
 )
 
 router = APIRouter()
@@ -291,8 +292,7 @@ async def recover_account(request: RecoverAccountRequest, db=Depends(get_db)):
 
 @router.post("/recover-oauth", response_model=TokenResponse)
 async def recover_oauth_account(
-    provider: str,
-    provider_id: str,
+    request: RecoverOAuthRequest,
     db=Depends(get_db)
 ):
     """
@@ -302,6 +302,9 @@ async def recover_oauth_account(
     """
     from ..utils.security import create_access_token, create_refresh_token
     from datetime import datetime, timedelta, timezone
+
+    provider = request.provider
+    provider_id = request.provider_id
 
     try:
         # Find soft-deleted user by provider

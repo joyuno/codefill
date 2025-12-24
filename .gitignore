@@ -57,3 +57,6 @@ next-env.d.ts
 # Logs
 logs
 *.log
+
+# External folders
+Modern_Farm_v1.2/
