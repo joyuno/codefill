@@ -174,3 +174,9 @@ class RecoverAccountRequest(BaseModel):
     """Request model for account recovery with login."""
     email: EmailStr
     password: str
+
+
+class RecoverOAuthRequest(BaseModel):
+    """Request model for OAuth account recovery."""
+    provider: str = Field(..., description="OAuth provider (kakao, google)")
+    provider_id: str = Field(..., description="Provider user ID")
