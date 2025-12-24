@@ -98,7 +98,7 @@ const HOUSE_LEVELS = [
 ];
 
 const ALL_CROP_TYPES: CropVariety[] = [
-  'carrot', 'tomato', 'corn', 'strawberry', 'potato', 'wheat', 'pumpkin'
+  'carrot', 'tomato', 'corn', 'strawberry', 'potato', 'wheat', 'pumpkin', 'cabbage', 'onion', 'radish'
 ];
 
 const GROWTH_TIMES: Record<CropVariety, number> = {

@@ -34,14 +34,14 @@ const COLOR_MAP: Record<string, string> = {
   pink: '#e91e8a',
 };
 
-// 샘플 작물 데이터
+// 샘플 작물 데이터 (Modern Farm 에셋 기반)
 const SAMPLE_CROPS: Array<{ type: CropVariety; stage: CropStage }> = [
   { type: 'tomato', stage: 4 },
   { type: 'carrot', stage: 3 },
-  { type: 'corn', stage: 2 },
-  { type: 'strawberry', stage: 4 },
-  { type: 'potato', stage: 1 },
-  { type: 'wheat', stage: 3 },
+  { type: 'corn', stage: 4 },
+  { type: 'strawberry', stage: 2 },
+  { type: 'cabbage', stage: 4 },
+  { type: 'pumpkin', stage: 3 },
 ];
 
 export function SidebarProfile() {
