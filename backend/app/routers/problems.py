@@ -153,25 +153,42 @@ async def get_base_problem(original_id: str, db=Depends(get_db)):
         )
 
 
-@router.get("/search/rag")
-async def search_problems_rag(
+@router.get("/search/rag", deprecated=True)
+async def search_problems_rag_deprecated(
     query: str = Query(..., min_length=2),
     framework: Optional[Framework] = None,
     limit: int = Query(5, ge=1, le=20),
     db=Depends(get_db)
 ):
     """
-    Search problems using RAG (Retrieval Augmented Generation).
+    [DEPRECATED] RAG 검색은 /agent/search 엔드포인트를 사용하세요.
 
-    Uses vector similarity search with pgvector.
-    Requires OpenAI embeddings API key.
+    This endpoint is deprecated. Use POST /agent/search instead.
+    The agent search endpoint provides full RAG functionality with:
+    - OpenAI embeddings + pgvector similarity search
+    - Fallback to code generation when no results found
     """
-    # TODO: Implement when OpenAI API key is available
-    return {
-        "message": "RAG search not yet implemented. Please provide OpenAI API key.",
-        "query": query,
-        "results": []
-    }
+    from fastapi import status
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=status.HTTP_301_MOVED_PERMANENTLY,
+        content={
+            "message": "이 엔드포인트는 deprecated되었습니다. POST /agent/search를 사용하세요.",
+            "redirect_to": "/agent/search",
+            "method": "POST",
+            "example_body": {
+                "query": query,
+                "topics": [],
+                "difficulty": None,
+                "language": None,
+                "limit": limit,
+            },
+            "query": query,
+            "results": []
+        },
+        headers={"Location": "/agent/search"}
+    )
 
 
 # ===========================================

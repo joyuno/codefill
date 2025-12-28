@@ -2,7 +2,7 @@
 Farm System API Router
 """
 
-from fastapi import APIRouter, HTTPException, Depends, status, Header
+from fastapi import APIRouter, HTTPException, Depends, status
 from typing import List, Optional
 from datetime import datetime, timezone
 from uuid import UUID
@@ -10,7 +10,7 @@ import random
 import json
 
 from ..database import get_db
-from ..utils.security import verify_token
+from ..dependencies import get_current_user_id  # 공통 인증 의존성
 from ..models.farm import (
     CharacterCreateRequest,
     CharacterData,
@@ -37,25 +37,6 @@ from ..models.farm import (
 )
 
 router = APIRouter()
-
-
-# =====================================================
-# Authentication Dependency
-# =====================================================
-
-async def get_current_user_id(authorization: str = Header(...)) -> UUID:
-    """Extract and verify user ID from JWT authorization header."""
-    token = authorization.replace("Bearer ", "")
-    payload = verify_token(token)
-    if payload and payload.get("type") == "access":
-        user_id = payload.get("sub")
-        if user_id:
-            return UUID(user_id)
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired token"
-    )
 
 
 # =====================================================

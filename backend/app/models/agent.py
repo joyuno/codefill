@@ -246,3 +246,42 @@ class RAGSearchResponse(BaseModel):
     results: List[RAGSearchResult]
     query_embedding_used: bool = False
     fallback_to_code_gen: bool = False
+
+
+# ============================================================
+# Intent-Based Chat Models
+# ============================================================
+
+class SessionContext(BaseModel):
+    """세션 컨텍스트 (의도 분류에 필요한 정보)."""
+    last_solved_problem: Optional[Dict[str, Any]] = None  # 최근 푼 문제 (코드 포함)
+    current_problem: Optional[Dict[str, Any]] = None  # 현재 풀고 있는 문제
+    last_suggestion: Optional[str] = None  # 마지막 제안
+    recent_problems: List[Dict[str, Any]] = []  # 최근 본 문제들
+
+
+class IntentChatRequest(BaseModel):
+    """Intent-based Chat Agent request."""
+    message: str
+    conversation_history: List[ChatAgentMessage] = []
+    user_context: Optional[Dict[str, Any]] = None  # onboarding data
+    session_context: Optional[SessionContext] = None  # 세션 컨텍스트
+
+
+class IntentInfo(BaseModel):
+    """분류된 의도 정보."""
+    intent: str
+    confidence: float
+    method: str  # "embedding", "llm", "rule", "fallback"
+    requires_context: Optional[str] = None  # "code", "problem", "previous_suggestion"
+    next_action: Optional[str] = None
+
+
+class IntentChatResponse(BaseModel):
+    """Intent-based Chat Agent response."""
+    message: str
+    intent_info: IntentInfo
+    collected_info: Optional[CollectedInfo] = None
+    is_complete: bool = False
+    search_query: Optional[str] = None
+    action_data: Optional[Dict[str, Any]] = None  # 추가 액션 데이터

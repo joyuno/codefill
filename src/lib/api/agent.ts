@@ -177,6 +177,62 @@ export interface RecommendResponse {
 }
 
 // ============================================================
+// Intent-Based Chat Types
+// ============================================================
+
+export interface SessionContext {
+  last_solved_problem: {
+    id: string;
+    name: string;
+    code: string;
+    language: string;
+    difficulty?: string;
+    topics?: string[];
+    solvedAt: string;
+  } | null;
+  current_problem: {
+    id: string;
+    name: string;
+    description?: string;
+    difficulty?: string;
+    topics?: string[];
+    startedAt: string;
+  } | null;
+  last_suggestion: string | null;
+  recent_problems: Array<{
+    id: string;
+    name: string;
+    code: string;
+    language: string;
+    solvedAt: string;
+  }>;
+}
+
+export interface IntentChatRequest {
+  message: string;
+  conversation_history: ChatAgentMessage[];
+  user_context?: Record<string, unknown>;
+  session_context?: SessionContext;
+}
+
+export interface IntentInfo {
+  intent: string;
+  confidence: number;
+  method: 'embedding' | 'llm' | 'rule' | 'fallback' | 'llm_verified';
+  requires_context?: 'code' | 'problem' | 'previous_suggestion' | null;
+  next_action?: string | null;
+}
+
+export interface IntentChatResponse {
+  message: string;
+  intent_info: IntentInfo;
+  collected_info?: CollectedInfo;
+  is_complete: boolean;
+  search_query?: string | null;
+  action_data?: Record<string, unknown> | null;
+}
+
+// ============================================================
 // API Client
 // ============================================================
 
@@ -186,6 +242,16 @@ export const agentApi = {
    */
   async chat(request: ChatAgentRequest): Promise<ChatAgentResponse> {
     const response = await api.post<ChatAgentResponse>('/agent/chat', request, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Intent-Based Chat Agent
+   * 의도 분류 + 컨텍스트 인식 채팅
+   */
+  async intentChat(request: IntentChatRequest): Promise<IntentChatResponse> {
+    const response = await api.post<IntentChatResponse>('/agent/chat/intent', request, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

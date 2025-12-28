@@ -61,6 +61,11 @@ export {
   type HintAgentResponse,
   type RAGSearchResponse,
   type RecommendResponse,
+  // Intent-Based Chat
+  type SessionContext,
+  type IntentChatRequest,
+  type IntentChatResponse,
+  type IntentInfo,
 } from './agent';
 export {
   translateText,

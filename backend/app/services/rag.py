@@ -6,9 +6,13 @@ Hybrid search (vector + keyword) and code generation fallback
 import json
 from typing import List, Dict, Any, Optional, Tuple
 from ..database import get_supabase_client
+from ..config import get_settings
 from .embedding import embedding_service
 from .openrouter import openrouter_service
 from ..prompts import CODE_GEN_SYSTEM_PROMPT
+
+# LLM 모델 설정
+settings = get_settings()
 
 
 class RAGService:
@@ -182,7 +186,7 @@ class RAGService:
         ]
 
         response = await openrouter_service.chat_completion(
-            model="claude-sonnet",
+            model=settings.llm_model_code_gen,
             messages=messages,
             temperature=0.7,
             max_tokens=8192,

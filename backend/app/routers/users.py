@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Header
+from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Optional, List
 from uuid import UUID
 
 from ..database import get_db
 from ..config import get_settings
+from ..dependencies import get_current_user_id  # 공통 인증 의존성
 from ..models.user import (
     User,
     UserProfile,
@@ -23,24 +24,6 @@ from ..models.user import (
 
 router = APIRouter()
 settings = get_settings()
-
-
-async def get_current_user_id(authorization: str = Header(...)) -> UUID:
-    """Extract and verify user ID from JWT authorization header."""
-    from ..utils.security import verify_token
-
-    token = authorization.replace("Bearer ", "")
-
-    payload = verify_token(token)
-    if payload and payload.get("type") == "access":
-        user_id = payload.get("sub")
-        if user_id:
-            return UUID(user_id)
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired token"
-    )
 
 
 @router.get("/me", response_model=UserProfile)

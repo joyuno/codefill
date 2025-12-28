@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends, Header, status
+from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
 from ..database import get_db
+from ..dependencies import get_current_user_id as get_user_id_from_token  # 공통 인증 의존성
 from ..models.practice import (
     BlankSubmission,
     PuzzleSubmission,
@@ -16,24 +17,6 @@ from ..models.practice import (
 from ..models.problem import ProblemType
 
 router = APIRouter()
-
-
-async def get_user_id_from_token(authorization: str = Header(...)) -> UUID:
-    """Extract user ID from JWT authorization header."""
-    from ..utils.security import verify_token
-
-    token = authorization.replace("Bearer ", "")
-
-    payload = verify_token(token)
-    if payload and payload.get("type") == "access":
-        user_id = payload.get("sub")
-        if user_id:
-            return UUID(user_id)
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired token"
-    )
 
 
 def check_blank_answers(submitted: dict, correct: list) -> tuple[bool, dict]:
@@ -221,13 +204,58 @@ async def run_code(request: CodeExecutionRequest):
     """
     Execute code and return output.
 
-    Currently supports JavaScript only via Sandpack.
-    Python/Java/C++ support requires Judge0 setup.
+    Judge0 API를 통해 Python/Java/C++ 코드를 실행합니다.
+    JavaScript/React는 프론트엔드에서 Sandpack으로 처리됩니다.
     """
-    # TODO: Implement Sandpack integration for JS/React
-    # TODO: Implement Judge0 integration for Python/Java/C++
+    from ..services.judge0 import judge0_service
 
-    return CodeExecutionResponse(
-        success=False,
-        error="Code execution not yet implemented. Coming soon!",
-    )
+    # JavaScript는 프론트엔드 Sandpack에서 처리
+    if request.language.lower() in ["javascript", "js", "react", "jsx", "tsx"]:
+        return CodeExecutionResponse(
+            success=False,
+            error="JavaScript/React는 프론트엔드에서 실행됩니다. Sandpack을 사용하세요.",
+        )
+
+    try:
+        # Judge0 API를 통해 코드 실행
+        result = await judge0_service.submit_code(
+            source_code=request.code,
+            language=request.language,
+            stdin=request.test_input or "",
+        )
+
+        if not result.get("success"):
+            return CodeExecutionResponse(
+                success=False,
+                error=result.get("error") or result.get("detail") or "코드 실행에 실패했습니다.",
+            )
+
+        # 실행 시간 변환 (초 -> 밀리초)
+        execution_time_ms = None
+        if result.get("time"):
+            try:
+                execution_time_ms = int(float(result["time"]) * 1000)
+            except (ValueError, TypeError):
+                pass
+
+        # 에러 확인 (stderr, compile_output)
+        error_msg = None
+        if result.get("stderr"):
+            error_msg = result["stderr"]
+        elif result.get("compile_output"):
+            error_msg = result["compile_output"]
+        elif result.get("is_error"):
+            error_msg = result.get("message", "실행 중 오류가 발생했습니다.")
+
+        return CodeExecutionResponse(
+            success=not result.get("is_error", False),
+            output=result.get("stdout", ""),
+            error=error_msg,
+            execution_time=execution_time_ms,
+        )
+
+    except Exception as e:
+        return CodeExecutionResponse(
+            success=False,
+            error=f"코드 실행 오류: {str(e)}",
+        )
