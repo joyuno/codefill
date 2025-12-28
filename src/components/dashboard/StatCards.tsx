@@ -1,35 +1,46 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, Award, Flame, Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { usersApi } from '@/lib/api/users';
 
 export function StatCards() {
-  const { profile, isLoading } = useAuth();
-  
-  // 기본값 설정 (로딩 중이거나 프로필이 없을 때)
-  const solvedCount = profile?.level ? profile.level * 5 : 0; // 임시 계산 (실제로는 DB에서)
-  const badgeCount = Math.floor(solvedCount / 10); // 임시 계산
-  const streak = 0; // 실제로는 DB에서 연속 학습일 계산
-  
+  const { profile, isLoading, isAuthenticated } = useAuth();
+  const [badgeCount, setBadgeCount] = useState(0);
+
+  // 뱃지 수 가져오기
+  useEffect(() => {
+    if (isAuthenticated) {
+      usersApi.getBadges()
+        .then(badges => setBadgeCount(badges.length))
+        .catch(() => setBadgeCount(0));
+    }
+  }, [isAuthenticated]);
+
+  // 실제 DB 데이터 사용
+  const solvedCount = profile?.solved_count ?? 0;
+  const streak = profile?.streak ?? 0;
+
   const stats = [
-    { 
-      label: '푼 문제', 
-      value: isLoading ? '-' : solvedCount, 
-      icon: Trophy, 
-      color: 'text-primary' 
+    {
+      label: '푼 문제',
+      value: isLoading ? '-' : solvedCount,
+      icon: Trophy,
+      color: 'text-primary'
     },
-    { 
-      label: '획득 뱃지', 
-      value: isLoading ? '-' : badgeCount, 
-      icon: Award, 
-      color: 'text-yellow-500' 
+    {
+      label: '획득 뱃지',
+      value: isLoading ? '-' : badgeCount,
+      icon: Award,
+      color: 'text-yellow-500'
     },
-    { 
-      label: '연속 학습', 
-      value: isLoading ? '-' : `${streak}일`, 
-      icon: Flame, 
-      color: 'text-orange-500' 
+    {
+      label: '연속 학습',
+      value: isLoading ? '-' : `${streak}일`,
+      icon: Flame,
+      color: 'text-orange-500'
     },
   ];
 

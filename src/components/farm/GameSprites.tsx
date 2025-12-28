@@ -560,20 +560,19 @@ export function FarmMinimap({
   const houseSize = HOUSE_SIZES[level as 1 | 2 | 3 | 4] || HOUSE_SIZES[1];
   
   return (
-    <div 
+    <div
       className={cn(
-        'relative rounded-xl overflow-hidden',
+        'relative w-full rounded-xl overflow-hidden',
         'border-4 border-amber-800',
         'shadow-[4px_4px_0_0_#78350f]',
         className
       )}
-      style={{ 
-        aspectRatio: '1',
+      style={{
         background: `
-          linear-gradient(to bottom, 
-            #87CEEB 0%, 
-            #B0E2FF 30%, 
-            #7CBA5F 30%, 
+          linear-gradient(to bottom,
+            #87CEEB 0%,
+            #B0E2FF 30%,
+            #7CBA5F 30%,
             #5A9F4A 100%
           )
         `,

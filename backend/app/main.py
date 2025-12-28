@@ -3,8 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from .config import get_settings
-from .routers import auth, users, problems, practice, chat, execute, agent
-
+from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -5,17 +5,20 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { mockBadges } from '@/lib/mockData';
+import { usersApi } from '@/lib/api/users';
+import { farmApi } from '@/lib/api/farm';
+import type { Badge as BadgeType } from '@/lib/types';
 import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2 } from 'lucide-react';
+import { BadgeIcon } from '@/components/ui/badge-icon';
 import { Button } from '@/components/ui/button';
 import {
   CharacterCreationModal,
   type CharacterData,
 } from '@/components/character/CharacterCreationModal';
-import { 
-  FarmMinimap, 
-  FarmerSprite, 
-  CropSprite, 
+import {
+  FarmMinimap,
+  FarmerSprite,
+  CropSprite,
   HouseSprite,
   type CropVariety,
   type CropStage,
@@ -23,6 +26,7 @@ import {
 import { useAuth, SUBSCRIPTION_FEATURES } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import type { UserFarm, FarmSlot } from '@/lib/api/farm';
 
 // Color mapping
 const COLOR_MAP: Record<string, string> = {
@@ -47,9 +51,10 @@ const SAMPLE_CROPS: Array<{ type: CropVariety; stage: CropStage }> = [
 export function SidebarProfile() {
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
-  const [character, setCharacter] = useState<CharacterData | null>(null);
-  const [farmLevel, setFarmLevel] = useState(1);
-  const [gold, setGold] = useState(1250);
+  const [farm, setFarm] = useState<UserFarm | null>(null);
+  const [farmLoading, setFarmLoading] = useState(false);
+  const [farmError, setFarmError] = useState<string | null>(null);
+  const [badges, setBadges] = useState<BadgeType[]>([]);
 
   // 사용자 XP 및 레벨 계산
   const level = profile?.level || 1;
@@ -57,28 +62,74 @@ export function SidebarProfile() {
   const requiredXP = profile?.required_xp || 100;
   const xpProgress = (currentXP / requiredXP) * 100;
 
-  // Load character from localStorage
-  useEffect(() => {
-    const savedCharacter = localStorage.getItem('codefill_character');
-    if (savedCharacter) {
-      try {
-        const parsed = JSON.parse(savedCharacter);
-        setCharacter(parsed);
-        const savedFarmLevel = localStorage.getItem('codefill_farm_level');
-        if (savedFarmLevel) {
-          setFarmLevel(parseInt(savedFarmLevel, 10));
-        }
-      } catch {
-        // Invalid data
-      }
-    }
-  }, []);
+  // Load farm data from API
+  const loadFarmData = async () => {
+    if (!isAuthenticated) return;
 
-  const handleCharacterCreate = (newCharacter: CharacterData) => {
-    localStorage.setItem('codefill_character', JSON.stringify(newCharacter));
-    setCharacter(newCharacter);
-    setShowCharacterModal(false);
+    setFarmLoading(true);
+    setFarmError(null);
+
+    try {
+      const data = await farmApi.getFarm();
+      setFarm(data);
+    } catch (err) {
+      console.error('농장 데이터 로드 실패:', err);
+      setFarmError('농장 데이터를 불러올 수 없습니다');
+      setFarm(null);
+    } finally {
+      setFarmLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadFarmData();
+  }, [isAuthenticated]);
+
+  // Fetch user badges from API
+  useEffect(() => {
+    if (isAuthenticated) {
+      usersApi.getBadges()
+        .then(setBadges)
+        .catch(() => setBadges([]));
+    }
+  }, [isAuthenticated]);
+
+  const handleCharacterCreate = async (newCharacter: CharacterData) => {
+    try {
+      // API 호출로 캐릭터 생성
+      const updatedFarm = await farmApi.createCharacter({
+        name: newCharacter.name,
+        hair: newCharacter.appearance.hair,
+        hairColor: COLOR_MAP[newCharacter.appearance.color] || '#8B4513',
+        face: newCharacter.appearance.face,
+        outfit: newCharacter.appearance.clothes,
+        outfitColor: COLOR_MAP[newCharacter.appearance.color] || '#8B4513',
+        farmName: newCharacter.farmName,
+      });
+      setFarm(updatedFarm);
+      setShowCharacterModal(false);
+    } catch (error) {
+      console.error('캐릭터 생성 실패:', error);
+      // Fallback: localStorage에도 저장 (오프라인 지원)
+      localStorage.setItem('codefill_character', JSON.stringify(newCharacter));
+      setShowCharacterModal(false);
+    }
+  };
+
+  // farm 데이터에서 캐릭터 정보 추출
+  const character = farm?.characterData ? {
+    name: farm.characterData.name,
+    appearance: {
+      hair: farm.characterData.hair,
+      face: farm.characterData.face,
+      clothes: farm.characterData.outfit,
+      color: Object.entries(COLOR_MAP).find(([_, v]) => v === farm.characterData?.hairColor)?.[0] || 'brown',
+    },
+    farmName: farm.characterData.farmName,
+  } : null;
+
+  const farmLevel = farm?.farmLevel || 1;
+  const gold = farm?.gold || 0;
 
   const characterColor = character ? COLOR_MAP[character.appearance.color] || COLOR_MAP.brown : COLOR_MAP.brown;
 
@@ -133,7 +184,32 @@ export function SidebarProfile() {
 
       {/* 농장 미니맵 섹션 */}
       <div className="space-y-3">
-        {character ? (
+        {farmLoading ? (
+          <div className={cn(
+            'rounded-xl p-6 text-center',
+            'bg-gradient-to-b from-amber-100 to-amber-50',
+            'border-4 border-amber-600'
+          )}>
+            <Loader2 className="h-8 w-8 animate-spin text-amber-600 mx-auto mb-2" />
+            <p className="text-sm text-amber-800">농장 불러오는 중...</p>
+          </div>
+        ) : farmError ? (
+          <div className={cn(
+            'rounded-xl p-4',
+            'bg-gradient-to-b from-red-50 to-red-100',
+            'border-4 border-red-300'
+          )}>
+            <p className="text-sm text-red-700 mb-3 text-center">{farmError}</p>
+            <Button
+              onClick={loadFarmData}
+              size="sm"
+              variant="outline"
+              className="w-full border-red-400 text-red-700 hover:bg-red-50"
+            >
+              다시 시도
+            </Button>
+          </div>
+        ) : character ? (
           <>
             {/* 농장 미니맵 */}
             <motion.div
@@ -344,24 +420,36 @@ export function SidebarProfile() {
       {/* Badges */}
       <div className="rounded-xl border border-border bg-card p-4">
         <h4 className="mb-3 text-sm font-medium text-muted-foreground">획득한 뱃지</h4>
-        <div className="flex flex-wrap gap-2">
-          {mockBadges.slice(0, 5).map((badge) => (
-            <Tooltip key={badge.id}>
-              <TooltipTrigger asChild>
-                <motion.div
-                  whileHover={{ scale: 1.1 }}
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg bg-secondary text-lg"
-                >
-                  {badge.icon}
-                </motion.div>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[200px]">
-                <p className="font-medium">{badge.name}</p>
-                <p className="text-xs text-muted-foreground">{badge.description}</p>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
+        {badges.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {badges.map((badge) => (
+              <Tooltip key={badge.id}>
+                <TooltipTrigger asChild>
+                  <motion.div
+                    whileHover={{ scale: 1.1 }}
+                    className="cursor-pointer"
+                  >
+                    {badge.iconUrl ? (
+                      <img
+                        src={badge.iconUrl}
+                        alt={badge.name}
+                        className="h-10 w-10 object-contain"
+                      />
+                    ) : (
+                      <BadgeIcon name={badge.name} rarity={badge.rarity} size="md" />
+                    )}
+                  </motion.div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[200px]">
+                  <p className="font-medium">{badge.name}</p>
+                  <p className="text-xs text-muted-foreground">{badge.description}</p>
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">아직 획득한 뱃지가 없습니다</p>
+        )}
       </div>
     </div>
   );

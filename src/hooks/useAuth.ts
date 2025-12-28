@@ -17,6 +17,9 @@ interface UserProfile {
   level: number;
   current_xp: number;
   required_xp: number;
+  solved_count: number;
+  streak: number;
+  max_streak: number;
   subscription_tier: 'free' | 'basic' | 'pro';
   subscription_expires_at?: string;
   created_at: string;
@@ -89,10 +92,13 @@ export function useAuth() {
         id: data.id,
         email: data.email,
         username: data.username || data.name || data.email?.split('@')[0] || 'User',
-        avatar_url: data.avatar_url,
+        avatar_url: data.avatar_url || data.avatarColor,
         level: data.level || 1,
         current_xp: data.current_xp || data.currentXP || 0,
         required_xp: data.required_xp || data.requiredXP || 100,
+        solved_count: data.solved_count || data.solvedCount || 0,
+        streak: data.streak || data.currentStreak || 0,
+        max_streak: data.max_streak || data.maxStreak || 0,
         subscription_tier: data.subscription_tier || data.subscription || 'free',
         subscription_expires_at: data.subscription_expires_at,
         created_at: data.created_at || data.joinedAt,

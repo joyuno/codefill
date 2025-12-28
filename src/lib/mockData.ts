@@ -96,12 +96,14 @@ export const mockUser: User = {
   subscription: 'pro',
 };
 
+const BADGE_STORAGE_URL = 'https://qukgaiwdusuxcswsqhjo.supabase.co/storage/v1/object/public/badges';
+
 export const mockBadges: Badge[] = [
-  { id: '1', name: 'First Steps', icon: '🎯', description: 'Complete your first problem', earnedAt: '2024-01-16', rarity: 'common' },
-  { id: '2', name: 'Week Warrior', icon: '🔥', description: '7 day streak', earnedAt: '2024-02-01', rarity: 'common' },
-  { id: '3', name: 'Algorithm Master', icon: '🐍', description: 'Solve 50 algorithm problems', earnedAt: '2024-03-15', rarity: 'rare' },
-  { id: '4', name: 'Speed Demon', icon: '⚡', description: 'Solve 10 problems in one day', earnedAt: '2024-04-20', rarity: 'epic' },
-  { id: '5', name: 'Perfectionist', icon: '💎', description: 'No hints on 25 problems', earnedAt: '2024-05-01', rarity: 'legendary' },
+  { id: '1', name: 'First Step', icon: 'first step', iconUrl: `${BADGE_STORAGE_URL}/first_step.png`, description: 'Complete your first problem', earnedAt: '2024-01-16', rarity: 'common' },
+  { id: '2', name: 'Week Warrior', icon: 'week warrior', iconUrl: `${BADGE_STORAGE_URL}/week_warrior.png`, description: '7 day streak', earnedAt: '2024-02-01', rarity: 'common' },
+  { id: '3', name: 'Half Century', icon: 'half century', iconUrl: `${BADGE_STORAGE_URL}/half_century.png`, description: 'Solve 50 problems', earnedAt: '2024-03-15', rarity: 'rare' },
+  { id: '4', name: 'Rising Star', icon: 'rising star', iconUrl: `${BADGE_STORAGE_URL}/rising_star.png`, description: 'Reach level 10', earnedAt: '2024-04-20', rarity: 'epic' },
+  { id: '5', name: 'Expert', icon: 'expert', iconUrl: `${BADGE_STORAGE_URL}/expert.png`, description: 'Reach level 50', earnedAt: '2024-05-01', rarity: 'legendary' },
 ];
 
 export const mockProblems: Problem[] = [

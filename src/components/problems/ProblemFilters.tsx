@@ -12,29 +12,20 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Search, X, Filter } from 'lucide-react';
-import type { Framework, Difficulty, ProblemType } from '@/lib/types';
 
 export interface ProblemFiltersState {
   search: string;
-  language: string;
   difficulty: string;
-  type: string;
-  topic: string;
+  source: string;
+  tags: string;
 }
 
 interface ProblemFiltersProps {
   filters: ProblemFiltersState;
   onFiltersChange: (filters: ProblemFiltersState) => void;
   resultCount: number;
+  totalCount: number;
 }
-
-const LANGUAGE_OPTIONS = [
-  { value: 'all', label: '모든 언어' },
-  { value: 'python', label: 'Python' },
-  { value: 'javascript', label: 'JavaScript' },
-  { value: 'java', label: 'Java' },
-  { value: 'cpp', label: 'C++' },
-];
 
 const DIFFICULTY_OPTIONS = [
   { value: 'all', label: '모든 난이도' },
@@ -43,30 +34,32 @@ const DIFFICULTY_OPTIONS = [
   { value: 'hard', label: 'Hard', color: 'text-red-500' },
 ];
 
-const TYPE_OPTIONS = [
-  { value: 'all', label: '모든 유형' },
-  { value: 'blank', label: '빈칸 채우기' },
-  { value: 'puzzle', label: '퍼즐' },
-  { value: 'guided', label: '1대1 대화형' },
-  { value: 'implementation', label: '구현' },
+const SOURCE_OPTIONS = [
+  { value: 'all', label: '모든 출처' },
+  { value: 'baekjoon', label: 'Baekjoon' },
+  { value: 'codeforces', label: 'Codeforces' },
+  { value: 'leetcode', label: 'LeetCode' },
+  { value: 'geeksforgeeks', label: 'GeeksforGeeks' },
+  { value: 'hackerrank', label: 'HackerRank' },
 ];
 
-const TOPIC_OPTIONS = [
-  { value: 'all', label: '모든 토픽' },
-  { value: 'array', label: '배열' },
-  { value: 'hash-map', label: '해시맵' },
-  { value: 'binary-search', label: '이진탐색' },
-  { value: 'dp', label: 'DP' },
-  { value: 'sorting', label: '정렬' },
-  { value: 'linked-list', label: '연결리스트' },
-  { value: 'stack', label: '스택' },
-  { value: 'string', label: '문자열' },
+const TAG_OPTIONS = [
+  { value: 'all', label: '모든 태그' },
+  { value: 'Dynamic programming', label: 'DP' },
+  { value: 'Graph algorithms', label: 'Graph' },
+  { value: 'Binary search', label: 'Binary Search' },
+  { value: 'Sorting', label: 'Sorting' },
+  { value: 'Math', label: 'Math' },
+  { value: 'String', label: 'String' },
+  { value: 'Implementation', label: 'Implementation' },
+  { value: 'Greedy', label: 'Greedy' },
 ];
 
 export function ProblemFilters({
   filters,
   onFiltersChange,
   resultCount,
+  totalCount,
 }: ProblemFiltersProps) {
   const updateFilter = (key: keyof ProblemFiltersState, value: string) => {
     onFiltersChange({ ...filters, [key]: value });
@@ -75,25 +68,22 @@ export function ProblemFilters({
   const clearFilters = () => {
     onFiltersChange({
       search: '',
-      language: 'all',
       difficulty: 'all',
-      type: 'all',
-      topic: 'all',
+      source: 'all',
+      tags: 'all',
     });
   };
 
   const hasActiveFilters =
     filters.search ||
-    filters.language !== 'all' ||
     filters.difficulty !== 'all' ||
-    filters.type !== 'all' ||
-    filters.topic !== 'all';
+    filters.source !== 'all' ||
+    filters.tags !== 'all';
 
   const activeFilterCount = [
-    filters.language !== 'all',
     filters.difficulty !== 'all',
-    filters.type !== 'all',
-    filters.topic !== 'all',
+    filters.source !== 'all',
+    filters.tags !== 'all',
   ].filter(Boolean).length;
 
   return (
@@ -108,7 +98,7 @@ export function ProblemFilters({
         <Input
           value={filters.search}
           onChange={(e) => updateFilter('search', e.target.value)}
-          placeholder="문제 제목, 토픽으로 검색..."
+          placeholder="문제 이름으로 검색..."
           className="bg-card pl-10 pr-10"
         />
         {filters.search && (
@@ -129,22 +119,6 @@ export function ProblemFilters({
         </div>
 
         <Select
-          value={filters.language}
-          onValueChange={(v) => updateFilter('language', v)}
-        >
-          <SelectTrigger className="w-[130px] bg-secondary h-9">
-            <SelectValue placeholder="언어" />
-          </SelectTrigger>
-          <SelectContent>
-            {LANGUAGE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
           value={filters.difficulty}
           onValueChange={(v) => updateFilter('difficulty', v)}
         >
@@ -161,14 +135,14 @@ export function ProblemFilters({
         </Select>
 
         <Select
-          value={filters.type}
-          onValueChange={(v) => updateFilter('type', v)}
+          value={filters.source}
+          onValueChange={(v) => updateFilter('source', v)}
         >
           <SelectTrigger className="w-[140px] bg-secondary h-9">
-            <SelectValue placeholder="유형" />
+            <SelectValue placeholder="출처" />
           </SelectTrigger>
           <SelectContent>
-            {TYPE_OPTIONS.map((opt) => (
+            {SOURCE_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
@@ -177,14 +151,14 @@ export function ProblemFilters({
         </Select>
 
         <Select
-          value={filters.topic}
-          onValueChange={(v) => updateFilter('topic', v)}
+          value={filters.tags}
+          onValueChange={(v) => updateFilter('tags', v)}
         >
-          <SelectTrigger className="w-[130px] bg-secondary h-9">
-            <SelectValue placeholder="토픽" />
+          <SelectTrigger className="w-[140px] bg-secondary h-9">
+            <SelectValue placeholder="태그" />
           </SelectTrigger>
           <SelectContent>
-            {TOPIC_OPTIONS.map((opt) => (
+            {TAG_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
@@ -209,7 +183,7 @@ export function ProblemFilters({
             <Badge variant="secondary">{activeFilterCount}개 필터 적용</Badge>
           )}
           <span className="text-sm text-muted-foreground">
-            {resultCount}개의 문제
+            {resultCount.toLocaleString()} / {totalCount.toLocaleString()}개
           </span>
         </div>
       </div>

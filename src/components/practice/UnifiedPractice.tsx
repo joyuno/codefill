@@ -30,6 +30,9 @@ import {
   Zap,
   Eye,
   EyeOff,
+  Lock,
+  Languages,
+  Loader2,
 } from 'lucide-react';
 import {
   Popover,
@@ -44,6 +47,14 @@ import {
 import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
 import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
 import { CodeEditor } from './CodeEditor';
+import { translateText, LANGUAGE_LABELS, type LanguageCode } from '@/lib/api/translate';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // UI에서 사용하는 퍼즐 블록 (indentation 포함)
 interface UIPuzzleBlock {
@@ -147,6 +158,22 @@ export function UnifiedPractice({
   const [blocks, setBlocks] = useState<UIPuzzleBlock[]>([]);
   const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
   const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
+  const [showPuzzlePulse, setShowPuzzlePulse] = useState(false);
+
+  // 번역 상태
+  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>('ko');
+  const [translatedDescription, setTranslatedDescription] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(true);
+
+  // 오답 애니메이션: 결과 나온 후 2초만 표시
+  useEffect(() => {
+    if (Object.keys(puzzleResults).length > 0) {
+      setShowPuzzlePulse(true);
+      const timer = setTimeout(() => setShowPuzzlePulse(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [puzzleResults]);
 
   // 문제/타입 변경 시 초기화
   useEffect(() => {
@@ -159,26 +186,24 @@ export function UnifiedPractice({
     setPuzzleResults({});
     setCustomTestCases([]);
     setExpandedTests(new Set([0]));
+    // 번역 상태 초기화
+    setTranslatedDescription(null);
+    setShowOriginal(true);
 
     if (problemType === 'blank') {
-      // 새 형식(codeTemplate) 또는 레거시 형식(codeSnippet) 지원
-      setCode(problem.codeTemplate || problem.codeSnippet || '');
+      setCode(problem.codeSnippet || '');
     } else if (problemType === 'puzzle') {
-      // 새 형식(blocks) 또는 레거시 형식(puzzleBlocks) 지원
-      const sourceBlocks = problem.blocks || problem.puzzleBlocks || [];
-      const uiBlocks: UIPuzzleBlock[] = sourceBlocks.map((b, idx) => ({
+      // ConvertedPuzzleBlock을 UIPuzzleBlock으로 변환
+      const uiBlocks: UIPuzzleBlock[] = (problem.puzzleBlocks || []).map(b => ({
         id: b.id,
         code: b.code,
-        indentation: b.indentation || 0,
-        correctOrder: b.correctOrder ?? idx,
+        indentation: 0, // 기본 indentation
+        correctOrder: b.correctOrder,
       }));
       // 랜덤 셔플
       const shuffled = [...uiBlocks].sort(() => Math.random() - 0.5);
       setBlocks(shuffled);
       setCode('# 블록을 올바른 순서로 정렬하세요');
-    } else if (problemType === 'guided') {
-      // guided 문제는 채팅에서 처리되므로 최종 코드만 표시
-      setCode(problem.finalCodeReveal || '# 튜터와 대화하며 문제를 풀어보세요');
     } else if (problemType === 'implementation') {
       // implementation 문제는 빈 코드로 시작
       setCode('# 여기에 코드를 작성하세요\n');
@@ -256,33 +281,11 @@ export function UnifiedPractice({
   // 실행 가능한 코드 조립
   const getExecutableCode = (): string => {
     if (problemType === 'blank') {
-      // 새 형식(codeTemplate) 또는 레거시 형식(codeSnippet) 지원
-      let execCode = problem.codeTemplate || problem.codeSnippet || '';
-      const blanks = problem.blanks || [];
-
-      // 형식 감지:
-      // 1. _0_, _1_ 형식 (번호가 있는 빈칸)
-      // 2. 연속 언더스코어 형식 (정답 글자수만큼 _)
-      const hasNumberedBlanks = /_\d+_/.test(execCode);
-
-      if (hasNumberedBlanks) {
-        // 번호 형식: _0_, _1_, _2_ -> 실제 답변으로 치환
-        blanks.forEach((blank, idx) => {
-          const answer = blankAnswers[blank.id] || `_${idx}_`;
-          execCode = execCode.replace(new RegExp(`_${idx}_`, 'g'), answer);
-        });
-      } else {
-        // 연속 언더스코어 형식: __, ___, ____ -> 순서대로 실제 답변으로 치환
-        let blankIdx = 0;
-        execCode = execCode.replace(/__+/g, (match) => {
-          const blank = blanks[blankIdx];
-          blankIdx++;
-          if (blank) {
-            return blankAnswers[blank.id] || match;
-          }
-          return match;
-        });
-      }
+      let execCode = problem.codeSnippet || '';
+      (problem.blanks || []).forEach((blank) => {
+        const answer = blankAnswers[blank.id] || '___';
+        execCode = execCode.replace('___', answer);
+      });
       return execCode;
     } else if (problemType === 'puzzle') {
       return blocks.map(b => '    '.repeat(b.indentation) + b.code).join('\n');
@@ -488,7 +491,7 @@ export function UnifiedPractice({
     onHintRequest(newLevel);
   };
 
-  // 블록 드래그 핸들러 (string | number 모두 지원)
+  // 블록 드래그 핸들러
   const handleDragStart = (blockId: string | number) => {
     setDraggedBlock(String(blockId));
   };
@@ -498,12 +501,36 @@ export function UnifiedPractice({
     const targetIdStr = String(targetId);
     if (!draggedBlock || draggedBlock === targetIdStr) return;
 
-    const dragIndex = blocks.findIndex(b => String(b.id) === draggedBlock);
-    const targetIndex = blocks.findIndex(b => String(b.id) === targetIdStr);
+    // 정답 블록 위로는 드래그 불가
+    const targetBlock = blocks.find(b => String(b.id) === targetIdStr);
+    if (targetBlock && puzzleResults[targetBlock.id]) return;
 
-    const newBlocks = [...blocks];
-    const [removed] = newBlocks.splice(dragIndex, 1);
-    newBlocks.splice(targetIndex, 0, removed);
+    // 정답 블록들의 원래 위치를 기억
+    const lockedPositions: { index: number; block: typeof blocks[0] }[] = [];
+    blocks.forEach((block, index) => {
+      if (puzzleResults[block.id]) {
+        lockedPositions.push({ index, block });
+      }
+    });
+
+    // 오답 블록들만 추출
+    const unlockedBlocks = blocks.filter(b => !puzzleResults[b.id]);
+
+    // 오답 블록들 내에서 순서 변경
+    const dragIndex = unlockedBlocks.findIndex(b => String(b.id) === draggedBlock);
+    const targetIndex = unlockedBlocks.findIndex(b => String(b.id) === targetIdStr);
+
+    if (dragIndex === -1 || targetIndex === -1) return;
+
+    const [removed] = unlockedBlocks.splice(dragIndex, 1);
+    unlockedBlocks.splice(targetIndex, 0, removed);
+
+    // 정답 블록들을 원래 위치에 다시 삽입
+    const newBlocks = [...unlockedBlocks];
+    lockedPositions.forEach(({ index, block }) => {
+      newBlocks.splice(index, 0, block);
+    });
+
     setBlocks(newBlocks);
   };
 
@@ -517,24 +544,45 @@ export function UnifiedPractice({
     setOutput('');
   };
 
+  // 번역 핸들러
+  const handleTranslate = async () => {
+    if (!problem.description || isTranslating) return;
+
+    setIsTranslating(true);
+    try {
+      const result = await translateText(problem.description, targetLanguage);
+      if (result.success && result.translated_text) {
+        setTranslatedDescription(result.translated_text);
+        setShowOriginal(false);
+      } else {
+        console.error('Translation failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Translation error:', error);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   const passedCount = testResults.filter((r) => r.passed).length;
   const totalTests = baseTestCases.length;
   const testedCount = testResults.length;
+
+  // 테스트 케이스 값을 보기 좋게 포맷팅
+  const formatTestValue = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') {
+      // 문자열은 그대로 반환 (줄바꿈 포함)
+      return value;
+    }
+    // 배열이나 객체는 보기 좋게 포맷팅
+    return JSON.stringify(value, null, 2);
+  };
   const allPassed = testedCount > 0 && passedCount === testedCount;
 
   // Blank 코드 렌더링
   const renderBlankCode = () => {
-    // 새 형식(codeTemplate) 또는 레거시 형식(codeSnippet) 지원
-    const codeSource = problem.codeTemplate || problem.codeSnippet || '';
-
-    // 형식 감지:
-    // 1. _0_, _1_ 형식 (번호가 있는 빈칸)
-    // 2. 연속 언더스코어 형식 (정답 글자수만큼 _)
-    // 3. 레거시 ___ 형식 (고정 3개)
-    const hasNumberedBlanks = /_\d+_/.test(codeSource);
-    const hasConsecutiveUnderscores = /__+/.test(codeSource);
-
-    const codeLines = codeSource.split('\n');
+    const codeLines = (problem.codeSnippet || '').split('\n');
     let blankIndex = 0;
     const blanks = problem.blanks || [];
 
@@ -542,11 +590,7 @@ export function UnifiedPractice({
       const parts: React.ReactNode[] = [];
       let lastIndex = 0;
       let match;
-
-      // 패턴 선택:
-      // - 번호 형식: _0_, _1_, _2_
-      // - 연속 언더스코어 형식: __, ___, ____ (2개 이상)
-      const blankPattern = hasNumberedBlanks ? /_(\d+)_/g : /__+/g;
+      const blankPattern = /___/g;
 
       while ((match = blankPattern.exec(line)) !== null) {
         if (match.index > lastIndex) {
@@ -557,36 +601,26 @@ export function UnifiedPractice({
           );
         }
 
-        // 번호 형식은 매치에서 인덱스 추출, 연속 언더스코어는 순서대로
-        const matchedIndex = hasNumberedBlanks && match[1] !== undefined
-          ? parseInt(match[1], 10)
-          : blankIndex;
-        const blank = blanks[matchedIndex];
-
+        const blank = blanks[blankIndex];
         if (blank) {
           const isCorrect = blankResults[blank.id];
           const hasResult = Object.keys(blankResults).length > 0;
 
-          // 빈칸 너비 계산: 연속 언더스코어 개수 기반 (최소 60px, 글자당 약 8px)
-          const underscoreCount = match[0].length;
-          const inputWidth = Math.max(60, underscoreCount * 10);
-
           parts.push(
-            <span key={`blank-${blank.id}-${lineIdx}-${match.index}`} className="inline-flex items-center gap-1 mx-1">
+            <span key={`blank-${blank.id}`} className="inline-flex items-center gap-1 mx-1">
               <Input
                 value={blankAnswers[blank.id] || ''}
                 onChange={(e) =>
                   setBlankAnswers((prev) => ({ ...prev, [blank.id]: e.target.value }))
                 }
-                style={{ width: `${inputWidth}px` }}
-                className={`inline-block h-7 px-2 py-0 font-mono text-sm ${
+                className={`inline-block h-7 w-24 px-2 py-0 font-mono text-sm ${
                   hasResult
                     ? isCorrect
                       ? 'border-green-500 bg-green-500/10 text-green-400'
                       : 'border-red-500 bg-red-500/10 text-red-400'
                     : 'border-primary/50 bg-[#2d2d2d] text-[#d4d4d4]'
                 }`}
-                placeholder={'_'.repeat(underscoreCount)}
+                placeholder="___"
                 disabled={isSubmitted}
               />
               {/* 힌트 버튼 - problem.keyConcepts 사용 */}
@@ -614,8 +648,7 @@ export function UnifiedPractice({
           blankIndex++;
         }
 
-        // 매치된 전체 문자열 길이만큼 이동
-        lastIndex = match.index + match[0].length;
+        lastIndex = match.index + 3;
       }
 
       if (lastIndex < line.length) {
@@ -740,7 +773,7 @@ export function UnifiedPractice({
                       variant="ghost"
                       size="icon"
                       className="h-5 w-5"
-                      onClick={() => navigator.clipboard.writeText(JSON.stringify(tc.input))}
+                      onClick={() => navigator.clipboard.writeText(formatTestValue(tc.input))}
                     >
                       <Copy className="h-3 w-3" />
                     </Button>
@@ -748,15 +781,15 @@ export function UnifiedPractice({
                 </div>
                 {isCustom ? (
                   <Input
-                    value={JSON.stringify(customTc!.input)}
+                    value={formatTestValue(customTc!.input)}
                     onChange={(e) => updateCustomTestCase(customTc!.id, 'input', e.target.value)}
                     className="h-7 text-xs font-mono bg-background"
-                    placeholder='예: [[1,2,3], 5]'
+                    placeholder='예: 1 2 3'
                   />
                 ) : (
-                  <code className="text-xs font-mono text-foreground block break-all">
-                    {JSON.stringify(tc.input)}
-                  </code>
+                  <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all bg-background/50 rounded p-2 max-h-32 overflow-auto">
+                    {formatTestValue(tc.input)}
+                  </pre>
                 )}
               </div>
 
@@ -766,18 +799,28 @@ export function UnifiedPractice({
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                     Expected
                   </span>
+                  {!isCustom && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => navigator.clipboard.writeText(formatTestValue(tc.expected))}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
                 {isCustom ? (
                   <Input
-                    value={JSON.stringify(customTc!.expected)}
+                    value={formatTestValue(customTc!.expected)}
                     onChange={(e) => updateCustomTestCase(customTc!.id, 'expected', e.target.value)}
                     className="h-7 text-xs font-mono bg-background"
-                    placeholder='예: [0, 1]'
+                    placeholder='예: 6'
                   />
                 ) : (
-                  <code className="text-xs font-mono text-foreground block">
-                    {JSON.stringify(tc.expected)}
-                  </code>
+                  <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all bg-background/50 rounded p-2 max-h-32 overflow-auto">
+                    {formatTestValue(tc.expected)}
+                  </pre>
                 )}
               </div>
 
@@ -787,9 +830,9 @@ export function UnifiedPractice({
                   <span className="text-[10px] uppercase tracking-wider text-red-400 font-medium block mb-1">
                     Actual
                   </span>
-                  <code className="text-xs font-mono text-red-500 block">
-                    {JSON.stringify(result.actual)}
-                  </code>
+                  <pre className="text-xs font-mono text-red-500 whitespace-pre-wrap break-all">
+                    {formatTestValue(result.actual)}
+                  </pre>
                   {result.error && (
                     <p className="text-xs text-red-400 mt-1.5 whitespace-pre-wrap">
                       {result.error}
@@ -888,9 +931,65 @@ export function UnifiedPractice({
                 {activeTab === 'problem' ? (
                   <div className="space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold mb-2">문제 설명</h4>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold">문제 설명</h4>
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={targetLanguage}
+                            onValueChange={(value) => setTargetLanguage(value as LanguageCode)}
+                          >
+                            <SelectTrigger className="h-7 w-24 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(LANGUAGE_LABELS).map(([code, label]) => (
+                                <SelectItem key={code} value={code} className="text-xs">
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleTranslate}
+                            disabled={isTranslating}
+                            className="h-7 px-2 text-xs gap-1"
+                          >
+                            {isTranslating ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Languages className="h-3.5 w-3.5" />
+                            )}
+                            번역
+                          </Button>
+                        </div>
+                      </div>
+                      {/* 원문/번역문 토글 */}
+                      {translatedDescription && (
+                        <div className="flex gap-1 mb-2">
+                          <Button
+                            variant={showOriginal ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => setShowOriginal(true)}
+                            className="h-6 px-2 text-xs"
+                          >
+                            원문
+                          </Button>
+                          <Button
+                            variant={!showOriginal ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => setShowOriginal(false)}
+                            className="h-6 px-2 text-xs"
+                          >
+                            {LANGUAGE_LABELS[targetLanguage]}
+                          </Button>
+                        </div>
+                      )}
                       <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                        {problem.description}
+                        {showOriginal || !translatedDescription
+                          ? problem.description
+                          : translatedDescription}
                       </p>
                     </div>
 
@@ -1012,16 +1111,18 @@ export function UnifiedPractice({
               {blocks.map((block) => {
                 const hasResult = Object.keys(puzzleResults).length > 0;
                 const isCorrect = puzzleResults[block.id];
+                // 정답 블록은 고정 (드래그 불가)
+                const isLocked = hasResult && isCorrect;
 
                 return (
                   <div
                     key={block.id}
-                    draggable={!isSubmitted}
-                    onDragStart={() => !isSubmitted && handleDragStart(block.id)}
-                    onDragOver={(e) => !isSubmitted && handleDragOver(e, block.id)}
+                    draggable={!isSubmitted && !isLocked}
+                    onDragStart={() => !isSubmitted && !isLocked && handleDragStart(block.id)}
+                    onDragOver={(e) => !isSubmitted && !isLocked && handleDragOver(e, block.id)}
                     onDragEnd={handleDragEnd}
                     className={`flex items-center gap-2 p-2 rounded border transition-all ${
-                      isSubmitted
+                      isSubmitted || isLocked
                         ? 'cursor-default'
                         : 'cursor-move'
                     } ${
@@ -1030,18 +1131,22 @@ export function UnifiedPractice({
                         : hasResult
                           ? isCorrect
                             ? 'bg-green-500/10 border-green-500/50'
-                            : 'bg-red-500/10 border-red-500/50 animate-pulse'
+                            : `bg-red-500/10 border-red-500/50 ${showPuzzlePulse ? 'animate-[pulse_2s_ease-in-out_1]' : ''}`
                           : 'bg-card border-border hover:border-primary/50'
                     }`}
                     style={{ marginLeft: block.indentation * 24 }}
                   >
-                    <GripVertical className={`h-4 w-4 shrink-0 ${
-                      hasResult
-                        ? isCorrect
-                          ? 'text-green-500'
-                          : 'text-red-500'
-                        : 'text-muted-foreground'
-                    }`} />
+                    {isLocked ? (
+                      <Lock className="h-4 w-4 shrink-0 text-green-500" />
+                    ) : (
+                      <GripVertical className={`h-4 w-4 shrink-0 ${
+                        hasResult
+                          ? isCorrect
+                            ? 'text-green-500'
+                            : 'text-red-500'
+                          : 'text-muted-foreground'
+                      }`} />
+                    )}
                     <code className={`text-sm font-mono flex-1 ${
                       hasResult
                         ? isCorrect
@@ -1093,9 +1198,32 @@ export function UnifiedPractice({
         {/* Puzzle 모드: 조립된 코드 미리보기 */}
         {problemType === 'puzzle' && (
           <div className="flex-1 min-h-0 overflow-auto bg-[#1e1e1e] p-4">
-            <p className="text-xs text-[#808080] mb-2">조립된 코드:</p>
-            <pre className="font-mono text-sm text-[#d4d4d4] whitespace-pre-wrap">
-              {code}
+            <div className="flex items-center gap-4 mb-3">
+              <p className="text-xs text-[#808080]">조립된 코드:</p>
+              <div className="flex items-center gap-3 text-[10px]">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#6A9955]"></span>
+                  <span className="text-[#808080]">고정 코드</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#9CDCFE]"></span>
+                  <span className="text-[#808080]">퍼즐 블록</span>
+                </span>
+              </div>
+            </div>
+            <pre className="font-mono text-sm whitespace-pre-wrap">
+              {/* fixed_start - 녹색 (고정) */}
+              {problem.fixedStart && (
+                <span className="text-[#6A9955]">{problem.fixedStart}{'\n'}</span>
+              )}
+              {/* 퍼즐 블록 - 하늘색 (변경 가능) */}
+              <span className="text-[#9CDCFE]">
+                {blocks.map(b => '    '.repeat(b.indentation || 0) + b.code).join('\n')}
+              </span>
+              {/* fixed_end - 녹색 (고정) */}
+              {problem.fixedEnd && (
+                <span className="text-[#6A9955]">{'\n'}{problem.fixedEnd}</span>
+              )}
             </pre>
           </div>
         )}
