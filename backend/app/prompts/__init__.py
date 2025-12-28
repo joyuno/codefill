@@ -37,6 +37,12 @@ from .hint_agent import (
     ERROR_HINT_TEMPLATES
 )
 
+from .free_chat_agent import (
+    FREE_CHAT_SYSTEM_PROMPT,
+    INTENT_ACTION_MAP,
+    CONTEXT_REQUIRED_INTENTS
+)
+
 __all__ = [
     # Chat Agent
     "CHAT_AGENT_SYSTEM_PROMPT",
@@ -61,4 +67,8 @@ __all__ = [
     "HINT_LEVEL_CONFIG",
     "PROBLEM_TYPE_HINT_FOCUS",
     "ERROR_HINT_TEMPLATES",
+    # Free Chat Agent
+    "FREE_CHAT_SYSTEM_PROMPT",
+    "INTENT_ACTION_MAP",
+    "CONTEXT_REQUIRED_INTENTS",
 ]

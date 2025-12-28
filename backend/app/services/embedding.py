@@ -96,7 +96,7 @@ class EmbeddingService:
     def create_problem_text_for_embedding(self, problem: Dict[str, Any]) -> str:
         """
         Create text representation of a problem for embedding.
-        Combines title, description, tags, and code for semantic search.
+        Combines title, description, tags, and Python code for semantic search.
 
         Args:
             problem: Problem dictionary
@@ -109,11 +109,13 @@ class EmbeddingService:
         # Title/Name
         if problem.get("name"):
             parts.append(problem["name"])
+        elif problem.get("title"):
+            parts.append(problem["title"])
 
         # Question/Description
         if problem.get("question"):
-            # Limit description length
-            question = problem["question"][:2000]
+            # Full question text (limit to 3000 chars for very long ones)
+            question = problem["question"][:3000]
             parts.append(question)
 
         # Tags
@@ -125,13 +127,18 @@ class EmbeddingService:
         if problem.get("difficulty"):
             parts.append(f"Difficulty: {problem['difficulty']}")
 
-        # Solutions (first solution code only, limited)
+        # Solutions - Python code only, full content
         solutions = problem.get("solutions", [])
         if solutions and isinstance(solutions, list):
-            first_solution = solutions[0] if solutions else {}
-            code = first_solution.get("code", "")[:1000]
-            if code:
-                parts.append(f"Code:\n{code}")
+            for sol in solutions:
+                # Support both formats: {"language": "python", "code": "..."} and {"code": "..."}
+                lang = sol.get("language", "python").lower()
+                code = sol.get("code", "")
+
+                if lang == "python" and code:
+                    # Include full Python code (no character limit)
+                    parts.append(f"Python Code:\n{code}")
+                    break  # Only include first Python solution
 
         return "\n\n".join(parts)
 

@@ -28,6 +28,9 @@ class IntentType(str, Enum):
     CODE_REVIEW = "code_review"                    # 코드 리뷰 요청
     ERROR_HELP = "error_help"                      # 에러 도움 요청
 
+    # ===== 문제 선택 =====
+    PROBLEM_SELECTION = "problem_selection"        # 문제 선택 (리스트에서 선택)
+
     # ===== 진행 관련 =====
     SKIP_PROBLEM = "skip_problem"                  # 문제 건너뛰기
     RETRY_PROBLEM = "retry_problem"                # 다시 풀기
@@ -193,7 +196,7 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
     },
 
     IntentType.RANDOM_RECOMMEND: {
-        "description": "아무거나 추천 요청",
+        "description": "아무거나 추천 요청 또는 초보자 기본 문제 요청",
         "examples": [
             "아무거나 추천해줘",
             "그냥 아무거나",
@@ -207,6 +210,20 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
             "네가 정해",
             "골라줘",
             "맡길게",
+            # 초보자/기본 요청
+            "기본적인거",
+            "제일 기본적인거",
+            "기초적인거",
+            "가장 쉬운거",
+            "제일 쉬운거",
+            "아무것도 모르는데",
+            "하나도 모르는데",
+            "초보인데",
+            "처음인데",
+            "입문자인데",
+            "그런거 잘 모르는데",
+            "뭔지 모르겠어",
+            "그냥 아무거나 기본적인거",
         ],
         "required_context": None,
         "next_action": "recommend_based_on_level",
@@ -310,6 +327,43 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
         ],
         "required_context": "code",
         "next_action": "debug_code",
+    },
+
+    # ============================================================
+    # 문제 선택
+    # ============================================================
+
+    IntentType.PROBLEM_SELECTION: {
+        "description": "문제 리스트에서 특정 문제 선택",
+        "examples": [
+            # 번호로 선택
+            "1번",
+            "1번으로 할래",
+            "첫번째 문제",
+            "두번째 거",
+            "2번 할게",
+            "3번째 문제로",
+
+            # 이름으로 선택
+            "taco_139로 할게",
+            "그 문제로 할래",
+            "저거 풀래",
+            "이거로 할게",
+            "그거",
+            "첫번째 거로",
+            "위에 거",
+            "마지막 거",
+
+            # 선택 표현
+            "그걸로 할게",
+            "그 문제 선택",
+            "이 문제 풀래",
+            "저 문제로",
+            "그거 할래",
+            "이걸로",
+        ],
+        "required_context": "problem_list",
+        "next_action": "select_problem_type",
     },
 
     # ============================================================
@@ -560,6 +614,7 @@ INTENT_GROUPS = {
         IntentType.ERROR_HELP,
         IntentType.HINT_REQUEST,
         IntentType.SUBMIT_CODE,
+        IntentType.PROBLEM_SELECTION,  # 문제 선택도 높은 우선순위
     ],
     "problem_search": [
         IntentType.NEW_PROBLEM,
@@ -605,5 +660,8 @@ CONTEXT_REQUIREMENTS = {
     "previous_suggestion": [
         IntentType.AFFIRMATION,
         IntentType.NEGATION,
+    ],
+    "problem_list": [
+        IntentType.PROBLEM_SELECTION,
     ],
 }

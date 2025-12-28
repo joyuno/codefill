@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import StreamingResponse
 from typing import Optional, Union
 import json
+import re
 
 from ..database import get_db
 from ..config import get_settings
@@ -24,6 +25,9 @@ from ..prompts import (
     GUIDED_PROBLEM_SYSTEM_PROMPT,
     CODE_GEN_SYSTEM_PROMPT,
     HINT_AGENT_SYSTEM_PROMPT,
+    FREE_CHAT_SYSTEM_PROMPT,
+    INTENT_ACTION_MAP,
+    CONTEXT_REQUIRED_INTENTS,
 )
 from ..models.agent import (
     # Chat Agent
@@ -56,30 +60,46 @@ router = APIRouter()
 
 
 # ============================================================
-# Chat Agent - Information Collection
+# Chat Agent - LLM 자유 대화 (Intent-Aware)
 # ============================================================
 
-@router.post("/chat", response_model=ChatAgentResponse)
+@router.post("/chat", response_model=IntentChatResponse)
 async def chat_agent(request: ChatAgentRequest, db=Depends(get_db)):
     """
-    AI-powered information collection chatbot.
+    LLM 자유 대화 챗봇 (의도 인식 + 자동 액션 수행)
 
-    Collects user preferences for problem recommendation:
-    - topics: algorithm topics (array)
-    - difficulty: easy/medium/hard
-    - language: python/java/cpp
-    - specific_needs: free text
-    - time_available: minutes
+    Flow:
+    1. 임베딩 기반 의도 분류
+    2. 의도 + 컨텍스트를 LLM에게 전달
+    3. LLM이 자연스러운 응답 생성
+    4. is_complete=true면 자동으로 검색/추천 수행
+       - RAG 검색 → 결과 부족하면 → CodeGen fallback
 
-    Uses GPT-4o-mini via OpenRouter.
+    프론트엔드는 message + action_data.problems만 표시하면 됨
     """
     try:
-        # Build user context string
-        user_context_str = json.dumps(request.user_context or {}, ensure_ascii=False)
+        # Step 1: 의도 분류 (임베딩 기반)
+        session_ctx = {}
+        if request.user_context:
+            session_ctx["user_info"] = request.user_context
+        session_ctx["message"] = request.message
 
-        # Format system prompt with user context
-        system_prompt = CHAT_AGENT_SYSTEM_PROMPT.format(
-            user_context=user_context_str
+        intent_result = await intent_classifier.classify(
+            message=request.message,
+            session_context=session_ctx
+        )
+
+        # Step 2: 컨텍스트 정보 구성
+        context_info = _build_context_info(request)
+        collected_info_str = _build_collected_info_str(request)
+
+        # Step 3: LLM에게 의도 + 컨텍스트 전달
+        system_prompt = FREE_CHAT_SYSTEM_PROMPT.format(
+            intent=intent_result.intent.value,
+            confidence=f"{intent_result.confidence:.2f}",
+            requires_context=intent_result.requires_context or "없음",
+            context_info=context_info,
+            collected_info=collected_info_str,
         )
 
         # Build messages
@@ -92,7 +112,7 @@ async def chat_agent(request: ChatAgentRequest, db=Depends(get_db)):
         # Add current message
         messages.append({"role": "user", "content": request.message})
 
-        # Call LLM
+        # Step 4: LLM 호출
         response = await openrouter_service.chat_completion(
             model=settings.llm_model_chat,
             messages=messages,
@@ -103,20 +123,91 @@ async def chat_agent(request: ChatAgentRequest, db=Depends(get_db)):
         content = openrouter_service.get_content(response)
         result = openrouter_service.parse_json_response(content)
 
-        # Parse collected info
-        collected = result.get("collected_info", {})
+        # Step 5: 응답 파싱
+        collected = result.get("collected_info", {}) or {}
+        action_trigger = result.get("action_trigger")
+        is_complete = result.get("is_complete", False)
 
-        return ChatAgentResponse(
-            message=result.get("message", ""),
-            collected_info=CollectedInfo(
-                topics=collected.get("topics", []),
-                difficulty=collected.get("difficulty"),
-                language=collected.get("language"),
-                specific_needs=collected.get("specific_needs"),
-                time_available=collected.get("time_available"),
+        collected_info = CollectedInfo(
+            topics=collected.get("topics") or [],
+            difficulty=collected.get("difficulty"),
+            language=collected.get("language"),
+            specific_needs=collected.get("specific_needs"),
+            time_available=collected.get("time_available"),
+            selected_problem=collected.get("selected_problem"),
+            selected_problem_index=collected.get("selected_problem_index"),
+        )
+
+        # Step 6: 자동 액션 수행 (is_complete=true이고 특정 트리거일 때)
+        action_data = None
+        final_message = result.get("message", "")
+
+        # 안전장치: 문제 컨텍스트 없이 hint 요청이 오면 문제 추천으로 전환
+        if action_trigger == "generate_hint":
+            has_current_problem = (
+                request.user_context and
+                request.user_context.get("current_problem")
+            )
+            if not has_current_problem:
+                # 문제 없는데 힌트 요청 → 문제 추천으로 전환
+                action_trigger = "search_problems"
+                final_message = "아직 풀고 있는 문제가 없어요! 먼저 문제를 찾아볼까요? 어떤 주제나 난이도로 할까요?"
+                is_complete = False
+
+        if is_complete and action_trigger == "select_problem_type":
+            # 문제 선택 완료 → 문제 유형 선택 UI 표시
+            action_data = {
+                "action_trigger": "select_problem_type",
+                "next_action": "show_problem_type_selector",
+                "selected_problem": collected_info.selected_problem,
+                "selected_problem_index": collected_info.selected_problem_index,
+            }
+            # 메시지에 문제 유형 선택 안내 추가 (프론트엔드가 UI 표시)
+            final_message = f"{final_message}\n\n어떤 방식으로 풀어볼까요?\n• 빈칸 채우기 (Blank)\n• 퍼즐 맞추기 (Puzzle)\n• 1:1 대화형 (Guided)"
+
+        elif is_complete and action_trigger in ["search_problems", "search_similar"]:
+            # RAG 검색 + CodeGen fallback 자동 수행
+            search_result = await _auto_search_problems(
+                collected_info=collected_info,
+                user_context=request.user_context,
+                db=db
+            )
+            action_data = search_result
+
+            # 검색 결과를 메시지에 추가
+            if search_result.get("problems"):
+                problems = search_result["problems"]
+                problem_list = "\n".join([
+                    f"  {i+1}. {p.get('name', 'Unknown')} ({p.get('difficulty', 'medium')})"
+                    for i, p in enumerate(problems[:5])
+                ])
+                final_message = f"{final_message}\n\n찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요?"
+            elif search_result.get("generated_problem"):
+                gen = search_result["generated_problem"]
+                final_message = f"{final_message}\n\n새로 만든 문제예요:\n  • {gen.get('title', 'Unknown')} ({gen.get('difficulty', 'medium')})\n\n이 문제를 풀어볼까요?"
+            else:
+                final_message = f"{final_message}\n\n아쉽게도 딱 맞는 문제를 못 찾았어요. 다른 주제나 난이도로 시도해볼까요?"
+
+        elif action_trigger:
+            action_data = {"action_trigger": action_trigger}
+
+        return IntentChatResponse(
+            message=final_message,
+            intent_info=IntentInfo(
+                intent=intent_result.intent.value,
+                confidence=intent_result.confidence,
+                method=intent_result.method,
+                requires_context=intent_result.requires_context,
+                next_action=result.get("next_step") or action_trigger
             ),
-            is_complete=result.get("is_complete", False),
+            collected_info=collected_info if any([
+                collected.get("topics"),
+                collected.get("difficulty"),
+                collected.get("language")
+            ]) else None,
+            is_complete=is_complete,
             search_query=result.get("search_query"),
+            action_data=action_data
         )
 
     except ValueError as e:
@@ -129,6 +220,125 @@ async def chat_agent(request: ChatAgentRequest, db=Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chat agent error: {str(e)}"
         )
+
+
+async def _auto_search_problems(
+    collected_info: CollectedInfo,
+    user_context: Optional[dict],
+    db
+) -> dict:
+    """
+    자동 문제 검색 + CodeGen fallback
+
+    1. RAG 검색 수행
+    2. 결과가 부족하면 CodeGen으로 새 문제 생성
+    3. 결과 반환
+    """
+    try:
+        # Build search query
+        topics = collected_info.topics or []
+        difficulty = collected_info.difficulty or "medium"
+        language = collected_info.language or "python"
+        specific_needs = collected_info.specific_needs or ""
+
+        search_query = " ".join(topics)
+        if specific_needs:
+            search_query += " " + specific_needs
+
+        # RAG 검색 수행 (이미 full problem data 포함)
+        results, should_fallback = await rag_service.search_problems_hybrid(
+            query=search_query or "알고리즘 문제",
+            topics=topics,
+            difficulty=difficulty,
+            language=language,
+            limit=5,
+        )
+
+        # results는 이미 full problem data를 포함함 (id, name, difficulty, tags, solutions 등)
+        # similarity는 이미 각 problem에 포함되어 있음
+        problems = results
+
+        # 결과 충분하면 반환
+        if not should_fallback and len(problems) >= 3:
+            return {
+                "status": "found",
+                "problems": problems[:5],
+                "fallback_used": False,
+            }
+
+        # CodeGen fallback
+        if should_fallback or len(problems) < 3:
+            try:
+                generated = await rag_service.generate_problem_with_rag(
+                    user_request={
+                        "topics": topics,
+                        "difficulty": difficulty,
+                        "language": language,
+                        "specific_needs": specific_needs,
+                    },
+                    similar_problems=problems,
+                    user_context=user_context,
+                )
+                return {
+                    "status": "generated",
+                    "problems": problems,
+                    "generated_problem": generated,
+                    "fallback_used": True,
+                }
+            except Exception as gen_error:
+                print(f"CodeGen fallback error: {gen_error}")
+                return {
+                    "status": "partial",
+                    "problems": problems,
+                    "fallback_used": True,
+                    "error": str(gen_error),
+                }
+
+        return {
+            "status": "found",
+            "problems": problems[:5],
+            "fallback_used": False,
+        }
+
+    except Exception as e:
+        print(f"Auto search error: {e}")
+        return {
+            "status": "error",
+            "problems": [],
+            "error": str(e),
+        }
+
+
+def _build_context_info(request: ChatAgentRequest) -> str:
+    """현재 컨텍스트 정보를 문자열로 구성"""
+    context_parts = []
+
+    if request.user_context:
+        level = request.user_context.get("level", "unknown")
+        context_parts.append(f"- 사용자 레벨: {level}")
+
+        if request.user_context.get("current_problem"):
+            problem = request.user_context.get("current_problem")
+            context_parts.append(f"- 현재 문제: {problem.get('name', 'Unknown')}")
+
+        if request.user_context.get("last_solved_problem"):
+            context_parts.append("- 최근 푼 문제 있음")
+
+    if not context_parts:
+        return "- 컨텍스트 정보 없음"
+
+    return "\n".join(context_parts)
+
+
+def _build_collected_info_str(request: ChatAgentRequest) -> str:
+    """이전 대화에서 수집된 정보를 문자열로 구성"""
+    # 대화 히스토리에서 이전에 수집된 정보 추출 (간단 버전)
+    if not request.conversation_history:
+        return "- 아직 수집된 정보 없음"
+
+    # 실제로는 이전 응답의 collected_info를 파싱해야 하지만,
+    # 간단히 대화 히스토리 존재 여부만 표시
+    return f"- 이전 대화 {len(request.conversation_history)}개 있음"
 
 
 @router.post("/chat/stream")
@@ -296,6 +506,10 @@ async def _handle_intent(
 
     elif intent == IntentType.RANDOM_RECOMMEND:
         return await _handle_random_recommend(request, intent_result, db)
+
+    # ===== 문제 선택 의도 =====
+    elif intent == IntentType.PROBLEM_SELECTION:
+        return await _handle_problem_selection(request, intent_result)
 
     # ===== 문제 풀이 중 의도 =====
     elif intent == IntentType.HINT_REQUEST:
@@ -688,6 +902,58 @@ async def _handle_random_recommend(request, intent_result, db) -> IntentChatResp
         ),
         is_complete=True,
         action_data={"action": "random_recommend"}
+    )
+
+
+async def _handle_problem_selection(request, intent_result) -> IntentChatResponse:
+    """문제 선택 처리 → 문제 유형 선택 UI 표시"""
+    # Extract selected problem from message
+    message = request.message.lower()
+    selected_problem = None
+    selected_index = None
+
+    # 번호로 선택 (1번, 2번, 첫번째, 두번째 등)
+    num_match = re.search(r'(\d+)\s*번', message)
+    if num_match:
+        selected_index = int(num_match.group(1))
+    elif "첫" in message or "1" in message:
+        selected_index = 1
+    elif "두" in message or "2" in message:
+        selected_index = 2
+    elif "세" in message or "3" in message:
+        selected_index = 3
+    elif "네" in message or "4" in message:
+        selected_index = 4
+    elif "다섯" in message or "5" in message:
+        selected_index = 5
+
+    # 이름으로 선택 (taco_139, permutation-swaps 등)
+    name_match = re.search(r'(taco_\d+|[a-z_\-]+\d*)', message)
+    if name_match:
+        selected_problem = name_match.group(1)
+
+    return IntentChatResponse(
+        message="좋아요! 선택한 문제로 진행할게요. 어떤 방식으로 풀어볼까요?\n\n"
+                "• 빈칸 채우기 (Blank) - 핵심 부분만 채우기\n"
+                "• 퍼즐 맞추기 (Puzzle) - 코드 순서 맞추기\n"
+                "• 1:1 대화형 (Guided) - 단계별 대화로 풀기",
+        intent_info=IntentInfo(
+            intent=intent_result.intent.value,
+            confidence=intent_result.confidence,
+            method=intent_result.method,
+            next_action="select_problem_type"
+        ),
+        is_complete=True,
+        collected_info=CollectedInfo(
+            selected_problem=selected_problem,
+            selected_problem_index=selected_index
+        ),
+        action_data={
+            "action_trigger": "select_problem_type",
+            "next_action": "show_problem_type_selector",
+            "selected_problem": selected_problem,
+            "selected_problem_index": selected_index
+        }
     )
 
 

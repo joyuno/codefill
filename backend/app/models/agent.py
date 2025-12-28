@@ -68,6 +68,8 @@ class CollectedInfo(BaseModel):
     language: Optional[str] = None
     specific_needs: Optional[str] = None
     time_available: Optional[int] = None
+    selected_problem: Optional[str] = None  # 선택된 문제 이름
+    selected_problem_index: Optional[int] = None  # 선택된 문제 번호 (1-based)
 
 
 class ChatAgentResponse(BaseModel):

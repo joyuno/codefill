@@ -62,6 +62,8 @@ app.include_router(problems.router, prefix="/problems", tags=["Problems"])
 app.include_router(practice.router, prefix="/practice", tags=["Practice"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 app.include_router(execute.router, prefix="/execute", tags=["Code Execution"])
+app.include_router(translate.router, prefix="/translate", tags=["Translation"])
+app.include_router(farm.router, prefix="/farm", tags=["Farm"])
 app.include_router(agent.router, prefix="/agent", tags=["AI Agents"])
 
 

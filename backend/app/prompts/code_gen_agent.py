@@ -122,131 +122,37 @@ CODE_GEN_SYSTEM_PROMPT = """
 
 ## 출력 형식
 
-반드시 아래 JSON 형식으로만 출력하세요:
+**중요: 순수 JSON만 출력하세요. 마크다운 코드 블록(```)이나 설명 텍스트 없이 바로 JSON 객체로 시작하세요.**
 
-```json
-{
-  "title": "문제 제목 (한국어)",
-  "title_en": "Problem Title (English)",
-  "description": "문제 설명 (마크다운 형식)",
-  "code": {
-    "python": "파이썬 코드",
-    "java": "자바 코드 (선택)",
-    "cpp": "C++ 코드 (선택)"
-  },
-  "input_format": "입력 형식 설명",
-  "output_format": "출력 형식 설명",
-  "examples": [
-    {
-      "input": "예제 입력",
-      "output": "예제 출력",
-      "explanation": "설명 (선택)"
-    }
-  ],
-  "constraints": [
-    "제약 조건 1",
-    "제약 조건 2"
-  ],
-  "difficulty": "beginner|elementary|intermediate|advanced",
-  "topics": ["관련 주제"],
-  "time_complexity": "O(n)",
-  "space_complexity": "O(n)",
-  "key_concepts": ["핵심 개념"],
-  "common_mistakes": ["자주 하는 실수"],
-  "hints_for_problem_gen": {
-    "blank_candidates": ["빈칸으로 만들기 좋은 부분"],
-    "puzzle_split_points": ["퍼즐로 나누기 좋은 지점"],
-    "guided_flow": ["단계별 설명 흐름"]
-  }
-}
-```
-
----
-
-## 예시
-
-### 입력 (사용자 요청)
-```json
-{
-  "topics": ["동적 프로그래밍", "배열"],
-  "difficulty": "intermediate",
-  "language": "python",
-  "specific_needs": "DP 기초를 배우고 싶어요"
-}
-```
-
-### 출력
-```json
-{
-  "title": "계단 오르기",
-  "title_en": "Climbing Stairs",
-  "description": "n개의 계단이 있습니다. 한 번에 1칸 또는 2칸을 오를 수 있을 때, 맨 위에 도달하는 방법의 수를 구하세요.",
-  "code": {
-    "python": "def climb_stairs(n):\\n    # 기저 조건\\n    if n <= 2:\\n        return n\\n    \\n    # DP 테이블 초기화\\n    dp = [0] * (n + 1)\\n    dp[1] = 1  # 1칸: 1가지\\n    dp[2] = 2  # 2칸: 2가지 (1+1, 2)\\n    \\n    # 점화식 적용\\n    for i in range(3, n + 1):\\n        dp[i] = dp[i-1] + dp[i-2]\\n    \\n    return dp[n]\\n\\n# 입력\\nn = int(input())\\nprint(climb_stairs(n))"
-  },
-  "input_format": "정수 n (1 <= n <= 45)",
-  "output_format": "계단을 오르는 방법의 수",
-  "examples": [
-    {
-      "input": "3",
-      "output": "3",
-      "explanation": "1+1+1, 1+2, 2+1 세 가지 방법"
-    },
-    {
-      "input": "5",
-      "output": "8",
-      "explanation": "피보나치 수열과 동일한 패턴"
-    }
-  ],
-  "constraints": [
-    "1 <= n <= 45",
-    "결과는 32비트 정수 범위 내"
-  ],
-  "difficulty": "intermediate",
-  "topics": ["동적 프로그래밍", "피보나치"],
-  "time_complexity": "O(n)",
-  "space_complexity": "O(n)",
-  "key_concepts": ["DP 점화식", "피보나치 패턴", "바텀업 방식"],
-  "common_mistakes": [
-    "dp[0] 초기화 실수",
-    "범위 설정 오류 (n+1 vs n)",
-    "기저 조건 누락"
-  ],
-  "hints_for_problem_gen": {
-    "blank_candidates": [
-      "dp[1] = 1 초기값",
-      "dp[i] = dp[i-1] + dp[i-2] 점화식",
-      "range(3, n + 1) 범위"
-    ],
-    "puzzle_split_points": [
-      "함수 정의",
-      "기저 조건",
-      "DP 테이블 초기화",
-      "점화식 루프",
-      "반환문"
-    ],
-    "guided_flow": [
-      "문제 이해 - 계단 오르기 규칙",
-      "작은 예시 - n=1,2,3 직접 세기",
-      "패턴 발견 - 피보나치와 연결",
-      "점화식 도출 - dp[i] = dp[i-1] + dp[i-2]",
-      "코드 구현"
-    ]
-  }
-}
-```
+필수 필드:
+- title: 문제 제목 (한국어)
+- title_en: Problem Title (English)
+- description: 문제 설명
+- code: {{"python": "코드"}} (최소 python 필수)
+- input_format: 입력 형식
+- output_format: 출력 형식
+- examples: [{{"input": "", "output": "", "explanation": ""}}]
+- constraints: ["제약조건"]
+- difficulty: "easy" | "medium" | "hard"
+- topics: ["주제"]
+- time_complexity: "O(n)"
+- space_complexity: "O(n)"
+- key_concepts: ["개념"]
+- common_mistakes: ["실수"]
+- hints_for_problem_gen: {{"blank_candidates": [], "puzzle_split_points": [], "guided_flow": []}}
 
 ---
 
 ## 주의사항
 
-1. **JSON만 출력** - 설명이나 주석 없이 순수 JSON만
-2. **유효한 JSON** - 파싱 가능한 형식
+1. **순수 JSON만 출력** - 코드블록이나 설명 텍스트 없이 바로 {{ 로 시작
+2. **유효한 JSON** - 파싱 가능한 형식, 문자열 내 줄바꿈은 \\n으로
 3. **실행 가능한 코드** - 문법 오류 없는 완전한 코드
 4. **교육적 코드** - 가독성과 이해도 우선
 5. **적절한 난이도** - 사용자 레벨 고려
-6. **문제 변환 힌트** - hints_for_problem_gen 상세히
-7. **최소 Python 필수** - Java/C++은 선택적
+6. **최소 Python 필수** - Java/C++은 선택적
+
+반드시 {{ 로 시작해서 }} 로 끝나는 순수 JSON만 출력하세요.
 """
 
 # 레벨별 추천 주제

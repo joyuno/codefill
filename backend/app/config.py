@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     azure_translator_region: str = "koreacentral"
     azure_translator_endpoint: str = "https://api.cognitive.microsofttranslator.com"
 
+    # Analytics (Next.js frontend uses these, but allow in backend env)
+    next_public_clarity_id: str = ""
+    next_public_ga_id: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
