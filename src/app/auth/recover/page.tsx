@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -9,7 +9,24 @@ import { Code2, Loader2, RefreshCcw, X, MessageCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { authApi } from '@/lib/api';
 
+// Wrapper component for Suspense boundary
 export default function RecoverAccountPage() {
+  return (
+    <Suspense fallback={<RecoverLoadingFallback />}>
+      <RecoverAccountPageContent />
+    </Suspense>
+  );
+}
+
+function RecoverLoadingFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
+function RecoverAccountPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();

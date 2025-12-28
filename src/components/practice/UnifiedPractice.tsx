@@ -161,19 +161,24 @@ export function UnifiedPractice({
     setExpandedTests(new Set([0]));
 
     if (problemType === 'blank') {
-      setCode(problem.codeSnippet || '');
+      // 새 형식(codeTemplate) 또는 레거시 형식(codeSnippet) 지원
+      setCode(problem.codeTemplate || problem.codeSnippet || '');
     } else if (problemType === 'puzzle') {
-      // ConvertedPuzzleBlock을 UIPuzzleBlock으로 변환
-      const uiBlocks: UIPuzzleBlock[] = (problem.puzzleBlocks || []).map(b => ({
+      // 새 형식(blocks) 또는 레거시 형식(puzzleBlocks) 지원
+      const sourceBlocks = problem.blocks || problem.puzzleBlocks || [];
+      const uiBlocks: UIPuzzleBlock[] = sourceBlocks.map((b, idx) => ({
         id: b.id,
         code: b.code,
-        indentation: 0, // 기본 indentation
-        correctOrder: b.correctOrder,
+        indentation: b.indentation || 0,
+        correctOrder: b.correctOrder ?? idx,
       }));
       // 랜덤 셔플
       const shuffled = [...uiBlocks].sort(() => Math.random() - 0.5);
       setBlocks(shuffled);
       setCode('# 블록을 올바른 순서로 정렬하세요');
+    } else if (problemType === 'guided') {
+      // guided 문제는 채팅에서 처리되므로 최종 코드만 표시
+      setCode(problem.finalCodeReveal || '# 튜터와 대화하며 문제를 풀어보세요');
     } else if (problemType === 'implementation') {
       // implementation 문제는 빈 코드로 시작
       setCode('# 여기에 코드를 작성하세요\n');
@@ -251,11 +256,33 @@ export function UnifiedPractice({
   // 실행 가능한 코드 조립
   const getExecutableCode = (): string => {
     if (problemType === 'blank') {
-      let execCode = problem.codeSnippet || '';
-      (problem.blanks || []).forEach((blank) => {
-        const answer = blankAnswers[blank.id] || '___';
-        execCode = execCode.replace('___', answer);
-      });
+      // 새 형식(codeTemplate) 또는 레거시 형식(codeSnippet) 지원
+      let execCode = problem.codeTemplate || problem.codeSnippet || '';
+      const blanks = problem.blanks || [];
+
+      // 형식 감지:
+      // 1. _0_, _1_ 형식 (번호가 있는 빈칸)
+      // 2. 연속 언더스코어 형식 (정답 글자수만큼 _)
+      const hasNumberedBlanks = /_\d+_/.test(execCode);
+
+      if (hasNumberedBlanks) {
+        // 번호 형식: _0_, _1_, _2_ -> 실제 답변으로 치환
+        blanks.forEach((blank, idx) => {
+          const answer = blankAnswers[blank.id] || `_${idx}_`;
+          execCode = execCode.replace(new RegExp(`_${idx}_`, 'g'), answer);
+        });
+      } else {
+        // 연속 언더스코어 형식: __, ___, ____ -> 순서대로 실제 답변으로 치환
+        let blankIdx = 0;
+        execCode = execCode.replace(/__+/g, (match) => {
+          const blank = blanks[blankIdx];
+          blankIdx++;
+          if (blank) {
+            return blankAnswers[blank.id] || match;
+          }
+          return match;
+        });
+      }
       return execCode;
     } else if (problemType === 'puzzle') {
       return blocks.map(b => '    '.repeat(b.indentation) + b.code).join('\n');
@@ -461,12 +488,12 @@ export function UnifiedPractice({
     onHintRequest(newLevel);
   };
 
-  // 블록 드래그 핸들러
-  const handleDragStart = (blockId: number) => {
+  // 블록 드래그 핸들러 (string | number 모두 지원)
+  const handleDragStart = (blockId: string | number) => {
     setDraggedBlock(String(blockId));
   };
 
-  const handleDragOver = (e: React.DragEvent, targetId: number) => {
+  const handleDragOver = (e: React.DragEvent, targetId: string | number) => {
     e.preventDefault();
     const targetIdStr = String(targetId);
     if (!draggedBlock || draggedBlock === targetIdStr) return;
@@ -497,7 +524,17 @@ export function UnifiedPractice({
 
   // Blank 코드 렌더링
   const renderBlankCode = () => {
-    const codeLines = (problem.codeSnippet || '').split('\n');
+    // 새 형식(codeTemplate) 또는 레거시 형식(codeSnippet) 지원
+    const codeSource = problem.codeTemplate || problem.codeSnippet || '';
+
+    // 형식 감지:
+    // 1. _0_, _1_ 형식 (번호가 있는 빈칸)
+    // 2. 연속 언더스코어 형식 (정답 글자수만큼 _)
+    // 3. 레거시 ___ 형식 (고정 3개)
+    const hasNumberedBlanks = /_\d+_/.test(codeSource);
+    const hasConsecutiveUnderscores = /__+/.test(codeSource);
+
+    const codeLines = codeSource.split('\n');
     let blankIndex = 0;
     const blanks = problem.blanks || [];
 
@@ -505,7 +542,11 @@ export function UnifiedPractice({
       const parts: React.ReactNode[] = [];
       let lastIndex = 0;
       let match;
-      const blankPattern = /___/g;
+
+      // 패턴 선택:
+      // - 번호 형식: _0_, _1_, _2_
+      // - 연속 언더스코어 형식: __, ___, ____ (2개 이상)
+      const blankPattern = hasNumberedBlanks ? /_(\d+)_/g : /__+/g;
 
       while ((match = blankPattern.exec(line)) !== null) {
         if (match.index > lastIndex) {
@@ -516,26 +557,36 @@ export function UnifiedPractice({
           );
         }
 
-        const blank = blanks[blankIndex];
+        // 번호 형식은 매치에서 인덱스 추출, 연속 언더스코어는 순서대로
+        const matchedIndex = hasNumberedBlanks && match[1] !== undefined
+          ? parseInt(match[1], 10)
+          : blankIndex;
+        const blank = blanks[matchedIndex];
+
         if (blank) {
           const isCorrect = blankResults[blank.id];
           const hasResult = Object.keys(blankResults).length > 0;
 
+          // 빈칸 너비 계산: 연속 언더스코어 개수 기반 (최소 60px, 글자당 약 8px)
+          const underscoreCount = match[0].length;
+          const inputWidth = Math.max(60, underscoreCount * 10);
+
           parts.push(
-            <span key={`blank-${blank.id}`} className="inline-flex items-center gap-1 mx-1">
+            <span key={`blank-${blank.id}-${lineIdx}-${match.index}`} className="inline-flex items-center gap-1 mx-1">
               <Input
                 value={blankAnswers[blank.id] || ''}
                 onChange={(e) =>
                   setBlankAnswers((prev) => ({ ...prev, [blank.id]: e.target.value }))
                 }
-                className={`inline-block h-7 w-24 px-2 py-0 font-mono text-sm ${
+                style={{ width: `${inputWidth}px` }}
+                className={`inline-block h-7 px-2 py-0 font-mono text-sm ${
                   hasResult
                     ? isCorrect
                       ? 'border-green-500 bg-green-500/10 text-green-400'
                       : 'border-red-500 bg-red-500/10 text-red-400'
                     : 'border-primary/50 bg-[#2d2d2d] text-[#d4d4d4]'
                 }`}
-                placeholder="___"
+                placeholder={'_'.repeat(underscoreCount)}
                 disabled={isSubmitted}
               />
               {/* 힌트 버튼 - problem.keyConcepts 사용 */}
@@ -563,7 +614,8 @@ export function UnifiedPractice({
           blankIndex++;
         }
 
-        lastIndex = match.index + 3;
+        // 매치된 전체 문자열 길이만큼 이동
+        lastIndex = match.index + match[0].length;
       }
 
       if (lastIndex < line.length) {

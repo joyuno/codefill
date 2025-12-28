@@ -36,3 +36,20 @@ export {
   type UserStats,
   type ActivityData,
 } from './users';
+export {
+  agentApi,
+  type ChatAgentRequest,
+  type ChatAgentResponse,
+  type ChatAgentMessage,
+  type CollectedInfo,
+  type BaseProblemInfo,
+  type ProblemGenerationRequest,
+  type BlankProblemResponse,
+  type PuzzleProblemResponse,
+  type GuidedProblemResponse,
+  type CodeGenerationResponse,
+  type HintAgentRequest,
+  type HintAgentResponse,
+  type RAGSearchResponse,
+  type RecommendResponse,
+} from './agent';

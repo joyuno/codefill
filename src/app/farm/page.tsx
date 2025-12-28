@@ -109,6 +109,9 @@ const GROWTH_TIMES: Record<CropVariety, number> = {
   potato: 35,
   wheat: 40,
   pumpkin: 120,
+  cabbage: 55,
+  onion: 40,
+  radish: 25,
 };
 
 const EXPANSION_COSTS = [
