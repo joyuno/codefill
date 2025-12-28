@@ -14,10 +14,169 @@ from ..models.problem import (
     HintRequest,
     HintResponse,
     Code,
+    BaseProblemListItem,
+    BaseProblemDetail,
+    BaseProblemListResponse,
 )
 
 router = APIRouter()
 
+
+# ===========================================
+# base_problems 테이블 API (정적 경로 먼저 정의)
+# ===========================================
+
+@router.get("/base", response_model=BaseProblemListResponse)
+async def list_base_problems(
+    difficulty: Optional[str] = None,
+    source: Optional[str] = None,
+    search: Optional[str] = None,
+    tags: Optional[str] = None,  # comma-separated
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db=Depends(get_db)
+):
+    """
+    base_problems 테이블에서 문제 목록 조회.
+
+    - difficulty: easy, medium, hard
+    - source: baekjoon, codeforces, leetcode 등
+    - search: 문제명 검색
+    - tags: 태그 필터 (쉼표 구분)
+    """
+    try:
+        # 먼저 전체 개수 조회
+        count_query = db.table("base_problems").select("id", count="exact")
+
+        if difficulty:
+            count_query = count_query.eq("difficulty", difficulty)
+        if source:
+            count_query = count_query.eq("source", source)
+        if search:
+            count_query = count_query.ilike("name", f"%{search}%")
+        if tags:
+            tag_list = [t.strip() for t in tags.split(",")]
+            count_query = count_query.overlaps("tags", tag_list)
+
+        count_result = count_query.execute()
+        total = count_result.count if count_result.count else 0
+
+        # 실제 데이터 조회
+        query = db.table("base_problems")\
+            .select("id, original_id, name, difficulty, tags, source")\
+            .order("original_id")
+
+        if difficulty:
+            query = query.eq("difficulty", difficulty)
+        if source:
+            query = query.eq("source", source)
+        if search:
+            query = query.ilike("name", f"%{search}%")
+        if tags:
+            tag_list = [t.strip() for t in tags.split(",")]
+            query = query.overlaps("tags", tag_list)
+
+        # Pagination
+        offset = (page - 1) * limit
+        query = query.range(offset, offset + limit - 1)
+
+        result = query.execute()
+
+        items = []
+        for item in (result.data or []):
+            items.append(BaseProblemListItem(
+                id=item["id"],
+                original_id=item.get("original_id", ""),
+                name=item.get("name", "Untitled"),
+                difficulty=item.get("difficulty", "medium"),
+                tags=item.get("tags") or [],
+                source=item.get("source"),
+            ))
+
+        has_more = (page * limit) < total
+
+        return BaseProblemListResponse(
+            items=items,
+            total=total,
+            page=page,
+            limit=limit,
+            has_more=has_more,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list base problems: {str(e)}"
+        )
+
+
+@router.get("/base/{original_id}", response_model=BaseProblemDetail)
+async def get_base_problem(original_id: str, db=Depends(get_db)):
+    """
+    base_problems 테이블에서 문제 상세 조회 (Preview용).
+
+    original_id로 조회 (예: "baekjoon_1001", "taco_1")
+    """
+    try:
+        result = db.table("base_problems")\
+            .select("*")\
+            .eq("original_id", original_id)\
+            .single()\
+            .execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Problem not found"
+            )
+
+        item = result.data
+        return BaseProblemDetail(
+            id=item["id"],
+            original_id=item.get("original_id", ""),
+            name=item.get("name", "Untitled"),
+            question=item.get("question", ""),
+            difficulty=item.get("difficulty", "medium"),
+            tags=item.get("tags") or [],
+            source=item.get("source"),
+            url=item.get("url"),
+            input_output=item.get("input_output"),
+            explanation=item.get("explanation"),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get base problem: {str(e)}"
+        )
+
+
+@router.get("/search/rag")
+async def search_problems_rag(
+    query: str = Query(..., min_length=2),
+    framework: Optional[Framework] = None,
+    limit: int = Query(5, ge=1, le=20),
+    db=Depends(get_db)
+):
+    """
+    Search problems using RAG (Retrieval Augmented Generation).
+
+    Uses vector similarity search with pgvector.
+    Requires OpenAI embeddings API key.
+    """
+    # TODO: Implement when OpenAI API key is available
+    return {
+        "message": "RAG search not yet implemented. Please provide OpenAI API key.",
+        "query": query,
+        "results": []
+    }
+
+
+# ===========================================
+# 기존 problems 테이블 API (동적 경로는 나중에)
+# ===========================================
 
 @router.get("", response_model=List[ProblemListItem])
 async def list_problems(
@@ -243,24 +402,3 @@ async def get_hint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get hint: {str(e)}"
         )
-
-
-@router.get("/search/rag")
-async def search_problems_rag(
-    query: str = Query(..., min_length=2),
-    framework: Optional[Framework] = None,
-    limit: int = Query(5, ge=1, le=20),
-    db=Depends(get_db)
-):
-    """
-    Search problems using RAG (Retrieval Augmented Generation).
-
-    Uses vector similarity search with pgvector.
-    Requires OpenAI embeddings API key.
-    """
-    # TODO: Implement when OpenAI API key is available
-    return {
-        "message": "RAG search not yet implemented. Please provide OpenAI API key.",
-        "query": query,
-        "results": []
-    }

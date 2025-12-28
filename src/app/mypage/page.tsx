@@ -6,6 +6,7 @@ import { TopNav } from '@/components/layout/TopNav';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User, Lock, CreditCard, Trash2, Check, X, Eye, EyeOff, BarChart3, AlertCircle } from 'lucide-react';
+import { BadgeIcon } from '@/components/ui/badge-icon';
 import { usersApi, authApi, type UserProfile, type UserStats } from '@/lib/api';
 import type { Badge as BadgeType, RecentActivity } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -389,8 +390,16 @@ export default function MyPagePage() {
                 key={badge.id}
                 className="flex items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary/50"
               >
-                <span className="text-2xl">{badge.icon}</span>
-                <div>
+                {badge.iconUrl ? (
+                  <img
+                    src={badge.iconUrl}
+                    alt={badge.name}
+                    className="h-12 w-12 object-contain"
+                  />
+                ) : (
+                  <BadgeIcon name={badge.name} rarity={badge.rarity} size="lg" />
+                )}
+                <div className="flex-1 min-w-0">
                   <p className="font-medium">{badge.name}</p>
                   <p className="text-xs text-muted-foreground">{badge.description}</p>
                 </div>

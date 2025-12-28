@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
+    # Azure Translator
+    azure_translator_key: str = ""
+    azure_translator_region: str = "koreacentral"
+    azure_translator_endpoint: str = "https://api.cognitive.microsofttranslator.com"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

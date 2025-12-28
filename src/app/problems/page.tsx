@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/layout/Header';
 import { TopNav } from '@/components/layout/TopNav';
 import { SidebarProfile } from '@/components/dashboard/SidebarProfile';
@@ -10,82 +9,98 @@ import {
   type ProblemFiltersState,
 } from '@/components/problems/ProblemFilters';
 import { ProblemCard } from '@/components/problems/ProblemCard';
-import { Badge } from '@/components/ui/badge';
+import { PreviewModal } from '@/components/problems/PreviewModal';
 import { Button } from '@/components/ui/button';
-import { mockProblems } from '@/lib/mockData';
-import { Inbox, RefreshCw } from 'lucide-react';
-import type { Problem } from '@/lib/types';
-
-const PROBLEM_TYPE_LABELS: Record<string, string> = {
-  blank: '빈칸 채우기',
-  puzzle: '퍼즐',
-  guided: '1대1 대화형',
-  implementation: '구현',
-};
+import { Input } from '@/components/ui/input';
+import { problemsApi, type BaseProblemListItem } from '@/lib/api';
+import { Inbox, RefreshCw, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 export default function ProblemsPage() {
   const [filters, setFilters] = useState<ProblemFiltersState>({
     search: '',
-    language: 'all',
     difficulty: 'all',
-    type: 'all',
-    topic: 'all',
+    source: 'all',
+    tags: 'all',
   });
 
-  // Filter problems based on current filters
-  const filteredProblems = useMemo(() => {
-    return mockProblems.filter((problem) => {
-      // Search filter
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        const matchesTitle = problem.title.toLowerCase().includes(searchLower);
-        const matchesTopics = problem.topics.some((t) =>
-          t.toLowerCase().includes(searchLower)
-        );
-        const matchesDescription = problem.description
-          .toLowerCase()
-          .includes(searchLower);
-        if (!matchesTitle && !matchesTopics && !matchesDescription) {
-          return false;
-        }
-      }
+  const [problems, setProblems] = useState<BaseProblemListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageInput, setPageInput] = useState('1'); // 입력용 상태
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const limit = 20;
 
-      // Language filter
-      if (filters.language !== 'all' && problem.framework !== filters.language) {
-        return false;
-      }
+  // Preview modal state
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
-      // Difficulty filter
-      if (filters.difficulty !== 'all' && problem.difficulty !== filters.difficulty) {
-        return false;
-      }
+  // Debounced search
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-      // Type filter
-      if (filters.type !== 'all' && problem.problemType !== filters.type) {
-        return false;
-      }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(filters.search);
+      setPage(1); // Reset page on search
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [filters.search]);
 
-      // Topic filter
-      if (
-        filters.topic !== 'all' &&
-        !problem.topics.includes(filters.topic)
-      ) {
-        return false;
-      }
+  // Reset page on filter change
+  useEffect(() => {
+    setPage(1);
+  }, [filters.difficulty, filters.source, filters.tags]);
 
-      return true;
-    });
-  }, [filters]);
+  // Fetch problems
+  const fetchProblems = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
-  // Group problems by type for summary
-  const problemsByType = useMemo(() => {
-    const grouped: Record<string, number> = {};
-    filteredProblems.forEach((p) => {
-      const type = p.problemType || 'unknown';
-      grouped[type] = (grouped[type] || 0) + 1;
-    });
-    return grouped;
-  }, [filteredProblems]);
+    try {
+      const response = await problemsApi.listBase({
+        difficulty: filters.difficulty !== 'all' ? filters.difficulty : undefined,
+        source: filters.source !== 'all' ? filters.source : undefined,
+        tags: filters.tags !== 'all' ? filters.tags : undefined,
+        search: debouncedSearch || undefined,
+        page,
+        limit,
+      });
+
+      setProblems(response.items);
+      setTotal(response.total);
+      setHasMore(response.has_more);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load problems');
+    } finally {
+      setLoading(false);
+    }
+  }, [filters.difficulty, filters.source, filters.tags, debouncedSearch, page]);
+
+  useEffect(() => {
+    fetchProblems();
+  }, [fetchProblems]);
+
+  // page 변경 시 input 동기화
+  useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
+
+  const handlePreview = (originalId: string) => {
+    setPreviewId(originalId);
+  };
+
+  const totalPages = Math.ceil(total / limit);
+
+  // 페이지 입력 후 Enter 시 이동
+  const handlePageInputSubmit = () => {
+    const val = parseInt(pageInput);
+    if (!isNaN(val) && val >= 1 && val <= totalPages) {
+      setPage(val);
+    } else {
+      // 유효하지 않으면 현재 페이지로 복원
+      setPageInput(String(page));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -105,97 +120,158 @@ export default function ProblemsPage() {
                   실전 코딩 문제를 풀고 실력을 키워보세요
                 </p>
               </div>
-              <div className="flex gap-2">
-                {Object.entries(problemsByType).map(([type, count]) => (
-                  <Badge
-                    key={type}
-                    variant="outline"
-                    className="cursor-pointer hover:bg-secondary"
-                    onClick={() =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        type: prev.type === type ? 'all' : type,
-                      }))
-                    }
-                  >
-                    {PROBLEM_TYPE_LABELS[type] || type}: {count}
-                  </Badge>
-                ))}
-              </div>
             </div>
 
             {/* Filters */}
             <ProblemFilters
               filters={filters}
               onFiltersChange={setFilters}
-              resultCount={filteredProblems.length}
+              resultCount={problems.length}
+              totalCount={total}
             />
 
-            {/* Problem List */}
-            <AnimatePresence mode="popLayout">
-              {filteredProblems.length > 0 ? (
-                <motion.div
-                  layout
-                  className="space-y-4"
-                >
-                  {filteredProblems.map((problem, i) => (
-                    <motion.div
-                      key={problem.id}
-                      layout
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ delay: i * 0.05 }}
-                    >
-                      <ProblemCard problem={problem} index={i} />
-                    </motion.div>
-                  ))}
-                </motion.div>
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex flex-col items-center justify-center py-16 text-center"
-                >
-                  <div className="rounded-full bg-secondary p-4 mb-4">
-                    <Inbox className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                  <h3 className="text-lg font-medium">검색 결과가 없습니다</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    다른 필터를 선택하거나 검색어를 변경해보세요
-                  </p>
-                  <Button
-                    variant="outline"
-                    className="mt-4"
-                    onClick={() =>
-                      setFilters({
-                        search: '',
-                        language: 'all',
-                        difficulty: 'all',
-                        type: 'all',
-                        topic: 'all',
-                      })
-                    }
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    필터 초기화
-                  </Button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* Error State */}
+            {error && !loading && (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <p className="text-destructive mb-4">{error}</p>
+                <Button variant="outline" onClick={fetchProblems}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  다시 시도
+                </Button>
+              </div>
+            )}
 
-            {/* Pagination placeholder */}
-            {filteredProblems.length > 0 && (
-              <div className="flex justify-center pt-4">
-                <p className="text-sm text-muted-foreground">
-                  {filteredProblems.length}개의 문제 중 {filteredProblems.length}개
-                  표시
-                </p>
+            {/* Problem List - 로딩 중에도 영역 유지 */}
+            {!error && (
+              <div className="relative">
+                {/* 로딩 오버레이 */}
+                {loading && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-lg">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+
+                {problems.length > 0 ? (
+                  <div className={`space-y-4 ${loading ? 'opacity-50' : ''}`}>
+                    {problems.map((problem, i) => (
+                      <ProblemCard
+                        key={problem.id}
+                        problem={problem}
+                        index={i}
+                        onPreview={handlePreview}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="rounded-full bg-secondary p-4 mb-4">
+                      <Inbox className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-lg font-medium">검색 결과가 없습니다</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      다른 필터를 선택하거나 검색어를 변경해보세요
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() =>
+                        setFilters({
+                          search: '',
+                          difficulty: 'all',
+                          source: 'all',
+                          tags: 'all',
+                        })
+                      }
+                    >
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      필터 초기화
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {!error && problems.length > 0 && (
+              <div className="flex items-center justify-center gap-2 pt-4">
+                {/* 처음 */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  title="처음"
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                {/* 이전 */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  title="이전"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                {/* 페이지 입력 */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={pageInput}
+                    onChange={(e) => setPageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handlePageInputSubmit();
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    onBlur={handlePageInputSubmit}
+                    className="w-16 h-8 text-center text-sm border-2 border-muted-foreground/50 focus:border-primary focus:ring-0 focus-visible:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    / {totalPages}
+                  </span>
+                </div>
+
+                {/* 다음 */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  title="다음"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                {/* 마지막 */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page >= totalPages}
+                  title="마지막"
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
               </div>
             )}
           </div>
         </main>
       </div>
+
+      {/* Preview Modal */}
+      <PreviewModal
+        originalId={previewId}
+        onClose={() => setPreviewId(null)}
+      />
     </div>
   );
 }

@@ -14,7 +14,16 @@ export {
   type RecoverData,
   type RecoverOAuthData,
 } from './auth';
-export { problemsApi, type ProblemFilters, type ProblemListResponse, type HintResponse } from './problems';
+export {
+  problemsApi,
+  type ProblemFilters,
+  type ProblemListResponse,
+  type HintResponse,
+  type BaseProblemListItem,
+  type BaseProblemDetail,
+  type BaseProblemListResponse,
+  type BaseProblemFilters,
+} from './problems';
 export {
   practiceApi,
   type BlankSubmission,
@@ -36,3 +45,27 @@ export {
   type UserStats,
   type ActivityData,
 } from './users';
+export {
+  translateText,
+  detectLanguage,
+  getSupportedLanguages,
+  LANGUAGE_LABELS,
+  type LanguageCode,
+  type TranslateResponse,
+  type DetectResponse,
+} from './translate';
+export {
+  farmApi,
+  type CharacterData,
+  type FarmSlot,
+  type UserFarm,
+  type FarmItem,
+  type InventoryItem,
+  type PlantResponse,
+  type HarvestResponse,
+  type BuyResponse,
+  type SellResponse,
+  type ExpansionOption,
+  type ExpansionCostsResponse,
+  type ExpandResponse,
+} from './farm';

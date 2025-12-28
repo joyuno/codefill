@@ -24,7 +24,7 @@ interface CropPixelProps extends PixelSpriteProps {
   type?: CropType;
 }
 
-export type CropType = 'tomato' | 'wheat' | 'corn' | 'carrot' | 'turnip' | 'strawberry' | 'grape' | 'potato' | 'pumpkin' | 'watermelon';
+export type CropType = 'tomato' | 'wheat' | 'corn' | 'carrot' | 'turnip' | 'strawberry' | 'grape' | 'potato' | 'pumpkin' | 'watermelon' | 'cabbage' | 'onion' | 'radish';
 
 export const CROP_INFO: Record<CropType, { name: string; emoji: string; growTime: number; sellPrice: number; buyPrice: number }> = {
   tomato: { name: '토마토', emoji: '🍅', growTime: 4, sellPrice: 25, buyPrice: 10 },
@@ -37,6 +37,9 @@ export const CROP_INFO: Record<CropType, { name: string; emoji: string; growTime
   potato: { name: '감자', emoji: '🥔', growTime: 3, sellPrice: 18, buyPrice: 6 },
   pumpkin: { name: '호박', emoji: '🎃', growTime: 7, sellPrice: 60, buyPrice: 30 },
   watermelon: { name: '수박', emoji: '🍉', growTime: 8, sellPrice: 80, buyPrice: 40 },
+  cabbage: { name: '양배추', emoji: '🥬', growTime: 4, sellPrice: 22, buyPrice: 9 },
+  onion: { name: '양파', emoji: '🧅', growTime: 3, sellPrice: 16, buyPrice: 6 },
+  radish: { name: '무', emoji: '🥕', growTime: 2, sellPrice: 14, buyPrice: 5 },
 };
 
 const CROP_COLORS: Record<CropType, { fruit: string; leaf: string }> = {
@@ -50,6 +53,9 @@ const CROP_COLORS: Record<CropType, { fruit: string; leaf: string }> = {
   potato: { fruit: '#d4a574', leaf: '#27ae60' },
   pumpkin: { fruit: '#ff8c00', leaf: '#27ae60' },
   watermelon: { fruit: '#2ecc71', leaf: '#27ae60' },
+  cabbage: { fruit: '#90EE90', leaf: '#27ae60' },
+  onion: { fruit: '#FFFACD', leaf: '#27ae60' },
+  radish: { fruit: '#FF69B4', leaf: '#27ae60' },
 };
 
 export function CropPixel({ stage, type = 'tomato', size = 48, className, onClick }: CropPixelProps) {

@@ -4,8 +4,8 @@ import os
 from groq import Groq
 from dotenv import load_dotenv
 
-# .env.local에서 환경변수 로드
-load_dotenv('.env.local')
+# .env에서 환경변수 로드
+load_dotenv('.env')
 
 # Groq API 설정
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
