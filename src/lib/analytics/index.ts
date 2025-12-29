@@ -50,8 +50,4 @@ export function identifyUser(
   }
 }
 
-/**
- * 분석 이벤트 일괄 전송
- * Clarity와 GA4 모두에 이벤트 전송
- */
-export { clarityEvents, ga4Events };
+// clarityEvents, ga4Events are already exported above

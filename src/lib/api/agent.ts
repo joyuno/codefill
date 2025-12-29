@@ -34,17 +34,37 @@ export interface ChatAgentResponse {
   collected_info: CollectedInfo;
   is_complete: boolean;
   search_query: string | null;
+  intent_info?: {
+    intent: string;
+    confidence: number;
+    method: string;
+    requires_context: string | null;
+    next_action: string | null;
+  };
+  action_data?: {
+    status?: string;
+    problems?: BaseProblemInfo[];
+    generated_problem?: BaseProblemInfo;
+    action_trigger?: string;
+    next_action?: string;
+    selected_problem?: string;
+    selected_problem_index?: number;
+  };
 }
 
 // Problem Generation
 export interface BaseProblemInfo {
   id?: string;
-  title: string;
-  description: string;
-  code: string;
-  language: 'python' | 'java' | 'cpp';
+  name?: string;  // DB에서 오는 문제 이름
+  title?: string;  // 생성된 문제 제목
+  description?: string;
+  question?: string;  // DB에서 오는 문제 설명
+  code?: string;
+  solutions?: { language: string; code: string }[];  // DB 문제의 솔루션
+  language?: 'python' | 'java' | 'cpp';
   difficulty: 'easy' | 'medium' | 'hard';
-  topics: string[];
+  topics?: string[];
+  tags?: string[];  // DB 문제의 태그
   time_complexity?: string;
   space_complexity?: string;
 }

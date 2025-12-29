@@ -165,28 +165,40 @@ async def chat_agent(request: ChatAgentRequest, db=Depends(get_db)):
             # 메시지에 문제 유형 선택 안내 추가 (프론트엔드가 UI 표시)
             final_message = f"{final_message}\n\n어떤 방식으로 풀어볼까요?\n• 빈칸 채우기 (Blank)\n• 퍼즐 맞추기 (Puzzle)\n• 1:1 대화형 (Guided)"
 
-        elif is_complete and action_trigger in ["search_problems", "search_similar"]:
-            # RAG 검색 + CodeGen fallback 자동 수행
-            search_result = await _auto_search_problems(
-                collected_info=collected_info,
-                user_context=request.user_context,
-                db=db
+        elif action_trigger in ["search_problems", "search_similar"]:
+            # action_trigger가 search_problems면 자동 검색 수행
+            # (difficulty나 topics가 있으면 충분, is_complete 무시)
+            has_search_criteria = (
+                collected_info.difficulty or
+                collected_info.topics or
+                intent_result.intent.value == "random_recommend"
             )
-            action_data = search_result
 
-            # 검색 결과를 메시지에 추가
-            if search_result.get("problems"):
-                problems = search_result["problems"]
-                problem_list = "\n".join([
-                    f"  {i+1}. {p.get('name', 'Unknown')} ({p.get('difficulty', 'medium')})"
-                    for i, p in enumerate(problems[:5])
-                ])
-                final_message = f"{final_message}\n\n찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요?"
-            elif search_result.get("generated_problem"):
-                gen = search_result["generated_problem"]
-                final_message = f"{final_message}\n\n새로 만든 문제예요:\n  • {gen.get('title', 'Unknown')} ({gen.get('difficulty', 'medium')})\n\n이 문제를 풀어볼까요?"
+            if is_complete or has_search_criteria:
+                # RAG 검색 + CodeGen fallback 자동 수행
+                search_result = await _auto_search_problems(
+                    collected_info=collected_info,
+                    user_context=request.user_context,
+                    db=db
+                )
+                action_data = search_result
+
+                # 검색 결과를 메시지에 추가
+                if search_result.get("problems"):
+                    problems = search_result["problems"]
+                    problem_list = "\n".join([
+                        f"  {i+1}. {p.get('name', 'Unknown')} ({p.get('difficulty', 'medium')})"
+                        for i, p in enumerate(problems[:5])
+                    ])
+                    final_message = f"{final_message}\n\n찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요?"
+                elif search_result.get("generated_problem"):
+                    gen = search_result["generated_problem"]
+                    final_message = f"{final_message}\n\n새로 만든 문제예요:\n  • {gen.get('title', 'Unknown')} ({gen.get('difficulty', 'medium')})\n\n이 문제를 풀어볼까요?"
+                else:
+                    final_message = f"{final_message}\n\n아쉽게도 딱 맞는 문제를 못 찾았어요. 다른 주제나 난이도로 시도해볼까요?"
             else:
-                final_message = f"{final_message}\n\n아쉽게도 딱 맞는 문제를 못 찾았어요. 다른 주제나 난이도로 시도해볼까요?"
+                # 검색 조건이 부족하면 action_trigger만 전달
+                action_data = {"action_trigger": action_trigger}
 
         elif action_trigger:
             action_data = {"action_trigger": action_trigger}

@@ -43,9 +43,9 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (user?.id) {
       identifyUser(user.id, {
-        userLevel: profile?.level || 'beginner',
+        userLevel: String(profile?.level ?? 'beginner'),
         signupDate: user.created_at,
-        problemsSolved: profile?.stats?.problemsSolved || 0,
+        problemsSolved: (profile as { stats?: { problemsSolved?: number } })?.stats?.problemsSolved || 0,
       });
     }
   }, [user, profile]);

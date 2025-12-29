@@ -674,24 +674,102 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       // Create assistant message with chips based on state
       let chips: QuickChip[] | undefined;
 
-      if (response.is_complete) {
-        // Info collection complete - show that we're searching
-        setFlowState('recommending');
-        chips = undefined; // Will add chips after recommendation
-      }
+      // Check if chat response already includes problems (auto-search)
+      const actionData = response.action_data as {
+        status?: string;
+        problems?: BaseProblemInfo[];
+        generated_problem?: BaseProblemInfo;
+        action_trigger?: string;
+      } | undefined;
 
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: response.message,
-        timestamp: new Date().toISOString(),
-        chips,
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+      // If action_data has problems from auto-search, use them directly
+      if (actionData?.status === 'found' && actionData?.problems?.length) {
+        setFlowState('type_selection');
+        setRecommendedProblems(actionData.problems);
 
-      // If collection complete, fetch recommendations
-      if (response.is_complete) {
-        await fetchRecommendations(response.collected_info);
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.message,
+          timestamp: new Date().toISOString(),
+          chips: actionData.problems.slice(0, 4).map((p, i) => ({
+            label: `${p.name || p.title} (${p.difficulty})`,
+            value: `problem-${i}`,
+            category: 'action' as const,
+          })),
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      } else if (actionData?.generated_problem) {
+        // CodeGen generated a new problem
+        setFlowState('type_selection');
+        setRecommendedProblems([actionData.generated_problem]);
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.message,
+          timestamp: new Date().toISOString(),
+          chips: [{
+            label: `${actionData.generated_problem.title} (${actionData.generated_problem.difficulty})`,
+            value: 'problem-0',
+            category: 'action' as const,
+          }],
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      } else if (actionData?.action_trigger === 'select_problem_type') {
+        // User selected a problem, show type selection
+        const selectedProblemName = (actionData as { selected_problem?: string }).selected_problem;
+        const selectedIndex = (actionData as { selected_problem_index?: number }).selected_problem_index;
+
+        // Find the selected problem from recommendedProblems
+        let selectedProblem: BaseProblemInfo | undefined;
+        if (selectedIndex !== undefined && recommendedProblems[selectedIndex - 1]) {
+          selectedProblem = recommendedProblems[selectedIndex - 1];
+        } else if (selectedProblemName) {
+          selectedProblem = recommendedProblems.find(
+            p => p.name === selectedProblemName || p.title === selectedProblemName
+          );
+        }
+
+        if (selectedProblem) {
+          setSelectedBaseProblem(selectedProblem);
+          showProblemTypeSelection(selectedProblem);
+        } else {
+          // Fallback - just show the message
+          const assistantMessage: Message = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: response.message,
+            timestamp: new Date().toISOString(),
+            chips: [
+              { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
+              { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
+              { label: '1대1 대화형', value: 'type-guided', category: 'action' },
+            ],
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setFlowState('type_selection');
+        }
+      } else {
+        // Normal chat flow
+        if (response.is_complete && !actionData?.problems) {
+          setFlowState('recommending');
+          chips = undefined;
+        }
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.message,
+          timestamp: new Date().toISOString(),
+          chips,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+
+        // Only fetch recommendations if no problems in action_data
+        if (response.is_complete && !actionData?.problems && !actionData?.generated_problem) {
+          await fetchRecommendations(response.collected_info);
+        }
       }
 
     } catch (error) {
