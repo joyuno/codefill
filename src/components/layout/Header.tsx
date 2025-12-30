@@ -1,10 +1,13 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CreditCard, LogOut, User, Settings, Crown } from 'lucide-react';
+import { CreditCard, LogOut, User, Settings, Crown, Users } from 'lucide-react';
+import { friendsApi } from '@/lib/api';
+import { FriendModal } from '@/components/friends';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,14 +19,34 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useAuth, SUBSCRIPTION_FEATURES } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, profile, isLoading, isAuthenticated, signOut } = useAuth();
 
+  // 친구 모달 상태
+  const [friendModalOpen, setFriendModalOpen] = useState(false);
+  const [apiUnreadCount, setApiUnreadCount] = useState(0);
+
+  // WebSocket 컨텍스트에서 실시간 읽지 않은 메시지 수
+  const { totalUnreadCount: wsUnreadCount } = useWebSocketContext();
+
   // 인증 페이지에서는 다른 헤더 표시
   const isAuthPage = pathname === '/login' || pathname === '/signup' || pathname === '/onboarding';
+
+  // 미확인 알림 수 조회 (API)
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      friendsApi.getUnreadCounts()
+        .then((res) => setApiUnreadCount(res.total))
+        .catch(() => setApiUnreadCount(0));
+    }
+  }, [isAuthenticated, user, friendModalOpen]);
+
+  // 총 읽지 않은 메시지 수 (API + WebSocket 실시간)
+  const unreadCount = apiUnreadCount + wsUnreadCount;
 
   // 로그아웃 처리
   const handleSignOut = async () => {
@@ -135,6 +158,22 @@ export function Header() {
                     </Link>
                   </DropdownMenuItem>
 
+                  <DropdownMenuItem
+                    onSelect={() => setFriendModalOpen(true)}
+                    className="cursor-pointer"
+                  >
+                    <Users className="mr-2 h-4 w-4" />
+                    친구
+                    {unreadCount > 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="ml-auto h-5 px-1.5 text-xs"
+                      >
+                        {unreadCount}
+                      </Badge>
+                    )}
+                  </DropdownMenuItem>
+
                   <DropdownMenuItem asChild>
                     <Link href="/pricing" className="cursor-pointer">
                       <CreditCard className="mr-2 h-4 w-4" />
@@ -178,6 +217,9 @@ export function Header() {
           )}
         </div>
       </div>
+
+      {/* 친구 모달 */}
+      <FriendModal open={friendModalOpen} onOpenChange={setFriendModalOpen} />
     </motion.header>
   );
 }

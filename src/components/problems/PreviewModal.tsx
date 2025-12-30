@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { X, Globe, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
+import { X, Globe, ExternalLink, Loader2, Copy, Check, MessageSquare } from 'lucide-react';
+import Link from 'next/link';
 import { problemsApi, type BaseProblemDetail } from '@/lib/api';
 import { translateText, type LanguageCode } from '@/lib/api/translate';
 import { cn } from '@/lib/utils';
@@ -234,7 +235,7 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                 {/* Question - Markdown + LaTeX 렌더링 */}
                 <div className="space-y-2">
                   <h3 className="text-sm font-medium text-muted-foreground">Problem</h3>
-                  <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/30 rounded-lg p-4 [&_pre]:bg-background/50 [&_pre]:p-3 [&_pre]:rounded-md [&_code]:text-primary [&_code]:bg-background/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
+                  <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/30 rounded-lg p-4 [&_pre]:bg-background/50 [&_pre]:p-3 [&_pre]:rounded-md [&_code]:text-primary [&_code]:bg-background/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_p]:text-[13px] [&_li]:text-[13px] [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                       rehypePlugins={[rehypeKatex]}
@@ -323,6 +324,12 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
               <Button variant="outline" onClick={onClose}>
                 Close
               </Button>
+              <Link href={`/problems/${problem.original_id}`}>
+                <Button variant="outline">
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Discussion
+                </Button>
+              </Link>
               <Button onClick={() => window.location.href = `/practice?id=${problem.original_id}&type=implementation`}>
                 Start Practice
               </Button>

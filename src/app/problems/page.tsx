@@ -8,7 +8,7 @@ import {
   ProblemFilters,
   type ProblemFiltersState,
 } from '@/components/problems/ProblemFilters';
-import { ProblemCard } from '@/components/problems/ProblemCard';
+import { ProblemRow } from '@/components/problems/ProblemRow';
 import { PreviewModal } from '@/components/problems/PreviewModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -111,7 +111,7 @@ export default function ProblemsPage() {
           <SidebarProfile />
         </aside>
         <main className="flex-1 p-6">
-          <div className="mx-auto max-w-4xl space-y-6">
+          <div className="mx-auto max-w-5xl space-y-6">
             {/* Page Header */}
             <div className="flex items-start justify-between">
               <div>
@@ -152,15 +152,30 @@ export default function ProblemsPage() {
                 )}
 
                 {problems.length > 0 ? (
-                  <div className={`space-y-4 ${loading ? 'opacity-50' : ''}`}>
-                    {problems.map((problem, i) => (
-                      <ProblemCard
-                        key={problem.id}
-                        problem={problem}
-                        index={i}
-                        onPreview={handlePreview}
-                      />
-                    ))}
+                  <div className={`rounded-lg border border-border overflow-hidden ${loading ? 'opacity-50' : ''}`}>
+                    <table className="w-full">
+                      <thead className="bg-muted/50">
+                        <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider">
+                          <th className="w-10 py-3 pl-4 pr-2"></th>
+                          <th className="w-20 py-3 px-2">번호</th>
+                          <th className="py-3 px-2">제목</th>
+                          <th className="w-24 py-3 px-2">난이도</th>
+                          <th className="w-20 py-3 px-2">출처</th>
+                          <th className="py-3 px-2 hidden lg:table-cell">태그</th>
+                          <th className="w-24 py-3 px-2 pr-4"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {problems.map((problem, i) => (
+                          <ProblemRow
+                            key={problem.id}
+                            problem={problem}
+                            index={i}
+                            onPreview={handlePreview}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
