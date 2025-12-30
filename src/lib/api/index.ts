@@ -44,6 +44,8 @@ export {
   type UserProfile,
   type UserStats,
   type ActivityData,
+  type DateActivityDetail,
+  type SolvedProblem,
 } from './users';
 export {
   agentApi,
@@ -91,4 +93,32 @@ export {
   type ExpansionCostsResponse,
   type ExpandResponse,
 } from './farm';
-
+export {
+  solutionsApi,
+  type SolutionAuthor,
+  type SolutionListItem,
+  type SolutionDetail,
+  type SolutionListResponse,
+  type CommentItem,
+  type CommentListResponse,
+  type VoteResponse,
+  type OfficialSolution,
+  type ProblemDiscussionResponse,
+  type SolutionCreateData,
+  type SolutionUpdateData,
+  type CommentCreateData,
+} from './solutions';
+export {
+  friendsApi,
+  type FriendRequest,
+  type Friend,
+  type FriendListResponse,
+  type FriendRequestsResponse,
+  type SentRequest,
+  type SentRequestsResponse,
+  type Message,
+  type ConversationResponse,
+  type UserSearchResult,
+  type UserSearchResponse,
+  type UnreadCountResponse,
+} from './friends';

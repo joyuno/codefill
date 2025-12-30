@@ -127,7 +127,7 @@ class BaseProblemInfo(BaseModel):
                 return self.solutions[0].get("code", "")
         return ""
 
-
+        
 class ProblemGenerationRequest(BaseModel):
     """Request to generate a problem."""
     base_problem: BaseProblemInfo

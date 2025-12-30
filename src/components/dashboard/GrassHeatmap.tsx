@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { usersApi } from '@/lib/api';
+import { usersApi, type DateActivityDetail } from '@/lib/api';
+import { Calendar, Code, Zap, Loader2, X } from 'lucide-react';
+import { format } from 'date-fns';
+import { ko } from 'date-fns/locale';
 
 interface ActivityDay {
   date: string;
@@ -60,9 +63,27 @@ function generateEmptyYear(): ActivityDay[] {
   return days;
 }
 
+// 난이도 색상
+const difficultyColors: Record<string, string> = {
+  easy: 'text-green-500',
+  medium: 'text-yellow-500',
+  hard: 'text-red-500',
+};
+
+// 문제 타입 라벨
+const problemTypeLabels: Record<string, string> = {
+  blank: '빈칸 채우기',
+  bug: '버그 찾기',
+  output: '출력 예측',
+  refactor: '리팩토링',
+};
+
 export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
   const [activityData, setActivityData] = useState<ActivityDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [dateDetail, setDateDetail] = useState<DateActivityDetail | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
   useEffect(() => {
     async function fetchActivity() {
@@ -112,6 +133,35 @@ export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
 
     fetchActivity();
   }, []);
+
+  // 날짜 클릭 핸들러
+  const handleDateClick = async (day: ActivityDay) => {
+    if (selectedDate === day.date) {
+      // 같은 날짜 클릭 시 닫기
+      setSelectedDate(null);
+      setDateDetail(null);
+      return;
+    }
+
+    setSelectedDate(day.date);
+    setIsLoadingDetail(true);
+    setDateDetail(null);
+
+    try {
+      const detail = await usersApi.getActivityByDate(day.date);
+      setDateDetail(detail);
+    } catch (err) {
+      console.error('Failed to load date detail:', err);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  // 선택 닫기
+  const handleCloseDetail = () => {
+    setSelectedDate(null);
+    setDateDetail(null);
+  };
 
   // 총 기여 수
   const totalContributions = useMemo(
@@ -307,9 +357,11 @@ export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
                     <Tooltip key={day.date}>
                       <TooltipTrigger asChild>
                         <div
+                          onClick={() => handleDateClick(day)}
                           className={cn(
                             'h-[11px] w-[11px] rounded-[2px] transition-transform hover:scale-125 cursor-pointer',
-                            intensityColors[day.intensity]
+                            intensityColors[day.intensity],
+                            selectedDate === day.date && 'ring-2 ring-primary ring-offset-1'
                           )}
                         />
                       </TooltipTrigger>
@@ -351,6 +403,102 @@ export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
           </div>
         </div>
       </div>
+
+      {/* 선택된 날짜 상세 패널 */}
+      <AnimatePresence>
+        {selectedDate && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-4 pt-4 border-t border-border">
+              {/* 헤더 */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  <span className="font-medium">
+                    {format(new Date(selectedDate), 'yyyy년 M월 d일 (EEEE)', { locale: ko })}
+                  </span>
+                </div>
+                <button
+                  onClick={handleCloseDetail}
+                  className="p-1 hover:bg-muted rounded-md transition-colors"
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
+
+              {/* 로딩 */}
+              {isLoadingDetail && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {/* 상세 내용 */}
+              {!isLoadingDetail && dateDetail && (
+                <div className="space-y-3">
+                  {/* 요약 통계 */}
+                  <div className="flex gap-4 text-sm">
+                    <div className="flex items-center gap-1.5">
+                      <Code className="h-4 w-4 text-green-500" />
+                      <span className="text-muted-foreground">문제 해결:</span>
+                      <span className="font-medium">{dateDetail.problems_solved}개</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Zap className="h-4 w-4 text-yellow-500" />
+                      <span className="text-muted-foreground">획득 XP:</span>
+                      <span className="font-medium">{dateDetail.xp_earned}</span>
+                    </div>
+                  </div>
+
+                  {/* 문제 목록 */}
+                  {dateDetail.problems.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground font-medium">풀이한 문제</p>
+                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                        {dateDetail.problems.map((problem) => (
+                          <div
+                            key={problem.id}
+                            className="flex items-center justify-between p-2.5 bg-muted/50 rounded-lg text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={cn('text-xs font-medium', difficultyColors[problem.difficulty])}>
+                                {problem.difficulty.toUpperCase()}
+                              </span>
+                              <span className="font-medium">{problem.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {problemTypeLabels[problem.problem_type] || problem.problem_type}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>+{problem.xp_earned} XP</span>
+                              <span>{format(new Date(problem.solved_at), 'HH:mm')}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-4 text-center">
+                      이 날에는 풀이한 문제가 없습니다.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* 데이터 없음 */}
+              {!isLoadingDetail && !dateDetail && (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  데이터를 불러올 수 없습니다.
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

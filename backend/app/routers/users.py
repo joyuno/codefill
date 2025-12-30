@@ -20,6 +20,8 @@ from ..models.user import (
     MypageBadge,
     ChangeNicknameRequest,
     ChangeNicknameResponse,
+    DateActivityDetail,
+    SolvedProblem,
 )
 
 router = APIRouter()
@@ -268,6 +270,78 @@ async def get_user_activity(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get activity: {str(e)}"
+        )
+
+
+@router.get("/me/activity/{date}", response_model=DateActivityDetail)
+async def get_activity_by_date(
+    date: str,
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """Get user's activity detail for a specific date (잔디 클릭 시 상세)."""
+    try:
+        from datetime import datetime
+
+        # Validate date format
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD."
+            )
+
+        # Get daily activity summary
+        daily_result = db.table("daily_activity")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .eq("activity_date", date)\
+            .single()\
+            .execute()
+
+        daily_data = daily_result.data or {}
+        problems_solved = daily_data.get("problems_solved", 0)
+        xp_earned = daily_data.get("xp_earned", 0)
+
+        # Get solved problems on that date
+        start_of_day = f"{date}T00:00:00"
+        end_of_day = f"{date}T23:59:59"
+
+        attempts_result = db.table("attempts")\
+            .select("id, problem_type, xp_earned, submitted_at, base_problems(id, name, difficulty)")\
+            .eq("user_id", str(user_id))\
+            .eq("is_correct", True)\
+            .gte("submitted_at", start_of_day)\
+            .lte("submitted_at", end_of_day)\
+            .order("submitted_at", desc=True)\
+            .execute()
+
+        problems = []
+        for attempt in (attempts_result.data or []):
+            base_problem = attempt.get("base_problems", {}) or {}
+            problems.append(SolvedProblem(
+                id=str(base_problem.get("id", attempt["id"])),
+                name=base_problem.get("name", "Unknown Problem"),
+                difficulty=base_problem.get("difficulty", "medium"),
+                problem_type=attempt.get("problem_type", "blank") or "blank",
+                xp_earned=attempt.get("xp_earned", 0) or 0,
+                solved_at=attempt["submitted_at"],
+            ))
+
+        return DateActivityDetail(
+            date=date,
+            problems_solved=problems_solved if problems_solved else len(problems),
+            xp_earned=xp_earned if xp_earned else sum(p.xp_earned for p in problems),
+            problems=problems,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get activity for date: {str(e)}"
         )
 
 

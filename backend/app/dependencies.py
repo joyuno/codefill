@@ -108,6 +108,32 @@ async def get_current_user(
     return result.data
 
 
+async def get_optional_user(
+    user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+    db = Depends(get_db),
+) -> Optional[Dict[str, Any]]:
+    """
+    현재 로그인한 사용자 정보를 조회합니다 (선택적).
+    토큰이 없거나 유효하지 않아도 에러를 발생시키지 않습니다.
+
+    Args:
+        user_id: 사용자 ID (optional)
+        db: Supabase 클라이언트
+
+    Returns:
+        Optional[Dict]: 사용자 정보 또는 None
+    """
+    if not user_id:
+        return None
+
+    result = db.table("users").select("*").eq("id", str(user_id)).single().execute()
+
+    if not result.data:
+        return None
+
+    return result.data
+
+
 async def get_current_user_with_profile(
     user_id: UUID = Depends(get_current_user_id),
     db = Depends(get_db),

@@ -189,6 +189,28 @@ class ChangeNicknameRequest(BaseModel):
     new_nickname: str = Field(..., min_length=2, max_length=50)
 
 
+# =====================================================
+# Date Activity Models (잔디 클릭 시 상세)
+# =====================================================
+
+class SolvedProblem(BaseModel):
+    """특정 날짜에 푼 문제."""
+    id: str
+    name: str
+    difficulty: str
+    problem_type: str
+    xp_earned: int
+    solved_at: datetime
+
+
+class DateActivityDetail(BaseModel):
+    """특정 날짜의 활동 상세."""
+    date: str
+    problems_solved: int
+    xp_earned: int
+    problems: List[SolvedProblem]
+
+
 class ChangeNicknameResponse(BaseModel):
     """Response model for nickname change."""
     success: bool

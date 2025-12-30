@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from .config import get_settings
-from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent
+from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws
 from .intents import intent_classifier
 
 @asynccontextmanager
@@ -65,6 +65,9 @@ app.include_router(execute.router, prefix="/execute", tags=["Code Execution"])
 app.include_router(translate.router, prefix="/translate", tags=["Translation"])
 app.include_router(farm.router, prefix="/farm", tags=["Farm"])
 app.include_router(agent.router, prefix="/agent", tags=["AI Agents"])
+app.include_router(solutions.router, prefix="/solutions", tags=["Solutions"])
+app.include_router(friends.router, prefix="/friends", tags=["Friends"])
+app.include_router(ws.router, prefix="/ws", tags=["WebSocket"])
 
 
 @app.get("/")
