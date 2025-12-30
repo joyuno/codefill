@@ -6,7 +6,7 @@ Request/Response models for AI agents
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from enum import Enum
 from uuid import UUID
 
@@ -54,13 +54,6 @@ class ChatAgentMessage(BaseModel):
     content: str
 
 
-class ChatAgentRequest(BaseModel):
-    """Request to Chat Agent for info collection."""
-    message: str
-    conversation_history: List[ChatAgentMessage] = []
-    user_context: Optional[Dict[str, Any]] = None  # onboarding data
-
-
 class CollectedInfo(BaseModel):
     """Information collected by Chat Agent."""
     topics: List[str] = []
@@ -70,6 +63,14 @@ class CollectedInfo(BaseModel):
     time_available: Optional[int] = None
     selected_problem: Optional[str] = None  # 선택된 문제 이름
     selected_problem_index: Optional[int] = None  # 선택된 문제 번호 (1-based)
+
+
+class ChatAgentRequest(BaseModel):
+    """Request to Chat Agent for info collection."""
+    message: str
+    conversation_history: List[ChatAgentMessage] = []
+    user_context: Optional[Dict[str, Any]] = None  # onboarding data
+    collected_info: Optional[CollectedInfo] = None  # 이전 턴에서 수집된 정보 (상태 유지용)
 
 
 class ChatAgentResponse(BaseModel):
@@ -87,14 +88,44 @@ class ChatAgentResponse(BaseModel):
 class BaseProblemInfo(BaseModel):
     """Base problem information for generation."""
     id: Optional[str] = None
-    title: str
-    description: str
-    code: str
+    name: Optional[str] = None  # DB에서 오는 문제 이름
+    title: Optional[str] = None  # 생성된 문제 제목
+    description: Optional[str] = None  # 문제 설명
+    question: Optional[str] = None  # DB에서 오는 문제 설명 (description 대체)
+    code: Optional[Union[str, dict]] = None  # str 또는 {"python": "...", "java": "..."}
+    solutions: Optional[List[dict]] = None  # DB 문제의 솔루션 배열
     language: LanguageEnum = LanguageEnum.PYTHON
     difficulty: DifficultyEnum = DifficultyEnum.MEDIUM
     topics: List[str] = []
+    tags: Optional[List[str]] = None  # DB 문제의 태그
     time_complexity: Optional[str] = None
     space_complexity: Optional[str] = None
+
+    def get_title(self) -> str:
+        """title 또는 name 반환"""
+        return self.title or self.name or "Problem"
+
+    def get_description(self) -> str:
+        """description 또는 question 반환"""
+        return self.description or self.question or ""
+
+    def get_code(self, target_language: str = "python") -> str:
+        """code 또는 solutions에서 코드 추출"""
+        if self.code:
+            # code가 dict인 경우: {"python": "...", "java": "..."}
+            if isinstance(self.code, dict):
+                return self.code.get(target_language) or next(iter(self.code.values()), "")
+            # code가 문자열인 경우
+            return self.code
+        if self.solutions:
+            # 타겟 언어의 솔루션 찾기
+            for sol in self.solutions:
+                if sol.get("language") == target_language:
+                    return sol.get("code", "")
+            # 없으면 첫 번째 솔루션
+            if self.solutions:
+                return self.solutions[0].get("code", "")
+        return ""
 
 
 class ProblemGenerationRequest(BaseModel):
@@ -103,6 +134,7 @@ class ProblemGenerationRequest(BaseModel):
     problem_type: ProblemTypeEnum
     user_level: UserLevelEnum = UserLevelEnum.INTERMEDIATE
     language: LanguageEnum = LanguageEnum.PYTHON
+    user_context: Optional[Dict[str, Any]] = None  # user_id 포함 (DB 저장용)
 
 
 # --- Blank Problem (data/examples/problems_blank.json 형식) ---
@@ -287,3 +319,59 @@ class IntentChatResponse(BaseModel):
     is_complete: bool = False
     search_query: Optional[str] = None
     action_data: Optional[Dict[str, Any]] = None  # 추가 액션 데이터
+
+
+# ============================================================
+# Problem Solving Models (문제 풀이 중)
+# ============================================================
+
+class ProblemContextModel(BaseModel):
+    """현재 풀고 있는 문제 정보."""
+    id: str
+    name: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    difficulty: str = "medium"
+    topics: List[str] = []
+    problem_type: str = "blank"  # blank, puzzle, guided
+
+    # 정답 정보
+    solution_code: Optional[str] = None
+    blanks: Optional[List[Dict[str, Any]]] = None  # blank 문제
+    correct_order: Optional[List[int]] = None  # puzzle 문제
+
+
+class UserProgressModel(BaseModel):
+    """사용자 진행 상황."""
+    current_code: Optional[str] = None
+    filled_blanks: Dict[str, str] = {}  # blank 문제
+    arranged_blocks: List[int] = []  # puzzle 문제
+    attempt_count: int = 0
+    hint_count: int = 0
+    last_error: Optional[str] = None
+
+
+class SolvingRequest(BaseModel):
+    """문제 풀이 중 요청."""
+    message: str
+    problem_context: ProblemContextModel
+    user_progress: Optional[UserProgressModel] = None
+    conversation_history: List[ChatAgentMessage] = []
+    previous_hints: List[str] = []
+
+
+class SolvingIntentInfo(BaseModel):
+    """풀이 중 의도 정보."""
+    intent: str  # hint_request, code_review, answer_check, feedback_request, give_up
+    confidence: float
+    sub_intent: Optional[str] = None  # hint_algorithm, hint_syntax, etc.
+
+
+class SolvingResponse(BaseModel):
+    """문제 풀이 중 응답."""
+    message: str
+    intent_info: SolvingIntentInfo
+    hint_level: Optional[int] = None  # 1~4
+    is_correct: Optional[bool] = None
+    action_trigger: Optional[str] = None  # hint_provided, code_reviewed, correct_answer, etc.
+    action_data: Optional[Dict[str, Any]] = None

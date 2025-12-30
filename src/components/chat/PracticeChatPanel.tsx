@@ -9,6 +9,11 @@ import type {
   ChatAgentMessage,
   CollectedInfo,
   BaseProblemInfo,
+  ChatV2Response,
+  GeneratedProblemData,
+  GeneratedBlankData,
+  GeneratedPuzzleData,
+  GeneratedGuidedData,
 } from '@/lib/api/agent';
 import type { Message, QuickChip } from '@/lib/types';
 import type { ConvertedProblem } from '@/lib/dataTypes';
@@ -29,6 +34,97 @@ const PROBLEM_TYPE_LABELS: Record<string, string> = {
   puzzle: '퍼즐 (코드 정렬)',
   guided: '1대1 대화형',
 };
+
+// Helper function to convert input_output to testCases
+function convertInputOutputToTestCases(inputOutput?: { inputs: string[]; outputs: string[] }) {
+  if (!inputOutput || !inputOutput.inputs || !inputOutput.outputs) {
+    return undefined;
+  }
+  const testCases = [];
+  const length = Math.min(inputOutput.inputs.length, inputOutput.outputs.length);
+  for (let i = 0; i < length; i++) {
+    testCases.push({
+      input: inputOutput.inputs[i],
+      expected: inputOutput.outputs[i],
+      isHidden: false,
+    });
+  }
+  return testCases.length > 0 ? testCases : undefined;
+}
+
+// Helper function to convert generated problem data to ConvertedProblem
+function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedProblem {
+  if (data.problem_type === 'blank') {
+    const blankData = data as GeneratedBlankData;
+    // 연속된 언더스코어(2개 이상)를 모두 ___ (3개)로 정규화 (UnifiedPractice에서 ___ 패턴 매칭)
+    const codeSnippet = blankData.code_template.replace(/_{2,}/g, '___');
+    return {
+      id: blankData.original_id || `generated-${Date.now()}`,
+      title: blankData.title,
+      description: blankData.description,
+      problemType: 'blank',
+      difficulty: blankData.difficulty as 'easy' | 'medium' | 'hard',
+      topics: blankData.topics,
+      keyConcepts: blankData.topics,
+      framework: blankData.language as 'python' | 'java' | 'cpp' | 'javascript',
+      codeTemplate: blankData.code_template,
+      codeSnippet: codeSnippet,
+      blanks: blankData.answers.map((answer, idx) => ({
+        id: `blank-${idx}`,
+        position: idx,
+        answer: answer,
+        placeholder: `_${idx}_`,
+      })),
+      testCases: convertInputOutputToTestCases(blankData.input_output),
+    };
+  } else if (data.problem_type === 'puzzle') {
+    const puzzleData = data as GeneratedPuzzleData;
+    // 블록 변환 (id를 정답 순서대로 정렬)
+    const sortedBlocks = [...puzzleData.blocks].sort((a, b) => a.id - b.id);
+    const convertedBlocks = sortedBlocks.map(b => ({
+      id: String(b.id),
+      code: b.code,
+      correctOrder: b.id,
+      indentation: 0,
+    }));
+
+    return {
+      id: puzzleData.original_id || `generated-${Date.now()}`,
+      title: puzzleData.title,
+      description: puzzleData.description,
+      problemType: 'puzzle',
+      difficulty: puzzleData.difficulty as 'easy' | 'medium' | 'hard',
+      topics: puzzleData.topics,
+      keyConcepts: puzzleData.topics,
+      framework: puzzleData.language as 'python' | 'java' | 'cpp' | 'javascript',
+      // puzzleBlocks와 blocks 둘 다 설정 (UnifiedPractice에서 puzzleBlocks 사용)
+      puzzleBlocks: convertedBlocks,
+      blocks: convertedBlocks,
+      correctOrder: sortedBlocks.map(b => String(b.id)),
+      fixedStart: puzzleData.fixed_start,
+      fixedEnd: puzzleData.fixed_end,
+      testCases: convertInputOutputToTestCases(puzzleData.input_output),
+    };
+  } else {
+    // guided
+    const guidedData = data as GeneratedGuidedData;
+    return {
+      id: guidedData.original_id || `generated-${Date.now()}`,
+      title: guidedData.title,
+      description: guidedData.description,
+      problemType: 'guided',
+      difficulty: guidedData.difficulty as 'easy' | 'medium' | 'hard',
+      topics: guidedData.topics,
+      keyConcepts: guidedData.topics,
+      framework: guidedData.language as 'python' | 'java' | 'cpp' | 'javascript',
+      concepts: guidedData.concepts,
+      flow: guidedData.flow,
+      checkpoints: guidedData.checkpoints,
+      finalCodeReveal: guidedData.final_code,
+      testCases: convertInputOutputToTestCases(guidedData.input_output),
+    };
+  }
+}
 
 // Initial welcome message
 const initialWelcomeMessage: Message = {
@@ -59,6 +155,8 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
   const [recommendedProblems, setRecommendedProblems] = useState<BaseProblemInfo[]>([]);
   const [selectedBaseProblem, setSelectedBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [flowState, setFlowState] = useState<'collecting' | 'recommending' | 'type_selection' | 'generating' | 'practicing' | 'guided_learning'>('collecting');
+  const [useV2, setUseV2] = useState(true);  // V3 API 기본 사용 (개선된 LangGraph)
+  const [v2SessionState, setV2SessionState] = useState<Record<string, unknown>>({});  // V2 세션 상태
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Guided 모드 상태
@@ -82,26 +180,44 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
     }
   }, [messages]);
 
-  // Get user context from localStorage (onboarding data)
+  // Get user context from localStorage (onboarding data) + current search results
   const getUserContext = useCallback(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const userData = localStorage.getItem('user_profile');
-      if (userData) {
-        const profile = JSON.parse(userData);
-        return {
-          status: profile.status,
-          goal: profile.goal,
-          level: profile.level,
-          strong_algorithms: profile.strong_algorithms,
-          desired_job: profile.desired_job,
-        };
+    const context: Record<string, unknown> = {};
+
+    // User profile from localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const userData = localStorage.getItem('user_profile');
+        if (userData) {
+          const profile = JSON.parse(userData);
+          context.status = profile.status;
+          context.goal = profile.goal;
+          context.level = profile.level;
+          context.strong_algorithms = profile.strong_algorithms;
+          context.desired_job = profile.desired_job;
+        }
+      } catch {
+        // Ignore
       }
-    } catch {
-      // Ignore
     }
-    return {};
-  }, []);
+
+    // Include search_results for problem selection
+    if (recommendedProblems.length > 0) {
+      context.search_results = recommendedProblems;
+    }
+
+    // Include current problem if exists
+    if (problem) {
+      context.current_problem = {
+        id: problem.id,
+        title: problem.title,
+        difficulty: problem.difficulty,
+        topics: problem.topics,
+      };
+    }
+
+    return context;
+  }, [recommendedProblems, problem]);
 
   // Handle guided flow progression (새 형식: string[] 배열)
   const handleGuidedProgress = useCallback((understood: boolean) => {
@@ -369,71 +485,128 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
     setIsLoading(true);
 
     try {
+      // Extract code from solutions array if not directly available
+      const targetLanguage = (selectedBaseProblem.language || 'python') as 'python' | 'java' | 'cpp';
+      const extractedCode = selectedBaseProblem.code ||
+        selectedBaseProblem.solutions?.find(s => s.language === targetLanguage)?.code ||
+        selectedBaseProblem.solutions?.[0]?.code || '';
+
+      // Validate that we have code to work with
+      if (!extractedCode) {
+        throw new Error('이 문제에는 솔루션 코드가 없어요. 다른 문제를 선택해주세요!');
+      }
+
       const request = {
-        base_problem: selectedBaseProblem,
+        base_problem: {
+          ...selectedBaseProblem,
+          code: extractedCode,
+          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
+          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+        },
         problem_type: type,
         user_level: 'intermediate' as const,
-        language: (selectedBaseProblem.language || 'python') as 'python' | 'java' | 'cpp',
+        language: targetLanguage,
       };
 
       let generatedProblem: ConvertedProblem;
 
+      // input_output을 testCases로 변환
+      const inputOutput = (selectedBaseProblem as any).input_output;
+      const testCases = inputOutput?.inputs && inputOutput?.outputs
+        ? inputOutput.inputs.slice(0, inputOutput.outputs.length).map((input: string, idx: number) => ({
+            input,
+            expected: inputOutput.outputs[idx],
+            isHidden: false,
+          }))
+        : undefined;
+
       if (type === 'blank') {
         const result = await agentApi.generateBlank(request);
         // 새 형식: original_id, language, code_template, answers[]
+        // 연속된 언더스코어를 ___ (3개)로 정규화
+        const codeSnippet = result.code_template.replace(/_{2,}/g, '___');
         generatedProblem = {
           id: result.original_id || `generated-${Date.now()}`,
-          title: selectedBaseProblem.title,
-          description: selectedBaseProblem.description,
+          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           problemType: 'blank',
           difficulty: selectedBaseProblem.difficulty,
-          topics: selectedBaseProblem.topics,
-          keyConcepts: selectedBaseProblem.topics,
+          topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+          keyConcepts: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+          framework: targetLanguage,
           codeTemplate: result.code_template,
+          codeSnippet: codeSnippet,  // UnifiedPractice에서 사용
           blanks: result.answers.map((answer, idx) => ({
             id: `blank-${idx}`,
             position: idx,
             answer: answer,
             placeholder: `_${idx}_`,
           })),
+          testCases,
         };
       } else if (type === 'puzzle') {
         const result = await agentApi.generatePuzzle(request);
         // 새 형식: original_id, language, fixed_start?, fixed_end?, blocks[]
+        const sortedBlocks = [...result.blocks].sort((a, b) => a.id - b.id);
+        const convertedBlocks = sortedBlocks.map(b => ({
+          id: String(b.id),
+          code: b.code,
+          correctOrder: b.id,
+          indentation: 0,  // 기본 들여쓰기
+        }));
         generatedProblem = {
           id: result.original_id || `generated-${Date.now()}`,
-          title: selectedBaseProblem.title,
-          description: selectedBaseProblem.description,
+          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           problemType: 'puzzle',
           difficulty: selectedBaseProblem.difficulty,
-          topics: selectedBaseProblem.topics,
-          keyConcepts: selectedBaseProblem.topics,
-          blocks: result.blocks.map(b => ({
-            id: String(b.id),
-            code: b.code,
-            correctOrder: b.id,  // id가 정답 순서
-          })),
-          correctOrder: result.blocks.map(b => String(b.id)),
+          topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+          keyConcepts: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+          framework: targetLanguage,
+          puzzleBlocks: convertedBlocks,  // UnifiedPractice에서 사용
+          blocks: convertedBlocks,
+          correctOrder: sortedBlocks.map(b => String(b.id)),
           fixedStart: result.fixed_start,
           fixedEnd: result.fixed_end,
+          testCases,
         };
       } else {
         const result = await agentApi.generateGuided(request);
         // 새 형식: original_id, language, concepts[], flow[], checkpoints[]
+        // 코드 추출 (code가 객체일 수 있음)
+        const extractedCode = typeof selectedBaseProblem.code === 'string'
+          ? selectedBaseProblem.code
+          : (selectedBaseProblem.code as Record<string, string>)?.[targetLanguage]
+            || selectedBaseProblem.solutions?.[0]?.code
+            || '';
+
         generatedProblem = {
           id: result.original_id || `generated-${Date.now()}`,
-          title: selectedBaseProblem.title,
-          description: selectedBaseProblem.description,
+          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           problemType: 'guided',
           difficulty: selectedBaseProblem.difficulty,
-          topics: selectedBaseProblem.topics,
-          keyConcepts: selectedBaseProblem.topics,
+          topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+          keyConcepts: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+          framework: targetLanguage,
           concepts: result.concepts,  // string[]
           flow: result.flow,          // string[]
           checkpoints: result.checkpoints,  // string[]
-          finalCodeReveal: selectedBaseProblem.code,  // 원본 코드를 최종 코드로 사용
+          finalCodeReveal: extractedCode,  // 원본 코드를 최종 코드로 사용
+          testCases,
         };
       }
+
+      console.log('[handleProblemTypeSelect] Generated problem:', {
+        type,
+        id: generatedProblem.id,
+        title: generatedProblem.title,
+        problemType: generatedProblem.problemType,
+        codeSnippet: (generatedProblem as any).codeSnippet?.substring(0, 100),
+        puzzleBlocks: (generatedProblem as any).puzzleBlocks?.length,
+        blanks: (generatedProblem as any).blanks?.length,
+        testCases: generatedProblem.testCases?.length,
+      });
 
       // Guided 문제인 경우: 채팅 UI에서 계속 진행
       if (type === 'guided' && generatedProblem.flow && generatedProblem.flow.length > 0) {
@@ -656,31 +829,90 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
     ];
 
     try {
-      const response = await agentApi.chat({
-        message: content,
-        conversation_history: conversationHistory,
-        user_context: getUserContext(),
-      });
-
-      // Update collected info
-      setCollectedInfo(response.collected_info);
-
-      // Update conversation history
-      setConversationHistory([
-        ...newHistory,
-        { role: 'assistant', content: response.message },
-      ]);
-
-      // Create assistant message with chips based on state
-      let chips: QuickChip[] | undefined;
-
-      // Check if chat response already includes problems (auto-search)
-      const actionData = response.action_data as {
+      // V2 또는 V1 API 선택
+      let responseMessage: string;
+      let responseCollectedInfo: CollectedInfo;
+      let actionData: {
         status?: string;
         problems?: BaseProblemInfo[];
         generated_problem?: BaseProblemInfo;
         action_trigger?: string;
+        selected_problem?: string;
+        selected_problem_index?: number;
       } | undefined;
+      let v2Response: ChatV2Response | undefined;
+
+      if (useV2) {
+        // 정식 LangGraph API 사용
+        v2Response = await agentApi.chatMain({
+          message: content,
+          conversation_history: conversationHistory,
+          user_context: getUserContext(),
+          session_state: {
+            collected_info: collectedInfo,
+            search_results: recommendedProblems,
+            selected_problem: selectedBaseProblem || undefined,
+            ...v2SessionState,
+          },
+        });
+
+        responseMessage = v2Response.message;
+        responseCollectedInfo = v2Response.collected_info || {
+          topics: [],
+          difficulty: null,
+          language: null,
+          specific_needs: null,
+          time_available: null,
+        };
+
+        // V2 세션 상태 업데이트
+        setV2SessionState({
+          stage: v2Response.stage,
+          next_stage: v2Response.next_stage,
+        });
+
+        // V2 action_data 변환
+        actionData = {
+          status: v2Response.search_results?.length ? 'found' : undefined,
+          problems: v2Response.search_results,
+          generated_problem: v2Response.generated_problem,
+          action_trigger: v2Response.action_trigger,
+        };
+
+        console.log('[V2 Response]', {
+          stage: v2Response.stage,
+          intent: v2Response.intent_info?.intent,
+          collected_info: responseCollectedInfo,
+          search_results: v2Response.search_results?.length,
+          action_trigger: v2Response.action_trigger,
+          generated_problem_data: v2Response.generated_problem_data,
+          selected_problem: v2Response.selected_problem,
+        });
+      } else {
+        // V1: 기존 API 사용
+        const response = await agentApi.chat({
+          message: content,
+          conversation_history: conversationHistory,
+          user_context: getUserContext(),
+          collected_info: collectedInfo,  // 이전 턴에서 수집된 정보 전달 (상태 유지!)
+        });
+
+        responseMessage = response.message;
+        responseCollectedInfo = response.collected_info;
+        actionData = response.action_data as typeof actionData;
+      }
+
+      // Update collected info
+      setCollectedInfo(responseCollectedInfo);
+
+      // Update conversation history
+      setConversationHistory([
+        ...newHistory,
+        { role: 'assistant', content: responseMessage },
+      ]);
+
+      // Create assistant message with chips based on state
+      let chips: QuickChip[] | undefined;
 
       // If action_data has problems from auto-search, use them directly
       if (actionData?.status === 'found' && actionData?.problems?.length) {
@@ -690,7 +922,7 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: response.message,
+          content: responseMessage,
           timestamp: new Date().toISOString(),
           chips: actionData.problems.slice(0, 4).map((p, i) => ({
             label: `${p.name || p.title} (${p.difficulty})`,
@@ -707,7 +939,7 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: response.message,
+          content: responseMessage,
           timestamp: new Date().toISOString(),
           chips: [{
             label: `${actionData.generated_problem.title} (${actionData.generated_problem.difficulty})`,
@@ -716,10 +948,66 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
           }],
         };
         setMessages(prev => [...prev, assistantMessage]);
+      } else if (v2Response?.action_trigger === 'problem_generated' && v2Response?.generated_problem_data) {
+        // 문제 유형 선택 후 문제가 생성됨 - 프론트엔드에 표시
+        const generatedData = v2Response.generated_problem_data;
+        console.log('[PracticeChatPanel] Generated problem data:', generatedData);
+        const convertedProblem = convertGeneratedDataToProblem(generatedData);
+        console.log('[PracticeChatPanel] Converted problem:', convertedProblem);
+
+        if (convertedProblem.problemType === 'guided') {
+          // Guided 모드: 채팅 UI에서 계속 진행
+          setGuidedProblem(convertedProblem);
+          setGuidedFlowStep(0);
+          setGuidedCheckpointIndex(0);
+
+          // 첫 번째 개념 설명과 flow step 시작
+          const concepts = convertedProblem.concepts || [];
+          const conceptIntro = concepts.length > 0
+            ? `먼저 핵심 개념을 알아볼까요?\n\n${concepts.map((c, idx) =>
+                typeof c === 'string' ? `${idx + 1}. **${c}**` : `**${(c as {name: string}).name}**: ${(c as {explanation: string}).explanation}`
+              ).join('\n')}\n\n---\n\n`
+            : '';
+
+          const firstStepContent = typeof convertedProblem.flow?.[0] === 'string'
+            ? convertedProblem.flow[0] as string
+            : '';
+
+          const assistantMessage: Message = {
+            id: `guided-start-${Date.now()}`,
+            role: 'assistant',
+            content: `${conceptIntro}**Step 1**\n\n${firstStepContent}`,
+            timestamp: new Date().toISOString(),
+            chips: [
+              { label: '이해했어요', value: 'guided-understood', category: 'action' },
+              { label: '잘 모르겠어요', value: 'guided-stuck', category: 'action' },
+            ],
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setFlowState('guided_learning');
+        } else {
+          // Blank/Puzzle: 연습 화면으로 이동
+          const assistantMessage: Message = {
+            id: `success-${Date.now()}`,
+            role: 'assistant',
+            content: responseMessage,
+            timestamp: new Date().toISOString(),
+            chips: [
+              { label: '힌트 보기', value: 'hint', category: 'action' },
+              { label: '핵심 개념', value: 'concepts', category: 'action' },
+            ],
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+
+          if (onProblemSelect) {
+            onProblemSelect(convertedProblem);
+          }
+          setFlowState('practicing');
+        }
       } else if (actionData?.action_trigger === 'select_problem_type') {
         // User selected a problem, show type selection
-        const selectedProblemName = (actionData as { selected_problem?: string }).selected_problem;
-        const selectedIndex = (actionData as { selected_problem_index?: number }).selected_problem_index;
+        const selectedProblemName = actionData.selected_problem;
+        const selectedIndex = actionData.selected_problem_index;
 
         // Find the selected problem from recommendedProblems
         let selectedProblem: BaseProblemInfo | undefined;
@@ -739,7 +1027,7 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
           const assistantMessage: Message = {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
-            content: response.message,
+            content: responseMessage,
             timestamp: new Date().toISOString(),
             chips: [
               { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
@@ -752,24 +1040,15 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
         }
       } else {
         // Normal chat flow
-        if (response.is_complete && !actionData?.problems) {
-          setFlowState('recommending');
-          chips = undefined;
-        }
-
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: response.message,
+          content: responseMessage,
           timestamp: new Date().toISOString(),
           chips,
         };
         setMessages(prev => [...prev, assistantMessage]);
 
-        // Only fetch recommendations if no problems in action_data
-        if (response.is_complete && !actionData?.problems && !actionData?.generated_problem) {
-          await fetchRecommendations(response.collected_info);
-        }
       }
 
     } catch (error) {
@@ -879,15 +1158,26 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
               )}
             </div>
           </div>
-          {flowState === 'guided_learning' && guidedProblem?.flow ? (
-            <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
-              Step {guidedFlowStep + 1}/{guidedProblem.flow.length}
-            </Badge>
-          ) : problem ? (
-            <Badge variant="outline" className="text-xs">
-              힌트 {hintLevel}/4
-            </Badge>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {/* V2 테스트 토글 */}
+            <Button
+              variant={useV2 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setUseV2(!useV2)}
+              className="text-xs h-6 px-2"
+            >
+              {useV2 ? 'V2' : 'V1'}
+            </Button>
+            {flowState === 'guided_learning' && guidedProblem?.flow ? (
+              <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+                Step {guidedFlowStep + 1}/{guidedProblem.flow.length}
+              </Badge>
+            ) : problem ? (
+              <Badge variant="outline" className="text-xs">
+                힌트 {hintLevel}/4
+              </Badge>
+            ) : null}
+          </div>
         </div>
       </div>
 

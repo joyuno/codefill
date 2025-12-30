@@ -48,6 +48,11 @@ import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, Convert
 import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
 import { CodeEditor } from './CodeEditor';
 import { translateText, LANGUAGE_LABELS, type LanguageCode } from '@/lib/api/translate';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import {
   Select,
   SelectContent,
@@ -986,11 +991,16 @@ export function UnifiedPractice({
                           </Button>
                         </div>
                       )}
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                        {showOriginal || !translatedDescription
-                          ? problem.description
-                          : translatedDescription}
-                      </p>
+                      <div className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:bg-secondary/50 prose-code:text-primary">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
+                          {showOriginal || !translatedDescription
+                            ? problem.description || ''
+                            : translatedDescription}
+                        </ReactMarkdown>
+                      </div>
                     </div>
 
                     {problem.keyConcepts && problem.keyConcepts.length > 0 && (
