@@ -142,6 +142,7 @@ async def get_base_problem(original_id: str, db=Depends(get_db)):
             url=item.get("url"),
             input_output=item.get("input_output"),
             explanation=item.get("explanation"),
+            solutions=item.get("solutions") or [],
         )
 
     except HTTPException:

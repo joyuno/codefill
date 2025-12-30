@@ -211,10 +211,20 @@ Phase 3 (사용자 10000+)
 
 ---
 
-## 환경 변수 추가
 
-```env
-# .env.local
-NEXT_PUBLIC_CLARITY_ID=your-clarity-id
-NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
-```
+
+
+  구조 이해
+
+  [1단계 LangGraph - 문제 선택]          [2단계 LangGraph - 문제 풀이]
+           │                                      │
+      문제 검색/생성                         힌트/피드백/정답
+           │                                      │
+           ▼                                      ▼
+  ┌─────────────────┐                   ┌─────────────────┐
+  │  classify_intent │                   │  classify_intent │
+  │  collect_info    │                   │  provide_hint    │
+  │  search_problems │  ──▶ 문제 표시 ──▶ │  review_code     │
+  │  handle_selection│                   │  check_answer    │
+  └─────────────────┘                   │  provide_feedback│
+                                        └─────────────────┘
