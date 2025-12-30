@@ -24,10 +24,19 @@ class Settings(BaseSettings):
     # CORS
     frontend_url: str = "http://localhost:3000"
 
-    # LLM
+    # LLM API Keys
     openrouter_api_key: str = ""
     openai_api_key: str = ""
     groq_api_key: str = ""
+
+    # LLM Models per Agent
+    llm_model_chat: str = "gpt-4o-mini"           # Chat agent, intent handler
+    llm_model_intent: str = "gpt-4o-mini"         # Intent classifier
+    llm_model_blank_gen: str = "gpt-4o-mini"      # Blank problem generation
+    llm_model_puzzle_gen: str = "gpt-4o-mini"     # Puzzle problem generation
+    llm_model_guided_gen: str = "gpt-4o-mini"     # Guided problem generation
+    llm_model_code_gen: str = "claude-sonnet"     # Code generation (RAG fallback)
+    llm_model_hint: str = "gemini-flash"          # Hint generation
 
     # Judge0 (Code Execution)
     judge0_url: str = "https://judge0-ce.p.rapidapi.com"
@@ -49,6 +58,15 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
+
+    # Azure Translator
+    azure_translator_key: str = ""
+    azure_translator_region: str = "koreacentral"
+    azure_translator_endpoint: str = "https://api.cognitive.microsofttranslator.com"
+
+    # Analytics (Next.js frontend uses these, but allow in backend env)
+    next_public_clarity_id: str = ""
+    next_public_ga_id: str = ""
 
     class Config:
         env_file = ".env"

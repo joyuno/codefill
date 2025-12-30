@@ -52,6 +52,22 @@ export interface ActivityData {
   totalDays: number;
 }
 
+export interface SolvedProblem {
+  id: string;
+  name: string;
+  difficulty: string;
+  problem_type: string;
+  xp_earned: number;
+  solved_at: string;
+}
+
+export interface DateActivityDetail {
+  date: string;
+  problems_solved: number;
+  xp_earned: number;
+  problems: SolvedProblem[];
+}
+
 // Backend response types (for transformation)
 interface BackendRecentActivity {
   id: string;
@@ -66,6 +82,7 @@ interface BackendBadge {
   id: string;
   name: string;
   icon: string;
+  icon_url?: string;  // from Supabase
   description: string;
   earnedAt: string;
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
@@ -117,6 +134,7 @@ export const usersApi = {
       id: badge.id,
       name: badge.name,
       icon: badge.icon,
+      iconUrl: badge.icon_url,  // snake_case -> camelCase
       description: badge.description,
       earnedAt: badge.earnedAt,
       rarity: badge.rarity,
@@ -128,6 +146,15 @@ export const usersApi = {
    */
   async getActivity(days: number = 365): Promise<ActivityData> {
     const response = await api.get<ActivityData>(`/users/me/activity?days=${days}`);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get activity detail for a specific date (잔디 클릭 시)
+   */
+  async getActivityByDate(date: string): Promise<DateActivityDetail> {
+    const response = await api.get<DateActivityDetail>(`/users/me/activity/${date}`);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

@@ -19,10 +19,10 @@ python-dotenv>=1.0.0
 httpx>=0.25.0
 email-validator>=2.1.0
 
-# AI/LLM (추후 활성화)
-# openai==1.58.1
-# langchain==0.3.14
-# langchain-openai==0.3.0
+# AI/LLM - LangGraph
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
 
 # Development
 pytest==8.3.4

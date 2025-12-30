@@ -125,3 +125,47 @@ class HintResponse(BaseModel):
     level: int
     xp_cost: int = 10
     docs_reference: Optional[str] = None
+
+
+# ===========================================
+# base_problems 테이블용 모델
+# ===========================================
+
+class BaseProblemListItem(BaseModel):
+    """base_problems 목록 조회용 모델."""
+    id: UUID
+    original_id: str
+    name: str
+    difficulty: str
+    tags: List[str] = []
+    source: Optional[str] = None
+
+
+class SolutionItem(BaseModel):
+    """솔루션 코드 아이템."""
+    code: str
+    language: str
+
+
+class BaseProblemDetail(BaseModel):
+    """base_problems 상세 조회용 모델 (Preview)."""
+    id: UUID
+    original_id: str
+    name: str
+    question: str
+    difficulty: str
+    tags: List[str] = []
+    source: Optional[str] = None
+    url: Optional[str] = None
+    input_output: Optional[Any] = None
+    explanation: Optional[str] = None
+    solutions: List[SolutionItem] = []  # 솔루션 코드 목록
+
+
+class BaseProblemListResponse(BaseModel):
+    """base_problems 목록 응답."""
+    items: List[BaseProblemListItem]
+    total: int
+    page: int
+    limit: int
+    has_more: bool

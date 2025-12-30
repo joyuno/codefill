@@ -18,6 +18,7 @@ export interface Badge {
   id: string;
   name: string;
   icon: string;
+  iconUrl?: string;  // Supabase Storage URL
   description: string;
   earnedAt: string;
   rarity: 'common' | 'rare' | 'epic' | 'legendary';

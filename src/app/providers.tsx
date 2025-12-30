@@ -5,6 +5,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { useState } from 'react';
+import { AnalyticsProvider } from '@/components/AnalyticsProvider';
+import { WebSocketProvider } from '@/contexts/WebSocketContext';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,7 +24,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        {children}
+        <WebSocketProvider>
+          <AnalyticsProvider>
+            {children}
+          </AnalyticsProvider>
+        </WebSocketProvider>
         <Toaster />
         <Sonner />
       </TooltipProvider>

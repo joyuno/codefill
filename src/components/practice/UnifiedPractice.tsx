@@ -30,6 +30,9 @@ import {
   Zap,
   Eye,
   EyeOff,
+  Lock,
+  Languages,
+  Loader2,
 } from 'lucide-react';
 import {
   Popover,
@@ -44,6 +47,19 @@ import {
 import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
 import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
 import { CodeEditor } from './CodeEditor';
+import { translateText, LANGUAGE_LABELS, type LanguageCode } from '@/lib/api/translate';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // UI에서 사용하는 퍼즐 블록 (indentation 포함)
 interface UIPuzzleBlock {
@@ -147,6 +163,22 @@ export function UnifiedPractice({
   const [blocks, setBlocks] = useState<UIPuzzleBlock[]>([]);
   const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
   const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
+  const [showPuzzlePulse, setShowPuzzlePulse] = useState(false);
+
+  // 번역 상태
+  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>('ko');
+  const [translatedDescription, setTranslatedDescription] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(true);
+
+  // 오답 애니메이션: 결과 나온 후 2초만 표시
+  useEffect(() => {
+    if (Object.keys(puzzleResults).length > 0) {
+      setShowPuzzlePulse(true);
+      const timer = setTimeout(() => setShowPuzzlePulse(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [puzzleResults]);
 
   // 문제/타입 변경 시 초기화
   useEffect(() => {
@@ -159,6 +191,9 @@ export function UnifiedPractice({
     setPuzzleResults({});
     setCustomTestCases([]);
     setExpandedTests(new Set([0]));
+    // 번역 상태 초기화
+    setTranslatedDescription(null);
+    setShowOriginal(true);
 
     if (problemType === 'blank') {
       setCode(problem.codeSnippet || '');
@@ -462,21 +497,45 @@ export function UnifiedPractice({
   };
 
   // 블록 드래그 핸들러
-  const handleDragStart = (blockId: number) => {
+  const handleDragStart = (blockId: string | number) => {
     setDraggedBlock(String(blockId));
   };
 
-  const handleDragOver = (e: React.DragEvent, targetId: number) => {
+  const handleDragOver = (e: React.DragEvent, targetId: string | number) => {
     e.preventDefault();
     const targetIdStr = String(targetId);
     if (!draggedBlock || draggedBlock === targetIdStr) return;
 
-    const dragIndex = blocks.findIndex(b => String(b.id) === draggedBlock);
-    const targetIndex = blocks.findIndex(b => String(b.id) === targetIdStr);
+    // 정답 블록 위로는 드래그 불가
+    const targetBlock = blocks.find(b => String(b.id) === targetIdStr);
+    if (targetBlock && puzzleResults[targetBlock.id]) return;
 
-    const newBlocks = [...blocks];
-    const [removed] = newBlocks.splice(dragIndex, 1);
-    newBlocks.splice(targetIndex, 0, removed);
+    // 정답 블록들의 원래 위치를 기억
+    const lockedPositions: { index: number; block: typeof blocks[0] }[] = [];
+    blocks.forEach((block, index) => {
+      if (puzzleResults[block.id]) {
+        lockedPositions.push({ index, block });
+      }
+    });
+
+    // 오답 블록들만 추출
+    const unlockedBlocks = blocks.filter(b => !puzzleResults[b.id]);
+
+    // 오답 블록들 내에서 순서 변경
+    const dragIndex = unlockedBlocks.findIndex(b => String(b.id) === draggedBlock);
+    const targetIndex = unlockedBlocks.findIndex(b => String(b.id) === targetIdStr);
+
+    if (dragIndex === -1 || targetIndex === -1) return;
+
+    const [removed] = unlockedBlocks.splice(dragIndex, 1);
+    unlockedBlocks.splice(targetIndex, 0, removed);
+
+    // 정답 블록들을 원래 위치에 다시 삽입
+    const newBlocks = [...unlockedBlocks];
+    lockedPositions.forEach(({ index, block }) => {
+      newBlocks.splice(index, 0, block);
+    });
+
     setBlocks(newBlocks);
   };
 
@@ -490,9 +549,40 @@ export function UnifiedPractice({
     setOutput('');
   };
 
+  // 번역 핸들러
+  const handleTranslate = async () => {
+    if (!problem.description || isTranslating) return;
+
+    setIsTranslating(true);
+    try {
+      const result = await translateText(problem.description, targetLanguage);
+      if (result.success && result.translated_text) {
+        setTranslatedDescription(result.translated_text);
+        setShowOriginal(false);
+      } else {
+        console.error('Translation failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Translation error:', error);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   const passedCount = testResults.filter((r) => r.passed).length;
   const totalTests = baseTestCases.length;
   const testedCount = testResults.length;
+
+  // 테스트 케이스 값을 보기 좋게 포맷팅
+  const formatTestValue = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') {
+      // 문자열은 그대로 반환 (줄바꿈 포함)
+      return value;
+    }
+    // 배열이나 객체는 보기 좋게 포맷팅
+    return JSON.stringify(value, null, 2);
+  };
   const allPassed = testedCount > 0 && passedCount === testedCount;
 
   // Blank 코드 렌더링
@@ -688,7 +778,7 @@ export function UnifiedPractice({
                       variant="ghost"
                       size="icon"
                       className="h-5 w-5"
-                      onClick={() => navigator.clipboard.writeText(JSON.stringify(tc.input))}
+                      onClick={() => navigator.clipboard.writeText(formatTestValue(tc.input))}
                     >
                       <Copy className="h-3 w-3" />
                     </Button>
@@ -696,15 +786,15 @@ export function UnifiedPractice({
                 </div>
                 {isCustom ? (
                   <Input
-                    value={JSON.stringify(customTc!.input)}
+                    value={formatTestValue(customTc!.input)}
                     onChange={(e) => updateCustomTestCase(customTc!.id, 'input', e.target.value)}
                     className="h-7 text-xs font-mono bg-background"
-                    placeholder='예: [[1,2,3], 5]'
+                    placeholder='예: 1 2 3'
                   />
                 ) : (
-                  <code className="text-xs font-mono text-foreground block break-all">
-                    {JSON.stringify(tc.input)}
-                  </code>
+                  <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all bg-background/50 rounded p-2 max-h-32 overflow-auto">
+                    {formatTestValue(tc.input)}
+                  </pre>
                 )}
               </div>
 
@@ -714,18 +804,28 @@ export function UnifiedPractice({
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                     Expected
                   </span>
+                  {!isCustom && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => navigator.clipboard.writeText(formatTestValue(tc.expected))}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
                 {isCustom ? (
                   <Input
-                    value={JSON.stringify(customTc!.expected)}
+                    value={formatTestValue(customTc!.expected)}
                     onChange={(e) => updateCustomTestCase(customTc!.id, 'expected', e.target.value)}
                     className="h-7 text-xs font-mono bg-background"
-                    placeholder='예: [0, 1]'
+                    placeholder='예: 6'
                   />
                 ) : (
-                  <code className="text-xs font-mono text-foreground block">
-                    {JSON.stringify(tc.expected)}
-                  </code>
+                  <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all bg-background/50 rounded p-2 max-h-32 overflow-auto">
+                    {formatTestValue(tc.expected)}
+                  </pre>
                 )}
               </div>
 
@@ -735,9 +835,9 @@ export function UnifiedPractice({
                   <span className="text-[10px] uppercase tracking-wider text-red-400 font-medium block mb-1">
                     Actual
                   </span>
-                  <code className="text-xs font-mono text-red-500 block">
-                    {JSON.stringify(result.actual)}
-                  </code>
+                  <pre className="text-xs font-mono text-red-500 whitespace-pre-wrap break-all">
+                    {formatTestValue(result.actual)}
+                  </pre>
                   {result.error && (
                     <p className="text-xs text-red-400 mt-1.5 whitespace-pre-wrap">
                       {result.error}
@@ -836,10 +936,71 @@ export function UnifiedPractice({
                 {activeTab === 'problem' ? (
                   <div className="space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold mb-2">문제 설명</h4>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                        {problem.description}
-                      </p>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold">문제 설명</h4>
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={targetLanguage}
+                            onValueChange={(value) => setTargetLanguage(value as LanguageCode)}
+                          >
+                            <SelectTrigger className="h-7 w-24 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(LANGUAGE_LABELS).map(([code, label]) => (
+                                <SelectItem key={code} value={code} className="text-xs">
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleTranslate}
+                            disabled={isTranslating}
+                            className="h-7 px-2 text-xs gap-1"
+                          >
+                            {isTranslating ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Languages className="h-3.5 w-3.5" />
+                            )}
+                            번역
+                          </Button>
+                        </div>
+                      </div>
+                      {/* 원문/번역문 토글 */}
+                      {translatedDescription && (
+                        <div className="flex gap-1 mb-2">
+                          <Button
+                            variant={showOriginal ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => setShowOriginal(true)}
+                            className="h-6 px-2 text-xs"
+                          >
+                            원문
+                          </Button>
+                          <Button
+                            variant={!showOriginal ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => setShowOriginal(false)}
+                            className="h-6 px-2 text-xs"
+                          >
+                            {LANGUAGE_LABELS[targetLanguage]}
+                          </Button>
+                        </div>
+                      )}
+                      <div className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:bg-secondary/50 prose-code:text-primary">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
+                          {showOriginal || !translatedDescription
+                            ? problem.description || ''
+                            : translatedDescription}
+                        </ReactMarkdown>
+                      </div>
                     </div>
 
                     {problem.keyConcepts && problem.keyConcepts.length > 0 && (
@@ -960,16 +1121,18 @@ export function UnifiedPractice({
               {blocks.map((block) => {
                 const hasResult = Object.keys(puzzleResults).length > 0;
                 const isCorrect = puzzleResults[block.id];
+                // 정답 블록은 고정 (드래그 불가)
+                const isLocked = hasResult && isCorrect;
 
                 return (
                   <div
                     key={block.id}
-                    draggable={!isSubmitted}
-                    onDragStart={() => !isSubmitted && handleDragStart(block.id)}
-                    onDragOver={(e) => !isSubmitted && handleDragOver(e, block.id)}
+                    draggable={!isSubmitted && !isLocked}
+                    onDragStart={() => !isSubmitted && !isLocked && handleDragStart(block.id)}
+                    onDragOver={(e) => !isSubmitted && !isLocked && handleDragOver(e, block.id)}
                     onDragEnd={handleDragEnd}
                     className={`flex items-center gap-2 p-2 rounded border transition-all ${
-                      isSubmitted
+                      isSubmitted || isLocked
                         ? 'cursor-default'
                         : 'cursor-move'
                     } ${
@@ -978,18 +1141,22 @@ export function UnifiedPractice({
                         : hasResult
                           ? isCorrect
                             ? 'bg-green-500/10 border-green-500/50'
-                            : 'bg-red-500/10 border-red-500/50 animate-pulse'
+                            : `bg-red-500/10 border-red-500/50 ${showPuzzlePulse ? 'animate-[pulse_2s_ease-in-out_1]' : ''}`
                           : 'bg-card border-border hover:border-primary/50'
                     }`}
                     style={{ marginLeft: block.indentation * 24 }}
                   >
-                    <GripVertical className={`h-4 w-4 shrink-0 ${
-                      hasResult
-                        ? isCorrect
-                          ? 'text-green-500'
-                          : 'text-red-500'
-                        : 'text-muted-foreground'
-                    }`} />
+                    {isLocked ? (
+                      <Lock className="h-4 w-4 shrink-0 text-green-500" />
+                    ) : (
+                      <GripVertical className={`h-4 w-4 shrink-0 ${
+                        hasResult
+                          ? isCorrect
+                            ? 'text-green-500'
+                            : 'text-red-500'
+                          : 'text-muted-foreground'
+                      }`} />
+                    )}
                     <code className={`text-sm font-mono flex-1 ${
                       hasResult
                         ? isCorrect
@@ -1041,9 +1208,32 @@ export function UnifiedPractice({
         {/* Puzzle 모드: 조립된 코드 미리보기 */}
         {problemType === 'puzzle' && (
           <div className="flex-1 min-h-0 overflow-auto bg-[#1e1e1e] p-4">
-            <p className="text-xs text-[#808080] mb-2">조립된 코드:</p>
-            <pre className="font-mono text-sm text-[#d4d4d4] whitespace-pre-wrap">
-              {code}
+            <div className="flex items-center gap-4 mb-3">
+              <p className="text-xs text-[#808080]">조립된 코드:</p>
+              <div className="flex items-center gap-3 text-[10px]">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#6A9955]"></span>
+                  <span className="text-[#808080]">고정 코드</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#9CDCFE]"></span>
+                  <span className="text-[#808080]">퍼즐 블록</span>
+                </span>
+              </div>
+            </div>
+            <pre className="font-mono text-sm whitespace-pre-wrap">
+              {/* fixed_start - 녹색 (고정) */}
+              {problem.fixedStart && (
+                <span className="text-[#6A9955]">{problem.fixedStart}{'\n'}</span>
+              )}
+              {/* 퍼즐 블록 - 하늘색 (변경 가능) */}
+              <span className="text-[#9CDCFE]">
+                {blocks.map(b => '    '.repeat(b.indentation || 0) + b.code).join('\n')}
+              </span>
+              {/* fixed_end - 녹색 (고정) */}
+              {problem.fixedEnd && (
+                <span className="text-[#6A9955]">{'\n'}{problem.fixedEnd}</span>
+              )}
             </pre>
           </div>
         )}

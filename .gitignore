@@ -59,3 +59,12 @@ logs
 
 # External folders
 Modern_Farm_v1.2/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/

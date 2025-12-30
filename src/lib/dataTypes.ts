@@ -66,19 +66,28 @@ export interface RawPuzzleProblem {
 // 변환된 문제 타입 (UI에서 사용)
 // ===========================================
 
-export type ConvertedProblemType = 'blank' | 'puzzle' | 'implementation';
+export type ConvertedProblemType = 'blank' | 'puzzle' | 'guided' | 'implementation';
 
 export interface ConvertedBlank {
   id: string;
-  position: number;           // _0_ -> 0, _1_ -> 1
+  position?: number;          // _0_ -> 0, _1_ -> 1
   answer: string;
-  placeholder: string;        // _0_, _1_ 등 원본 플레이스홀더
+  placeholder?: string;       // _0_, _1_ 등 원본 플레이스홀더
+  hints?: string[];           // 힌트 배열
 }
 
 export interface ConvertedPuzzleBlock {
   id: string;
   code: string;
-  correctOrder: number;       // 정답 순서 (원본 id 기준)
+  correctOrder?: number;      // 정답 순서 (원본 id 기준)
+  indentation?: number;       // 들여쓰기 레벨
+}
+
+export interface ConvertedPuzzleDistractor {
+  id: string;
+  code: string;
+  indentation?: number;
+  why_wrong?: string;
 }
 
 export interface ConvertedTestCase {
@@ -87,28 +96,64 @@ export interface ConvertedTestCase {
   isHidden?: boolean;
 }
 
+// Guided 문제용 타입 (새 간단 형식: string arrays)
+// 레거시 형식은 하위 호환성을 위해 유지
+export interface GuidedConcept {
+  name: string;
+  explanation: string;
+  analogy?: string;
+}
+
+export interface GuidedFlowStep {
+  step: number;
+  title: string;
+  tutor_message: string;
+  expected_understanding: string;
+  hints_if_stuck: string[];
+}
+
+export interface GuidedCheckpoint {
+  step: number;
+  question: string;
+  correct_indicators: string[];
+  follow_up_if_wrong: string;
+}
+
+// 새 형식 (problems_guided.json과 일치)
+// concepts, flow, checkpoints는 모두 string[] 형태
+
 export interface ConvertedProblem {
   id: string;
   title: string;
   description: string;
-  framework: 'python' | 'java' | 'cpp' | 'javascript';
+  framework?: 'python' | 'java' | 'cpp' | 'javascript';
   difficulty: 'easy' | 'medium' | 'hard';
   topics: string[];
   problemType: ConvertedProblemType;
 
   // 공통 필드
-  solutionCode: string;       // 정답 코드
-  testCases: ConvertedTestCase[];
+  solutionCode?: string;      // 정답 코드
+  testCases?: ConvertedTestCase[];
   keyConcepts: string[];      // 핵심 개념 (힌트 생성용)
 
   // Blank 문제용
-  codeSnippet?: string;       // ___ 형태로 변환된 코드
+  codeSnippet?: string;       // ___ 형태로 변환된 코드 (레거시)
+  codeTemplate?: string;      // _0_, _1_ 형태로 변환된 코드 (새 형식)
   blanks?: ConvertedBlank[];
 
   // Puzzle 문제용
   puzzleBlocks?: ConvertedPuzzleBlock[];
+  blocks?: ConvertedPuzzleBlock[];      // 새 형식
+  correctOrder?: string[];              // 정답 순서 (블록 ID 배열)
+  distractors?: ConvertedPuzzleDistractor[];  // 오답 블록
   fixedStart?: string;
   fixedEnd?: string;
+
+  // Guided 문제용 (새 형식: string[], 레거시 형식: 복잡한 객체 배열)
+  concepts?: string[] | GuidedConcept[];
+  flow?: string[] | GuidedFlowStep[];
+  checkpoints?: string[] | GuidedCheckpoint[];
+  finalCodeReveal?: string;
 
   // 메타 정보
   source?: string;
