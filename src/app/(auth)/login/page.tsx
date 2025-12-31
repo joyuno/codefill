@@ -10,7 +10,8 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Code2, Loader2, Eye, EyeOff, MessageCircle, RefreshCcw, X } from 'lucide-react';
+import Image from 'next/image';
+import { Loader2, Eye, EyeOff, MessageCircle, RefreshCcw, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { authApi, RecoveryRequiredResponse } from '@/lib/api';
 
@@ -187,15 +188,16 @@ function LoginPageContent() {
         className="w-full max-w-sm space-y-6"
       >
         <div className="text-center">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <Code2 className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold">
-              Code<span className="text-primary">Fill</span>
-            </span>
+          <Link href="/" className="inline-flex items-center justify-center">
+            <Image
+              src="/logo.png"
+              alt="CodeFill"
+              width={270}
+              height={72}
+              className="h-[72px] w-auto"
+              priority
+            />
           </Link>
-          <p className="mt-2 text-muted-foreground">다시 만나서 반가워요!</p>
         </div>
 
         <form

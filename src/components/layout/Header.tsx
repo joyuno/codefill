@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth, SUBSCRIPTION_FEATURES } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
@@ -126,9 +127,12 @@ export function Header() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      {profile?.username?.slice(0, 2).toUpperCase() || 'U'}
-                    </div>
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.username} />
+                      <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                        {profile?.username?.slice(0, 2).toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
                     <span className="hidden sm:inline max-w-[100px] truncate">
                       {profile?.username || user.email?.split('@')[0]}
                     </span>

@@ -20,10 +20,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { MoreHorizontal, UserX, Ban, MessageCircle, Loader2, Users } from 'lucide-react';
+import { MoreHorizontal, UserX, Ban, MessageCircle, Loader2, Users, ExternalLink } from 'lucide-react';
 import { friendsApi, type Friend } from '@/lib/api';
 import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 
 interface FriendListProps {
   friends: Friend[];
@@ -163,6 +164,12 @@ export function FriendList({ friends, onSelectFriend, onRefresh }: FriendListPro
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem asChild>
+                      <Link href={`/u/${encodeURIComponent(friend.name || '')}`} className="gap-2">
+                        <ExternalLink className="h-4 w-4" />
+                        프로필 보기
+                      </Link>
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => {
                         setTargetFriend(friend);

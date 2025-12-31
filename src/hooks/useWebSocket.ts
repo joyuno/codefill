@@ -50,6 +50,9 @@ interface UseWebSocketReturn {
   disconnect: () => void;
 }
 
+// Ping 간격 (15초 - 브라우저 쓰로틀링 대응)
+const PING_INTERVAL = 15000;
+
 /**
  * WebSocket 연결 관리 훅
  */
@@ -61,7 +64,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     onError,
     autoConnect = true,
     reconnectInterval = 3000,
-    maxReconnectAttempts = 5,
+    maxReconnectAttempts = 10,
   } = options;
 
   const [isConnected, setIsConnected] = useState(false);
@@ -71,7 +74,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isDisconnectingRef = useRef(false);
+  const isUnmountingRef = useRef(false);
 
   // 콜백들을 ref로 저장하여 의존성 문제 해결
   const onMessageRef = useRef(onMessage);
@@ -106,16 +109,23 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     return `${wsUrl}/ws?token=${token}`;
   }, []);
 
+  // Ping 전송
+  const sendPing = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, []);
+
   // 연결
   const connect = useCallback(() => {
-    // 이미 연결 중이거나 연결됨
-    if (wsRef.current?.readyState === WebSocket.OPEN ||
-        wsRef.current?.readyState === WebSocket.CONNECTING) {
+    // 언마운트 중이면 무시
+    if (isUnmountingRef.current) {
       return;
     }
 
-    // 의도적 연결 해제 중이면 무시
-    if (isDisconnectingRef.current) {
+    // 이미 연결 중이거나 연결됨
+    if (wsRef.current?.readyState === WebSocket.OPEN ||
+        wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
     }
 
@@ -136,12 +146,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         reconnectAttemptsRef.current = 0;
         onConnectRef.current?.();
 
-        // Ping 간격 설정 (30초마다)
-        pingIntervalRef.current = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'ping' }));
-          }
-        }, 30000);
+        // Ping 간격 설정 (15초마다)
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+        }
+        pingIntervalRef.current = setInterval(sendPing, PING_INTERVAL);
       };
 
       ws.onmessage = (event) => {
@@ -166,14 +175,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           pingIntervalRef.current = null;
         }
 
-        // 재연결 시도 (비정상 종료 시, 의도적 해제가 아닌 경우)
-        if (!isDisconnectingRef.current && event.code !== 1000 && event.code !== 4001) {
+        // 재연결 시도 (비정상 종료 시, 언마운트가 아닌 경우)
+        if (!isUnmountingRef.current && event.code !== 1000 && event.code !== 4001) {
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             reconnectAttemptsRef.current += 1;
-            console.log(`Reconnecting... (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+            const delay = Math.min(reconnectInterval * reconnectAttemptsRef.current, 30000);
+            console.log(`Reconnecting in ${delay}ms... (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
             reconnectTimeoutRef.current = setTimeout(() => {
               connect();
-            }, reconnectInterval);
+            }, delay);
           }
         }
       };
@@ -189,16 +199,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       console.error('Failed to create WebSocket:', e);
       setIsConnecting(false);
     }
-  }, [getWebSocketUrl, reconnectInterval, maxReconnectAttempts]);
+  }, [getWebSocketUrl, reconnectInterval, maxReconnectAttempts, sendPing]);
 
-  // 이미 연결 시도했는지 추적
-  const hasConnectedRef = useRef(false);
-
-  // 연결 해제
+  // 연결 해제 (수동 호출용)
   const disconnect = useCallback(() => {
-    isDisconnectingRef.current = true;
-    hasConnectedRef.current = false; // 재연결 가능하도록 리셋
-
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -216,8 +220,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
     setIsConnected(false);
     setIsConnecting(false);
-    reconnectAttemptsRef.current = maxReconnectAttempts; // 재연결 방지
-  }, [maxReconnectAttempts]);
+    reconnectAttemptsRef.current = 0;
+  }, []);
 
   // 메시지 전송
   const sendMessage = useCallback((message: WSMessage) => {
@@ -228,21 +232,38 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
   }, []);
 
-  // 자동 연결 (마운트 시 1회만)
+  // 자동 연결 (마운트 시)
   useEffect(() => {
-    if (autoConnect && !hasConnectedRef.current) {
+    isUnmountingRef.current = false;
+
+    if (autoConnect) {
       const token = localStorage.getItem('access_token');
       if (token) {
-        hasConnectedRef.current = true;
-        isDisconnectingRef.current = false;
         connect();
       }
     }
 
     return () => {
-      disconnect();
+      // 언마운트 시 정리
+      isUnmountingRef.current = true;
+
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+
+      if (wsRef.current) {
+        wsRef.current.close(1000, 'Component unmount');
+        wsRef.current = null;
+      }
     };
-  }, [autoConnect, connect, disconnect]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 빈 의존성 - 마운트/언마운트 시에만 실행
 
   // 토큰 변경 감지 (로그인/로그아웃)
   useEffect(() => {
@@ -250,7 +271,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       if (e.key === 'access_token') {
         if (e.newValue) {
           // 토큰 추가됨 → 연결
-          isDisconnectingRef.current = false;
           reconnectAttemptsRef.current = 0;
           connect();
         } else {
@@ -263,6 +283,27 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [connect, disconnect]);
+
+  // 탭 활성화 시 연결 상태 확인 및 재연결
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // 탭이 다시 활성화됨
+        const token = localStorage.getItem('access_token');
+        if (token && wsRef.current?.readyState !== WebSocket.OPEN) {
+          console.log('Tab visible, reconnecting WebSocket...');
+          reconnectAttemptsRef.current = 0;
+          connect();
+        } else if (token && wsRef.current?.readyState === WebSocket.OPEN) {
+          // 연결되어 있으면 즉시 ping 전송하여 연결 확인
+          sendPing();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [connect, sendPing]);
 
   return {
     isConnected,

@@ -1,1271 +1,1735 @@
 #!/usr/bin/env python3
-import json
+# -*- coding: utf-8 -*-
+"""
+10개의 중간 난이도 문제에 대한 솔루션 추가 스크립트
+빈 solutions 배열을 가진 문제에만 솔루션을 추가합니다.
+"""
 
-# 새로운 10개 문제 솔루션
-new_solutions = {
-    "14919": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
+import json
+import fcntl
+import os
+
+JSON_PATH = '/Users/admin/Downloads/codefill/data/baekjoon/problems_with_github_solutions.json'
+
+# 솔루션 정의
+SOLUTIONS = {
+    # 문제 16112: 5차 전직 (그리디, 정렬)
+    "baekjoon_16112": [
+        {
+            "language": "python",
+            "code": '''# 백준 16112: 5차 전직
+# 그리디 + 정렬 문제
+# 경험치가 큰 퀘스트를 나중에 처리하면 더 많은 아케인스톤에 경험치가 쌓임
+import sys
 input = sys.stdin.readline
 
-# 구간 개수 m 입력
-m = int(input())
-# 실수 배열 입력
-nums = list(map(float, input().split()))
+n, k = map(int, input().split())
+a = list(map(int, input().split()))
 
-# 각 구간의 개수를 저장할 배열
-count = [0] * m
-# 구간 길이
-L = 1.0 / m
+# 경험치를 오름차순으로 정렬
+a.sort()
 
-# 각 실수가 어느 구간에 속하는지 계산
-for num in nums:
-    # 구간 인덱스 계산 (0-indexed)
-    idx = int(num / L)
-    # 정확히 1인 경우 마지막 구간에 포함
-    if idx >= m:
-        idx = m - 1
-    count[idx] += 1
+# 각 퀘스트를 처리할 때, 이전에 획득한 아케인스톤 중 최대 k개가 활성화됨
+# i번째 퀘스트를 처리할 때 min(i, k)개의 아케인스톤이 활성화 상태
+total = 0
+for i in range(n):
+    # i번째 퀘스트를 처리할 때 활성화된 아케인스톤 개수
+    active_stones = min(i, k)
+    total += a[i] * active_stones
+
+print(total)
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 16112: 5차 전직
+// 그리디 + 정렬 문제
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        StringTokenizer st = new StringTokenizer(br.readLine());
+
+        int n = Integer.parseInt(st.nextToken());
+        int k = Integer.parseInt(st.nextToken());
+
+        long[] a = new long[n];
+        st = new StringTokenizer(br.readLine());
+        for (int i = 0; i < n; i++) {
+            a[i] = Long.parseLong(st.nextToken());
+        }
+
+        // 경험치를 오름차순으로 정렬
+        Arrays.sort(a);
+
+        // 각 퀘스트를 처리할 때 활성화된 아케인스톤 개수만큼 경험치 추가
+        long total = 0;
+        for (int i = 0; i < n; i++) {
+            // i번째 퀘스트를 처리할 때 활성화된 아케인스톤 개수
+            int activeStones = Math.min(i, k);
+            total += a[i] * activeStones;
+        }
+
+        System.out.println(total);
+    }
+}
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 16112: 5차 전직
+// 그리디 + 정렬 문제
+#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    int n, k;
+    cin >> n >> k;
+
+    vector<long long> a(n);
+    for (int i = 0; i < n; i++) {
+        cin >> a[i];
+    }
+
+    // 경험치를 오름차순으로 정렬
+    sort(a.begin(), a.end());
+
+    // 각 퀘스트를 처리할 때 활성화된 아케인스톤 개수만큼 경험치 추가
+    long long total = 0;
+    for (int i = 0; i < n; i++) {
+        // i번째 퀘스트를 처리할 때 활성화된 아케인스톤 개수
+        int activeStones = min(i, k);
+        total += a[i] * activeStones;
+    }
+
+    cout << total << "\\n";
+    return 0;
+}
+'''
+        }
+    ],
+
+    # 문제 17479: 정식당 (구현, 해시셋)
+    "baekjoon_17479": [
+        {
+            "language": "python",
+            "code": '''# 백준 17479: 정식당
+# 구현 + 해시셋 문제
+import sys
+input = sys.stdin.readline
+
+A, B, C = map(int, input().split())
+
+# 메뉴 저장
+normal_menu = {}  # 일반메뉴: {이름: 가격}
+special_menu = {}  # 특별메뉴: {이름: 가격}
+service_menu = set()  # 서비스메뉴: 이름만 저장
+
+# 일반메뉴 입력
+for _ in range(A):
+    parts = input().split()
+    name, price = parts[0], int(parts[1])
+    normal_menu[name] = price
+
+# 특별메뉴 입력
+for _ in range(B):
+    parts = input().split()
+    name, price = parts[0], int(parts[1])
+    special_menu[name] = price
+
+# 서비스메뉴 입력
+for _ in range(C):
+    name = input().strip()
+    service_menu.add(name)
+
+# 주문 처리
+N = int(input())
+normal_total = 0  # 일반메뉴 주문 총액
+special_total = 0  # 특별메뉴 주문 총액
+service_count = 0  # 서비스메뉴 주문 개수
+valid = True
+
+for _ in range(N):
+    order = input().strip()
+
+    if order in normal_menu:
+        normal_total += normal_menu[order]
+    elif order in special_menu:
+        special_total += special_menu[order]
+    elif order in service_menu:
+        service_count += 1
+    # 메뉴에 있는 음식만 주문한다고 했으므로 else 케이스 없음
+
+# 주문 검증
+# 1. 특별메뉴는 일반메뉴 20000원 이상 주문해야 함
+if special_total > 0 and normal_total < 20000:
+    valid = False
+
+# 2. 서비스메뉴는 일반+특별메뉴 50000원 이상 주문해야 함
+if service_count > 0 and (normal_total + special_total) < 50000:
+    valid = False
+
+# 3. 서비스메뉴는 단 하나만 주문 가능
+if service_count > 1:
+    valid = False
+
+print("Okay" if valid else "No")
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 17479: 정식당
+// 구현 + 해시셋 문제
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        StringTokenizer st = new StringTokenizer(br.readLine());
+
+        int A = Integer.parseInt(st.nextToken());
+        int B = Integer.parseInt(st.nextToken());
+        int C = Integer.parseInt(st.nextToken());
+
+        // 메뉴 저장
+        Map<String, Integer> normalMenu = new HashMap<>();
+        Map<String, Integer> specialMenu = new HashMap<>();
+        Set<String> serviceMenu = new HashSet<>();
+
+        // 일반메뉴 입력
+        for (int i = 0; i < A; i++) {
+            st = new StringTokenizer(br.readLine());
+            String name = st.nextToken();
+            int price = Integer.parseInt(st.nextToken());
+            normalMenu.put(name, price);
+        }
+
+        // 특별메뉴 입력
+        for (int i = 0; i < B; i++) {
+            st = new StringTokenizer(br.readLine());
+            String name = st.nextToken();
+            int price = Integer.parseInt(st.nextToken());
+            specialMenu.put(name, price);
+        }
+
+        // 서비스메뉴 입력
+        for (int i = 0; i < C; i++) {
+            serviceMenu.add(br.readLine().trim());
+        }
+
+        // 주문 처리
+        int N = Integer.parseInt(br.readLine());
+        long normalTotal = 0;
+        long specialTotal = 0;
+        int serviceCount = 0;
+
+        for (int i = 0; i < N; i++) {
+            String order = br.readLine().trim();
+
+            if (normalMenu.containsKey(order)) {
+                normalTotal += normalMenu.get(order);
+            } else if (specialMenu.containsKey(order)) {
+                specialTotal += specialMenu.get(order);
+            } else if (serviceMenu.contains(order)) {
+                serviceCount++;
+            }
+        }
+
+        // 주문 검증
+        boolean valid = true;
+
+        // 특별메뉴는 일반메뉴 20000원 이상 주문해야 함
+        if (specialTotal > 0 && normalTotal < 20000) {
+            valid = false;
+        }
+
+        // 서비스메뉴는 일반+특별메뉴 50000원 이상 주문해야 함
+        if (serviceCount > 0 && (normalTotal + specialTotal) < 50000) {
+            valid = false;
+        }
+
+        // 서비스메뉴는 단 하나만 주문 가능
+        if (serviceCount > 1) {
+            valid = false;
+        }
+
+        System.out.println(valid ? "Okay" : "No");
+    }
+}
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 17479: 정식당
+// 구현 + 해시셋 문제
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    int A, B, C;
+    cin >> A >> B >> C;
+
+    // 메뉴 저장
+    unordered_map<string, int> normalMenu;
+    unordered_map<string, int> specialMenu;
+    unordered_set<string> serviceMenu;
+
+    // 일반메뉴 입력
+    for (int i = 0; i < A; i++) {
+        string name;
+        int price;
+        cin >> name >> price;
+        normalMenu[name] = price;
+    }
+
+    // 특별메뉴 입력
+    for (int i = 0; i < B; i++) {
+        string name;
+        int price;
+        cin >> name >> price;
+        specialMenu[name] = price;
+    }
+
+    // 서비스메뉴 입력
+    for (int i = 0; i < C; i++) {
+        string name;
+        cin >> name;
+        serviceMenu.insert(name);
+    }
+
+    // 주문 처리
+    int N;
+    cin >> N;
+    long long normalTotal = 0;
+    long long specialTotal = 0;
+    int serviceCount = 0;
+
+    for (int i = 0; i < N; i++) {
+        string order;
+        cin >> order;
+
+        if (normalMenu.count(order)) {
+            normalTotal += normalMenu[order];
+        } else if (specialMenu.count(order)) {
+            specialTotal += specialMenu[order];
+        } else if (serviceMenu.count(order)) {
+            serviceCount++;
+        }
+    }
+
+    // 주문 검증
+    bool valid = true;
+
+    // 특별메뉴는 일반메뉴 20000원 이상 주문해야 함
+    if (specialTotal > 0 && normalTotal < 20000) {
+        valid = false;
+    }
+
+    // 서비스메뉴는 일반+특별메뉴 50000원 이상 주문해야 함
+    if (serviceCount > 0 && (normalTotal + specialTotal) < 50000) {
+        valid = false;
+    }
+
+    // 서비스메뉴는 단 하나만 주문 가능
+    if (serviceCount > 1) {
+        valid = false;
+    }
+
+    cout << (valid ? "Okay" : "No") << "\\n";
+    return 0;
+}
+'''
+        }
+    ],
+
+    # 문제 19699: 소-난다! (조합 + 소수 판정)
+    "baekjoon_19699": [
+        {
+            "language": "python",
+            "code": '''# 백준 19699: 소-난다!
+# 조합 + 소수 판정 문제
+from itertools import combinations
+
+def is_prime(n):
+    """소수 판정 함수"""
+    if n < 2:
+        return False
+    if n == 2:
+        return True
+    if n % 2 == 0:
+        return False
+    for i in range(3, int(n ** 0.5) + 1, 2):
+        if n % i == 0:
+            return False
+    return True
+
+N, M = map(int, input().split())
+weights = list(map(int, input().split()))
+
+# M마리 소를 선택하는 모든 조합에서 몸무게 합이 소수인 경우 찾기
+prime_sums = set()
+for comb in combinations(weights, M):
+    total = sum(comb)
+    if is_prime(total):
+        prime_sums.add(total)
 
 # 결과 출력
-print(' '.join(map(str, count)))
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        int m = Integer.parseInt(br.readLine().trim());
-        StringTokenizer st = new StringTokenizer(br.readLine());
-        int[] count = new int[m];
-        double L = 1.0 / m;
-        while (st.hasMoreTokens()) {
-            double num = Double.parseDouble(st.nextToken());
-            int idx = (int)(num / L);
-            if (idx >= m) idx = m - 1;
-            count[idx]++;
-        }
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < m; i++) {
-            if (i > 0) sb.append(" ");
-            sb.append(count[i]);
-        }
-        System.out.println(sb);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <vector>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-    int m;
-    cin >> m;
-    vector<int> count(m, 0);
-    double L = 1.0 / m;
-    double num;
-    while (cin >> num) {
-        int idx = (int)(num / L);
-        if (idx >= m) idx = m - 1;
-        count[idx]++;
-    }
-    for (int i = 0; i < m; i++) {
-        if (i > 0) cout << " ";
-        cout << count[i];
-    }
-    cout << endl;
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "20937": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-input = sys.stdin.readline
-
-# 떡의 개수 입력
-n = int(input())
-# 각 떡의 둘레 입력
-perimeters = list(map(int, input().split()))
-
-# 둘레별 떡 개수를 세기 (같은 둘레의 떡은 한 그릇에 담을 수 없음)
-count = {}
-for p in perimeters:
-    count[p] = count.get(p, 0) + 1
-
-# 가장 많이 겹치는 둘레의 개수가 필요한 그릇 수
-result = max(count.values())
-print(result)
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        int n = Integer.parseInt(br.readLine().trim());
-        StringTokenizer st = new StringTokenizer(br.readLine());
-        Map<Integer, Integer> count = new HashMap<>();
-        for (int i = 0; i < n; i++) {
-            int p = Integer.parseInt(st.nextToken());
-            count.put(p, count.getOrDefault(p, 0) + 1);
-        }
-        int result = 0;
-        for (int cnt : count.values()) {
-            result = Math.max(result, cnt);
-        }
-        System.out.println(result);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <map>
-#include <algorithm>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-    int n;
-    cin >> n;
-    map<int, int> count;
-    for (int i = 0; i < n; i++) {
-        int p;
-        cin >> p;
-        count[p]++;
-    }
-    int result = 0;
-    for (auto& pair : count) {
-        result = max(result, pair.second);
-    }
-    cout << result << endl;
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "2232": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-input = sys.stdin.readline
-
-# 지뢰 개수 입력
-n = int(input())
-# 각 지뢰의 충격 강도
-p = [int(input()) for _ in range(n)]
-
-# 극대값(양쪽보다 큰 값)인 지뢰를 찾기
-for i in range(n):
-    left_ok = (i == 0) or (p[i] >= p[i-1])
-    right_ok = (i == n-1) or (p[i] >= p[i+1])
-    if left_ok and right_ok:
-        if i > 0 and p[i] == p[i-1]:
-            continue
-        print(i + 1)
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        StringBuilder sb = new StringBuilder();
-        int n = Integer.parseInt(br.readLine().trim());
-        int[] p = new int[n];
-        for (int i = 0; i < n; i++) {
-            p[i] = Integer.parseInt(br.readLine().trim());
-        }
-        for (int i = 0; i < n; i++) {
-            boolean leftOk = (i == 0) || (p[i] >= p[i-1]);
-            boolean rightOk = (i == n-1) || (p[i] >= p[i+1]);
-            if (leftOk && rightOk) {
-                if (i > 0 && p[i] == p[i-1]) continue;
-                sb.append(i + 1).append("\\n");
-            }
-        }
-        System.out.print(sb);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <vector>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-    int n;
-    cin >> n;
-    vector<int> p(n);
-    for (int i = 0; i < n; i++) {
-        cin >> p[i];
-    }
-    for (int i = 0; i < n; i++) {
-        bool leftOk = (i == 0) || (p[i] >= p[i-1]);
-        bool rightOk = (i == n-1) || (p[i] >= p[i+1]);
-        if (leftOk && rightOk) {
-            if (i > 0 && p[i] == p[i-1]) continue;
-            cout << i + 1 << "\\n";
-        }
-    }
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "1980": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-input = sys.stdin.readline
-
-# 타워버거 n분, 불고기버거 m분, 총 t분
-n, m, t = map(int, input().split())
-
-# 콜라 마시는 시간을 최소화하면서 햄버거를 최대한 많이 먹기
-min_cola = t + 1
-max_burgers = 0
-
-for i in range(t // n + 1):
-    remaining = t - n * i
-    j = remaining // m
-    cola_time = remaining - m * j
-    total_burgers = i + j
-
-    if cola_time < min_cola or (cola_time == min_cola and total_burgers > max_burgers):
-        min_cola = cola_time
-        max_burgers = total_burgers
-
-print(max_burgers, min_cola)
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        StringTokenizer st = new StringTokenizer(br.readLine());
-        int n = Integer.parseInt(st.nextToken());
-        int m = Integer.parseInt(st.nextToken());
-        int t = Integer.parseInt(st.nextToken());
-
-        int minCola = t + 1;
-        int maxBurgers = 0;
-
-        for (int i = 0; i <= t / n; i++) {
-            int remaining = t - n * i;
-            int j = remaining / m;
-            int colaTime = remaining - m * j;
-            int totalBurgers = i + j;
-
-            if (colaTime < minCola || (colaTime == minCola && totalBurgers > maxBurgers)) {
-                minCola = colaTime;
-                maxBurgers = totalBurgers;
-            }
-        }
-        System.out.println(maxBurgers + " " + minCola);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-    int n, m, t;
-    cin >> n >> m >> t;
-
-    int minCola = t + 1;
-    int maxBurgers = 0;
-
-    for (int i = 0; i <= t / n; i++) {
-        int remaining = t - n * i;
-        int j = remaining / m;
-        int colaTime = remaining - m * j;
-        int totalBurgers = i + j;
-
-        if (colaTime < minCola || (colaTime == minCola && totalBurgers > maxBurgers)) {
-            minCola = colaTime;
-            maxBurgers = totalBurgers;
-        }
-    }
-    cout << maxBurgers << " " << minCola << endl;
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "27162": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-from collections import Counter
-
-input = sys.stdin.readline
-
-# 이미 선택한 족보 (Y: 선택함, N: 선택 안함)
-used = input().strip()
-# 고정된 주사위 3개
-fixed = list(map(int, input().split()))
-
-max_score = 0
-
-for d1 in range(1, 7):
-    for d2 in range(1, 7):
-        dice = fixed + [d1, d2]
-        count = Counter(dice)
-        total = sum(dice)
-
-        scores = [0] * 12
-
-        # Ones ~ Sixes
-        for i in range(6):
-            scores[i] = count[i + 1] * (i + 1)
-
-        # Four of a Kind
-        if any(c >= 4 for c in count.values()):
-            scores[6] = total
-
-        # Full House
-        vals = sorted(count.values())
-        if vals == [2, 3] or vals == [5]:
-            scores[7] = total
-
-        # Little Straight
-        if all(i in count for i in [1, 2, 3, 4, 5]):
-            scores[8] = 30
-
-        # Big Straight
-        if all(i in count for i in [2, 3, 4, 5, 6]):
-            scores[9] = 30
-
-        # Yacht
-        if any(c >= 5 for c in count.values()):
-            scores[10] = 50
-
-        # Choice
-        scores[11] = total
-
-        for i in range(12):
-            if used[i] == 'N':
-                max_score = max(max_score, scores[i])
-
-print(max_score)
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        String used = br.readLine().trim();
-        StringTokenizer st = new StringTokenizer(br.readLine());
-        int[] fixed = new int[3];
-        for (int i = 0; i < 3; i++) {
-            fixed[i] = Integer.parseInt(st.nextToken());
-        }
-
-        int maxScore = 0;
-
-        for (int d1 = 1; d1 <= 6; d1++) {
-            for (int d2 = 1; d2 <= 6; d2++) {
-                int[] dice = {fixed[0], fixed[1], fixed[2], d1, d2};
-                int[] count = new int[7];
-                int total = 0;
-                for (int d : dice) {
-                    count[d]++;
-                    total += d;
-                }
-
-                int[] scores = new int[12];
-                for (int i = 0; i < 6; i++) {
-                    scores[i] = count[i + 1] * (i + 1);
-                }
-
-                for (int c : count) {
-                    if (c >= 4) { scores[6] = total; break; }
-                }
-
-                boolean hasThree = false, hasTwo = false, hasFive = false;
-                for (int c : count) {
-                    if (c == 3) hasThree = true;
-                    if (c == 2) hasTwo = true;
-                    if (c == 5) hasFive = true;
-                }
-                if ((hasThree && hasTwo) || hasFive) scores[7] = total;
-
-                if (count[1] >= 1 && count[2] >= 1 && count[3] >= 1 && count[4] >= 1 && count[5] >= 1) scores[8] = 30;
-                if (count[2] >= 1 && count[3] >= 1 && count[4] >= 1 && count[5] >= 1 && count[6] >= 1) scores[9] = 30;
-
-                for (int c : count) {
-                    if (c >= 5) { scores[10] = 50; break; }
-                }
-
-                scores[11] = total;
-
-                for (int i = 0; i < 12; i++) {
-                    if (used.charAt(i) == 'N') {
-                        maxScore = Math.max(maxScore, scores[i]);
-                    }
-                }
-            }
-        }
-        System.out.println(maxScore);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <algorithm>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-
-    string used;
-    cin >> used;
-    int fixed[3];
-    for (int i = 0; i < 3; i++) cin >> fixed[i];
-
-    int maxScore = 0;
-
-    for (int d1 = 1; d1 <= 6; d1++) {
-        for (int d2 = 1; d2 <= 6; d2++) {
-            int dice[5] = {fixed[0], fixed[1], fixed[2], d1, d2};
-            int count[7] = {0};
-            int total = 0;
-            for (int d : dice) { count[d]++; total += d; }
-
-            int scores[12] = {0};
-            for (int i = 0; i < 6; i++) scores[i] = count[i + 1] * (i + 1);
-
-            for (int i = 1; i <= 6; i++) if (count[i] >= 4) { scores[6] = total; break; }
-
-            bool hasThree = false, hasTwo = false, hasFive = false;
-            for (int i = 1; i <= 6; i++) {
-                if (count[i] == 3) hasThree = true;
-                if (count[i] == 2) hasTwo = true;
-                if (count[i] == 5) hasFive = true;
-            }
-            if ((hasThree && hasTwo) || hasFive) scores[7] = total;
-
-            if (count[1] >= 1 && count[2] >= 1 && count[3] >= 1 && count[4] >= 1 && count[5] >= 1) scores[8] = 30;
-            if (count[2] >= 1 && count[3] >= 1 && count[4] >= 1 && count[5] >= 1 && count[6] >= 1) scores[9] = 30;
-
-            for (int i = 1; i <= 6; i++) if (count[i] >= 5) { scores[10] = 50; break; }
-
-            scores[11] = total;
-
-            for (int i = 0; i < 12; i++) {
-                if (used[i] == 'N') maxScore = max(maxScore, scores[i]);
-            }
-        }
-    }
-    cout << maxScore << endl;
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "27931": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-input = sys.stdin.readline
-
-n = int(input())
-points = list(map(int, input().split()))
-
-# 홀수, 짝수 좌표 분리
-odd = sorted([p for p in points if p % 2 == 1])
-even = sorted([p for p in points if p % 2 == 0])
-
-# 짝수 거리: 같은 패리티끼리
-min_even = -1
-for arr in [odd, even]:
-    for i in range(len(arr) - 1):
-        dist = arr[i + 1] - arr[i]
-        if min_even == -1 or dist < min_even:
-            min_even = dist
-
-# 홀수 거리: 다른 패리티끼리
-min_odd = -1
-if odd and even:
-    i, j = 0, 0
-    while i < len(odd) and j < len(even):
-        dist = abs(odd[i] - even[j])
-        if min_odd == -1 or dist < min_odd:
-            min_odd = dist
-        if odd[i] < even[j]:
-            i += 1
-        else:
-            j += 1
-
-print(min_even, min_odd)
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        int n = Integer.parseInt(br.readLine().trim());
-        StringTokenizer st = new StringTokenizer(br.readLine());
-        List<Long> odd = new ArrayList<>();
-        List<Long> even = new ArrayList<>();
-
-        for (int i = 0; i < n; i++) {
-            long p = Long.parseLong(st.nextToken());
-            if (p % 2 == 0) even.add(p);
-            else odd.add(p);
-        }
-
-        Collections.sort(odd);
-        Collections.sort(even);
-
-        long minEven = -1;
-        for (int i = 0; i < odd.size() - 1; i++) {
-            long dist = odd.get(i + 1) - odd.get(i);
-            if (minEven == -1 || dist < minEven) minEven = dist;
-        }
-        for (int i = 0; i < even.size() - 1; i++) {
-            long dist = even.get(i + 1) - even.get(i);
-            if (minEven == -1 || dist < minEven) minEven = dist;
-        }
-
-        long minOdd = -1;
-        if (!odd.isEmpty() && !even.isEmpty()) {
-            int i = 0, j = 0;
-            while (i < odd.size() && j < even.size()) {
-                long dist = Math.abs(odd.get(i) - even.get(j));
-                if (minOdd == -1 || dist < minOdd) minOdd = dist;
-                if (odd.get(i) < even.get(j)) i++;
-                else j++;
-            }
-        }
-
-        System.out.println(minEven + " " + minOdd);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <cmath>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-
-    int n;
-    cin >> n;
-    vector<long long> odd, even;
-    for (int i = 0; i < n; i++) {
-        long long p;
-        cin >> p;
-        if (p % 2 == 0) even.push_back(p);
-        else odd.push_back(p);
-    }
-
-    sort(odd.begin(), odd.end());
-    sort(even.begin(), even.end());
-
-    long long minEven = -1;
-    for (int i = 0; i < (int)odd.size() - 1; i++) {
-        long long dist = odd[i + 1] - odd[i];
-        if (minEven == -1 || dist < minEven) minEven = dist;
-    }
-    for (int i = 0; i < (int)even.size() - 1; i++) {
-        long long dist = even[i + 1] - even[i];
-        if (minEven == -1 || dist < minEven) minEven = dist;
-    }
-
-    long long minOdd = -1;
-    if (!odd.empty() && !even.empty()) {
-        int i = 0, j = 0;
-        while (i < (int)odd.size() && j < (int)even.size()) {
-            long long dist = abs(odd[i] - even[j]);
-            if (minOdd == -1 || dist < minOdd) minOdd = dist;
-            if (odd[i] < even[j]) i++;
-            else j++;
-        }
-    }
-
-    cout << minEven << " " << minOdd << endl;
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "6324": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-input = sys.stdin.readline
-
-n = int(input())
-
-for i in range(1, n + 1):
-    url = input().strip()
-
-    # 프로토콜
-    protocol_end = url.index('://')
-    protocol = url[:protocol_end]
-    rest = url[protocol_end + 3:]
-
-    # 호스트
-    host_end = len(rest)
-    for j, c in enumerate(rest):
-        if c == '/' or c == ':':
-            host_end = j
-            break
-    host = rest[:host_end]
-    rest = rest[host_end:]
-
-    # 포트
-    port = "<default>"
-    if rest.startswith(':'):
-        port_end = rest.find('/')
-        if port_end == -1:
-            port = rest[1:]
-            rest = ""
-        else:
-            port = rest[1:port_end]
-            rest = rest[port_end:]
-
-    # 경로
-    path = "<default>"
-    if rest.startswith('/'):
-        rest = rest[1:]
-        if rest:
-            path = rest
-
-    print(f"URL #{i}")
-    print(f"Protocol = {protocol}")
-    print(f"Host     = {host}")
-    print(f"Port     = {port}")
-    print(f"Path     = {path}")
-
-    if i < n:
-        print()
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        StringBuilder sb = new StringBuilder();
-
-        int n = Integer.parseInt(br.readLine().trim());
-
-        for (int i = 1; i <= n; i++) {
-            String url = br.readLine().trim();
-
-            int protocolEnd = url.indexOf("://");
-            String protocol = url.substring(0, protocolEnd);
-            String rest = url.substring(protocolEnd + 3);
-
-            int hostEnd = rest.length();
-            for (int j = 0; j < rest.length(); j++) {
-                char c = rest.charAt(j);
-                if (c == '/' || c == ':') {
-                    hostEnd = j;
-                    break;
-                }
-            }
-            String host = rest.substring(0, hostEnd);
-            rest = rest.substring(hostEnd);
-
-            String port = "<default>";
-            if (rest.startsWith(":")) {
-                int portEnd = rest.indexOf('/');
-                if (portEnd == -1) {
-                    port = rest.substring(1);
-                    rest = "";
-                } else {
-                    port = rest.substring(1, portEnd);
-                    rest = rest.substring(portEnd);
-                }
-            }
-
-            String path = "<default>";
-            if (rest.startsWith("/")) {
-                rest = rest.substring(1);
-                if (!rest.isEmpty()) path = rest;
-            }
-
-            sb.append("URL #").append(i).append("\\n");
-            sb.append("Protocol = ").append(protocol).append("\\n");
-            sb.append("Host     = ").append(host).append("\\n");
-            sb.append("Port     = ").append(port).append("\\n");
-            sb.append("Path     = ").append(path).append("\\n");
-
-            if (i < n) sb.append("\\n");
-        }
-        System.out.print(sb);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <string>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-
-    int n;
-    cin >> n;
-    cin.ignore();
-
-    for (int i = 1; i <= n; i++) {
-        string url;
-        getline(cin, url);
-
-        size_t protocolEnd = url.find("://");
-        string protocol = url.substr(0, protocolEnd);
-        string rest = url.substr(protocolEnd + 3);
-
-        size_t hostEnd = rest.length();
-        for (size_t j = 0; j < rest.length(); j++) {
-            if (rest[j] == '/' || rest[j] == ':') {
-                hostEnd = j;
-                break;
-            }
-        }
-        string host = rest.substr(0, hostEnd);
-        rest = rest.substr(hostEnd);
-
-        string port = "<default>";
-        if (!rest.empty() && rest[0] == ':') {
-            size_t portEnd = rest.find('/');
-            if (portEnd == string::npos) {
-                port = rest.substr(1);
-                rest = "";
-            } else {
-                port = rest.substr(1, portEnd - 1);
-                rest = rest.substr(portEnd);
-            }
-        }
-
-        string path = "<default>";
-        if (!rest.empty() && rest[0] == '/') {
-            rest = rest.substr(1);
-            if (!rest.empty()) path = rest;
-        }
-
-        cout << "URL #" << i << "\\n";
-        cout << "Protocol = " << protocol << "\\n";
-        cout << "Host     = " << host << "\\n";
-        cout << "Port     = " << port << "\\n";
-        cout << "Path     = " << path << "\\n";
-
-        if (i < n) cout << "\\n";
-    }
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "17124": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-from bisect import bisect_left
-
-input = sys.stdin.readline
-
-t = int(input())
-
-for _ in range(t):
-    n, m = map(int, input().split())
-    A = list(map(int, input().split()))
-    B = sorted(map(int, input().split()))
-
-    total = 0
-    for a in A:
-        idx = bisect_left(B, a)
-        candidates = []
-        if idx > 0:
-            candidates.append(B[idx - 1])
-        if idx < m:
-            candidates.append(B[idx])
-        closest = min(candidates, key=lambda x: (abs(x - a), x))
-        total += closest
-
-    print(total)
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        StringBuilder sb = new StringBuilder();
-
-        int t = Integer.parseInt(br.readLine().trim());
-
-        while (t-- > 0) {
-            StringTokenizer st = new StringTokenizer(br.readLine());
-            int n = Integer.parseInt(st.nextToken());
-            int m = Integer.parseInt(st.nextToken());
-
-            int[] A = new int[n];
-            st = new StringTokenizer(br.readLine());
-            for (int i = 0; i < n; i++) A[i] = Integer.parseInt(st.nextToken());
-
-            int[] B = new int[m];
-            st = new StringTokenizer(br.readLine());
-            for (int i = 0; i < m; i++) B[i] = Integer.parseInt(st.nextToken());
-            Arrays.sort(B);
-
-            long total = 0;
-            for (int a : A) {
-                int idx = Arrays.binarySearch(B, a);
-                if (idx < 0) idx = -(idx + 1);
-
-                int closest;
-                if (idx == 0) closest = B[0];
-                else if (idx == m) closest = B[m - 1];
-                else {
-                    int left = B[idx - 1];
-                    int right = B[idx];
-                    closest = (a - left <= right - a) ? left : right;
-                }
-                total += closest;
-            }
-            sb.append(total).append("\\n");
-        }
-        System.out.print(sb);
-    }
-}
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <vector>
-#include <algorithm>
-using namespace std;
-
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-
-    int t;
-    cin >> t;
-
-    while (t--) {
-        int n, m;
-        cin >> n >> m;
-
-        vector<int> A(n), B(m);
-        for (int i = 0; i < n; i++) cin >> A[i];
-        for (int i = 0; i < m; i++) cin >> B[i];
-        sort(B.begin(), B.end());
-
-        long long total = 0;
-        for (int a : A) {
-            int idx = lower_bound(B.begin(), B.end(), a) - B.begin();
-
-            int closest;
-            if (idx == 0) closest = B[0];
-            else if (idx == m) closest = B[m - 1];
-            else {
-                int left = B[idx - 1];
-                int right = B[idx];
-                closest = (a - left <= right - a) ? left : right;
-            }
-            total += closest;
-        }
-        cout << total << "\\n";
-    }
-    return 0;
-}
-"""
-            }
-        ]
-    },
-    "19948": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
-input = sys.stdin.readline
-
-poem = input().strip()
-space_limit = int(input())
-alpha_limits = list(map(int, input().split()))
-
-space_count = 0
-alpha_count = [0] * 26
-title_chars = []
-
-prev_space = True
-for c in poem:
-    if c == ' ':
-        space_count += 1
-        prev_space = True
-    else:
-        upper_c = c.upper()
-        idx = ord(upper_c) - ord('A')
-        alpha_count[idx] += 1
-        if prev_space:
-            title_chars.append(upper_c)
-        prev_space = False
-
-for c in title_chars:
-    idx = ord(c) - ord('A')
-    alpha_count[idx] += 1
-
-if space_count > space_limit:
-    print(-1)
+if prime_sums:
+    print(' '.join(map(str, sorted(prime_sums))))
 else:
-    possible = True
-    for i in range(26):
-        if alpha_count[i] > alpha_limits[i]:
-            possible = False
-            break
-
-    if possible:
-        print(''.join(title_chars))
-    else:
-        print(-1)
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
+    print(-1)
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 19699: 소-난다!
+// 조합 + 소수 판정 문제
+import java.io.*;
 import java.util.*;
 
 public class Main {
+    static int N, M;
+    static int[] weights;
+    static Set<Integer> primeSums = new TreeSet<>();
+
     public static void main(String[] args) throws IOException {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-
-        String poem = br.readLine();
-        int spaceLimit = Integer.parseInt(br.readLine().trim());
-        int[] alphaLimits = new int[26];
         StringTokenizer st = new StringTokenizer(br.readLine());
-        for (int i = 0; i < 26; i++) alphaLimits[i] = Integer.parseInt(st.nextToken());
 
-        int spaceCount = 0;
-        int[] alphaCount = new int[26];
-        StringBuilder title = new StringBuilder();
+        N = Integer.parseInt(st.nextToken());
+        M = Integer.parseInt(st.nextToken());
 
-        boolean prevSpace = true;
-        for (int i = 0; i < poem.length(); i++) {
-            char c = poem.charAt(i);
-            if (c == ' ') {
-                spaceCount++;
-                prevSpace = true;
-            } else {
-                char upperC = Character.toUpperCase(c);
-                int idx = upperC - 'A';
-                alphaCount[idx]++;
-                if (prevSpace) title.append(upperC);
-                prevSpace = false;
-            }
+        weights = new int[N];
+        st = new StringTokenizer(br.readLine());
+        for (int i = 0; i < N; i++) {
+            weights[i] = Integer.parseInt(st.nextToken());
         }
 
-        for (int i = 0; i < title.length(); i++) {
-            int idx = title.charAt(i) - 'A';
-            alphaCount[idx]++;
-        }
+        // 조합 생성
+        combination(0, 0, 0);
 
-        if (spaceCount > spaceLimit) {
+        // 결과 출력
+        if (primeSums.isEmpty()) {
             System.out.println(-1);
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for (int sum : primeSums) {
+                sb.append(sum).append(" ");
+            }
+            System.out.println(sb.toString().trim());
+        }
+    }
+
+    // 조합 생성 함수
+    static void combination(int start, int count, int sum) {
+        if (count == M) {
+            if (isPrime(sum)) {
+                primeSums.add(sum);
+            }
             return;
         }
 
-        for (int i = 0; i < 26; i++) {
-            if (alphaCount[i] > alphaLimits[i]) {
-                System.out.println(-1);
-                return;
-            }
+        for (int i = start; i < N; i++) {
+            combination(i + 1, count + 1, sum + weights[i]);
         }
-        System.out.println(title);
+    }
+
+    // 소수 판정 함수
+    static boolean isPrime(int n) {
+        if (n < 2) return false;
+        if (n == 2) return true;
+        if (n % 2 == 0) return false;
+        for (int i = 3; i * i <= n; i += 2) {
+            if (n % i == 0) return false;
+        }
+        return true;
     }
 }
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
-#include <string>
-#include <cctype>
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 19699: 소-난다!
+// 조합 + 소수 판정 문제
+#include <iostream>
+#include <vector>
+#include <set>
+#include <cmath>
 using namespace std;
 
+int N, M;
+vector<int> weights;
+set<int> primeSums;
+
+// 소수 판정 함수
+bool isPrime(int n) {
+    if (n < 2) return false;
+    if (n == 2) return true;
+    if (n % 2 == 0) return false;
+    for (int i = 3; i * i <= n; i += 2) {
+        if (n % i == 0) return false;
+    }
+    return true;
+}
+
+// 조합 생성 함수
+void combination(int start, int count, int sum) {
+    if (count == M) {
+        if (isPrime(sum)) {
+            primeSums.insert(sum);
+        }
+        return;
+    }
+
+    for (int i = start; i < N; i++) {
+        combination(i + 1, count + 1, sum + weights[i]);
+    }
+}
+
 int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
 
-    string poem;
-    getline(cin, poem);
+    cin >> N >> M;
+    weights.resize(N);
+    for (int i = 0; i < N; i++) {
+        cin >> weights[i];
+    }
 
-    int spaceLimit;
-    cin >> spaceLimit;
+    // 조합 생성
+    combination(0, 0, 0);
 
-    int alphaLimits[26];
-    for (int i = 0; i < 26; i++) cin >> alphaLimits[i];
-
-    int spaceCount = 0;
-    int alphaCount[26] = {0};
-    string title = "";
-
-    bool prevSpace = true;
-    for (char c : poem) {
-        if (c == ' ') {
-            spaceCount++;
-            prevSpace = true;
-        } else {
-            char upperC = toupper(c);
-            int idx = upperC - 'A';
-            alphaCount[idx]++;
-            if (prevSpace) title += upperC;
-            prevSpace = false;
+    // 결과 출력
+    if (primeSums.empty()) {
+        cout << -1 << "\\n";
+    } else {
+        bool first = true;
+        for (int sum : primeSums) {
+            if (!first) cout << " ";
+            cout << sum;
+            first = false;
         }
+        cout << "\\n";
     }
 
-    for (char c : title) {
-        int idx = c - 'A';
-        alphaCount[idx]++;
-    }
-
-    if (spaceCount > spaceLimit) {
-        cout << -1 << endl;
-        return 0;
-    }
-
-    for (int i = 0; i < 26; i++) {
-        if (alphaCount[i] > alphaLimits[i]) {
-            cout << -1 << endl;
-            return 0;
-        }
-    }
-    cout << title << endl;
     return 0;
 }
-"""
-            }
-        ]
-    },
-    "11507": {
-        "solutions": [
-            {
-                "language": "python",
-                "code": """import sys
+'''
+        }
+    ],
+
+    # 문제 28217: 두 정삼각형 (구현)
+    "baekjoon_28217": [
+        {
+            "language": "python",
+            "code": '''# 백준 28217: 두 정삼각형
+# 구현 문제 - 정삼각형 회전/대칭
+import sys
 input = sys.stdin.readline
 
-cards = input().strip()
+def read_triangle(n):
+    """정삼각형 읽기"""
+    triangle = []
+    for i in range(1, n + 1):
+        row = list(map(int, input().split()))
+        triangle.append(row)
+    return triangle
 
-# 모양별 카드 존재 여부
-suits = {'P': [False] * 14, 'K': [False] * 14, 'H': [False] * 14, 'T': [False] * 14}
+def rotate_cw(tri, n):
+    """시계방향 120도 회전"""
+    new_tri = []
+    for i in range(1, n + 1):
+        row = []
+        for j in range(i):
+            # 새 위치 계산
+            row.append(tri[n - 1 - j][n - i])
+        new_tri.append(row)
+    return new_tri
 
-error = False
+def reflect(tri, n):
+    """좌우 대칭"""
+    new_tri = []
+    for i in range(n):
+        new_tri.append(tri[i][::-1])
+    return new_tri
 
-i = 0
-while i < len(cards):
-    suit = cards[i]
-    num = int(cards[i+1:i+3])
+def count_diff(a, b, n):
+    """두 정삼각형의 차이 계산"""
+    diff = 0
+    for i in range(n):
+        for j in range(i + 1):
+            if a[i][j] != b[i][j]:
+                diff += 1
+    return diff
 
-    if suits[suit][num]:
-        error = True
-        break
-    suits[suit][num] = True
-    i += 3
+n = int(input())
+A = read_triangle(n)
+B = read_triangle(n)
 
-if error:
-    print("GRESKA")
-else:
-    result = []
-    for suit in ['P', 'K', 'H', 'T']:
-        count = sum(1 for j in range(1, 14) if not suits[suit][j])
-        result.append(count)
-    print(' '.join(map(str, result)))
-"""
-            },
-            {
-                "language": "java",
-                "code": """import java.io.*;
+min_diff = float('inf')
+
+# 원본과 대칭
+current = A
+for _ in range(2):  # 원본, 대칭
+    for _ in range(3):  # 0도, 120도, 240도 회전
+        diff = count_diff(current, B, n)
+        min_diff = min(min_diff, diff)
+        current = rotate_cw(current, n)
+    current = reflect(A, n)
+
+print(min_diff)
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 28217: 두 정삼각형
+// 구현 문제 - 정삼각형 회전/대칭
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    static int n;
+
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        n = Integer.parseInt(br.readLine().trim());
+
+        int[][] A = readTriangle(br);
+        int[][] B = readTriangle(br);
+
+        int minDiff = Integer.MAX_VALUE;
+
+        // 원본과 대칭에서 각각 3번 회전
+        int[][] current = copyTriangle(A);
+        for (int flip = 0; flip < 2; flip++) {
+            for (int rot = 0; rot < 3; rot++) {
+                int diff = countDiff(current, B);
+                minDiff = Math.min(minDiff, diff);
+                current = rotateCW(current);
+            }
+            current = reflect(A);
+        }
+
+        System.out.println(minDiff);
+    }
+
+    static int[][] readTriangle(BufferedReader br) throws IOException {
+        int[][] tri = new int[n][];
+        for (int i = 0; i < n; i++) {
+            StringTokenizer st = new StringTokenizer(br.readLine());
+            tri[i] = new int[i + 1];
+            for (int j = 0; j <= i; j++) {
+                tri[i][j] = Integer.parseInt(st.nextToken());
+            }
+        }
+        return tri;
+    }
+
+    static int[][] copyTriangle(int[][] tri) {
+        int[][] copy = new int[n][];
+        for (int i = 0; i < n; i++) {
+            copy[i] = tri[i].clone();
+        }
+        return copy;
+    }
+
+    static int[][] rotateCW(int[][] tri) {
+        int[][] newTri = new int[n][];
+        for (int i = 0; i < n; i++) {
+            newTri[i] = new int[i + 1];
+            for (int j = 0; j <= i; j++) {
+                newTri[i][j] = tri[n - 1 - j][n - 1 - i];
+            }
+        }
+        return newTri;
+    }
+
+    static int[][] reflect(int[][] tri) {
+        int[][] newTri = new int[n][];
+        for (int i = 0; i < n; i++) {
+            newTri[i] = new int[i + 1];
+            for (int j = 0; j <= i; j++) {
+                newTri[i][j] = tri[i][i - j];
+            }
+        }
+        return newTri;
+    }
+
+    static int countDiff(int[][] a, int[][] b) {
+        int diff = 0;
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j <= i; j++) {
+                if (a[i][j] != b[i][j]) diff++;
+            }
+        }
+        return diff;
+    }
+}
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 28217: 두 정삼각형
+// 구현 문제 - 정삼각형 회전/대칭
+#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+int n;
+
+vector<vector<int>> readTriangle() {
+    vector<vector<int>> tri(n);
+    for (int i = 0; i < n; i++) {
+        tri[i].resize(i + 1);
+        for (int j = 0; j <= i; j++) {
+            cin >> tri[i][j];
+        }
+    }
+    return tri;
+}
+
+vector<vector<int>> rotateCW(const vector<vector<int>>& tri) {
+    vector<vector<int>> newTri(n);
+    for (int i = 0; i < n; i++) {
+        newTri[i].resize(i + 1);
+        for (int j = 0; j <= i; j++) {
+            newTri[i][j] = tri[n - 1 - j][n - 1 - i];
+        }
+    }
+    return newTri;
+}
+
+vector<vector<int>> reflect(const vector<vector<int>>& tri) {
+    vector<vector<int>> newTri(n);
+    for (int i = 0; i < n; i++) {
+        newTri[i].resize(i + 1);
+        for (int j = 0; j <= i; j++) {
+            newTri[i][j] = tri[i][i - j];
+        }
+    }
+    return newTri;
+}
+
+int countDiff(const vector<vector<int>>& a, const vector<vector<int>>& b) {
+    int diff = 0;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j <= i; j++) {
+            if (a[i][j] != b[i][j]) diff++;
+        }
+    }
+    return diff;
+}
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    cin >> n;
+    vector<vector<int>> A = readTriangle();
+    vector<vector<int>> B = readTriangle();
+
+    int minDiff = 1e9;
+
+    // 원본과 대칭에서 각각 3번 회전
+    vector<vector<int>> current = A;
+    for (int flip = 0; flip < 2; flip++) {
+        for (int rot = 0; rot < 3; rot++) {
+            int diff = countDiff(current, B);
+            minDiff = min(minDiff, diff);
+            current = rotateCW(current);
+        }
+        current = reflect(A);
+    }
+
+    cout << minDiff << "\\n";
+    return 0;
+}
+'''
+        }
+    ],
+
+    # 문제 31964: 반품 회수 (그리디)
+    "baekjoon_31964": [
+        {
+            "language": "python",
+            "code": '''# 백준 31964: 반품 회수
+# 그리디 문제 - 가장 먼 집까지 갔다가 돌아오는 시간 + 대기 시간 고려
+import sys
+input = sys.stdin.readline
+
+n = int(input())
+X = list(map(int, input().split()))  # 각 집의 위치
+T = list(map(int, input().split()))  # 각 집이 물건을 내놓는 시각
+
+# 가장 먼 집의 위치
+max_x = max(X)
+
+# 트럭이 가장 먼 집까지 갔다가 돌아오는 기본 시간
+base_time = 2 * max_x
+
+# 각 집에서 물건을 회수할 수 있는 최소 시간 계산
+# 트럭이 위치 x에 도착하는 시간은 x (왕복 경로 중 가는 길)
+# 또는 2*max_x - x (돌아오는 길)
+max_wait = 0
+for i in range(n):
+    x, t = X[i], T[i]
+    # 가는 길에 회수하려면 시간 x에 도착, t까지 기다려야 함
+    # 돌아오는 길에 회수하려면 시간 2*max_x - x에 도착
+    # 어느 경로든 물건이 나와 있어야 함
+
+    # 가는 길에 도착하는 시간: x
+    # 물건이 나오는 시간: t
+    # 가는 길에 회수하려면 x >= t 이거나, 기다려야 함
+    if x < t:
+        # 가는 길에 도착했을 때 물건이 안 나옴
+        # t까지 기다렸다가 다시 출발해야 하므로 추가 시간 필요
+        wait = t - x
+        max_wait = max(max_wait, wait)
+
+print(base_time + max_wait)
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 31964: 반품 회수
+// 그리디 문제
+import java.io.*;
+import java.util.*;
 
 public class Main {
     public static void main(String[] args) throws IOException {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        String cards = br.readLine().trim();
 
-        boolean[][] suits = new boolean[4][14];
-        boolean error = false;
+        int n = Integer.parseInt(br.readLine().trim());
 
-        for (int i = 0; i < cards.length(); i += 3) {
-            int suitIdx = getSuitIdx(cards.charAt(i));
-            int num = Integer.parseInt(cards.substring(i + 1, i + 3));
-
-            if (suits[suitIdx][num]) {
-                error = true;
-                break;
-            }
-            suits[suitIdx][num] = true;
+        StringTokenizer st = new StringTokenizer(br.readLine());
+        long[] X = new long[n];
+        for (int i = 0; i < n; i++) {
+            X[i] = Long.parseLong(st.nextToken());
         }
 
-        if (error) {
-            System.out.println("GRESKA");
-        } else {
-            StringBuilder sb = new StringBuilder();
-            for (int s = 0; s < 4; s++) {
-                int count = 0;
-                for (int j = 1; j <= 13; j++) {
-                    if (!suits[s][j]) count++;
-                }
-                if (s > 0) sb.append(" ");
-                sb.append(count);
-            }
-            System.out.println(sb);
+        st = new StringTokenizer(br.readLine());
+        long[] T = new long[n];
+        for (int i = 0; i < n; i++) {
+            T[i] = Long.parseLong(st.nextToken());
         }
-    }
 
-    static int getSuitIdx(char c) {
-        if (c == 'P') return 0;
-        if (c == 'K') return 1;
-        if (c == 'H') return 2;
-        return 3;
+        // 가장 먼 집의 위치
+        long maxX = 0;
+        for (int i = 0; i < n; i++) {
+            maxX = Math.max(maxX, X[i]);
+        }
+
+        // 기본 왕복 시간
+        long baseTime = 2 * maxX;
+
+        // 추가 대기 시간 계산
+        long maxWait = 0;
+        for (int i = 0; i < n; i++) {
+            long x = X[i], t = T[i];
+            if (x < t) {
+                // 가는 길에 도착했을 때 물건이 안 나옴
+                long wait = t - x;
+                maxWait = Math.max(maxWait, wait);
+            }
+        }
+
+        System.out.println(baseTime + maxWait);
     }
 }
-"""
-            },
-            {
-                "language": "cpp",
-                "code": """#include <iostream>
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 31964: 반품 회수
+// 그리디 문제
+#include <iostream>
+#include <algorithm>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    int n;
+    cin >> n;
+
+    long long X[n], T[n];
+    for (int i = 0; i < n; i++) {
+        cin >> X[i];
+    }
+    for (int i = 0; i < n; i++) {
+        cin >> T[i];
+    }
+
+    // 가장 먼 집의 위치
+    long long maxX = 0;
+    for (int i = 0; i < n; i++) {
+        maxX = max(maxX, X[i]);
+    }
+
+    // 기본 왕복 시간
+    long long baseTime = 2 * maxX;
+
+    // 추가 대기 시간 계산
+    long long maxWait = 0;
+    for (int i = 0; i < n; i++) {
+        long long x = X[i], t = T[i];
+        if (x < t) {
+            // 가는 길에 도착했을 때 물건이 안 나옴
+            long long wait = t - x;
+            maxWait = max(maxWait, wait);
+        }
+    }
+
+    cout << baseTime + maxWait << "\\n";
+    return 0;
+}
+'''
+        }
+    ],
+
+    # 문제 9291: 스도쿠 채점 (구현)
+    "baekjoon_9291": [
+        {
+            "language": "python",
+            "code": '''# 백준 9291: 스도쿠 채점
+# 구현 문제 - 스도쿠 유효성 검사
+import sys
+input = sys.stdin.readline
+
+def is_valid_sudoku(grid):
+    """스도쿠가 유효한지 검사"""
+    # 각 행 검사
+    for row in grid:
+        if len(set(row)) != 9:
+            return False
+
+    # 각 열 검사
+    for col in range(9):
+        column = [grid[row][col] for row in range(9)]
+        if len(set(column)) != 9:
+            return False
+
+    # 각 3x3 박스 검사
+    for box_row in range(3):
+        for box_col in range(3):
+            box = []
+            for i in range(3):
+                for j in range(3):
+                    box.append(grid[box_row * 3 + i][box_col * 3 + j])
+            if len(set(box)) != 9:
+                return False
+
+    return True
+
+T = int(input())
+for case in range(1, T + 1):
+    grid = []
+    for _ in range(9):
+        row = list(map(int, input().split()))
+        grid.append(row)
+
+    # 테스트 케이스 사이 빈 줄 처리
+    if case < T:
+        try:
+            input()  # 빈 줄 읽기
+        except:
+            pass
+
+    result = "CORRECT" if is_valid_sudoku(grid) else "INCORRECT"
+    print(f"Case {case}: {result}")
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 9291: 스도쿠 채점
+// 구현 문제 - 스도쿠 유효성 검사
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        StringBuilder sb = new StringBuilder();
+
+        int T = Integer.parseInt(br.readLine().trim());
+
+        for (int tc = 1; tc <= T; tc++) {
+            int[][] grid = new int[9][9];
+
+            for (int i = 0; i < 9; i++) {
+                StringTokenizer st = new StringTokenizer(br.readLine());
+                for (int j = 0; j < 9; j++) {
+                    grid[i][j] = Integer.parseInt(st.nextToken());
+                }
+            }
+
+            // 테스트 케이스 사이 빈 줄 처리
+            if (tc < T) {
+                br.readLine();
+            }
+
+            boolean valid = isValidSudoku(grid);
+            sb.append("Case ").append(tc).append(": ");
+            sb.append(valid ? "CORRECT" : "INCORRECT").append("\\n");
+        }
+
+        System.out.print(sb);
+    }
+
+    static boolean isValidSudoku(int[][] grid) {
+        // 각 행 검사
+        for (int i = 0; i < 9; i++) {
+            Set<Integer> set = new HashSet<>();
+            for (int j = 0; j < 9; j++) {
+                set.add(grid[i][j]);
+            }
+            if (set.size() != 9) return false;
+        }
+
+        // 각 열 검사
+        for (int j = 0; j < 9; j++) {
+            Set<Integer> set = new HashSet<>();
+            for (int i = 0; i < 9; i++) {
+                set.add(grid[i][j]);
+            }
+            if (set.size() != 9) return false;
+        }
+
+        // 각 3x3 박스 검사
+        for (int boxRow = 0; boxRow < 3; boxRow++) {
+            for (int boxCol = 0; boxCol < 3; boxCol++) {
+                Set<Integer> set = new HashSet<>();
+                for (int i = 0; i < 3; i++) {
+                    for (int j = 0; j < 3; j++) {
+                        set.add(grid[boxRow * 3 + i][boxCol * 3 + j]);
+                    }
+                }
+                if (set.size() != 9) return false;
+            }
+        }
+
+        return true;
+    }
+}
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 9291: 스도쿠 채점
+// 구현 문제 - 스도쿠 유효성 검사
+#include <iostream>
+#include <set>
 #include <string>
 using namespace std;
 
-int getSuitIdx(char c) {
-    if (c == 'P') return 0;
-    if (c == 'K') return 1;
-    if (c == 'H') return 2;
-    return 3;
+int grid[9][9];
+
+bool isValidSudoku() {
+    // 각 행 검사
+    for (int i = 0; i < 9; i++) {
+        set<int> s;
+        for (int j = 0; j < 9; j++) {
+            s.insert(grid[i][j]);
+        }
+        if (s.size() != 9) return false;
+    }
+
+    // 각 열 검사
+    for (int j = 0; j < 9; j++) {
+        set<int> s;
+        for (int i = 0; i < 9; i++) {
+            s.insert(grid[i][j]);
+        }
+        if (s.size() != 9) return false;
+    }
+
+    // 각 3x3 박스 검사
+    for (int boxRow = 0; boxRow < 3; boxRow++) {
+        for (int boxCol = 0; boxCol < 3; boxCol++) {
+            set<int> s;
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
+                    s.insert(grid[boxRow * 3 + i][boxCol * 3 + j]);
+                }
+            }
+            if (s.size() != 9) return false;
+        }
+    }
+
+    return true;
 }
 
 int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
 
-    string cards;
-    cin >> cards;
+    int T;
+    cin >> T;
 
-    bool suits[4][14] = {false};
-    bool error = false;
-
-    for (int i = 0; i < (int)cards.length(); i += 3) {
-        int suitIdx = getSuitIdx(cards[i]);
-        int num = stoi(cards.substr(i + 1, 2));
-
-        if (suits[suitIdx][num]) {
-            error = true;
-            break;
-        }
-        suits[suitIdx][num] = true;
-    }
-
-    if (error) {
-        cout << "GRESKA" << endl;
-    } else {
-        for (int s = 0; s < 4; s++) {
-            int count = 0;
-            for (int j = 1; j <= 13; j++) {
-                if (!suits[s][j]) count++;
+    for (int tc = 1; tc <= T; tc++) {
+        for (int i = 0; i < 9; i++) {
+            for (int j = 0; j < 9; j++) {
+                cin >> grid[i][j];
             }
-            if (s > 0) cout << " ";
-            cout << count;
         }
-        cout << endl;
+
+        bool valid = isValidSudoku();
+        cout << "Case " << tc << ": " << (valid ? "CORRECT" : "INCORRECT") << "\\n";
     }
+
     return 0;
 }
-"""
+'''
+        }
+    ],
+
+    # 문제 9421: 소수상근수 (에라토스테네스의 체 + 상근수 판정)
+    "baekjoon_9421": [
+        {
+            "language": "python",
+            "code": '''# 백준 9421: 소수상근수
+# 에라토스테네스의 체 + 상근수 판정
+import sys
+
+def sieve(n):
+    """에라토스테네스의 체로 소수 찾기"""
+    is_prime = [True] * (n + 1)
+    is_prime[0] = is_prime[1] = False
+    for i in range(2, int(n ** 0.5) + 1):
+        if is_prime[i]:
+            for j in range(i * i, n + 1, i):
+                is_prime[j] = False
+    return [i for i in range(2, n + 1) if is_prime[i]]
+
+def is_happy(n):
+    """상근수(행복수) 판정"""
+    seen = set()
+    while n != 1 and n not in seen:
+        seen.add(n)
+        n = sum(int(d) ** 2 for d in str(n))
+    return n == 1
+
+n = int(input())
+
+# 소수 찾기
+primes = sieve(n)
+
+# 소수상근수 찾기
+result = [p for p in primes if is_happy(p)]
+
+# 출력
+for num in result:
+    print(num)
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 9421: 소수상근수
+// 에라토스테네스의 체 + 상근수 판정
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        StringBuilder sb = new StringBuilder();
+
+        int n = Integer.parseInt(br.readLine().trim());
+
+        // 에라토스테네스의 체
+        boolean[] isPrime = new boolean[n + 1];
+        Arrays.fill(isPrime, true);
+        isPrime[0] = isPrime[1] = false;
+
+        for (int i = 2; i * i <= n; i++) {
+            if (isPrime[i]) {
+                for (int j = i * i; j <= n; j += i) {
+                    isPrime[j] = false;
+                }
             }
-        ]
+        }
+
+        // 소수상근수 찾기
+        for (int i = 2; i <= n; i++) {
+            if (isPrime[i] && isHappy(i)) {
+                sb.append(i).append("\\n");
+            }
+        }
+
+        System.out.print(sb);
+    }
+
+    // 상근수(행복수) 판정
+    static boolean isHappy(int num) {
+        Set<Integer> seen = new HashSet<>();
+        while (num != 1 && !seen.contains(num)) {
+            seen.add(num);
+            int sum = 0;
+            while (num > 0) {
+                int d = num % 10;
+                sum += d * d;
+                num /= 10;
+            }
+            num = sum;
+        }
+        return num == 1;
     }
 }
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 9421: 소수상근수
+// 에라토스테네스의 체 + 상근수 판정
+#include <iostream>
+#include <vector>
+#include <set>
+using namespace std;
 
-if __name__ == "__main__":
-    # Read existing file
-    with open('/Users/admin/Downloads/codefill/data/baekjoon/baek_medium.json', 'r') as f:
-        data = json.load(f)
+// 상근수(행복수) 판정
+bool isHappy(int num) {
+    set<int> seen;
+    while (num != 1 && seen.find(num) == seen.end()) {
+        seen.insert(num);
+        int sum = 0;
+        while (num > 0) {
+            int d = num % 10;
+            sum += d * d;
+            num /= 10;
+        }
+        num = sum;
+    }
+    return num == 1;
+}
 
-    # Add new solutions
-    data.update(new_solutions)
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
 
-    # Save
-    with open('/Users/admin/Downloads/codefill/data/baekjoon/baek_medium.json', 'w') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    int n;
+    cin >> n;
 
-    print(f"Added {len(new_solutions)} new solutions")
-    print("New problem IDs:", list(new_solutions.keys()))
+    // 에라토스테네스의 체
+    vector<bool> isPrime(n + 1, true);
+    isPrime[0] = isPrime[1] = false;
+
+    for (int i = 2; i * i <= n; i++) {
+        if (isPrime[i]) {
+            for (int j = i * i; j <= n; j += i) {
+                isPrime[j] = false;
+            }
+        }
+    }
+
+    // 소수상근수 출력
+    for (int i = 2; i <= n; i++) {
+        if (isPrime[i] && isHappy(i)) {
+            cout << i << "\\n";
+        }
+    }
+
+    return 0;
+}
+'''
+        }
+    ],
+
+    # 문제 30445: 행복 점수 (문자열, 구현)
+    "baekjoon_30445": [
+        {
+            "language": "python",
+            "code": '''# 백준 30445: 행복 점수
+# 문자열 처리 문제
+# HAPPY에 있는 글자: H, A, P, Y (행복한 글자)
+# SAD에 있는 글자: S, A, D (우울한 글자)
+
+message = input().strip()
+
+happy_chars = set('HAPPY')  # H, A, P, Y
+sad_chars = set('SAD')  # S, A, D
+
+ph = 0  # 행복 점수
+pg = 0  # 우울 점수
+
+for c in message:
+    upper_c = c.upper()
+    if upper_c in happy_chars:
+        ph += 1
+    if upper_c in sad_chars:
+        pg += 1
+
+# 행복 지수 계산
+if ph == 0 and pg == 0:
+    h = 0.5
+else:
+    h = ph / (ph + pg)
+
+# 백분율로 변환하여 출력 (소수점 둘째 자리까지)
+print(f"{h * 100:.2f}")
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 30445: 행복 점수
+// 문자열 처리 문제
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        String message = br.readLine();
+
+        Set<Character> happyChars = new HashSet<>(Arrays.asList('H', 'A', 'P', 'Y'));
+        Set<Character> sadChars = new HashSet<>(Arrays.asList('S', 'A', 'D'));
+
+        int ph = 0;  // 행복 점수
+        int pg = 0;  // 우울 점수
+
+        for (char c : message.toCharArray()) {
+            char upperC = Character.toUpperCase(c);
+            if (happyChars.contains(upperC)) {
+                ph++;
+            }
+            if (sadChars.contains(upperC)) {
+                pg++;
+            }
+        }
+
+        // 행복 지수 계산
+        double h;
+        if (ph == 0 && pg == 0) {
+            h = 0.5;
+        } else {
+            h = (double) ph / (ph + pg);
+        }
+
+        // 백분율로 변환하여 출력
+        System.out.printf("%.2f%n", h * 100);
+    }
+}
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 30445: 행복 점수
+// 문자열 처리 문제
+#include <iostream>
+#include <string>
+#include <set>
+#include <iomanip>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    string message;
+    getline(cin, message);
+
+    set<char> happyChars = {'H', 'A', 'P', 'Y'};
+    set<char> sadChars = {'S', 'A', 'D'};
+
+    int ph = 0;  // 행복 점수
+    int pg = 0;  // 우울 점수
+
+    for (char c : message) {
+        char upperC = toupper(c);
+        if (happyChars.count(upperC)) {
+            ph++;
+        }
+        if (sadChars.count(upperC)) {
+            pg++;
+        }
+    }
+
+    // 행복 지수 계산
+    double h;
+    if (ph == 0 && pg == 0) {
+        h = 0.5;
+    } else {
+        h = (double) ph / (ph + pg);
+    }
+
+    // 백분율로 변환하여 출력
+    cout << fixed << setprecision(2) << h * 100 << "\\n";
+    return 0;
+}
+'''
+        }
+    ],
+
+    # 문제 31287: 장난감 강아지 (시뮬레이션)
+    "baekjoon_31287": [
+        {
+            "language": "python",
+            "code": '''# 백준 31287: 장난감 강아지
+# 시뮬레이션 문제
+# S를 K번 반복한 문자열 T를 따라 이동하며 원점 재방문 확인
+import sys
+input = sys.stdin.readline
+
+N, K = map(int, input().split())
+S = input().strip()
+
+# 방향 매핑
+dx = {'U': 0, 'D': 0, 'L': -1, 'R': 1}
+dy = {'U': 1, 'D': -1, 'L': 0, 'R': 0}
+
+# S를 한 번 실행했을 때의 좌표 변화량
+total_dx = sum(dx[c] for c in S)
+total_dy = sum(dy[c] for c in S)
+
+# S를 한 번 실행하면서 원점 방문 확인
+x, y = 0, 0
+visited_first = False
+for c in S:
+    x += dx[c]
+    y += dy[c]
+    if x == 0 and y == 0:
+        visited_first = True
+        break
+
+if visited_first:
+    print("YES")
+elif total_dx == 0 and total_dy == 0:
+    # S를 한 번 실행하면 원점으로 돌아옴
+    # 따라서 K >= 2이면 S를 2번 실행해도 원점 방문 가능
+    print("YES")
+else:
+    # S를 두 번 실행하면서 원점 방문 확인 (K >= 2인 경우)
+    if K >= 2:
+        # 두 번째 S 실행
+        for c in S:
+            x += dx[c]
+            y += dy[c]
+            if x == 0 and y == 0:
+                visited_first = True
+                break
+
+    if visited_first:
+        print("YES")
+    else:
+        print("NO")
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 31287: 장난감 강아지
+// 시뮬레이션 문제
+import java.io.*;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        StringTokenizer st = new StringTokenizer(br.readLine());
+
+        int N = Integer.parseInt(st.nextToken());
+        int K = Integer.parseInt(st.nextToken());
+        String S = br.readLine().trim();
+
+        // S를 한 번 실행하면서 원점 방문 확인
+        int x = 0, y = 0;
+        boolean visited = false;
+
+        for (char c : S.toCharArray()) {
+            if (c == 'U') y++;
+            else if (c == 'D') y--;
+            else if (c == 'L') x--;
+            else if (c == 'R') x++;
+
+            if (x == 0 && y == 0) {
+                visited = true;
+                break;
+            }
+        }
+
+        if (visited) {
+            System.out.println("YES");
+            return;
+        }
+
+        // S를 한 번 실행 후 위치
+        int totalDx = x;
+        int totalDy = y;
+
+        if (totalDx == 0 && totalDy == 0) {
+            // S를 한 번 실행하면 원점으로 돌아옴
+            System.out.println("YES");
+            return;
+        }
+
+        // S를 두 번째 실행하면서 원점 방문 확인
+        if (K >= 2) {
+            for (char c : S.toCharArray()) {
+                if (c == 'U') y++;
+                else if (c == 'D') y--;
+                else if (c == 'L') x--;
+                else if (c == 'R') x++;
+
+                if (x == 0 && y == 0) {
+                    visited = true;
+                    break;
+                }
+            }
+        }
+
+        System.out.println(visited ? "YES" : "NO");
+    }
+}
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 31287: 장난감 강아지
+// 시뮬레이션 문제
+#include <iostream>
+#include <string>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    int N, K;
+    string S;
+    cin >> N >> K >> S;
+
+    // S를 한 번 실행하면서 원점 방문 확인
+    int x = 0, y = 0;
+    bool visited = false;
+
+    for (char c : S) {
+        if (c == 'U') y++;
+        else if (c == 'D') y--;
+        else if (c == 'L') x--;
+        else if (c == 'R') x++;
+
+        if (x == 0 && y == 0) {
+            visited = true;
+            break;
+        }
+    }
+
+    if (visited) {
+        cout << "YES\\n";
+        return 0;
+    }
+
+    // S를 한 번 실행 후 위치
+    int totalDx = x;
+    int totalDy = y;
+
+    if (totalDx == 0 && totalDy == 0) {
+        // S를 한 번 실행하면 원점으로 돌아옴
+        cout << "YES\\n";
+        return 0;
+    }
+
+    // S를 두 번째 실행하면서 원점 방문 확인
+    if (K >= 2) {
+        for (char c : S) {
+            if (c == 'U') y++;
+            else if (c == 'D') y--;
+            else if (c == 'L') x--;
+            else if (c == 'R') x++;
+
+            if (x == 0 && y == 0) {
+                visited = true;
+                break;
+            }
+        }
+    }
+
+    cout << (visited ? "YES" : "NO") << "\\n";
+    return 0;
+}
+'''
+        }
+    ],
+
+    # 문제 22351: 수학은 체육과목 입니다 3 (문자열, 브루트포스)
+    "baekjoon_22351": [
+        {
+            "language": "python",
+            "code": '''# 백준 22351: 수학은 체육과목 입니다 3
+# 문자열 브루트포스 문제
+# A부터 B까지 이어 붙인 문자열이 입력과 일치하는지 확인
+
+S = input().strip()
+
+def check(a, b):
+    """a부터 b까지 이어붙인 문자열이 S와 일치하는지 확인"""
+    result = ''.join(str(i) for i in range(a, b + 1))
+    return result == S
+
+# A는 1~999, B는 A~999
+result = None
+for a in range(1, 1000):
+    # a로 시작하는 문자열인지 먼저 확인
+    if not S.startswith(str(a)):
+        continue
+
+    # a부터 시작해서 b까지 이어붙여보기
+    current = str(a)
+    b = a
+    while len(current) < len(S) and b < 999:
+        b += 1
+        current += str(b)
+
+    if current == S:
+        if result is None or a < result[0]:
+            result = (a, b)
+
+if result:
+    print(result[0], result[1])
+'''
+        },
+        {
+            "language": "java",
+            "code": '''// 백준 22351: 수학은 체육과목 입니다 3
+// 문자열 브루트포스 문제
+import java.io.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        String S = br.readLine().trim();
+
+        int resultA = -1, resultB = -1;
+
+        // A는 1~999
+        for (int a = 1; a <= 999; a++) {
+            String aStr = String.valueOf(a);
+
+            // S가 a로 시작하는지 확인
+            if (!S.startsWith(aStr)) {
+                continue;
+            }
+
+            // a부터 시작해서 b까지 이어붙여보기
+            StringBuilder current = new StringBuilder(aStr);
+            int b = a;
+
+            while (current.length() < S.length() && b < 999) {
+                b++;
+                current.append(b);
+            }
+
+            if (current.toString().equals(S)) {
+                if (resultA == -1 || a < resultA) {
+                    resultA = a;
+                    resultB = b;
+                }
+            }
+        }
+
+        System.out.println(resultA + " " + resultB);
+    }
+}
+'''
+        },
+        {
+            "language": "cpp",
+            "code": '''// 백준 22351: 수학은 체육과목 입니다 3
+// 문자열 브루트포스 문제
+#include <iostream>
+#include <string>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    string S;
+    cin >> S;
+
+    int resultA = -1, resultB = -1;
+
+    // A는 1~999
+    for (int a = 1; a <= 999; a++) {
+        string aStr = to_string(a);
+
+        // S가 a로 시작하는지 확인
+        if (S.substr(0, aStr.length()) != aStr) {
+            continue;
+        }
+
+        // a부터 시작해서 b까지 이어붙여보기
+        string current = aStr;
+        int b = a;
+
+        while (current.length() < S.length() && b < 999) {
+            b++;
+            current += to_string(b);
+        }
+
+        if (current == S) {
+            if (resultA == -1 || a < resultA) {
+                resultA = a;
+                resultB = b;
+            }
+        }
+    }
+
+    cout << resultA << " " << resultB << "\\n";
+    return 0;
+}
+'''
+        }
+    ],
+}
+
+def main():
+    # JSON 파일 읽기 (파일 잠금 사용)
+    with open(JSON_PATH, 'r+', encoding='utf-8') as f:
+        # 배타적 파일 잠금 획득
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+
+        try:
+            data = json.load(f)
+
+            updated_count = 0
+            for problem in data:
+                problem_id = problem.get('id')
+
+                # 빈 solutions 배열인 경우에만 처리
+                if problem_id in SOLUTIONS:
+                    if not problem.get('solutions') or len(problem.get('solutions', [])) == 0:
+                        problem['solutions'] = SOLUTIONS[problem_id]
+                        updated_count += 1
+                        print(f"Updated: {problem_id}")
+                    else:
+                        print(f"Skipped (already has solutions): {problem_id}")
+
+            # 파일 처음으로 이동하고 내용 덮어쓰기
+            f.seek(0)
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.truncate()
+
+            print(f"\nTotal updated: {updated_count} problems")
+
+        finally:
+            # 파일 잠금 해제
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+if __name__ == '__main__':
+    main()

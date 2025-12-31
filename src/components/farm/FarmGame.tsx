@@ -4,39 +4,65 @@
  * FarmGame - Phaser 게임 React 래퍼 컴포넌트
  * 스타듀밸리 스타일 농장 게임
  * 고정 크기 960x640 (30x20 타일)
+ *
+ * 통합 배치 시스템 리팩토링 - 레거시 Props 제거됨
  */
 
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { FarmScene } from './scenes/FarmScene';
-import type { FarmSlot, FarmItem, InventoryItem } from '@/lib/api/farm';
+import type { PlacementChanges } from './scenes/UnifiedPlacementManager';
+import type { InventoryItem, PlacedItem, ItemMetadata } from '@/lib/api/farm';
+
+// 외부에서 접근 가능한 메서드
+export interface FarmGameHandle {
+  hasPlacementChanges: () => boolean;
+  getPlacementChanges: () => PlacementChanges;
+  revertPlacementChanges: () => void;
+  confirmPlacementChanges: () => void;
+  placeItemLocally: (itemCode: string, tileX: number, tileY: number, metadata: ItemMetadata) => string | null;
+}
 
 // 게임 크기 상수 (config와 동일)
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 640;
 
 interface FarmGameProps {
-  farmSlots: FarmSlot[];
   farmSize: number;
   gold: number;
-  items: FarmItem[];
   inventory: InventoryItem[];
-  selectedSeed: string;
-  onPlant: (slot: number, cropCode: string) => Promise<void>;
-  onHarvest: (slot: number) => Promise<void>;
+  selectedSeed: string | null;
   onNotify: (message: string, type: 'success' | 'error') => void;
+  // 배치 시스템 상태
+  placementMode: boolean;
+  selectedPlacementItem?: string | null;
+  // 통합 배치 시스템
+  placedItems: PlacedItem[];
+  // 로컬 배치 콜백 (API 호출 없이 프론트에서 처리, 모드 전환 시 저장)
+  onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => string | null;
+  onMoveItem: (itemId: string, tileX: number, tileY: number) => Promise<void>;
+  onRemoveItem: (itemId: string) => Promise<void>;
+  onPlantOnPlot: (plotId: string, cropCode: string) => Promise<void>;
+  onHarvestFromPlot: (plotId: string) => Promise<{ gold: number; xp: number } | null>;
+  // 콜백으로 핸들 전달 (dynamic import 호환용)
+  onReady?: (handle: FarmGameHandle) => void;
 }
 
 export function FarmGame({
-  farmSlots,
   farmSize,
   gold,
-  items,
   inventory,
   selectedSeed,
-  onPlant,
-  onHarvest,
   onNotify,
+  placementMode,
+  selectedPlacementItem,
+  placedItems,
+  onPlaceItemLocally,
+  onMoveItem,
+  onRemoveItem,
+  onPlantOnPlot,
+  onHarvestFromPlot,
+  onReady,
 }: FarmGameProps) {
   const gameContainerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
@@ -58,7 +84,7 @@ export function FarmGame({
       pixelArt: true,
       scene: FarmScene,
       scale: {
-        mode: Phaser.Scale.FIT,  // 비율 유지하며 맞춤
+        mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
       input: {
@@ -80,25 +106,30 @@ export function FarmGame({
         scene.scene.restart({
           gold,
           farmSize,
-          farmSlots: farmSlots.map(slot => {
-            // 작물별 성장 시간 찾기
-            const cropItem = slot.cropCode
-              ? items.find(item => item.code === slot.cropCode)
-              : null;
-            return {
-              slot: slot.slot,
-              cropCode: slot.cropCode,
-              plantedAt: slot.plantedAt,
-              stage: slot.stage,
-              growTimeSeconds: cropItem?.growTimeSeconds,
-            };
-          }),
           inventory,
-          onPlant,
-          onHarvest,
           onNotify,
           selectedSeed,
+          placementMode,
+          deleteMode: false, // 우클릭 삭제로 변경됨
+          selectedPlacementItem,
+          placedItems,
+          onPlaceItemLocally, // 로컬 배치 (API 호출 없음)
+          onMoveItem,
+          onRemoveItem,
+          onPlantOnPlot,
+          onHarvestFromPlot,
         });
+
+        // 핸들 생성 및 콜백 호출
+        const handle: FarmGameHandle = {
+          hasPlacementChanges: () => sceneRef.current?.hasPlacementChanges() ?? false,
+          getPlacementChanges: () => sceneRef.current?.getPlacementChanges() ?? { moved: [], deleted: [], created: [] },
+          revertPlacementChanges: () => sceneRef.current?.revertPlacementChanges(),
+          confirmPlacementChanges: () => sceneRef.current?.confirmPlacementChanges(),
+          placeItemLocally: (itemCode, tileX, tileY, metadata) =>
+            sceneRef.current?.placeItemLocally(itemCode, tileX, tileY, metadata) ?? null,
+        };
+        onReady?.(handle);
       }
       setIsLoaded(true);
     });
@@ -115,32 +146,30 @@ export function FarmGame({
   // 농장 데이터 변경 시 씬 업데이트
   useEffect(() => {
     if (sceneRef.current && isLoaded) {
-      sceneRef.current.updateFarmData(
-        farmSlots.map(slot => {
-          // 작물별 성장 시간 찾기
-          const cropItem = slot.cropCode
-            ? items.find(item => item.code === slot.cropCode)
-            : null;
-          return {
-            slot: slot.slot,
-            cropCode: slot.cropCode,
-            plantedAt: slot.plantedAt,
-            stage: slot.stage,
-            growTimeSeconds: cropItem?.growTimeSeconds,
-          };
-        }),
-        selectedSeed,
-        inventory
-      );
+      sceneRef.current.updateFarmData(selectedSeed, inventory);
     }
-  }, [farmSlots, selectedSeed, inventory, items, isLoaded]);
+  }, [selectedSeed, inventory, isLoaded]);
 
-  // 농장 크기 변경 시 씬 업데이트
+  // 배치 모드 변경 시 씬 업데이트
   useEffect(() => {
     if (sceneRef.current && isLoaded) {
-      sceneRef.current.updateFarmSize(farmSize);
+      sceneRef.current.updatePlacementMode(placementMode, false);
     }
-  }, [farmSize, isLoaded]);
+  }, [placementMode, isLoaded]);
+
+  // 배치 아이템 변경 시 씬 업데이트
+  useEffect(() => {
+    if (sceneRef.current && isLoaded && placedItems) {
+      sceneRef.current.updatePlacedItems(placedItems);
+    }
+  }, [placedItems, isLoaded]);
+
+  // 선택된 배치 아이템 변경 시 씬 업데이트
+  useEffect(() => {
+    if (sceneRef.current && isLoaded) {
+      sceneRef.current.updateSelectedPlacementItem(selectedPlacementItem || null);
+    }
+  }, [selectedPlacementItem, isLoaded]);
 
   return (
     <div

@@ -27,6 +27,7 @@ export interface ChatAgentRequest {
   message: string;
   conversation_history: ChatAgentMessage[];
   user_context?: Record<string, unknown>;
+  collected_info?: CollectedInfo;  // 이전 턴에서 수집된 정보 (상태 유지용)
 }
 
 export interface ChatAgentResponse {
@@ -253,6 +254,94 @@ export interface IntentChatResponse {
 }
 
 // ============================================================
+// Chat V2 Types (3-Stage LangGraph)
+// ============================================================
+
+export interface ChatV2Request {
+  message: string;
+  conversation_history: ChatAgentMessage[];
+  user_context?: Record<string, unknown>;
+  session_state?: {
+    collected_info?: CollectedInfo;
+    search_results?: BaseProblemInfo[];
+    selected_problem?: BaseProblemInfo;
+    stage?: string;
+  };
+}
+
+// 문제 유형별 생성 결과
+export interface GeneratedBlankData {
+  problem_type: 'blank';
+  original_id: string;
+  language: string;
+  code_template: string;
+  answers: string[];
+  title: string;
+  description: string;
+  difficulty: string;
+  topics: string[];
+  input_output?: {
+    inputs: string[];
+    outputs: string[];
+  };
+}
+
+export interface GeneratedPuzzleData {
+  problem_type: 'puzzle';
+  original_id: string;
+  language: string;
+  fixed_start?: string;
+  fixed_end?: string;
+  blocks: Array<{ id: number; code: string }>;
+  title: string;
+  description: string;
+  difficulty: string;
+  topics: string[];
+  input_output?: {
+    inputs: string[];
+    outputs: string[];
+  };
+}
+
+export interface GeneratedGuidedData {
+  problem_type: 'guided';
+  original_id: string;
+  language: string;
+  concepts: string[];
+  flow: string[];
+  checkpoints: string[];
+  final_code: string;
+  title: string;
+  description: string;
+  difficulty: string;
+  topics: string[];
+  input_output?: {
+    inputs: string[];
+    outputs: string[];
+  };
+}
+
+export type GeneratedProblemData = GeneratedBlankData | GeneratedPuzzleData | GeneratedGuidedData;
+
+export interface ChatV2Response {
+  stage: string;  // intent, discovery, solving, problem_generation
+  message: string;
+  intent_info?: IntentInfo;
+  collected_info?: CollectedInfo;
+  search_results?: BaseProblemInfo[];
+  selected_problem?: BaseProblemInfo;
+  generated_problem?: BaseProblemInfo;
+  // 문제 유형별 생성 결과 (blank/puzzle/guided)
+  generated_problem_data?: GeneratedProblemData;
+  action_trigger?: string;
+  action_data?: Record<string, unknown>;
+  next_stage?: string;
+  is_complete: boolean;
+  hint_level?: number;
+  is_correct?: boolean;
+}
+
+// ============================================================
 // API Client
 // ============================================================
 
@@ -274,6 +363,33 @@ export const agentApi = {
     const response = await api.post<IntentChatResponse>('/agent/chat/intent', request, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
+  },
+
+  /**
+   * Chat Agent V2 - 3단계 LangGraph 구조
+   * Intent → Discovery → Solving 단계별 처리
+   */
+  async chatV2(request: ChatV2Request): Promise<ChatV2Response> {
+    const response = await api.post<ChatV2Response>('/agent/chat/v2', request, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Chat Agent - 정식 LangGraph 기반 채팅
+   * 3단계 그래프: Intent → Discovery → Solving
+   */
+  async chatMain(request: ChatV2Request): Promise<ChatV2Response> {
+    const response = await api.post<ChatV2Response>('/agent/chat', request, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * @deprecated Use chatMain instead
+   */
+  async chatV3(request: ChatV2Request): Promise<ChatV2Response> {
+    return this.chatMain(request);
   },
 
   /**

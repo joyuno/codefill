@@ -150,6 +150,26 @@ class IntentClassifier:
                 next_action="offer_alternatives"
             )
 
+        # 감사 표현 (rule-based)
+        thanks_patterns = ["고마워", "감사", "땡큐", "thanks", "thank you", "최고", "완벽"]
+        if any(pattern in message_lower for pattern in thanks_patterns) and len(message) < 30:
+            return IntentResult(
+                intent=IntentType.THANKS,
+                confidence=0.95,
+                method="rule",
+                next_action="acknowledge_thanks"
+            )
+
+        # 인사 표현 (rule-based)
+        greeting_patterns = ["안녕", "하이", "hello", "hi", "반가워"]
+        if any(pattern in message_lower for pattern in greeting_patterns) and len(message) < 20:
+            return IntentResult(
+                intent=IntentType.GREETING,
+                confidence=0.95,
+                method="rule",
+                next_action="greet_user"
+            )
+
         # 코드 블록 + "비슷한" 키워드
         if has_code_block and any(kw in message_lower for kw in ["비슷한", "유사한", "이 코드"]):
             return IntentResult(

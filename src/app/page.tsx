@@ -8,7 +8,6 @@ import { SidebarProfile } from '@/components/dashboard/SidebarProfile';
 import { StatCards } from '@/components/dashboard/StatCards';
 import { GrassHeatmap } from '@/components/dashboard/GrassHeatmap';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { 
   Play, 
   Sparkles, 
@@ -74,10 +73,6 @@ function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             className="text-center space-y-6"
           >
-            <Badge variant="secondary" className="px-4 py-1.5">
-              🎉 새로운 학습 방식
-            </Badge>
-            
             <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
               코딩은 <span className="text-primary">채우는 것</span>부터
               <br />

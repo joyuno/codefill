@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from .config import get_settings
-from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws
+from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement
 from .intents import intent_classifier
 
 @asynccontextmanager
@@ -64,6 +64,8 @@ app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 app.include_router(execute.router, prefix="/execute", tags=["Code Execution"])
 app.include_router(translate.router, prefix="/translate", tags=["Translation"])
 app.include_router(farm.router, prefix="/farm", tags=["Farm"])
+app.include_router(shop.router, prefix="/shop", tags=["Shop"])
+app.include_router(placement.router, prefix="/placement", tags=["Placement"])
 app.include_router(agent.router, prefix="/agent", tags=["AI Agents"])
 app.include_router(solutions.router, prefix="/solutions", tags=["Solutions"])
 app.include_router(friends.router, prefix="/friends", tags=["Friends"])

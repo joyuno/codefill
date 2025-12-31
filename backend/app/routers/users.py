@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from typing import Optional, List
 from uuid import UUID
+import uuid as uuid_module
 
 from ..database import get_db
 from ..config import get_settings
@@ -22,6 +23,13 @@ from ..models.user import (
     ChangeNicknameResponse,
     DateActivityDetail,
     SolvedProblem,
+    # Public Profile Models
+    PublicProfile,
+    PublicStats,
+    PublicFarm,
+    PublicFarmCharacter,
+    PublicFarmSlot,
+    PublicBadge,
 )
 
 router = APIRouter()
@@ -641,3 +649,510 @@ async def change_nickname(
         message="닉네임이 변경되었습니다.",
         next_change_available_at=next_available
     )
+
+
+# =====================================================
+# Avatar Upload Endpoint
+# =====================================================
+
+ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+def ensure_avatars_bucket_exists(db):
+    """Ensure the 'avatars' bucket exists in Supabase Storage."""
+    try:
+        # Try to list buckets and check if 'avatars' exists
+        buckets = db.storage.list_buckets()
+        bucket_names = [b.name for b in buckets]
+
+        if "avatars" not in bucket_names:
+            # Create the bucket with public access
+            db.storage.create_bucket("avatars", options={"public": True})
+    except Exception as e:
+        # If bucket already exists or other non-critical error, continue
+        # The actual upload will fail if there's a real problem
+        pass
+
+
+@router.post("/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """Upload user avatar image to Supabase Storage."""
+    try:
+        # Validate file type
+        if file.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="지원하지 않는 이미지 형식입니다. (JPEG, PNG, GIF, WebP만 가능)"
+            )
+
+        # Read file content
+        content = await file.read()
+
+        # Validate file size
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="파일 크기가 5MB를 초과합니다."
+            )
+
+        # Ensure bucket exists
+        ensure_avatars_bucket_exists(db)
+
+        # Generate unique filename
+        file_ext = file.filename.split(".")[-1] if file.filename else "jpg"
+        unique_filename = f"{user_id}/{uuid_module.uuid4()}.{file_ext}"
+
+        # Upload to Supabase Storage
+        storage = db.storage.from_("avatars")
+
+        # Delete old avatar if exists
+        try:
+            old_files = storage.list(path=f"{user_id}")
+            for old_file in old_files:
+                storage.remove([f"{user_id}/{old_file['name']}"])
+        except Exception:
+            pass  # Ignore errors when deleting old files
+
+        # Upload new avatar
+        result = storage.upload(
+            path=unique_filename,
+            file=content,
+            file_options={"content-type": file.content_type}
+        )
+
+        # Get public URL
+        public_url = storage.get_public_url(unique_filename)
+
+        # Update user's avatar_url in database
+        db.table("users").update({"avatar_url": public_url}).eq("id", str(user_id)).execute()
+
+        return {
+            "success": True,
+            "avatar_url": public_url,
+            "message": "프로필 이미지가 변경되었습니다."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"이미지 업로드에 실패했습니다: {str(e)}"
+        )
+
+
+@router.delete("/me/avatar")
+async def delete_avatar(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """Delete user avatar image."""
+    try:
+        # Delete from storage
+        storage = db.storage.from_("avatars")
+        try:
+            files = storage.list(path=f"{user_id}")
+            for file in files:
+                storage.remove([f"{user_id}/{file['name']}"])
+        except Exception:
+            pass
+
+        # Clear avatar_url in database
+        db.table("users").update({"avatar_url": None}).eq("id", str(user_id)).execute()
+
+        return {
+            "success": True,
+            "message": "프로필 이미지가 삭제되었습니다."
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"이미지 삭제에 실패했습니다: {str(e)}"
+        )
+
+
+# =====================================================
+# Public Profile Endpoints (공개 프로필 - 인증 불필요)
+# =====================================================
+
+def get_user_by_username(db, username: str):
+    """Helper: username으로 사용자 조회."""
+    result = db.table("users")\
+        .select("*")\
+        .eq("name", username)\
+        .is_("deleted_at", "null")\
+        .single()\
+        .execute()
+    return result.data
+
+
+@router.get("/{username}/public-profile", response_model=PublicProfile)
+async def get_public_profile(
+    username: str,
+    db=Depends(get_db)
+):
+    """Get public profile by username. No auth required."""
+    try:
+        user = get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+
+        user_id = user["id"]
+
+        # Get stats
+        stats_result = db.table("user_stats")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .single()\
+            .execute()
+        stats_data = stats_result.data or {}
+
+        level = stats_data.get("level", 1)
+        total_xp = stats_data.get("total_xp", 0)
+
+        return PublicProfile(
+            id=str(user_id),
+            username=user.get("name", "User"),
+            avatarUrl=user.get("avatar_url"),  # 실제 이미지 URL (없으면 None)
+            avatarColor="hsl(142, 71%, 45%)",  # 폴백 배경색
+            level=level,
+            currentXP=calculate_current_xp(total_xp, level),
+            requiredXP=calculate_required_xp(level),
+            totalXP=total_xp,
+            solvedCount=stats_data.get("problems_solved", 0),
+            streak=stats_data.get("current_streak", 0),
+            joinedAt=user.get("created_at", ""),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get public profile: {str(e)}"
+        )
+
+
+@router.get("/{username}/public-stats", response_model=PublicStats)
+async def get_public_stats(
+    username: str,
+    db=Depends(get_db)
+):
+    """Get public stats by username. No auth required."""
+    try:
+        user = get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+
+        user_id = user["id"]
+
+        # Get stats
+        stats_result = db.table("user_stats")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .single()\
+            .execute()
+        stats_data = stats_result.data or {}
+
+        # Get solved counts by difficulty
+        difficulty_result = db.table("attempts")\
+            .select("base_problems(difficulty)")\
+            .eq("user_id", str(user_id))\
+            .eq("is_correct", True)\
+            .execute()
+
+        solved_by_difficulty = {"easy": 0, "medium": 0, "hard": 0}
+        for attempt in (difficulty_result.data or []):
+            base_problem = attempt.get("base_problems", {}) or {}
+            difficulty = base_problem.get("difficulty", "medium")
+            if difficulty in solved_by_difficulty:
+                solved_by_difficulty[difficulty] += 1
+
+        return PublicStats(
+            totalSolved=stats_data.get("problems_solved", 0),
+            solvedByDifficulty=solved_by_difficulty,
+            solvedByType={
+                "blank": stats_data.get("blank_solved", 0),
+                "puzzle": stats_data.get("bug_solved", 0) + stats_data.get("output_solved", 0),
+            },
+            currentStreak=stats_data.get("current_streak", 0),
+            maxStreak=stats_data.get("longest_streak", 0),
+            totalXP=stats_data.get("total_xp", 0),
+            level=stats_data.get("level", 1),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get public stats: {str(e)}"
+        )
+
+
+@router.get("/{username}/public-activity", response_model=List[DailyActivity])
+async def get_public_activity(
+    username: str,
+    days: int = 365,
+    db=Depends(get_db)
+):
+    """Get public activity (grass) by username. No auth required."""
+    try:
+        from datetime import datetime, timedelta
+
+        user = get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+
+        user_id = user["id"]
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        result = db.table("daily_activity")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .gte("activity_date", start_date)\
+            .order("activity_date", desc=False)\
+            .execute()
+
+        return [DailyActivity(
+            date=item["activity_date"],
+            problems_solved=item.get("problems_solved", 0),
+            xp_earned=item.get("xp_earned", 0),
+            time_spent=item.get("time_spent", 0),
+            blank_count=item.get("blank_count", 0),
+            bug_count=item.get("bug_count", 0),
+            output_count=item.get("output_count", 0),
+            refactor_count=item.get("refactor_count", 0),
+        ) for item in (result.data or [])]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get public activity: {str(e)}"
+        )
+
+
+@router.get("/{username}/public-farm", response_model=PublicFarm)
+async def get_public_farm(
+    username: str,
+    db=Depends(get_db)
+):
+    """Get public farm minimap data by username. No auth required."""
+    try:
+        user = get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+
+        user_id = user["id"]
+
+        # Get farm data
+        farm_result = db.table("farms")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .single()\
+            .execute()
+
+        if not farm_result.data:
+            return PublicFarm(hasCharacter=False)
+
+        farm = farm_result.data
+        character_data = farm.get("character_data")
+
+        if not character_data:
+            return PublicFarm(hasCharacter=False)
+
+        # Get farm slots
+        slots_result = db.table("farm_slots")\
+            .select("*")\
+            .eq("farm_id", farm["id"])\
+            .order("slot_index")\
+            .execute()
+
+        slots = []
+        for slot in (slots_result.data or []):
+            slots.append(PublicFarmSlot(
+                slotIndex=slot.get("slot_index", 0),
+                cropType=slot.get("crop_type"),
+                stage=slot.get("growth_stage", 0),
+                isReady=slot.get("growth_stage", 0) >= 4,
+            ))
+
+        return PublicFarm(
+            hasCharacter=True,
+            character=PublicFarmCharacter(
+                name=character_data.get("name", "농부"),
+                hair=character_data.get("hair", "short"),
+                hairColor=character_data.get("hairColor", "#8B4513"),
+                face=character_data.get("face", "smile"),
+                outfit=character_data.get("outfit", "overalls"),
+                outfitColor=character_data.get("outfitColor", "#8B4513"),
+                farmName=character_data.get("farmName", "나의 농장"),
+            ),
+            farmLevel=farm.get("farm_level", 1),
+            gold=farm.get("gold", 0),
+            slots=slots,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get public farm: {str(e)}"
+        )
+
+
+@router.get("/{username}/public-activity/{date}", response_model=DateActivityDetail)
+async def get_public_activity_by_date(
+    username: str,
+    date: str,
+    db=Depends(get_db)
+):
+    """Get public activity detail for a specific date. No auth required."""
+    try:
+        from datetime import datetime
+
+        # Validate date format
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD."
+            )
+
+        user = get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+
+        user_id = user["id"]
+
+        # Get daily activity summary
+        daily_result = db.table("daily_activity")\
+            .select("*")\
+            .eq("user_id", str(user_id))\
+            .eq("activity_date", date)\
+            .single()\
+            .execute()
+
+        daily_data = daily_result.data or {}
+        problems_solved = daily_data.get("problems_solved", 0)
+        xp_earned = daily_data.get("xp_earned", 0)
+
+        # Get solved problems on that date
+        start_of_day = f"{date}T00:00:00"
+        end_of_day = f"{date}T23:59:59"
+
+        attempts_result = db.table("attempts")\
+            .select("id, problem_type, xp_earned, submitted_at, base_problems(id, name, difficulty)")\
+            .eq("user_id", str(user_id))\
+            .eq("is_correct", True)\
+            .gte("submitted_at", start_of_day)\
+            .lte("submitted_at", end_of_day)\
+            .order("submitted_at", desc=True)\
+            .execute()
+
+        problems = []
+        for attempt in (attempts_result.data or []):
+            base_problem = attempt.get("base_problems", {}) or {}
+            problems.append(SolvedProblem(
+                id=str(base_problem.get("id", attempt["id"])),
+                name=base_problem.get("name", "Unknown Problem"),
+                difficulty=base_problem.get("difficulty", "medium"),
+                problem_type=attempt.get("problem_type", "blank") or "blank",
+                xp_earned=attempt.get("xp_earned", 0) or 0,
+                solved_at=attempt["submitted_at"],
+            ))
+
+        return DateActivityDetail(
+            date=date,
+            problems_solved=problems_solved if problems_solved else len(problems),
+            xp_earned=xp_earned if xp_earned else sum(p.xp_earned for p in problems),
+            problems=problems,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get public activity for date: {str(e)}"
+        )
+
+
+@router.get("/{username}/public-badges", response_model=List[PublicBadge])
+async def get_public_badges(
+    username: str,
+    db=Depends(get_db)
+):
+    """Get public badges by username. No auth required."""
+    try:
+        user = get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+
+        user_id = user["id"]
+
+        result = db.table("user_badges")\
+            .select("*, badges(*)")\
+            .eq("user_id", str(user_id))\
+            .execute()
+
+        badges = []
+        icon_map = {
+            "first_problem": "🎯",
+            "streak_7": "🔥",
+            "streak_30": "🏆",
+            "streak_100": "👑",
+            "problems_50": "💪",
+            "problems_100": "🎖️",
+            "level_10": "⭐",
+            "level_50": "🌟",
+        }
+
+        for badge_entry in (result.data or []):
+            badge_data = badge_entry.get("badges", {}) or {}
+            code = badge_data.get("code", "")
+            badges.append(PublicBadge(
+                id=str(badge_data.get("id", "")),
+                name=badge_data.get("name", "Badge"),
+                icon=icon_map.get(code, "🏅"),
+                description=badge_data.get("description", ""),
+                rarity=badge_data.get("rarity", "common"),
+            ))
+
+        return badges
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get public badges: {str(e)}"
+        )
