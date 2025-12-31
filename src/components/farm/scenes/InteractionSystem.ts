@@ -1,35 +1,37 @@
 /**
  * InteractionSystem - 상호작용 시스템
- * 슬롯 하이라이트, 액션 인디케이터, 근처 슬롯 감지
+ * 슬롯 하이라이트, 액션 인디케이터, 근처 밭(farm_plot) 감지
+ *
+ * 통합 배치 시스템 리팩토링 - CropManager 제거됨
  */
 
 import Phaser from 'phaser';
 import { TILE_SIZE, INTERACTION_RADIUS } from '../config/gameConfig';
 import { DEPTH } from '../config/depthConfig';
-import { CropManager, FarmSlotData } from './CropManager';
 import { PlayerController } from './PlayerController';
+import type { UnifiedPlacementManager } from './UnifiedPlacementManager';
+import type { PlacedItem } from '@/lib/api/farm';
 
 // 상호작용 타입
 export type InteractionType = 'plant' | 'harvest' | 'none';
 
 export class InteractionSystem {
   private scene: Phaser.Scene;
-  private cropManager: CropManager;
   private playerController: PlayerController;
+  private unifiedPlacementManager: UnifiedPlacementManager | null = null;
 
   private highlightGraphics: Phaser.GameObjects.Graphics;
   private indicatorText: Phaser.GameObjects.Text;
 
-  private currentSlot: number = -1;
+  private currentPlot: PlacedItem | null = null;
   private currentInteraction: InteractionType = 'none';
 
   constructor(
     scene: Phaser.Scene,
-    cropManager: CropManager,
+    _cropManager: unknown, // 레거시 파라미터 (null)
     playerController: PlayerController
   ) {
     this.scene = scene;
-    this.cropManager = cropManager;
     this.playerController = playerController;
 
     // 하이라이트 그래픽스
@@ -50,23 +52,31 @@ export class InteractionSystem {
   }
 
   /**
+   * UnifiedPlacementManager 설정
+   */
+  setUnifiedPlacementManager(manager: UnifiedPlacementManager): void {
+    this.unifiedPlacementManager = manager;
+  }
+
+  /**
    * 매 프레임 업데이트
    * @param selectedSeed 현재 선택된 씨앗 코드
    */
   update(selectedSeed: string | null): void {
-    const playerPos = this.playerController.getPosition();
-    const nearestSlot = this.findNearestSlot(playerPos.x, playerPos.y);
+    if (!this.unifiedPlacementManager) return;
 
-    if (nearestSlot !== this.currentSlot) {
-      this.currentSlot = nearestSlot;
+    const playerPos = this.playerController.getPosition();
+    const nearestPlot = this.findNearestFarmPlot(playerPos.x, playerPos.y);
+
+    if (nearestPlot?.id !== this.currentPlot?.id) {
+      this.currentPlot = nearestPlot;
       this.updateHighlight();
     }
 
     // 상호작용 타입 결정
-    if (nearestSlot >= 0) {
-      const slotData = this.cropManager.getSlotData(nearestSlot);
-      this.currentInteraction = this.determineInteraction(slotData, selectedSeed);
-      this.updateIndicator(nearestSlot);
+    if (nearestPlot) {
+      this.currentInteraction = this.determineInteraction(nearestPlot, selectedSeed);
+      this.updateIndicator(nearestPlot);
     } else {
       this.currentInteraction = 'none';
       this.hideIndicator();
@@ -74,44 +84,50 @@ export class InteractionSystem {
   }
 
   /**
-   * 가장 가까운 슬롯 찾기
+   * 가장 가까운 farm_plot 찾기
    */
-  private findNearestSlot(playerX: number, playerY: number): number {
-    const farmSize = this.cropManager.getFarmSize();
-    let nearestSlot = -1;
+  private findNearestFarmPlot(playerX: number, playerY: number): PlacedItem | null {
+    if (!this.unifiedPlacementManager) return null;
+
+    const farmPlots = this.unifiedPlacementManager.getFarmPlots();
+    let nearestPlot: PlacedItem | null = null;
     let nearestDistance = INTERACTION_RADIUS;
 
-    for (let i = 0; i < farmSize * farmSize; i++) {
-      const slotPos = this.cropManager.getSlotPosition(i);
+    for (const plot of farmPlots) {
+      // 타일 중심 좌표 계산
+      const plotCenterX = plot.tileX * TILE_SIZE + TILE_SIZE / 2;
+      const plotCenterY = plot.tileY * TILE_SIZE + TILE_SIZE / 2;
+
       const distance = Phaser.Math.Distance.Between(
         playerX, playerY,
-        slotPos.x, slotPos.y
+        plotCenterX, plotCenterY
       );
 
       if (distance < nearestDistance) {
         nearestDistance = distance;
-        nearestSlot = i;
+        nearestPlot = plot;
       }
     }
 
-    return nearestSlot;
+    return nearestPlot;
   }
 
   /**
    * 상호작용 타입 결정
    */
   private determineInteraction(
-    slotData: FarmSlotData | undefined,
+    plot: PlacedItem,
     selectedSeed: string | null
   ): InteractionType {
-    // 작물이 있고 수확 가능한 경우
-    if (slotData?.cropCode && slotData.stage >= 4) {
+    const plotData = plot.data as { cropCode?: string; stage?: number } | undefined;
+
+    // 작물이 있고 수확 가능한 경우 (stage >= 4)
+    if (plotData?.cropCode && (plotData.stage || 0) >= 4) {
       return 'harvest';
     }
 
-    // 빈 슬롯이고 씨앗이 선택된 경우
-    // slotData가 없어도 빈 슬롯으로 취급 (테스트/확장용)
-    if ((!slotData || !slotData.cropCode) && selectedSeed) {
+    // 빈 밭이고 씨앗이 선택된 경우
+    if (!plotData?.cropCode && selectedSeed) {
       return 'plant';
     }
 
@@ -124,15 +140,16 @@ export class InteractionSystem {
   private updateHighlight(): void {
     this.highlightGraphics.clear();
 
-    if (this.currentSlot < 0) return;
+    if (!this.currentPlot) return;
 
-    const pos = this.cropManager.getSlotPosition(this.currentSlot);
+    const centerX = this.currentPlot.tileX * TILE_SIZE + TILE_SIZE / 2;
+    const centerY = this.currentPlot.tileY * TILE_SIZE + TILE_SIZE / 2;
 
     // 노란색 테두리 하이라이트
     this.highlightGraphics.lineStyle(3, 0xffff00, 0.8);
     this.highlightGraphics.strokeRect(
-      pos.x - TILE_SIZE / 2,
-      pos.y - TILE_SIZE / 2,
+      centerX - TILE_SIZE / 2,
+      centerY - TILE_SIZE / 2,
       TILE_SIZE,
       TILE_SIZE
     );
@@ -140,8 +157,8 @@ export class InteractionSystem {
     // 안쪽 약한 하이라이트
     this.highlightGraphics.fillStyle(0xffff00, 0.15);
     this.highlightGraphics.fillRect(
-      pos.x - TILE_SIZE / 2,
-      pos.y - TILE_SIZE / 2,
+      centerX - TILE_SIZE / 2,
+      centerY - TILE_SIZE / 2,
       TILE_SIZE,
       TILE_SIZE
     );
@@ -150,13 +167,14 @@ export class InteractionSystem {
   /**
    * 인디케이터 텍스트 업데이트
    */
-  private updateIndicator(slotIndex: number): void {
+  private updateIndicator(plot: PlacedItem): void {
     if (this.currentInteraction === 'none') {
       this.hideIndicator();
       return;
     }
 
-    const pos = this.cropManager.getSlotPosition(slotIndex);
+    const centerX = plot.tileX * TILE_SIZE + TILE_SIZE / 2;
+    const centerY = plot.tileY * TILE_SIZE + TILE_SIZE / 2;
     let text = '';
 
     switch (this.currentInteraction) {
@@ -169,7 +187,7 @@ export class InteractionSystem {
     }
 
     this.indicatorText.setText(text);
-    this.indicatorText.setPosition(pos.x, pos.y - TILE_SIZE / 2 - 5);
+    this.indicatorText.setPosition(centerX, centerY - TILE_SIZE / 2 - 5);
     this.indicatorText.setVisible(true);
   }
 
@@ -181,10 +199,10 @@ export class InteractionSystem {
   }
 
   /**
-   * 현재 상호작용 가능한 슬롯 번호
+   * 현재 상호작용 가능한 밭 (farm_plot)
    */
-  getCurrentSlot(): number {
-    return this.currentSlot;
+  getCurrentPlot(): PlacedItem | null {
+    return this.currentPlot;
   }
 
   /**
@@ -198,7 +216,7 @@ export class InteractionSystem {
    * 상호작용 가능 여부
    */
   canInteract(): boolean {
-    return this.currentSlot >= 0 && this.currentInteraction !== 'none';
+    return this.currentPlot !== null && this.currentInteraction !== 'none';
   }
 
   /**

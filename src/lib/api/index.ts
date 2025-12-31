@@ -41,11 +41,19 @@ export {
 } from './chat';
 export {
   usersApi,
+  publicProfileApi,
   type UserProfile,
   type UserStats,
   type ActivityData,
   type DateActivityDetail,
   type SolvedProblem,
+  // Public Profile Types
+  type PublicProfile,
+  type PublicStats,
+  type PublicFarm,
+  type PublicFarmCharacter,
+  type PublicFarmSlot,
+  type PublicBadge,
 } from './users';
 export {
   agentApi,
@@ -80,18 +88,28 @@ export {
 } from './translate';
 export {
   farmApi,
+  // Core Types
   type CharacterData,
-  type FarmSlot,
   type UserFarm,
   type FarmItem,
   type InventoryItem,
-  type PlantResponse,
-  type HarvestResponse,
   type BuyResponse,
   type SellResponse,
   type ExpansionOption,
   type ExpansionCostsResponse,
   type ExpandResponse,
+  // 통합 배치 시스템 (Unified Placement System)
+  type UnifiedShopItem,
+  type PlacedItem,
+  type ItemMetadata,
+  type FarmPlotData,
+  type UnifiedShopResponse,
+  type PlacedItemsResponse,
+  type PlaceItemResponse,
+  type MoveItemResponse,
+  type RemoveItemResponse,
+  type PlantCropResponse,
+  type HarvestCropResponse,
 } from './farm';
 export {
   solutionsApi,

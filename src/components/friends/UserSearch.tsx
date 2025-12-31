@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Search, UserPlus, Loader2, Check, Clock, SearchX } from 'lucide-react';
+import { Search, UserPlus, Loader2, Check, Clock, SearchX, ExternalLink } from 'lucide-react';
 import { friendsApi, type UserSearchResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 
 interface UserSearchProps {
   onRequestSent: () => void;
@@ -132,7 +133,16 @@ export function UserSearch({ onRequestSent }: UserSearchProps) {
               </Avatar>
 
               <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{user.name || '익명'}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-medium truncate">{user.name || '익명'}</p>
+                  <Link
+                    href={`/u/${encodeURIComponent(user.name || '')}`}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
               </div>
 
               <div>

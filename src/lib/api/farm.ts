@@ -1,5 +1,6 @@
 /**
  * Farm API Functions
+ * 통합 배치 시스템 리팩토링 - 레거시 타입/함수 제거됨
  */
 
 import { api } from './client';
@@ -18,13 +19,6 @@ export interface CharacterData {
   farmName: string;
 }
 
-export interface FarmSlot {
-  slot: number;
-  cropCode: string | null;
-  plantedAt: string | null;
-  stage: 0 | 1 | 2 | 3 | 4;
-}
-
 export interface UserFarm {
   id: string;
   userId: string;
@@ -33,8 +27,7 @@ export interface UserFarm {
   farmUnlocked: boolean;
   farmLevel: number;
   gold: number;
-  farmSize: number;
-  farmSlots: FarmSlot[];
+  farmSize: number;  // 배치 가능 영역 크기
   houseLevel: number;
   createdAt: string;
   updatedAt: string;
@@ -57,21 +50,6 @@ export interface FarmItem {
 export interface InventoryItem {
   itemCode: string;
   quantity: number;
-}
-
-export interface PlantResponse {
-  success: boolean;
-  message: string;
-  farmSlots: FarmSlot[];
-  inventory: InventoryItem[];
-}
-
-export interface HarvestResponse {
-  success: boolean;
-  message: string;
-  rewards: { gold: number; xp: number };
-  farmSlots: FarmSlot[];
-  gold: number;
 }
 
 export interface BuyResponse {
@@ -112,6 +90,104 @@ export interface ExpandResponse {
 }
 
 // =====================================================
+// 레거시 Customization/ShopItem 타입 제거됨
+// 통합 배치 시스템 타입(UnifiedShopItem, PlacedItem) 사용
+// =====================================================
+
+// =====================================================
+// Unified Placement System Types (신규)
+// =====================================================
+
+export interface ItemMetadata {
+  sprite: string;
+  width: number;
+  height: number;
+  depth: number;
+  canMove: boolean;
+  canDelete: boolean;
+  anchor?: number[];
+  collision?: boolean;
+}
+
+export interface UnifiedShopItem {
+  code: string;
+  name: string;
+  nameKo: string;
+  category: 'building' | 'tree' | 'decoration' | 'fence' | 'farm';
+  rarity: string;
+  price: number;
+  maxQuantity: number | null;
+  owned: number;      // 인벤토리 보유량
+  placed: number;     // 배치된 개수
+  canBuy: boolean;
+  metadata: ItemMetadata;
+}
+
+export interface PlacedItem {
+  id: string;
+  itemCode: string;
+  tileX: number;
+  tileY: number;
+  rotation: number;
+  data: Record<string, unknown>;
+  metadata: ItemMetadata;
+  placedAt?: string;
+}
+
+export interface FarmPlotData {
+  cropCode?: string;
+  plantedAt?: string;
+  stage?: number;
+}
+
+export interface UnifiedShopResponse {
+  success: boolean;
+  items: UnifiedShopItem[];
+  gold: number;
+}
+
+export interface PlacedItemsResponse {
+  success: boolean;
+  items: PlacedItem[];
+}
+
+export interface PlaceItemResponse {
+  success: boolean;
+  message: string;
+  item: PlacedItem;
+  inventory: Record<string, number>;
+}
+
+export interface MoveItemResponse {
+  success: boolean;
+  message: string;
+  item: PlacedItem;
+}
+
+export interface RemoveItemResponse {
+  success: boolean;
+  message: string;
+  inventory: Record<string, number>;
+}
+
+export interface PlantCropResponse {
+  success: boolean;
+  message: string;
+  item: PlacedItem;
+  inventory: Record<string, number>;
+}
+
+export interface HarvestCropResponse {
+  success: boolean;
+  message: string;
+  rewards: { gold: number; xp: number };
+  item: PlacedItem;
+  gold: number;
+}
+
+// 레거시 ShopResponse, PurchaseResponse, CustomizationResponse 제거됨
+
+// =====================================================
 // Backend Response Types (for transformation)
 // =====================================================
 
@@ -132,12 +208,6 @@ interface BackendUserFarm {
   farm_level: number;
   gold: number;
   farm_size: number;
-  farm_slots: Array<{
-    slot: number;
-    crop_code: string | null;
-    planted_at: string | null;
-    stage: number;
-  }>;
   house_level: number;
   created_at: string;
   updated_at: string;
@@ -160,31 +230,6 @@ interface BackendFarmItem {
 interface BackendInventoryItem {
   item_code: string;
   quantity: number;
-}
-
-interface BackendPlantResponse {
-  success: boolean;
-  message: string;
-  farm_slots: Array<{
-    slot: number;
-    crop_code: string | null;
-    planted_at: string | null;
-    stage: number;
-  }>;
-  inventory: BackendInventoryItem[];
-}
-
-interface BackendHarvestResponse {
-  success: boolean;
-  message: string;
-  rewards: { gold: number; xp: number };
-  farm_slots: Array<{
-    slot: number;
-    crop_code: string | null;
-    planted_at: string | null;
-    stage: number;
-  }>;
-  gold: number;
 }
 
 interface BackendBuyResponse {
@@ -240,12 +285,6 @@ function transformUserFarm(data: BackendUserFarm): UserFarm {
     farmLevel: data.farm_level,
     gold: data.gold,
     farmSize: data.farm_size,
-    farmSlots: data.farm_slots.map((slot) => ({
-      slot: slot.slot,
-      cropCode: slot.crop_code,
-      plantedAt: slot.planted_at,
-      stage: slot.stage as 0 | 1 | 2 | 3 | 4,
-    })),
     houseLevel: data.house_level,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -273,17 +312,6 @@ function transformInventoryItem(data: BackendInventoryItem): InventoryItem {
     itemCode: data.item_code,
     quantity: data.quantity,
   };
-}
-
-function transformFarmSlots(
-  slots: Array<{ slot: number; crop_code: string | null; planted_at: string | null; stage: number }>
-): FarmSlot[] {
-  return slots.map((slot) => ({
-    slot: slot.slot,
-    cropCode: slot.crop_code,
-    plantedAt: slot.planted_at,
-    stage: slot.stage as 0 | 1 | 2 | 3 | 4,
-  }));
 }
 
 // =====================================================
@@ -343,39 +371,8 @@ export const farmApi = {
     return (response.data?.items || []).map(transformInventoryItem);
   },
 
-  /**
-   * Plant a seed
-   */
-  async plant(slot: number, cropCode: string): Promise<PlantResponse> {
-    const response = await api.post<BackendPlantResponse>('/farm/plant', {
-      slot,
-      crop_code: cropCode,
-    });
-    if (response.error) throw new Error(response.error.message);
-    const data = response.data!;
-    return {
-      success: data.success,
-      message: data.message,
-      farmSlots: transformFarmSlots(data.farm_slots),
-      inventory: data.inventory.map(transformInventoryItem),
-    };
-  },
-
-  /**
-   * Harvest a crop
-   */
-  async harvest(slot: number): Promise<HarvestResponse> {
-    const response = await api.post<BackendHarvestResponse>('/farm/harvest', { slot });
-    if (response.error) throw new Error(response.error.message);
-    const data = response.data!;
-    return {
-      success: data.success,
-      message: data.message,
-      rewards: data.rewards,
-      farmSlots: transformFarmSlots(data.farm_slots),
-      gold: data.gold,
-    };
-  },
+  // 레거시 plant(), harvest() 함수 제거됨
+  // 통합 배치 시스템의 plantOnPlot(), harvestFromPlot() 사용
 
   /**
    * Buy seeds
@@ -450,5 +447,97 @@ export const farmApi = {
       farmSize: data.farm_size,
       gold: data.gold,
     };
+  },
+
+  // 레거시 getCustomization, updateCustomization, getBuildingShop, purchaseBuilding 함수 제거됨
+  // 통합 배치 시스템(placement API, shop API) 사용
+
+  // =====================================================
+  // Unified Placement System API
+  // =====================================================
+
+  /**
+   * Get unified shop items
+   */
+  async getUnifiedShopItems(category?: string): Promise<UnifiedShopResponse> {
+    const url = category ? `/shop/items?category=${category}` : '/shop/items';
+    const response = await api.get<UnifiedShopResponse>(url);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Buy item from unified shop
+   */
+  async buyShopItem(itemCode: string, quantity: number = 1): Promise<{ success: boolean; message: string; gold: number; inventory: Record<string, number> }> {
+    const response = await api.post<{ success: boolean; message: string; gold: number; inventory: Record<string, number> }>('/shop/buy', {
+      item_code: itemCode,
+      quantity,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get all placed items
+   */
+  async getPlacedItems(): Promise<PlacedItem[]> {
+    const response = await api.get<PlacedItemsResponse>('/placement/items');
+    if (response.error) throw new Error(response.error.message);
+    return response.data!.items;
+  },
+
+  /**
+   * Place an item from inventory
+   */
+  async placeItem(itemCode: string, tileX: number, tileY: number): Promise<PlaceItemResponse> {
+    const response = await api.post<PlaceItemResponse>('/placement/place', {
+      item_code: itemCode,
+      tile_x: tileX,
+      tile_y: tileY,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Move a placed item
+   */
+  async moveItem(itemId: string, tileX: number, tileY: number): Promise<MoveItemResponse> {
+    const response = await api.patch<MoveItemResponse>(`/placement/items/${itemId}`, {
+      tile_x: tileX,
+      tile_y: tileY,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Remove a placed item (return to inventory)
+   */
+  async removeItem(itemId: string): Promise<RemoveItemResponse> {
+    const response = await api.delete<RemoveItemResponse>(`/placement/items/${itemId}`);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Plant a crop on a farm plot
+   */
+  async plantOnPlot(plotId: string, cropCode: string): Promise<PlantCropResponse> {
+    const response = await api.post<PlantCropResponse>(`/placement/items/${plotId}/plant`, {
+      crop_code: cropCode,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Harvest a crop from a farm plot
+   */
+  async harvestFromPlot(plotId: string): Promise<HarvestCropResponse> {
+    const response = await api.post<HarvestCropResponse>(`/placement/items/${plotId}/harvest`, {});
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
   },
 };

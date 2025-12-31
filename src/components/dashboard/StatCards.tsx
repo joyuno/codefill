@@ -6,22 +6,46 @@ import { Trophy, Award, Flame, Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { usersApi } from '@/lib/api/users';
 
-export function StatCards() {
-  const { profile, isLoading, isAuthenticated } = useAuth();
+interface StatCardsProps {
+  /** 조회할 사용자 username. 없으면 본인 */
+  username?: string;
+  /** 부모에서 전달받은 공개 프로필 데이터 (있으면 API 호출 안 함) */
+  publicData?: {
+    solvedCount: number;
+    streak: number;
+    badgeCount: number;
+  };
+}
+
+export function StatCards({ username, publicData }: StatCardsProps) {
+  const { profile, isLoading: authLoading, isAuthenticated } = useAuth();
   const [badgeCount, setBadgeCount] = useState(0);
 
-  // 뱃지 수 가져오기
+  // 본인 프로필인지 확인
+  const isOwnProfile = !username;
+
+  // 본인 프로필일 때만 뱃지 수 가져오기
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isOwnProfile && isAuthenticated) {
       usersApi.getBadges()
         .then(badges => setBadgeCount(badges.length))
         .catch(() => setBadgeCount(0));
     }
-  }, [isAuthenticated]);
+  }, [isOwnProfile, isAuthenticated]);
 
-  // 실제 DB 데이터 사용
-  const solvedCount = profile?.solved_count ?? 0;
-  const streak = profile?.streak ?? 0;
+  // 로딩 상태 (본인 프로필일 때만)
+  const isLoading = isOwnProfile ? authLoading : false;
+
+  // 표시할 데이터
+  const solvedCount = isOwnProfile
+    ? (profile?.solved_count ?? 0)
+    : (publicData?.solvedCount ?? 0);
+  const streak = isOwnProfile
+    ? (profile?.streak ?? 0)
+    : (publicData?.streak ?? 0);
+  const displayBadgeCount = isOwnProfile
+    ? badgeCount
+    : (publicData?.badgeCount ?? 0);
 
   const stats = [
     {
@@ -32,7 +56,7 @@ export function StatCards() {
     },
     {
       label: '획득 뱃지',
-      value: isLoading ? '-' : badgeCount,
+      value: isLoading ? '-' : displayBadgeCount,
       icon: Award,
       color: 'text-yellow-500'
     },

@@ -5,8 +5,10 @@ import { Header } from '@/components/layout/Header';
 import { TopNav } from '@/components/layout/TopNav';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User, Lock, CreditCard, Trash2, Check, X, Eye, EyeOff, BarChart3, AlertCircle } from 'lucide-react';
+import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User, Lock, CreditCard, Trash2, Check, X, Eye, EyeOff, BarChart3, AlertCircle, Camera } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { BadgeIcon } from '@/components/ui/badge-icon';
+import { AvatarEditModal } from '@/components/mypage/AvatarEditModal';
 import { usersApi, authApi, type UserProfile, type UserStats } from '@/lib/api';
 import type { Badge as BadgeType, RecentActivity } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,6 +46,9 @@ export default function MyPagePage() {
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  // Avatar modal state
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -144,6 +149,22 @@ export default function MyPagePage() {
       setPasswordError(error instanceof Error ? error.message : '비밀번호 변경에 실패했습니다');
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  // 프로필 이미지 저장 핸들러 (모달에서 크롭 후 호출)
+  const handleAvatarSave = async (file: File) => {
+    const result = await usersApi.uploadAvatar(file);
+    if (result.success && profile) {
+      setProfile({ ...profile, avatarColor: result.avatar_url });
+    }
+  };
+
+  // 프로필 이미지 삭제 핸들러
+  const handleAvatarDelete = async () => {
+    await usersApi.deleteAvatar();
+    if (profile) {
+      setProfile({ ...profile, avatarColor: 'hsl(142, 71%, 45%)' });
     }
   };
 
@@ -256,12 +277,29 @@ export default function MyPagePage() {
           className="rounded-xl border border-border bg-card p-6"
         >
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-            <div
-              className="flex h-20 w-20 items-center justify-center rounded-full text-3xl font-bold text-primary-foreground"
-              style={{ backgroundColor: displayUser.avatarColor || 'hsl(142, 71%, 45%)' }}
+            {/* Avatar with edit button */}
+            <button
+              type="button"
+              onClick={() => setAvatarModalOpen(true)}
+              className="relative group cursor-pointer"
             >
-              {displayUser.username.slice(0, 2).toUpperCase()}
-            </div>
+              <Avatar className="h-20 w-20">
+                <AvatarImage
+                  src={displayUser.avatarColor?.startsWith('http') ? displayUser.avatarColor : undefined}
+                  alt={displayUser.username}
+                />
+                <AvatarFallback
+                  className="text-3xl font-bold text-primary-foreground"
+                  style={{ backgroundColor: displayUser.avatarColor?.startsWith('hsl') ? displayUser.avatarColor : 'hsl(142, 71%, 45%)' }}
+                >
+                  {displayUser.username.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              {/* Hover overlay */}
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Camera className="h-6 w-6 text-white" />
+              </div>
+            </button>
             <div className="flex-1">
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold">{displayUser.username}</h1>
@@ -739,6 +777,17 @@ export default function MyPagePage() {
             </motion.div>
           </div>
         )}
+
+        {/* Avatar Edit Modal */}
+        <AvatarEditModal
+          open={avatarModalOpen}
+          onOpenChange={setAvatarModalOpen}
+          currentAvatarUrl={displayUser.avatarColor?.startsWith('http') ? displayUser.avatarColor : undefined}
+          username={displayUser.username}
+          avatarColor={displayUser.avatarColor || 'hsl(142, 71%, 45%)'}
+          onSave={handleAvatarSave}
+          onDelete={handleAvatarDelete}
+        />
       </main>
     </div>
   );

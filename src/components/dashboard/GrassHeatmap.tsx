@@ -4,10 +4,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { usersApi, type DateActivityDetail } from '@/lib/api';
+import { usersApi, publicProfileApi, type DateActivityDetail } from '@/lib/api';
 import { Calendar, Code, Zap, Loader2, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { useAuth } from '@/hooks/useAuth';
 
 interface ActivityDay {
   date: string;
@@ -17,6 +18,13 @@ interface ActivityDay {
 
 interface GrassHeatmapProps {
   compact?: boolean;
+  /** 조회할 사용자 username. 없으면 본인 */
+  username?: string;
+  /** 부모에서 전달받은 공개 활동 데이터 (있으면 API 호출 안 함) */
+  publicActivityData?: {
+    days: Array<{ date?: string; activity_date?: string; problems_solved?: number; count?: number }>;
+    totalDays?: number;
+  };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -78,50 +86,71 @@ const problemTypeLabels: Record<string, string> = {
   refactor: '리팩토링',
 };
 
-export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
+export function GrassHeatmap({ compact = false, username, publicActivityData }: GrassHeatmapProps) {
+  const { profile } = useAuth();
   const [activityData, setActivityData] = useState<ActivityDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dateDetail, setDateDetail] = useState<DateActivityDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
+  // 본인 프로필인지 확인
+  const isOwnProfile = !username || (profile?.username === username);
+
   useEffect(() => {
+    // 데이터 처리 함수
+    function processActivityData(response: { days?: Array<{ date?: string; activity_date?: string; problems_solved?: number; count?: number }> } | Array<{ date?: string; activity_date?: string; problems_solved?: number; count?: number }>) {
+      // 빈 1년치 데이터 생성
+      const emptyYear = generateEmptyYear();
+
+      // 백엔드 응답을 Map으로 변환 (date -> problems_solved)
+      const activityMap = new Map<string, number>();
+      const days = (response as { days?: Array<unknown> })?.days || response || [];
+
+      if (Array.isArray(days)) {
+        days.forEach((day: { date?: string; activity_date?: string; problems_solved?: number; count?: number }) => {
+          const date = day.date || day.activity_date;
+          const count = day.problems_solved ?? day.count ?? 0;
+          if (date) {
+            activityMap.set(date, count);
+          }
+        });
+      }
+
+      // 최대값 계산 (intensity 계산용)
+      const maxCount = Math.max(...Array.from(activityMap.values()), 1);
+
+      // 데이터 채우기
+      const filledData = emptyYear.map((day) => {
+        const count = activityMap.get(day.date) || 0;
+        return {
+          ...day,
+          count,
+          intensity: calculateIntensity(count, maxCount),
+        };
+      });
+
+      return filledData;
+    }
+
+    // publicActivityData가 있으면 사용
+    if (username && publicActivityData) {
+      setActivityData(processActivityData(publicActivityData));
+      setIsLoading(false);
+      return;
+    }
+
+    // 없으면 API 호출
     async function fetchActivity() {
       try {
         setIsLoading(true);
-        const response = await usersApi.getActivity(365);
 
-        // 빈 1년치 데이터 생성
-        const emptyYear = generateEmptyYear();
+        // username이 있으면 타인, 없으면 본인
+        const response = username
+          ? await publicProfileApi.getActivity(username, 365)
+          : await usersApi.getActivity(365);
 
-        // 백엔드 응답을 Map으로 변환 (date -> problems_solved)
-        const activityMap = new Map<string, number>();
-        const days = response?.days || response || [];
-
-        if (Array.isArray(days)) {
-          days.forEach((day: { date?: string; activity_date?: string; problems_solved?: number; count?: number }) => {
-            const date = day.date || day.activity_date;
-            const count = day.problems_solved ?? day.count ?? 0;
-            if (date) {
-              activityMap.set(date, count);
-            }
-          });
-        }
-
-        // 최대값 계산 (intensity 계산용)
-        const maxCount = Math.max(...Array.from(activityMap.values()), 1);
-
-        // 데이터 채우기
-        const filledData = emptyYear.map((day) => {
-          const count = activityMap.get(day.date) || 0;
-          return {
-            ...day,
-            count,
-            intensity: calculateIntensity(count, maxCount),
-          };
-        });
-
-        setActivityData(filledData);
+        setActivityData(processActivityData(response));
       } catch (err) {
         console.error('Failed to load activity data:', err);
         // 에러 시 빈 데이터 사용
@@ -132,7 +161,7 @@ export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
     }
 
     fetchActivity();
-  }, []);
+  }, [username, publicActivityData]);
 
   // 날짜 클릭 핸들러
   const handleDateClick = async (day: ActivityDay) => {
@@ -148,7 +177,10 @@ export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
     setDateDetail(null);
 
     try {
-      const detail = await usersApi.getActivityByDate(day.date);
+      // 본인 프로필이면 /me/activity/{date}, 타인이면 /{username}/public-activity/{date}
+      const detail = isOwnProfile
+        ? await usersApi.getActivityByDate(day.date)
+        : await publicProfileApi.getActivityByDate(username!, day.date);
       setDateDetail(detail);
     } catch (err) {
       console.error('Failed to load date detail:', err);
@@ -458,7 +490,7 @@ export function GrassHeatmap({ compact = false }: GrassHeatmapProps) {
                   {dateDetail.problems.length > 0 ? (
                     <div className="space-y-2">
                       <p className="text-xs text-muted-foreground font-medium">풀이한 문제</p>
-                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                      <div className="space-y-1.5">
                         {dateDetail.problems.map((problem) => (
                           <div
                             key={problem.id}
