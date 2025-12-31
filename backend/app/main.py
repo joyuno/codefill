@@ -6,6 +6,8 @@ import asyncio
 from .config import get_settings
 from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws
 from .intents import intent_classifier
+from .services.collection_embeddings import initialize_collection_embeddings
+from .services.discovery_embeddings import initialize_discovery_embeddings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,6 +19,12 @@ async def lifespan(app: FastAPI):
     # Intent Classifier 초기화 (백그라운드에서)
     # 서버 시작 시 임베딩 생성 (시간 소요될 수 있음)
     asyncio.create_task(initialize_intent_classifier())
+
+    # Collection Embeddings 초기화 (정보 수집 단계용)
+    asyncio.create_task(initialize_collection_embeddings_startup())
+
+    # Discovery Embeddings 초기화 (문제 탐색 단계용)
+    asyncio.create_task(initialize_discovery_embeddings_startup())
 
     yield
     # Shutdown
@@ -31,6 +39,32 @@ async def initialize_intent_classifier():
     except Exception as e:
         print(f"Intent classifier initialization failed: {e}")
         print("Will initialize on first request instead")
+
+
+async def initialize_collection_embeddings_startup():
+    """Collection Embeddings 초기화 (정보 수집용 topic/difficulty/language)"""
+    try:
+        success = await initialize_collection_embeddings()
+        if success:
+            print("Collection embeddings initialized successfully")
+        else:
+            print("Collection embeddings initialization returned false")
+    except Exception as e:
+        print(f"Collection embeddings initialization failed: {e}")
+        print("Will use keyword fallback instead")
+
+
+async def initialize_discovery_embeddings_startup():
+    """Discovery Embeddings 초기화 (문제 탐색용 action/selection/rerank)"""
+    try:
+        success = await initialize_discovery_embeddings()
+        if success:
+            print("Discovery embeddings initialized successfully")
+        else:
+            print("Discovery embeddings initialization returned false")
+    except Exception as e:
+        print(f"Discovery embeddings initialization failed: {e}")
+        print("Will use keyword fallback instead")
 
 
 settings = get_settings()

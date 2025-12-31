@@ -455,7 +455,7 @@ async def practice_chat(request: PracticeChatRequest, db=Depends(get_db)):
     # Ask for missing info
     prompts = {
         "framework": "어떤 언어/프레임워크로 연습하고 싶으신가요? (React, Vue, JavaScript, Python 등)",
-        "difficulty": "난이도는 어느 정도로 할까요? (쉬움/중간/어려움)",
+        "difficulty": "난이도는 어느 정도로 할까요? (실버/골드/플래티넘/다이아/마스터)",
         "problem_type": "어떤 유형의 문제를 풀어볼까요?\n• 빈칸 채우기: 코드의 핵심 부분 맞추기\n• 버그 수정: 오류 찾아 고치기\n• 출력 예측: 실행 결과 맞추기\n• 리팩토링: 더 좋은 코드로 개선하기",
     }
 

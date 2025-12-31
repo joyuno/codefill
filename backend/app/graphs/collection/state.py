@@ -41,11 +41,28 @@ class CollectionState(TypedDict, total=False):
     question_type: Optional[str]          # 질문 유형 (recommendation, explanation, comparison)
 
     # ============================================================
+    # 추천/확인 관련 (handle_question 용)
+    # ============================================================
+    suggested_value: Optional[str]        # LLM이 추천한 값 (예: "DP")
+    awaiting_confirmation: bool           # "네/아니오" 응답 대기 상태
+    is_positive_response: bool            # 긍정 응답인지 ("네")
+    is_negative_response: bool            # 부정 응답인지 ("아니오")
+
+    # ============================================================
+    # 거절 히스토리 및 맥락 (부정 응답 처리용)
+    # ============================================================
+    rejected_values: List[str]            # 거절된 값 리스트 (예: ["정렬", "DP"])
+    rejection_reason: Optional[str]       # 거절 이유 힌트 (예: "too_hard", "already_done")
+    alternative_value: Optional[str]      # 부정과 함께 제시된 대안 (예: "DP 말고 그래프" → "그래프")
+
+    # ============================================================
     # 출력
     # ============================================================
     response_message: str                 # 사용자에게 보낼 메시지
     is_complete: bool                     # 모든 정보 수집 완료 여부
     route_to: Optional[str]               # 다음 그래프 (discovery, solving, respond)
+    chips: Optional[List[Dict[str, str]]] # 빠른 선택용 칩 리스트
+    needs_reconfirmation: bool            # 애매한 응답 → 재확인 필요
 
     # ============================================================
     # 에러 처리
@@ -68,10 +85,14 @@ VALID_TOPICS = {
 }
 
 VALID_DIFFICULTIES = {
-    # 한글
+    # 티어 (한글)
+    "실버", "골드", "플래티넘", "플레티넘", "다이아", "다이아몬드", "마스터",
+    # 티어 (영어)
+    "silver", "gold", "platinum", "diamond", "master",
+    # 기존 호환성 (한글)
     "쉬움", "쉬운", "쉽", "중간", "보통", "어려움", "어려운", "어렵",
-    # 영어
-    "easy", "medium", "hard",
+    # 기존 호환성 (영어)
+    "easy", "medium", "medium_hard", "hard", "very_hard",
 }
 
 VALID_LANGUAGES = {
@@ -81,11 +102,39 @@ VALID_LANGUAGES = {
     "python", "java", "cpp", "c++",
 }
 
-# 난이도 정규화 매핑
+# 난이도 정규화 매핑 (티어 시스템)
+# DB 값: easy, medium, medium_hard, hard, very_hard
 DIFFICULTY_NORMALIZE = {
+    # 티어명 → DB값
+    "실버": "easy", "silver": "easy",
+    "골드": "medium", "gold": "medium",
+    "플래티넘": "medium_hard", "플레티넘": "medium_hard", "platinum": "medium_hard",
+    "다이아": "hard", "다이아몬드": "hard", "diamond": "hard",
+    "마스터": "very_hard", "master": "very_hard",
+    # 기존 호환성
     "쉬움": "easy", "쉬운": "easy", "쉽": "easy", "easy": "easy",
     "중간": "medium", "보통": "medium", "medium": "medium",
+    "medium_hard": "medium_hard",
     "어려움": "hard", "어려운": "hard", "어렵": "hard", "hard": "hard",
+    "very_hard": "very_hard",
+}
+
+# DB값 → 티어 표시명
+DIFFICULTY_TO_TIER = {
+    "easy": "실버",
+    "medium": "골드",
+    "medium_hard": "플래티넘",
+    "hard": "다이아",
+    "very_hard": "마스터",
+}
+
+# 티어 설명
+TIER_DESCRIPTIONS = {
+    "easy": "기본 개념 연습",
+    "medium": "응용 문제",
+    "medium_hard": "심화 응용",
+    "hard": "도전적인 문제",
+    "very_hard": "최상위 난이도",
 }
 
 # 언어 정규화 매핑
@@ -110,22 +159,10 @@ TOPIC_NORMALIZE = {
     "bfs": "BFS/DFS", "dfs": "BFS/DFS",
 }
 
-# 질문 패턴 정의
-QUESTION_PATTERNS = [
-    # 추천 요청
-    "추천", "뭐가 좋", "뭘 해", "뭘해", "알아서", "골라", "정해",
-    # 모름 표현
-    "모르", "몰라", "모름", "잘 모", "하나도",
-    # 질문
-    "뭐야", "뭔데", "뭐지", "어떤 거", "어떤거", "무슨",
-    # 비교/설명 요청
-    "차이", "뭐가 다", "설명", "알려",
-]
-
-# 추천 요청 패턴 (질문 중에서도 추천을 원하는 경우)
-RECOMMENDATION_PATTERNS = [
-    "추천", "뭐가 좋", "알아서", "골라", "정해", "아무", "랜덤",
-]
+# ============================================================
+# 패턴/키워드 상수들은 collection_tools.py의 LLM 프롬프트로 이동됨
+# (Tool 기반 리팩토링으로 인해 더 이상 사용하지 않음)
+# ============================================================
 
 
 def get_initial_state(
@@ -159,6 +196,15 @@ def get_initial_state(
         is_question=False,
         extracted_value=None,
         question_type=None,
+        suggested_value=None,
+        awaiting_confirmation=False,
+        is_positive_response=False,
+        is_negative_response=False,
+        # 거절 히스토리 및 맥락
+        rejected_values=[],
+        rejection_reason=None,
+        alternative_value=None,
+        # 출력
         response_message="",
         is_complete=False,
         route_to=None,

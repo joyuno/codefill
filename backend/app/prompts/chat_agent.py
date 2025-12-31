@@ -182,11 +182,13 @@ TOPIC_ALIASES = {
     "수학": ["수학", "math", "정수론"],
 }
 
-# 난이도 매핑
+# 난이도 → 티어 매핑 (5단계)
 DIFFICULTY_MAP = {
-    "easy": "쉬움",
-    "medium": "보통",
-    "hard": "어려움"
+    "easy": "실버",
+    "medium": "골드",
+    "medium_hard": "플래티넘",
+    "hard": "다이아",
+    "very_hard": "마스터"
 }
 
 # 레벨별 추천 주제

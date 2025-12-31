@@ -1,9 +1,15 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # Prisma용 DATABASE_URL, DIRECT_URL 등 허용
+    )
 
     # App
     app_name: str = "CodeFill API"
@@ -68,9 +74,6 @@ class Settings(BaseSettings):
     next_public_clarity_id: str = ""
     next_public_ga_id: str = ""
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 @lru_cache()

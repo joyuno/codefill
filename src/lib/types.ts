@@ -163,7 +163,7 @@ export interface RelatedDoc {
 }
 
 export type Framework = 'python' | 'java' | 'cpp' | 'javascript';
-export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Difficulty = 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
 
 export interface Message {
   id: string;
@@ -176,7 +176,7 @@ export interface Message {
 export interface QuickChip {
   label: string;
   value: string;
-  category: 'framework' | 'difficulty' | 'topic' | 'action';
+  category: 'framework' | 'difficulty' | 'topic' | 'action' | 'language';
 }
 
 export interface ActivityDay {

@@ -125,8 +125,9 @@ export function Conversation({ friend }: ConversationProps) {
     }
   };
 
-  // Enter 키로 전송
+  // Enter 키로 전송 (IME 조합 중에는 무시)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();

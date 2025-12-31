@@ -346,7 +346,7 @@ export function GuidedPractice({
               <Input
                 value={userInput}
                 onChange={(e) => setUserInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
+                onKeyDown={(e) => !e.nativeEvent.isComposing && e.key === 'Enter' && handleTextSubmit()}
                 placeholder={
                   currentStep.responseType === 'code'
                     ? '코드를 입력하세요...'

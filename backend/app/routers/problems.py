@@ -63,7 +63,7 @@ async def list_base_problems(
 
         # 실제 데이터 조회
         query = db.table("base_problems")\
-            .select("id, original_id, name, difficulty, tags, source")\
+            .select("id, original_id, name, difficulty, tags, source, input_output")\
             .order("original_id")
 
         if difficulty:
@@ -91,6 +91,7 @@ async def list_base_problems(
                 difficulty=item.get("difficulty", "medium"),
                 tags=item.get("tags") or [],
                 source=item.get("source"),
+                input_output=item.get("input_output"),
             ))
 
         has_more = (page * limit) < total

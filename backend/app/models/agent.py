@@ -30,10 +30,12 @@ class LanguageEnum(str, Enum):
 
 
 class DifficultyEnum(str, Enum):
-    """Difficulty levels."""
-    EASY = "easy"
-    MEDIUM = "medium"
-    HARD = "hard"
+    """Difficulty levels (5-tier system)."""
+    EASY = "easy"           # 실버
+    MEDIUM = "medium"       # 골드
+    MEDIUM_HARD = "medium_hard"  # 플래티넘
+    HARD = "hard"           # 다이아
+    VERY_HARD = "very_hard"  # 마스터
 
 
 class UserLevelEnum(str, Enum):
