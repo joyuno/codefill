@@ -72,16 +72,16 @@ router = APIRouter()
 # Chat Agent - LangGraph 기반 대화 에이전트
 # ============================================================
 
-# LangGraph 가져오기 (Legacy + 3단계 구조)
+# LangGraph 가져오기
 from ..graphs import (
-    # Legacy (호환성)
+    # Legacy
     ChatGraph,
     ProblemSolvingGraph,
-    # 3단계 구조 (신규)
-    ChatOrchestrator,
-    IntentGraph,
+    # Discovery
     DiscoveryGraph,
-    get_orchestrator,
+    # Orchestrator V2 (Tool 기반)
+    ChatOrchestratorV2,
+    get_orchestrator_v2,
 )
 
 # 전역 그래프 인스턴스 (싱글톤)
@@ -97,11 +97,11 @@ def get_solving_graph() -> ProblemSolvingGraph:
     return _solving_graph
 
 
-def get_chat_orchestrator() -> ChatOrchestrator:
-    """3단계 ChatOrchestrator 싱글톤 반환"""
+def get_chat_orchestrator() -> ChatOrchestratorV2:
+    """ChatOrchestratorV2 싱글톤 반환"""
     global _orchestrator
     if _orchestrator is None:
-        _orchestrator = get_orchestrator()
+        _orchestrator = get_orchestrator_v2()
     return _orchestrator
 
 
@@ -151,7 +151,11 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_agent(request: ChatRequest, db=Depends(get_db)):
+async def chat_agent(
+    request: ChatRequest,
+    db=Depends(get_db),
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
     """
     LangGraph 기반 대화 챗봇 (정식 버전)
 
@@ -185,11 +189,16 @@ async def chat_agent(request: ChatRequest, db=Depends(get_db)):
             for msg in request.conversation_history
         ]
 
+        # user_context에 user_id 추가 (DB 저장에 필요)
+        user_context = request.user_context or {}
+        if current_user_id:
+            user_context["user_id"] = str(current_user_id)
+
         # 오케스트레이터 실행
         result = await orchestrator.process(
             message=request.message,
             conversation_history=conversation_history,
-            user_context=request.user_context,
+            user_context=user_context,
             session_state=request.session_state,
         )
 

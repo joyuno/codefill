@@ -2,10 +2,10 @@
 
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Eye, Play, Check, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { getTierInfo } from '@/lib/constants/tiers';
 import type { BaseProblemListItem } from '@/lib/api';
 
 interface ProblemRowProps {
@@ -13,12 +13,6 @@ interface ProblemRowProps {
   index: number;
   onPreview: (originalId: string) => void;
 }
-
-const difficultyConfig: Record<string, { label: string; color: string; dot: string }> = {
-  easy: { label: 'Easy', color: 'text-emerald-500', dot: 'bg-emerald-500' },
-  medium: { label: 'Medium', color: 'text-amber-500', dot: 'bg-amber-500' },
-  hard: { label: 'Hard', color: 'text-rose-500', dot: 'bg-rose-500' },
-};
 
 const sourceLabels: Record<string, string> = {
   baekjoon: '백준',
@@ -29,7 +23,8 @@ const sourceLabels: Record<string, string> = {
 };
 
 export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
-  const difficulty = difficultyConfig[problem.difficulty] || difficultyConfig.easy;
+  const tier = getTierInfo(problem.difficulty);
+  const TierIcon = tier.Icon;
   const sourceLabel = sourceLabels[problem.source || ''] || problem.source || '-';
   const isSolved = false; // TODO: 실제 풀이 여부 연동
 
@@ -50,23 +45,18 @@ export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
         )}
       </td>
 
-      {/* 문제 번호 */}
-      <td className="w-20 py-3 px-2 text-sm text-muted-foreground font-mono">
-        #{problem.original_id.slice(-4)}
-      </td>
-
-      {/* 제목 */}
-      <td className="py-3 px-2">
-        <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+      {/* 제목 - 최대 2줄, 넘으면 ... */}
+      <td className="py-3 px-2 max-w-[400px]">
+        <span className="font-medium text-foreground group-hover:text-primary transition-colors line-clamp-2">
           {problem.name}
         </span>
       </td>
 
-      {/* 난이도 */}
-      <td className="w-24 py-3 px-2">
+      {/* 티어 (난이도) */}
+      <td className="w-28 py-3 px-2">
         <div className="flex items-center gap-1.5">
-          <span className={cn('w-2 h-2 rounded-full', difficulty.dot)} />
-          <span className={cn('text-sm', difficulty.color)}>{difficulty.label}</span>
+          <TierIcon size={16} />
+          <span className={cn('text-sm font-medium', tier.color)}>{tier.name}</span>
         </div>
       </td>
 
@@ -77,21 +67,34 @@ export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
 
       {/* 태그 */}
       <td className="py-3 px-2 hidden lg:table-cell">
-        <div className="flex gap-1 flex-wrap">
-          {problem.tags.slice(0, 2).map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-xs py-0 px-1.5 font-normal">
-              {tag}
-            </Badge>
-          ))}
-          {problem.tags.length > 2 && (
-            <span className="text-xs text-muted-foreground">+{problem.tags.length - 2}</span>
-          )}
-        </div>
+        {(() => {
+          const maxTags = 2;
+          const visibleTags = problem.tags.slice(0, maxTags);
+          const remainingCount = problem.tags.length - maxTags;
+
+          return (
+            <div className="flex gap-1.5 items-center flex-nowrap">
+              {visibleTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border px-2.5 py-0.5 text-xs font-medium text-foreground whitespace-nowrap"
+                >
+                  {tag}
+                </span>
+              ))}
+              {remainingCount > 0 && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  +{remainingCount}
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </td>
 
       {/* 액션 버튼 - 호버 시에만 표시 */}
-      <td className="w-28 py-3 px-2 pr-4">
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <td className="w-24 py-3 px-2 pr-4">
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-muted/50 group-hover:bg-muted rounded-md p-0.5">
           <Button
             variant="ghost"
             size="icon"

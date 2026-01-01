@@ -28,6 +28,16 @@ interface PracticeChatPanelProps {
   hints?: string[];
 }
 
+// Session state interface for LangGraph
+interface SessionState {
+  stage?: string;
+  next_stage?: string;
+  awaiting_confirmation?: boolean;
+  suggested_value?: string | null;
+  search_offset?: number;
+  [key: string]: unknown;
+}
+
 // Problem type labels
 const PROBLEM_TYPE_LABELS: Record<string, string> = {
   blank: '빈칸 채우기',
@@ -63,7 +73,7 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
       title: blankData.title,
       description: blankData.description,
       problemType: 'blank',
-      difficulty: blankData.difficulty as 'easy' | 'medium' | 'hard',
+      difficulty: blankData.difficulty as 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard',
       topics: blankData.topics,
       keyConcepts: blankData.topics,
       framework: blankData.language as 'python' | 'java' | 'cpp' | 'javascript',
@@ -93,7 +103,7 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
       title: puzzleData.title,
       description: puzzleData.description,
       problemType: 'puzzle',
-      difficulty: puzzleData.difficulty as 'easy' | 'medium' | 'hard',
+      difficulty: puzzleData.difficulty as 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard',
       topics: puzzleData.topics,
       keyConcepts: puzzleData.topics,
       framework: puzzleData.language as 'python' | 'java' | 'cpp' | 'javascript',
@@ -113,7 +123,7 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
       title: guidedData.title,
       description: guidedData.description,
       problemType: 'guided',
-      difficulty: guidedData.difficulty as 'easy' | 'medium' | 'hard',
+      difficulty: guidedData.difficulty as 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard',
       topics: guidedData.topics,
       keyConcepts: guidedData.topics,
       framework: guidedData.language as 'python' | 'java' | 'cpp' | 'javascript',
@@ -133,9 +143,10 @@ const initialWelcomeMessage: Message = {
   content: '안녕하세요! 코딩 연습을 도와드릴게요.\n\n어떤 알고리즘을 연습하고 싶으신가요? 원하는 주제나 난이도를 말씀해주세요!',
   timestamp: new Date().toISOString(),
   chips: [
-    { label: 'DP 연습하고 싶어요', value: 'dp', category: 'topic' },
-    { label: '그래프 문제 풀래요', value: 'graph', category: 'topic' },
-    { label: '쉬운 문제로 시작', value: 'easy', category: 'difficulty' },
+    { label: '기초', value: '기초', category: 'topic' },
+    { label: 'DP', value: 'DP', category: 'topic' },
+    { label: '그래프', value: '그래프', category: 'topic' },
+    { label: '정렬', value: '정렬', category: 'topic' },
   ],
 };
 
@@ -155,9 +166,14 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
   const [recommendedProblems, setRecommendedProblems] = useState<BaseProblemInfo[]>([]);
   const [selectedBaseProblem, setSelectedBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [flowState, setFlowState] = useState<'collecting' | 'recommending' | 'type_selection' | 'generating' | 'practicing' | 'guided_learning'>('collecting');
-  const [useV2, setUseV2] = useState(true);  // V3 API 기본 사용 (개선된 LangGraph)
-  const [v2SessionState, setV2SessionState] = useState<Record<string, unknown>>({});  // V2 세션 상태
+  const [sessionState, setSessionState] = useState<SessionState>({});  // LangGraph 세션 상태
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Refs to always have latest state (avoid stale closure issues)
+  const collectedInfoRef = useRef(collectedInfo);
+  const sessionStateRef = useRef(sessionState);
+  const recommendedProblemsRef = useRef(recommendedProblems);
+  const selectedBaseProblemRef = useRef(selectedBaseProblem);
 
   // Guided 모드 상태
   const [guidedFlowStep, setGuidedFlowStep] = useState(0);
@@ -179,6 +195,12 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       scrollRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  // Keep refs in sync with state (for use in callbacks)
+  useEffect(() => { collectedInfoRef.current = collectedInfo; }, [collectedInfo]);
+  useEffect(() => { sessionStateRef.current = sessionState; }, [sessionState]);
+  useEffect(() => { recommendedProblemsRef.current = recommendedProblems; }, [recommendedProblems]);
+  useEffect(() => { selectedBaseProblemRef.current = selectedBaseProblem; }, [selectedBaseProblem]);
 
   // Get user context from localStorage (onboarding data) + current search results
   const getUserContext = useCallback(() => {
@@ -343,9 +365,10 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       content: '새로운 문제를 시작할게요!\n\n어떤 알고리즘을 연습하고 싶으신가요?',
       timestamp: new Date().toISOString(),
       chips: [
-        { label: 'DP 연습하고 싶어요', value: 'dp', category: 'topic' },
-        { label: '그래프 문제 풀래요', value: 'graph', category: 'topic' },
-        { label: '쉬운 문제로 시작', value: 'easy', category: 'difficulty' },
+        { label: '기초', value: '기초', category: 'topic' },
+        { label: 'DP', value: 'DP', category: 'topic' },
+        { label: '그래프', value: '그래프', category: 'topic' },
+        { label: '정렬', value: '정렬', category: 'topic' },
       ],
     };
     setMessages(prev => [...prev, resetMsg]);
@@ -441,6 +464,46 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
         setFlowState('type_selection');
         showProblemTypeSelection(selectedBaseProblem);
       }
+    } else if (chip.value === 'yes') {
+      // 네/아니오 칩: "네" - 추천값 수락
+      const userMsg: Message = {
+        id: `user-yes-${Date.now()}`,
+        role: 'user',
+        content: '네, 그걸로 할게요',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, userMsg]);
+      handleSendMessage('네');
+    } else if (chip.value === 'no') {
+      // 네/아니오 칩: "아니오" - 다른 추천 요청
+      const userMsg: Message = {
+        id: `user-no-${Date.now()}`,
+        role: 'user',
+        content: '아니오, 다른 거요',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, userMsg]);
+      handleSendMessage('아니오, 다른 거로 할게요');
+    } else if (chip.value === 'more-search') {
+      // 더 찾아보기: 다음 5개 문제 검색
+      const userMsg: Message = {
+        id: `user-more-search-${Date.now()}`,
+        role: 'user',
+        content: '비슷한 문제 더 찾아줘',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, userMsg]);
+      handleSendMessage('비슷한 문제 더 찾아줘');
+    } else if (chip.value === 'generate-new') {
+      // 새 문제 생성: CodeGen으로 유사 문제 생성
+      const userMsg: Message = {
+        id: `user-generate-new-${Date.now()}`,
+        role: 'user',
+        content: '새로운 문제를 생성해줘',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, userMsg]);
+      handleSendMessage('새로운 유사 문제를 생성해줘');
     } else if (chip.value.startsWith('problem-')) {
       // Problem selection
       const problemIndex = parseInt(chip.value.replace('problem-', ''), 10);
@@ -829,78 +892,80 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
     ];
 
     try {
-      // V2 또는 V1 API 선택
-      let responseMessage: string;
-      let responseCollectedInfo: CollectedInfo;
-      let actionData: {
-        status?: string;
-        problems?: BaseProblemInfo[];
-        generated_problem?: BaseProblemInfo;
-        action_trigger?: string;
-        selected_problem?: string;
-        selected_problem_index?: number;
-      } | undefined;
-      let v2Response: ChatV2Response | undefined;
+      // 디버깅: 요청 전 상태 확인 (ref에서 최신값 읽기)
+      const currentCollectedInfo = collectedInfoRef.current;
+      const currentSessionState = sessionStateRef.current;
+      const currentProblems = recommendedProblemsRef.current;
+      const currentSelectedProblem = selectedBaseProblemRef.current;
 
-      if (useV2) {
-        // 정식 LangGraph API 사용
-        v2Response = await agentApi.chatMain({
-          message: content,
-          conversation_history: conversationHistory,
-          user_context: getUserContext(),
-          session_state: {
-            collected_info: collectedInfo,
-            search_results: recommendedProblems,
-            selected_problem: selectedBaseProblem || undefined,
-            ...v2SessionState,
-          },
-        });
+      console.log('[Chat Request]', {
+        message: content,
+        collectedInfo_before_request: currentCollectedInfo,
+        sessionState: currentSessionState,
+      });
 
-        responseMessage = v2Response.message;
-        responseCollectedInfo = v2Response.collected_info || {
-          topics: [],
-          difficulty: null,
-          language: null,
-          specific_needs: null,
-          time_available: null,
-        };
+      // LangGraph API 호출 (refs 사용으로 stale closure 방지)
+      const chatResponse = await agentApi.chatMain({
+        message: content,
+        conversation_history: conversationHistory,
+        user_context: getUserContext(),
+        session_state: {
+          collected_info: currentCollectedInfo,
+          search_results: currentProblems,
+          selected_problem: currentSelectedProblem || undefined,
+          // 정보 수집 단계 상태 (네/아니오 응답용)
+          awaiting_confirmation: currentSessionState.awaiting_confirmation || false,
+          suggested_value: currentSessionState.suggested_value || null,
+          ...currentSessionState,
+        },
+      });
 
-        // V2 세션 상태 업데이트
-        setV2SessionState({
-          stage: v2Response.stage,
-          next_stage: v2Response.next_stage,
-        });
+      const responseMessage = chatResponse.message;
+      const responseCollectedInfo = chatResponse.collected_info || {
+        topics: [],
+        difficulty: null,
+        language: null,
+        specific_needs: null,
+        time_available: null,
+      };
 
-        // V2 action_data 변환
-        actionData = {
-          status: v2Response.search_results?.length ? 'found' : undefined,
-          problems: v2Response.search_results,
-          generated_problem: v2Response.generated_problem,
-          action_trigger: v2Response.action_trigger,
-        };
+      // 세션 상태 업데이트 (awaiting_confirmation, suggested_value 포함)
+      setSessionState({
+        stage: chatResponse.stage,
+        next_stage: chatResponse.next_stage,
+        awaiting_confirmation: chatResponse.awaiting_confirmation || false,
+        suggested_value: chatResponse.suggested_value || null,
+      });
 
-        console.log('[V2 Response]', {
-          stage: v2Response.stage,
-          intent: v2Response.intent_info?.intent,
-          collected_info: responseCollectedInfo,
-          search_results: v2Response.search_results?.length,
-          action_trigger: v2Response.action_trigger,
-          generated_problem_data: v2Response.generated_problem_data,
-          selected_problem: v2Response.selected_problem,
-        });
-      } else {
-        // V1: 기존 API 사용
-        const response = await agentApi.chat({
-          message: content,
-          conversation_history: conversationHistory,
-          user_context: getUserContext(),
-          collected_info: collectedInfo,  // 이전 턴에서 수집된 정보 전달 (상태 유지!)
-        });
+      // action_data 변환
+      const backendActionData = chatResponse.action_data as Record<string, unknown> | undefined;
+      const actionData = {
+        status: chatResponse.search_results?.length ? 'found' : undefined,
+        problems: chatResponse.search_results,
+        generated_problem: chatResponse.generated_problem,
+        action_trigger: chatResponse.action_trigger,
+        // 정보 수집 단계 confirmation 정보
+        awaiting_confirmation: chatResponse.awaiting_confirmation,
+        suggested_value: chatResponse.suggested_value,
+        action_data: backendActionData,  // 백엔드에서 전달하는 action_data
+        // search 관련 데이터
+        search_offset: (backendActionData?.search_offset as number) || 0,
+        has_more: backendActionData?.has_more as boolean | undefined,
+        is_fallback: backendActionData?.is_fallback as boolean | undefined,
+        // 문제 선택 관련 데이터
+        selected_problem: backendActionData?.selected_problem as string | undefined,
+        selected_problem_index: backendActionData?.selected_problem_index as number | undefined,
+      };
 
-        responseMessage = response.message;
-        responseCollectedInfo = response.collected_info;
-        actionData = response.action_data as typeof actionData;
-      }
+      console.log('[Chat Response]', {
+        stage: chatResponse.stage,
+        intent: chatResponse.intent_info?.intent,
+        collected_info: responseCollectedInfo,
+        search_results: chatResponse.search_results?.length,
+        action_trigger: chatResponse.action_trigger,
+        generated_problem_data: chatResponse.generated_problem_data,
+        selected_problem: chatResponse.selected_problem,
+      });
 
       // Update collected info
       setCollectedInfo(responseCollectedInfo);
@@ -919,27 +984,50 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
         setFlowState('type_selection');
         setRecommendedProblems(actionData.problems);
 
-        const assistantMessage: Message = {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: responseMessage,
-          timestamp: new Date().toISOString(),
-          chips: actionData.problems.slice(0, 4).map((p, i) => ({
-            label: `${p.name || p.title} (${p.difficulty})`,
-            value: `problem-${i}`,
-            category: 'action' as const,
-          })),
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-      } else if (actionData?.generated_problem) {
-        // CodeGen generated a new problem
-        setFlowState('type_selection');
-        setRecommendedProblems([actionData.generated_problem]);
+        // search_offset을 세션 상태에 저장
+        const currentOffset = actionData.search_offset || 0;
+        setSessionState(prev => ({
+          ...prev,
+          search_offset: currentOffset,
+        }));
+
+        // 문제 칩 5개 + 추가 옵션 칩
+        const problemChips = actionData.problems.slice(0, 5).map((p, i) => ({
+          label: `${p.name || p.title} (${p.difficulty})`,
+          value: `problem-${i}`,
+          category: 'action' as const,
+        }));
+
+        // 추가 옵션 칩들 (더 찾아보기는 has_more가 true일 때만)
+        const additionalChips = [];
+        if (actionData.has_more !== false) {
+          additionalChips.push({ label: '🔍 더 찾아보기', value: 'more-search', category: 'action' as const });
+        }
+        additionalChips.push({ label: '✨ 새 문제 생성', value: 'generate-new', category: 'action' as const });
 
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
           content: responseMessage,
+          timestamp: new Date().toISOString(),
+          chips: [...problemChips, ...additionalChips],
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      } else if (actionData?.generated_problem) {
+        // CodeGen generated a new problem (fallback from RAG search)
+        setFlowState('type_selection');
+        setRecommendedProblems([actionData.generated_problem]);
+
+        // Fallback 안내 메시지 (is_fallback이 true일 때)
+        const isFallback = actionData.is_fallback === true;
+        const fallbackNotice = isFallback
+          ? '🔍 DB에서 조건에 맞는 문제를 찾지 못해서 새로운 문제를 생성했어요!\n\n'
+          : '';
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: `${fallbackNotice}${responseMessage}`,
           timestamp: new Date().toISOString(),
           chips: [{
             label: `${actionData.generated_problem.title} (${actionData.generated_problem.difficulty})`,
@@ -948,9 +1036,9 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
           }],
         };
         setMessages(prev => [...prev, assistantMessage]);
-      } else if (v2Response?.action_trigger === 'problem_generated' && v2Response?.generated_problem_data) {
+      } else if (chatResponse?.action_trigger === 'problem_generated' && chatResponse?.generated_problem_data) {
         // 문제 유형 선택 후 문제가 생성됨 - 프론트엔드에 표시
-        const generatedData = v2Response.generated_problem_data;
+        const generatedData = chatResponse.generated_problem_data;
         console.log('[PracticeChatPanel] Generated problem data:', generatedData);
         const convertedProblem = convertGeneratedDataToProblem(generatedData);
         console.log('[PracticeChatPanel] Converted problem:', convertedProblem);
@@ -1009,12 +1097,12 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
         const selectedProblemName = actionData.selected_problem;
         const selectedIndex = actionData.selected_problem_index;
 
-        // Find the selected problem from recommendedProblems
+        // Find the selected problem from recommendedProblems (use ref for latest)
         let selectedProblem: BaseProblemInfo | undefined;
-        if (selectedIndex !== undefined && recommendedProblems[selectedIndex - 1]) {
-          selectedProblem = recommendedProblems[selectedIndex - 1];
+        if (selectedIndex !== undefined && currentProblems[selectedIndex - 1]) {
+          selectedProblem = currentProblems[selectedIndex - 1];
         } else if (selectedProblemName) {
-          selectedProblem = recommendedProblems.find(
+          selectedProblem = currentProblems.find(
             p => p.name === selectedProblemName || p.title === selectedProblemName
           );
         }
@@ -1038,6 +1126,38 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
           setMessages(prev => [...prev, assistantMessage]);
           setFlowState('type_selection');
         }
+      } else if (actionData.awaiting_confirmation && actionData.suggested_value) {
+        // 정보 수집 단계: LLM 추천 + 네/아니오 칩
+        const confirmationChips: QuickChip[] = [
+          { label: '네', value: 'yes', category: 'action' as const },
+          { label: '아니오, 다른 거', value: 'no', category: 'action' as const },
+        ];
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: responseMessage,
+          timestamp: new Date().toISOString(),
+          chips: confirmationChips,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      } else if (actionData.action_data?.type === 'selection' && actionData.action_data?.chips) {
+        // 정보 수집 단계: 빠른 선택용 칩 (주제/난이도/언어)
+        const chipsArray = actionData.action_data.chips as Array<{ label: string; value: string; category: string }>;
+        const selectionChips: QuickChip[] = chipsArray.map((chip) => ({
+          label: chip.label,
+          value: chip.value,
+          category: chip.category as 'topic' | 'difficulty' | 'action',
+        }));
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: responseMessage,
+          timestamp: new Date().toISOString(),
+          chips: selectionChips,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
       } else {
         // Normal chat flow
         const assistantMessage: Message = {
@@ -1064,7 +1184,7 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, conversationHistory, getUserContext]);
+  }, [isLoading, conversationHistory, getUserContext]);  // refs don't need to be in deps (stable references)
 
   // Fetch problem recommendations
   const fetchRecommendations = useCallback(async (info: CollectedInfo) => {
@@ -1159,15 +1279,6 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* V2 테스트 토글 */}
-            <Button
-              variant={useV2 ? "default" : "outline"}
-              size="sm"
-              onClick={() => setUseV2(!useV2)}
-              className="text-xs h-6 px-2"
-            >
-              {useV2 ? 'V2' : 'V1'}
-            </Button>
             {flowState === 'guided_learning' && guidedProblem?.flow ? (
               <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
                 Step {guidedFlowStep + 1}/{guidedProblem.flow.length}

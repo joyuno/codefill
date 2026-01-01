@@ -1,210 +1,216 @@
 """
-Parse Input Node
+Parse Input Node (Tool-based)
 
-사용자 메시지에서 직접 정보를 추출하는 노드
-LLM 없이 패턴 매칭으로 빠르게 처리
+사용자 메시지 파싱 - LLM Tool 기반으로 리팩토링
+- 임베딩 1차 매칭 + LLM 보조
+- 복잡한 키워드 매칭 제거
+- 긍정/부정/거절 분석을 Tool에 위임
 """
-import re
+
 from typing import Dict, Any, Optional
-from ..state import (
-    CollectionState,
-    VALID_TOPICS,
-    VALID_DIFFICULTIES,
-    VALID_LANGUAGES,
-    TOPIC_NORMALIZE,
-    DIFFICULTY_NORMALIZE,
-    LANGUAGE_NORMALIZE,
-    QUESTION_PATTERNS,
-    RECOMMENDATION_PATTERNS,
-)
+from ..state import CollectionState
+from app.tools.collection_tools import collection_tool
 
 
-def parse_input(state: CollectionState) -> Dict[str, Any]:
+async def parse_input(state: CollectionState) -> Dict[str, Any]:
     """
-    사용자 메시지를 파싱하여 정보 추출
+    사용자 메시지 파싱 (Tool 기반)
 
-    1. 질문인지 선택인지 판단
-    2. 현재 단계에 맞는 값 추출
-    3. 추출된 값 정규화
+    1. 확인 대기 상태면 → 긍정/부정 분석
+    2. 아니면 → 값 추출
+    3. 다음 단계 결정
     """
-    message = state.get("message", "").lower().strip()
+    message = state.get("message", "").strip()
     current_step = state.get("current_step", "topic")
+    awaiting_confirmation = state.get("awaiting_confirmation", False)
+
+    # 기존 값들
+    existing_values = {
+        "topic": state.get("topic"),
+        "difficulty": state.get("difficulty"),
+        "language": state.get("language"),
+    }
 
     # 결과 초기화
     updates: Dict[str, Any] = {
         "is_question": False,
         "extracted_value": None,
         "question_type": None,
+        "is_positive_response": False,
+        "is_negative_response": False,
     }
 
     # ============================================================
-    # 1. 질문 패턴 감지
+    # 1. 확인 대기 상태: 긍정/부정 분석
     # ============================================================
-    is_question = _detect_question(message)
-    if is_question:
-        updates["is_question"] = True
-        updates["question_type"] = _classify_question_type(message)
+    if awaiting_confirmation:
+        suggested = state.get("suggested_value")
+        confirmation = await collection_tool.analyze_confirmation(
+            message=message,
+            awaiting_value=suggested,
+            current_step=current_step,
+        )
+
+        print(f"[parse_input] Confirmation: {confirmation.response} (conf={confirmation.confidence:.2f})")
+
+        # 긍정 응답
+        if confirmation.response == "positive":
+            # 애매한 긍정 (재확인 필요)
+            if confirmation.confidence < 0.65:
+                print(f"[parse_input] Ambiguous positive, asking reconfirmation")
+                updates["awaiting_confirmation"] = True
+                updates["needs_reconfirmation"] = True
+                return updates
+
+            updates["is_positive_response"] = True
+            updates["awaiting_confirmation"] = False
+
+            # 긍정하면서 언급한 값 처리
+            final_value = confirmation.extracted_value or suggested
+
+            # 현재 단계 값 적용
+            if final_value:
+                updates[current_step] = final_value
+                updates["extracted_value"] = final_value
+
+            # 추가 정보 (원샷 입력: "정렬 쉬운 거로")
+            if confirmation.has_additional_info and confirmation.additional_values:
+                for step, value in confirmation.additional_values.items():
+                    if step != current_step and value:
+                        updates[step] = value
+                        print(f"[parse_input] Additional {step}: {value}")
+
+            # 다음 단계 결정
+            updates["current_step"] = _determine_next_step(
+                topic=updates.get("topic") or existing_values["topic"],
+                difficulty=updates.get("difficulty") or existing_values["difficulty"],
+                language=updates.get("language") or existing_values["language"],
+            )
+            print(f"[parse_input] Positive confirmed: {final_value}, next={updates['current_step']}")
+            return updates
+
+        # 부정 응답
+        elif confirmation.response == "negative":
+            updates["is_negative_response"] = True
+            updates["awaiting_confirmation"] = False
+
+            # 거절된 값 추적
+            rejected_values = list(state.get("rejected_values", []))
+            if suggested and suggested not in rejected_values:
+                rejected_values.append(suggested)
+            updates["rejected_values"] = rejected_values
+            updates["suggested_value"] = None
+
+            # 거절 분석 (이유 + 대안)
+            rejection = await collection_tool.analyze_rejection(
+                message=message,
+                current_step=current_step,
+                rejected_values=rejected_values,
+            )
+            print(f"[parse_input] Rejection: reason={rejection.reason}, alternative={rejection.alternative}")
+
+            if rejection.reason:
+                updates["rejection_reason"] = rejection.reason
+
+            # 대안이 있으면 바로 적용
+            if rejection.alternative:
+                step = rejection.alternative_step or current_step
+                updates[step] = rejection.alternative
+                updates["is_negative_response"] = False  # 대안 선택이므로
+
+                updates["current_step"] = _determine_next_step(
+                    topic=updates.get("topic") or existing_values["topic"],
+                    difficulty=updates.get("difficulty") or existing_values["difficulty"],
+                    language=updates.get("language") or existing_values["language"],
+                )
+                print(f"[parse_input] Alternative selected: {rejection.alternative}")
+                return updates
+
+            # 대안 없으면 다시 추천 요청
+            updates["is_question"] = True
+            updates["question_type"] = "rejection"
+            return updates
+
+        # 불명확 → 값 추출 시도
+        print(f"[parse_input] Unclear confirmation, trying value extraction...")
+
+    # ============================================================
+    # 2. 이미 모든 값이 수집된 경우 (complete 단계) → 바로 완료
+    # ============================================================
+    if current_step == "complete":
+        print(f"[parse_input] Already complete, skipping extraction")
+        updates["current_step"] = "complete"
+        updates["is_complete"] = True
         return updates
 
     # ============================================================
-    # 2. 현재 단계에 따른 값 추출
+    # 3. 값 추출 (질문 or 선택)
     # ============================================================
-    if current_step == "topic":
-        extracted = _extract_topic(message)
-        if extracted:
-            updates["extracted_value"] = extracted
-            updates["topic"] = extracted
+    extraction = await collection_tool.extract_values(
+        message=message,
+        current_step=current_step,
+        existing_values=existing_values,
+        use_llm_fallback=True,
+    )
 
-    elif current_step == "difficulty":
-        extracted = _extract_difficulty(message)
-        if extracted:
-            updates["extracted_value"] = extracted
-            updates["difficulty"] = extracted
+    print(f"[parse_input] Extraction: {extraction.values} (conf={extraction.confidence:.2f}, type={extraction.extraction_type})")
 
-    elif current_step == "language":
-        extracted = _extract_language(message)
-        if extracted:
-            updates["extracted_value"] = extracted
-            updates["language"] = extracted
+    # 현재 단계 값 확인
+    current_value = extraction.values.get(current_step)
 
-    # ============================================================
-    # 3. 모든 단계에서 한 번에 여러 정보가 들어올 수 있음
-    # ============================================================
-    # 예: "파이썬으로 쉬운 DP 문제 풀래"
-    if not updates.get("topic"):
-        topic = _extract_topic(message)
-        if topic:
-            updates["topic"] = topic
+    # 값이 추출되면 적용
+    if current_value and extraction.confidence >= 0.60:
+        updates[current_step] = current_value
+        updates["extracted_value"] = current_value
 
-    if not updates.get("difficulty"):
-        difficulty = _extract_difficulty(message)
-        if difficulty:
-            updates["difficulty"] = difficulty
+        # 다른 단계 값도 함께 적용 (원샷 입력)
+        for step in ["topic", "difficulty", "language"]:
+            if step != current_step:
+                value = extraction.values.get(step)
+                if value and not existing_values.get(step):
+                    updates[step] = value
+                    print(f"[parse_input] Additional {step}: {value}")
+    else:
+        # ============================================================
+        # 값이 이미 설정되어 있고 다음 단계로 넘어가야 하는 경우
+        # → is_question=False로 confirm_value로 라우팅
+        # ============================================================
+        topic = existing_values.get("topic")
+        difficulty = existing_values.get("difficulty")
+        language = existing_values.get("language")
 
-    if not updates.get("language"):
-        language = _extract_language(message)
-        if language:
-            updates["language"] = language
+        # 이전 단계 값이 있고, 현재 단계 값이 없는 경우 → 다음 질문하러 가야 함
+        if topic and current_step == "difficulty" and not difficulty:
+            # topic이 방금 설정됨 → 난이도 물어보러 confirm_value로
+            print(f"[parse_input] Topic set, moving to difficulty selection")
+            updates["is_question"] = False
+        elif topic and difficulty and current_step == "language" and not language:
+            # difficulty가 방금 설정됨 → 언어 물어보러 confirm_value로
+            print(f"[parse_input] Difficulty set, moving to language selection")
+            updates["is_question"] = False
+        else:
+            # 그 외에는 질문으로 처리
+            updates["is_question"] = True
+            updates["question_type"] = _classify_question_type(message)
+            print(f"[parse_input] No value extracted, treating as question")
 
     # ============================================================
     # 4. 다음 단계 결정
     # ============================================================
     updates["current_step"] = _determine_next_step(
-        topic=updates.get("topic") or state.get("topic"),
-        difficulty=updates.get("difficulty") or state.get("difficulty"),
-        language=updates.get("language") or state.get("language"),
+        topic=updates.get("topic") or existing_values["topic"],
+        difficulty=updates.get("difficulty") or existing_values["difficulty"],
+        language=updates.get("language") or existing_values["language"],
     )
 
     return updates
 
 
-def _detect_question(message: str) -> bool:
-    """질문인지 판단"""
-    # 질문 패턴 검사
-    for pattern in QUESTION_PATTERNS:
-        if pattern in message:
-            # 단순 선택인지 질문인지 구분
-            # "DP로 할게" vs "DP가 뭐야?"
-            selection_indicators = ["할게", "할래", "으로", "로 해", "선택"]
-            is_selection = any(ind in message for ind in selection_indicators)
-
-            if not is_selection:
-                return True
-
-    # 물음표가 있으면 질문
-    if "?" in message:
-        return True
-
-    return False
-
-
-def _classify_question_type(message: str) -> str:
-    """질문 유형 분류"""
-    # 추천 요청
-    for pattern in RECOMMENDATION_PATTERNS:
-        if pattern in message:
-            return "recommendation"
-
-    # 설명 요청
-    explanation_patterns = ["뭐야", "뭔데", "뭐지", "무슨", "어떤", "설명"]
-    if any(p in message for p in explanation_patterns):
-        return "explanation"
-
-    # 비교 요청
-    comparison_patterns = ["차이", "다른", "뭐가 다", "비교"]
-    if any(p in message for p in comparison_patterns):
-        return "comparison"
-
-    return "general"
-
-
-def _extract_topic(message: str) -> Optional[str]:
-    """메시지에서 주제 추출"""
-    message_lower = message.lower()
-
-    # 직접 매칭
-    for keyword in VALID_TOPICS:
-        if keyword.lower() in message_lower:
-            return TOPIC_NORMALIZE.get(keyword.lower(), keyword)
-
-    # "기초", "기본" 등 추가 패턴
-    if any(p in message for p in ["기초", "기본", "쉬운거", "처음"]):
-        return "기초"
-
-    # "아무거나", "랜덤" 등
-    if any(p in message for p in ["아무", "랜덤", "random"]):
-        return "기초"  # 기본값으로 기초 선택
-
-    return None
-
-
-def _extract_difficulty(message: str) -> Optional[str]:
-    """메시지에서 난이도 추출"""
-    message_lower = message.lower()
-
-    # 직접 매칭
-    for keyword in VALID_DIFFICULTIES:
-        if keyword.lower() in message_lower:
-            return DIFFICULTY_NORMALIZE.get(keyword.lower(), keyword)
-
-    # 추가 패턴: "쉬" 포함 → easy
-    if "쉬" in message:
-        return "easy"
-
-    # "어렵" 포함 → hard
-    if "어렵" in message or "어려" in message:
-        return "hard"
-
-    # "중간", "보통" 포함 → medium
-    if "중간" in message or "보통" in message:
-        return "medium"
-
-    return None
-
-
-def _extract_language(message: str) -> Optional[str]:
-    """메시지에서 언어 추출"""
-    message_lower = message.lower()
-
-    # 직접 매칭
-    for keyword in VALID_LANGUAGES:
-        if keyword.lower() in message_lower:
-            return LANGUAGE_NORMALIZE.get(keyword.lower(), keyword)
-
-    # 추가 패턴
-    if "파이" in message or "py" in message_lower:
-        return "python"
-
-    if "자바" in message and "스크립트" not in message:  # JavaScript 제외
-        return "java"
-
-    if "씨플" in message or "c++" in message_lower or "cpp" in message_lower:
-        return "cpp"
-
-    return None
-
-
-def _determine_next_step(topic: Optional[str], difficulty: Optional[str], language: Optional[str]) -> str:
+def _determine_next_step(
+    topic: Optional[str],
+    difficulty: Optional[str],
+    language: Optional[str],
+) -> str:
     """다음 수집 단계 결정"""
     if not topic:
         return "topic"
@@ -213,3 +219,45 @@ def _determine_next_step(topic: Optional[str], difficulty: Optional[str], langua
     if not language:
         return "language"
     return "complete"
+
+
+def _classify_question_type(message: str) -> str:
+    """질문 유형 분류 (간단한 키워드 체크)"""
+    message_lower = message.lower()
+
+    # 추천 요청
+    if any(p in message_lower for p in ["추천", "뭐가 좋", "알아서", "골라", "아무"]):
+        return "recommendation"
+
+    # 설명 요청
+    if any(p in message_lower for p in ["뭐야", "뭔데", "무슨", "어떤", "설명"]):
+        return "explanation"
+
+    # 비교 요청
+    if any(p in message_lower for p in ["차이", "다른", "비교"]):
+        return "comparison"
+
+    return "general"
+
+
+# ============================================================
+# 라우팅 함수 (그래프용)
+# ============================================================
+
+def route_after_parse(state: CollectionState) -> str:
+    """parse_input 후 라우팅 결정"""
+    if state.get("is_question"):
+        return "handle_question"
+
+    current_step = state.get("current_step", "topic")
+
+    if current_step == "complete":
+        return "complete"
+    elif current_step == "topic":
+        return "choose_topic"
+    elif current_step == "difficulty":
+        return "choose_difficulty"
+    elif current_step == "language":
+        return "choose_language"
+    else:
+        return "handle_question"

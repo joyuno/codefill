@@ -1,8 +1,9 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Any
 from datetime import datetime
 from enum import Enum
 from uuid import UUID
+import json
 
 
 class ProblemType(str, Enum):
@@ -139,6 +140,20 @@ class BaseProblemListItem(BaseModel):
     difficulty: str
     tags: List[str] = []
     source: Optional[str] = None
+    input_output: Optional[dict] = None
+
+    @field_validator('input_output', mode='before')
+    @classmethod
+    def parse_input_output(cls, v):
+        """JSON 문자열을 dict로 파싱"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return None
+        return v
 
 
 class SolutionItem(BaseModel):
@@ -157,9 +172,22 @@ class BaseProblemDetail(BaseModel):
     tags: List[str] = []
     source: Optional[str] = None
     url: Optional[str] = None
-    input_output: Optional[Any] = None
+    input_output: Optional[dict] = None
     explanation: Optional[str] = None
     solutions: List[SolutionItem] = []  # 솔루션 코드 목록
+
+    @field_validator('input_output', mode='before')
+    @classmethod
+    def parse_input_output(cls, v):
+        """JSON 문자열을 dict로 파싱"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return None
+        return v
 
 
 class BaseProblemListResponse(BaseModel):

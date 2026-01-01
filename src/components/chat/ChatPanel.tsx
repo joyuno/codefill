@@ -15,9 +15,11 @@ const welcomeMessage: Message = {
   content: '안녕하세요! 코딩 테스트 및 알고리즘 연습을 도와드릴게요. 어떤 난이도로 연습하시겠어요?',
   timestamp: new Date().toISOString(),
   chips: [
-    { label: 'Easy', value: 'easy', category: 'difficulty' },
-    { label: 'Medium', value: 'medium', category: 'difficulty' },
-    { label: 'Hard', value: 'hard', category: 'difficulty' },
+    { label: '실버', value: 'easy', category: 'difficulty' },
+    { label: '골드', value: 'medium', category: 'difficulty' },
+    { label: '플래티넘', value: 'medium_hard', category: 'difficulty' },
+    { label: '다이아', value: 'hard', category: 'difficulty' },
+    { label: '마스터', value: 'very_hard', category: 'difficulty' },
   ],
 };
 
@@ -53,12 +55,12 @@ export function ChatPanel({ onProblemsFound }: ChatPanelProps) {
   const generateFallbackResponse = useCallback((userMessage: string): Message => {
     const lowerMessage = userMessage.toLowerCase();
 
-    // Difficulty detection
-    if (lowerMessage.includes('easy') || lowerMessage.includes('쉬운') || lowerMessage.includes('초급')) {
+    // Tier detection (5-level system: 실버, 골드, 플래티넘, 다이아, 마스터)
+    if (lowerMessage.includes('easy') || lowerMessage.includes('실버') || lowerMessage.includes('silver') || lowerMessage.includes('쉬운') || lowerMessage.includes('초급')) {
       return {
         id: `msg-${Date.now()}`,
         role: 'assistant',
-        content: 'Easy 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
+        content: '실버 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
         timestamp: new Date().toISOString(),
         chips: [
           { label: '빈칸 채우기', value: 'blank', category: 'topic' },
@@ -67,11 +69,11 @@ export function ChatPanel({ onProblemsFound }: ChatPanelProps) {
       };
     }
 
-    if (lowerMessage.includes('medium') || lowerMessage.includes('중간') || lowerMessage.includes('중급')) {
+    if (lowerMessage.includes('medium') || lowerMessage.includes('골드') || lowerMessage.includes('gold') || lowerMessage.includes('중간') || lowerMessage.includes('중급')) {
       return {
         id: `msg-${Date.now()}`,
         role: 'assistant',
-        content: 'Medium 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
+        content: '골드 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
         timestamp: new Date().toISOString(),
         chips: [
           { label: '빈칸 채우기', value: 'blank', category: 'topic' },
@@ -80,11 +82,37 @@ export function ChatPanel({ onProblemsFound }: ChatPanelProps) {
       };
     }
 
-    if (lowerMessage.includes('hard') || lowerMessage.includes('어려운') || lowerMessage.includes('고급')) {
+    if (lowerMessage.includes('플래티넘') || lowerMessage.includes('platinum') || lowerMessage.includes('medium_hard')) {
       return {
         id: `msg-${Date.now()}`,
         role: 'assistant',
-        content: 'Hard 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
+        content: '플래티넘 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
+        timestamp: new Date().toISOString(),
+        chips: [
+          { label: '빈칸 채우기', value: 'blank', category: 'topic' },
+          { label: '퍼즐 (코드 정렬)', value: 'puzzle', category: 'topic' },
+        ],
+      };
+    }
+
+    if (lowerMessage.includes('다이아') || lowerMessage.includes('diamond') || lowerMessage.includes('hard') || lowerMessage.includes('어려운') || lowerMessage.includes('고급')) {
+      return {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: '다이아 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
+        timestamp: new Date().toISOString(),
+        chips: [
+          { label: '빈칸 채우기', value: 'blank', category: 'topic' },
+          { label: '퍼즐 (코드 정렬)', value: 'puzzle', category: 'topic' },
+        ],
+      };
+    }
+
+    if (lowerMessage.includes('마스터') || lowerMessage.includes('master') || lowerMessage.includes('very_hard')) {
+      return {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: '마스터 난이도로 선택하셨네요! 어떤 유형의 문제를 원하시나요?',
         timestamp: new Date().toISOString(),
         chips: [
           { label: '빈칸 채우기', value: 'blank', category: 'topic' },

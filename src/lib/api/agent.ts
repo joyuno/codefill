@@ -56,6 +56,7 @@ export interface ChatAgentResponse {
 // Problem Generation
 export interface BaseProblemInfo {
   id?: string;
+  original_id?: string;  // 원본 문제 ID
   name?: string;  // DB에서 오는 문제 이름
   title?: string;  // 생성된 문제 제목
   description?: string;
@@ -63,9 +64,13 @@ export interface BaseProblemInfo {
   code?: string;
   solutions?: { language: string; code: string }[];  // DB 문제의 솔루션
   language?: 'python' | 'java' | 'cpp';
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   topics?: string[];
   tags?: string[];  // DB 문제의 태그
+  input_output?: {  // 입출력 예제
+    inputs: string[];
+    outputs: string[];
+  };
   time_complexity?: string;
   space_complexity?: string;
 }
@@ -169,7 +174,7 @@ export interface HintAgentResponse {
 export interface RAGSearchRequest {
   query: string;
   topics: string[];
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   language?: 'python' | 'java' | 'cpp';
   limit: number;
 }
@@ -266,6 +271,10 @@ export interface ChatV2Request {
     search_results?: BaseProblemInfo[];
     selected_problem?: BaseProblemInfo;
     stage?: string;
+    // 정보 수집 단계 상태 (네/아니오 응답용)
+    awaiting_confirmation?: boolean;
+    suggested_value?: string | null;
+    [key: string]: unknown;  // Allow additional properties
   };
 }
 
@@ -339,6 +348,9 @@ export interface ChatV2Response {
   is_complete: boolean;
   hint_level?: number;
   is_correct?: boolean;
+  // 정보 수집 단계: 네/아니오 확인 상태
+  awaiting_confirmation?: boolean;
+  suggested_value?: string;
 }
 
 // ============================================================
@@ -366,16 +378,6 @@ export const agentApi = {
   },
 
   /**
-   * Chat Agent V2 - 3단계 LangGraph 구조
-   * Intent → Discovery → Solving 단계별 처리
-   */
-  async chatV2(request: ChatV2Request): Promise<ChatV2Response> {
-    const response = await api.post<ChatV2Response>('/agent/chat/v2', request, false);
-    if (response.error) throw new Error(response.error.message);
-    return response.data!;
-  },
-
-  /**
    * Chat Agent - 정식 LangGraph 기반 채팅
    * 3단계 그래프: Intent → Discovery → Solving
    */
@@ -383,13 +385,6 @@ export const agentApi = {
     const response = await api.post<ChatV2Response>('/agent/chat', request, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
-  },
-
-  /**
-   * @deprecated Use chatMain instead
-   */
-  async chatV3(request: ChatV2Request): Promise<ChatV2Response> {
-    return this.chatMain(request);
   },
 
   /**

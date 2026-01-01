@@ -7,6 +7,16 @@ from typing import Dict, Any
 from ..state import CollectionState
 
 
+# DB값 → 티어 표시명
+DIFFICULTY_TO_TIER = {
+    "easy": "실버",
+    "medium": "골드",
+    "medium_hard": "플래티넘",
+    "hard": "다이아",
+    "very_hard": "마스터",
+}
+
+
 def complete_collection(state: CollectionState) -> Dict[str, Any]:
     """
     정보 수집 완료 처리
@@ -28,12 +38,8 @@ def complete_collection(state: CollectionState) -> Dict[str, Any]:
         if not language:
             return {"current_step": "language"}
 
-    # 난이도 한글 변환
-    difficulty_korean = {
-        "easy": "쉬운",
-        "medium": "중간",
-        "hard": "어려운",
-    }.get(difficulty, difficulty)
+    # 티어 이름
+    tier_name = DIFFICULTY_TO_TIER.get(difficulty, difficulty)
 
     # 언어 표시명
     language_display = {
@@ -44,8 +50,8 @@ def complete_collection(state: CollectionState) -> Dict[str, Any]:
 
     # 완료 메시지
     message = (
-        f"좋아요! **{topic}** 주제의 **{difficulty_korean}** 난이도 문제를 "
-        f"**{language_display}**으로 찾아볼게요!"
+        f"좋아요! {topic} 주제의 {tier_name} 문제를 "
+        f"{language_display}로 찾아볼게요!"
     )
 
     return {

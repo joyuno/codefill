@@ -1,10 +1,12 @@
 # 배치 락 관리자 - 배치 간 충돌 방지
+from __future__ import annotations
 
 import os
 import json
 import time
 import fcntl
 from datetime import datetime
+from typing import Optional, List, Tuple, Set, Dict
 from config import LOCK_DIR, CHECKPOINT_FILE, MAIN_FILE, BATCH_SIZE
 
 class LockManager:
@@ -82,12 +84,16 @@ class LockManager:
         empty_indices = []
         for i, problem in enumerate(data):
             solutions = problem.get('solutions', [])
-            if not solutions:
+            # solutions가 문자열이거나 빈 경우 빈 것으로 처리
+            if not solutions or isinstance(solutions, str):
                 empty_indices.append(i)
             else:
                 # 솔루션이 있어도 placeholder인지 확인
                 has_real_code = False
                 for sol in solutions:
+                    # sol이 dict가 아닌 경우 건너뛰기
+                    if not isinstance(sol, dict):
+                        continue
                     code = sol.get('code', '')
                     # 주석만 있거나 너무 짧은 코드는 placeholder로 간주
                     if code and len(code.strip()) > 50:

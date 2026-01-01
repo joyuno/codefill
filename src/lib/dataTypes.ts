@@ -24,7 +24,7 @@ export interface RawProblem {
   name: string;
   question: string;
   input_output: RawInputOutput;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   tags: string[];
   source?: string;
   url?: string;
@@ -127,7 +127,7 @@ export interface ConvertedProblem {
   title: string;
   description: string;
   framework?: 'python' | 'java' | 'cpp' | 'javascript';
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   topics: string[];
   problemType: ConvertedProblemType;
 

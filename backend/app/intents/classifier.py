@@ -124,6 +124,46 @@ class IntentClassifier:
             llm_result = await self._classify_with_llm(message, session_context)
             return self._enrich_result(llm_result, session_context)
 
+    # 주제 키워드 (rule-based 매칭용)
+    TOPIC_KEYWORDS = {
+        # 알고리즘
+        "dp", "DP", "다이나믹", "동적", "동적프로그래밍",
+        "그래프", "graph", "bfs", "BFS", "dfs", "DFS",
+        "정렬", "sort", "탐색", "search",
+        "그리디", "greedy", "탐욕",
+        "구현", "implementation", "브루트포스", "bruteforce",
+        "이분탐색", "binary", "이진탐색",
+        "백트래킹", "backtracking",
+        "분할정복",
+        # 자료구조
+        "스택", "stack", "큐", "queue",
+        "트리", "tree", "해시", "hash",
+        "문자열", "string",
+        # 기초
+        "기초", "기본", "입문",
+    }
+
+    # 난이도 키워드 (rule-based 매칭용)
+    DIFFICULTY_KEYWORDS = {
+        # 티어 시스템
+        "실버", "silver", "Silver",
+        "골드", "gold", "Gold",
+        "플래티넘", "플레티넘", "platinum", "Platinum",
+        "다이아", "다이아몬드", "diamond", "Diamond",
+        "마스터", "master", "Master",
+        # 일반 난이도
+        "쉬움", "쉬운", "쉽", "easy", "Easy",
+        "중간", "보통", "medium", "Medium",
+        "어려움", "어려운", "어렵", "hard", "Hard",
+    }
+
+    # 언어 키워드 (rule-based 매칭용)
+    LANGUAGE_KEYWORDS = {
+        "파이썬", "python", "Python", "py",
+        "자바", "java", "Java",
+        "씨플플", "cpp", "c++", "C++",
+    }
+
     def _check_rules(self, message: str) -> Optional[IntentResult]:
         """
         규칙 기반 빠른 분류 (코드 블록, 특수 패턴 등)
@@ -169,6 +209,67 @@ class IntentClassifier:
                 method="rule",
                 next_action="greet_user"
             )
+
+        # 목적/동기 표현 (rule-based) - 코테 준비, 면접 준비 등
+        purpose_patterns = [
+            "코테", "코딩테스트", "코딩 테스트",
+            "면접 준비", "면접준비", "취준", "취업 준비",
+            "알고리즘 공부", "알고리즘 연습", "실력 향상",
+            "뭐 풀", "문제 추천", "문제추천", "추천해",
+        ]
+        if any(pattern in message_lower for pattern in purpose_patterns):
+            return IntentResult(
+                intent=IntentType.NEW_PROBLEM,
+                confidence=0.90,
+                method="rule",
+                next_action="start_info_collection"
+            )
+
+        # === 정보 수집 키워드 매칭 (단답 입력 지원) ===
+        # 주제/난이도/언어 키워드는 모두 TOPIC_SPECIFIC으로 분류 → InfoCollectionGraph에서 처리
+        if len(message) <= 15:
+            # 주제 키워드
+            if message in self.TOPIC_KEYWORDS or message_lower in self.TOPIC_KEYWORDS:
+                return IntentResult(
+                    intent=IntentType.TOPIC_SPECIFIC,
+                    confidence=0.95,
+                    method="rule",
+                    next_action="set_topic_and_continue"
+                )
+            # 난이도 키워드
+            if message in self.DIFFICULTY_KEYWORDS or message_lower in self.DIFFICULTY_KEYWORDS:
+                return IntentResult(
+                    intent=IntentType.DIFFICULTY_CHANGE,
+                    confidence=0.95,
+                    method="rule",
+                    next_action="set_difficulty_and_continue"
+                )
+            # 언어 키워드
+            if message in self.LANGUAGE_KEYWORDS or message_lower in self.LANGUAGE_KEYWORDS:
+                return IntentResult(
+                    intent=IntentType.LANGUAGE_CHANGE,
+                    confidence=0.95,
+                    method="rule",
+                    next_action="set_language_and_continue"
+                )
+            # 주제 키워드 + "로", "으로", "할래", "할게" 등의 조합
+            for keyword in self.TOPIC_KEYWORDS:
+                if message_lower.startswith(keyword.lower()) and len(message_lower) - len(keyword) <= 5:
+                    return IntentResult(
+                        intent=IntentType.TOPIC_SPECIFIC,
+                        confidence=0.90,
+                        method="rule",
+                        next_action="set_topic_and_continue"
+                    )
+            # 난이도 키워드 + 조합
+            for keyword in self.DIFFICULTY_KEYWORDS:
+                if message_lower.startswith(keyword.lower()) and len(message_lower) - len(keyword) <= 5:
+                    return IntentResult(
+                        intent=IntentType.DIFFICULTY_CHANGE,
+                        confidence=0.90,
+                        method="rule",
+                        next_action="set_difficulty_and_continue"
+                    )
 
         # 코드 블록 + "비슷한" 키워드
         if has_code_block and any(kw in message_lower for kw in ["비슷한", "유사한", "이 코드"]):

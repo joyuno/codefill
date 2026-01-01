@@ -20,6 +20,8 @@ class IntentType(str, Enum):
     DIFFICULTY_CHANGE = "difficulty_change"        # 난이도 변경
     LANGUAGE_CHANGE = "language_change"            # 언어 변경
     RANDOM_RECOMMEND = "random_recommend"          # 아무거나 추천
+    MORE_SEARCH = "more_search"                    # 추가 검색 (다음 5개)
+    GENERATE_NEW = "generate_new"                  # 새 문제 생성 (CodeGen)
 
     # ===== 문제 풀이 중 =====
     HINT_REQUEST = "hint_request"                  # 힌트 요청
@@ -79,6 +81,17 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
             "다른 유형 문제",
             "새로운 도전",
             "다른 거 풀어볼래",
+            # 추가: 목적/동기 표현
+            "코테 준비 중인데",
+            "코딩테스트 준비하려고",
+            "면접 준비 중이야",
+            "알고리즘 공부하려고",
+            "문제 풀고 싶어",
+            "연습하고 싶어",
+            "실력 늘리고 싶어",
+            "뭐 풀지",
+            "심심한데 문제나 풀까",
+            "심심해 문제 줘",
         ],
         "required_context": None,
         "next_action": "collect_preferences",
@@ -117,21 +130,46 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
     IntentType.TOPIC_SPECIFIC: {
         "description": "특정 주제/알고리즘 문제 요청",
         "examples": [
+            # === 단순 키워드 (단답 입력) ===
+            "DP",
+            "dp",
+            "그래프",
+            "정렬",
+            "탐색",
+            "BFS",
+            "DFS",
+            "그리디",
+            "구현",
+            "문자열",
+            "이분탐색",
+            "백트래킹",
+            "다이나믹",
+            "동적프로그래밍",
+            "스택",
+            "큐",
+            "트리",
+            "해시",
+
+            # === 문장형 요청 ===
             # DP
             "DP 문제 풀래",
             "동적 프로그래밍 연습하고 싶어",
             "디피 문제 줘",
+            "DP로 할래",
+            "DP 할래",
 
             # 그래프
             "그래프 문제 풀고 싶어",
             "BFS 연습할래",
             "DFS 문제 있어?",
             "최단경로 문제",
+            "그래프로 할게",
 
             # 정렬/탐색
             "정렬 알고리즘 문제",
             "이진탐색 연습",
             "투포인터 문제",
+            "정렬로 할래",
 
             # 자료구조
             "스택 문제 풀래",
@@ -154,6 +192,20 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
     IntentType.DIFFICULTY_CHANGE: {
         "description": "난이도 변경 요청",
         "examples": [
+            # === 단순 키워드 (단답 입력) ===
+            "실버",
+            "골드",
+            "플래티넘",
+            "다이아",
+            "마스터",
+            "쉬움",
+            "중간",
+            "어려움",
+            "easy",
+            "medium",
+            "hard",
+
+            # === 문장형 요청 ===
             # 쉽게
             "더 쉬운 거",
             "쉬운 문제로",
@@ -161,6 +213,8 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
             "이건 너무 어려워",
             "초급으로 해줘",
             "기초 문제",
+            "실버로 할래",
+            "골드로 해줘",
 
             # 어렵게
             "더 어려운 거",
@@ -169,6 +223,8 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
             "이건 너무 쉬워",
             "고급으로 해줘",
             "챌린지 문제",
+            "다이아로",
+            "플래티넘으로 할게",
 
             # 중간
             "중간 난이도로",
@@ -182,6 +238,18 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
     IntentType.LANGUAGE_CHANGE: {
         "description": "프로그래밍 언어 변경",
         "examples": [
+            # === 단순 키워드 (단답 입력) ===
+            "파이썬",
+            "python",
+            "Python",
+            "자바",
+            "java",
+            "Java",
+            "씨플플",
+            "cpp",
+            "C++",
+
+            # === 문장형 요청 ===
             "파이썬으로 할래",
             "자바로 바꿔줘",
             "C++로 풀고 싶어",
@@ -227,6 +295,54 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
         ],
         "required_context": None,
         "next_action": "recommend_based_on_level",
+    },
+
+    IntentType.MORE_SEARCH: {
+        "description": "추가 검색 - 다음 5개 문제 요청",
+        "examples": [
+            # 더 찾아보기
+            "더 찾아줘",
+            "더 없어?",
+            "다른 문제 더 보여줘",
+            "비슷한 문제 더 찾아줘",
+            "유사한 문제 더",
+            "다음 문제들 보여줘",
+            "다른 것도 보여줘",
+            "더 있어?",
+            "몇 개 더",
+            "추가로 더",
+            "다음 5개",
+            "그 다음",
+            "다른 거 더 없어?",
+            "더 보여줘",
+            "목록 더 보여줘",
+        ],
+        "required_context": "problem_list",
+        "next_action": "search_more_problems",
+    },
+
+    IntentType.GENERATE_NEW: {
+        "description": "새 문제 생성 - CodeGen으로 유사 문제 생성",
+        "examples": [
+            # 생성 요청
+            "새 문제 생성해줘",
+            "새로 만들어줘",
+            "문제 생성해줘",
+            "유사한 문제 생성해줘",
+            "비슷한 문제 만들어줘",
+            "AI가 만든 문제 풀고 싶어",
+            "새로운 문제 만들어줘",
+            "생성된 문제 풀래",
+            "니가 만든 문제",
+            "네가 만든 거 풀래",
+            "새로운 유사 문제",
+            "만들어준 문제 풀래",
+            "생성 문제",
+            "커스텀 문제",
+            "새로 생성",
+        ],
+        "required_context": None,
+        "next_action": "generate_new_problem",
     },
 
     # ============================================================
@@ -534,8 +650,9 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
     },
 
     IntentType.CONFUSION: {
-        "description": "혼란/모르겠음",
+        "description": "혼란/모르겠음 - 도움 요청",
         "examples": [
+            # 기본 혼란
             "모르겠어",
             "헷갈려",
             "이해가 안 돼",
@@ -545,6 +662,15 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
             "어렵다",
             "복잡해",
             "뭘 해야 하지?",
+            # 추가: 도움 요청
+            "도와줘",
+            "어떻게 해",
+            "어떻게 해야 해",
+            "뭐가 뭔지 모르겠어",
+            "막막해",
+            "감이 안 잡혀",
+            "뭐부터 해야 돼?",
+            "어디서부터 시작해?",
         ],
         "required_context": None,
         "next_action": "clarify_and_help",
@@ -634,6 +760,8 @@ INTENT_GROUPS = {
         IntentType.SIMILAR_CODE_PROBLEM,
         IntentType.TOPIC_SPECIFIC,
         IntentType.RANDOM_RECOMMEND,
+        IntentType.MORE_SEARCH,
+        IntentType.GENERATE_NEW,
     ],
     "modification": [
         IntentType.DIFFICULTY_CHANGE,

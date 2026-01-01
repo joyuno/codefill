@@ -80,7 +80,7 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
                 "초보자라면 **기초**부터 시작하는 걸 추천드려요. 어떤 주제로 해볼까요?"
             )
         elif not existing_info.get("difficulty"):
-            fallback_message = "난이도를 선택해주세요! 쉬움, 중간, 어려움 중에 어떤 게 좋을까요?"
+            fallback_message = "난이도를 선택해주세요! 실버, 골드, 플래티넘, 다이아, 마스터 중에 어떤 게 좋을까요?"
         elif not existing_info.get("language"):
             fallback_message = "어떤 프로그래밍 언어로 풀어볼까요? (Python, Java, C++)"
         else:
@@ -150,12 +150,16 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
             is_complete = False
             # 유저 레벨에 따른 난이도 추천
             recommended = "easy" if user_level in ["beginner", "elementary"] else "medium"
+            # 유저 레벨에 따른 추천 난이도 변환
+            tier_recommended = {"easy": "실버", "medium": "골드"}.get(recommended, "실버")
             response_message = (
                 f"난이도는 어떻게 할까요?\n\n"
-                f"• **쉬움** - 기본 개념 익히기\n"
-                f"• **중간** - 응용 문제\n"
-                f"• **어려움** - 도전 문제\n\n"
-                f"회원님 레벨 기준으로 **{recommended}** 추천드려요!"
+                f"• **실버** - 기본 개념 익히기\n"
+                f"• **골드** - 응용 문제\n"
+                f"• **플래티넘** - 심화 문제\n"
+                f"• **다이아** - 도전 문제\n"
+                f"• **마스터** - 최상위 난이도\n\n"
+                f"회원님 레벨 기준으로 **{tier_recommended}** 추천드려요!"
             )
             next_node = "respond"
         # 3. 언어가 없으면 물어보기

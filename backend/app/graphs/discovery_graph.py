@@ -1,23 +1,23 @@
 """
 LangGraph Discovery Graph Definition (Stage 2)
 
-2단계: 문제 탐색 그래프
+2단계: 문제 탐색 그래프 (임베딩 기반 개선)
 
 역할:
 - RAG 기반 문제 검색
 - 검색 결과 필터링 / CodeGen fallback
-- 사용자 문제 선택 처리
+- 임베딩 기반 사용자 의도 인식 (액션, 문제 선택)
 - 문제 확정 및 유형 선택
 
 플로우:
-    START → route_discovery_intent
+    START → route_discovery_intent (임베딩 기반 액션 인식)
               ↓
     search_problems (RAG 검색)
               ↓ (조건부 분기)
-    ├─ 유사도 높음 → filter_results
+    ├─ 유사도 높음 → filter_results (임베딩 재순위)
     └─ fallback → generate_problem
               ↓ (합류)
-    handle_selection (문제유형 선택)
+    handle_selection (임베딩 기반 문제 선택)
               ↓ (조건부)
     ├─ 선택 안됨 → respond (목록 표시, 선택 대기)
     └─ 선택됨 → confirm_problem (문제 생성 agent)
@@ -34,6 +34,7 @@ from .discovery_state import (
     DISCOVERY_INTENTS,
     IMMEDIATE_SEARCH_INTENTS,
     SELECTION_INTENTS,
+    GENERATE_INTENTS,
 )
 
 
@@ -44,36 +45,62 @@ from .discovery_state import (
 async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     Discovery 그래프의 진입점.
-    의도에 따라 다음 노드를 결정합니다.
+
+    Note: 대부분의 의도 분류는 orchestrator의 intent_tool에서 이미 처리됨.
+    이 노드는 state에 전달된 intent와 selection_index를 기반으로 라우팅만 수행.
     """
     intent = state.get("intent", "")
-    message = state.get("message", "")
     search_results = state.get("search_results", [])
     collected_info = state.get("collected_info", {})
+    current_offset = state.get("search_offset", 0)
+    selection_index = state.get("selection_index")
 
-    # 1. 이미 검색 결과가 있고 문제 선택 의도인 경우
-    if intent in SELECTION_INTENTS or (search_results and _is_selection_message(message)):
+    # 1. 오케스트레이터에서 이미 선택 인덱스를 감지한 경우 → 바로 선택 처리
+    if selection_index and search_results:
+        print(f"[DiscoveryGraph] Using pre-detected selection_index: {selection_index}")
         return {"next_node": "handle_selection"}
 
-    # 2. 새 문제 검색이 필요한 경우
+    # 2. 강제 생성 의도 (새 문제 생성 버튼)
+    if intent in GENERATE_INTENTS:
+        return {
+            "force_generate": True,
+            "next_node": "generate_problem",
+        }
+
+    # 3. 더 찾아보기 의도 (다음 5개)
+    if intent == "more_search" or intent == "show_more":
+        new_offset = current_offset + 5
+        return {
+            "search_offset": new_offset,
+            "next_node": "search_problems",
+        }
+
+    # 4. 문제 선택 의도 (검색 결과가 있을 때)
+    if intent in SELECTION_INTENTS or intent == "select_problem":
+        if search_results:
+            return {"next_node": "handle_selection"}
+
+    # 5. 새 문제 검색이 필요한 경우
     if intent in IMMEDIATE_SEARCH_INTENTS:
-        return {"next_node": "search_problems"}
+        return {"search_offset": 0, "next_node": "search_problems"}
 
-    # 3. 수집된 정보가 있으면 검색
+    # 6. 수집된 정보가 있으면 검색
     if collected_info.get("topics") or collected_info.get("difficulty"):
-        return {"next_node": "search_problems"}
+        return {"search_offset": 0, "next_node": "search_problems"}
 
-    # 4. 기본: 검색
-    return {"next_node": "search_problems"}
+    # 7. 기본: 검색
+    return {"search_offset": 0, "next_node": "search_problems"}
 
 
 async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     RAG를 통해 문제를 검색합니다.
+    offset을 사용하여 다음 결과를 가져올 수 있습니다.
     """
     from ..services.rag import rag_service
 
     collected_info = state.get("collected_info", {})
+    search_offset = state.get("search_offset", 0)
 
     # 검색 파라미터
     topics = collected_info.get("topics", [])
@@ -88,15 +115,25 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
         query_parts.append(f"{difficulty} difficulty")
     query = " ".join(query_parts) if query_parts else "기초 알고리즘 문제"
 
-    # RAG 검색
+    # RAG 검색 (offset 적용: limit을 늘려서 가져온 후 슬라이싱)
     try:
+        # offset + 5개를 가져와서 offset 이후 5개만 사용
+        fetch_limit = search_offset + 5
         results, should_fallback = await rag_service.search_problems_hybrid(
             query=query,
             topics=topics,
             difficulty=difficulty,
             language=language,
-            limit=5
+            limit=fetch_limit
         )
+        # offset 이후 결과만 사용
+        results = results[search_offset:search_offset + 5]
+
+        # 더 이상 결과가 없으면 fallback 여부 확인
+        if len(results) == 0 and search_offset > 0:
+            should_fallback = True
+            print(f"[DiscoveryGraph:Search] No more results at offset {search_offset}")
+
     except Exception as e:
         print(f"[DiscoveryGraph:Search] RAG error: {e}")
         results = []
@@ -107,6 +144,7 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     for r in results:
         search_results.append({
             "id": r.get("id"),
+            "original_id": r.get("original_id"),
             "name": r.get("name") or r.get("original_id"),
             "title": r.get("title") or r.get("name"),
             "question": r.get("question"),
@@ -115,6 +153,7 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
             "tags": r.get("tags", []),
             "topics": r.get("topics", []),
             "solutions": r.get("solutions", []),
+            "input_output": r.get("input_output"),  # 입출력 예제 추가
             "similarity": r.get("similarity"),
         })
 
@@ -136,29 +175,47 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
 async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     검색 결과를 필터링하고 응답을 생성합니다.
+
+    Note: RAG 검색이 이미 유사도 기반 정렬을 하므로 추가 reranking 불필요.
+    단순히 상위 5개를 사용합니다.
     """
     search_results = state.get("search_results", [])
-    collected_info = state.get("collected_info", {})
+    search_offset = state.get("search_offset", 0)
 
-    # 필터링 (현재는 패스스루, 추후 고도화 가능)
+    # RAG 결과에서 상위 5개 사용 (이미 유사도 정렬됨)
     filtered_results = search_results[:5]
 
     # 응답 메시지 생성
     if filtered_results:
-        problem_list = "\n".join([
-            f"  {i+1}. {p.get('name') or p.get('title', 'Unknown')} ({p.get('difficulty', 'medium')})"
-            for i, p in enumerate(filtered_results)
-        ])
-        response_message = f"찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요? 번호로 선택해주세요!"
+        # offset에 따른 메시지 조정
+        if search_offset > 0:
+            start_num = search_offset + 1
+            end_num = search_offset + len(filtered_results)
+            problem_list = "\n".join([
+                f"  {start_num + i}. {p.get('name') or p.get('title', 'Unknown')} ({p.get('difficulty', 'medium')})"
+                for i, p in enumerate(filtered_results)
+            ])
+            response_message = f"추가로 찾은 문제들이에요 ({start_num}~{end_num}번):\n{problem_list}\n\n어떤 문제를 풀어볼까요?"
+        else:
+            problem_list = "\n".join([
+                f"  {i+1}. {p.get('name') or p.get('title', 'Unknown')} ({p.get('difficulty', 'medium')})"
+                for i, p in enumerate(filtered_results)
+            ])
+            response_message = f"찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요? 번호로 선택해주세요!"
 
         action_data = {
             "status": "found",
             "problems": filtered_results,
+            "search_offset": search_offset,
+            "has_more": len(filtered_results) == 5,  # 5개가 있으면 더 있을 수 있음
         }
         action_trigger = "search_problems"
     else:
-        response_message = "조건에 맞는 문제를 찾지 못했어요. 다른 조건으로 시도해볼까요?"
-        action_data = {"status": "not_found"}
+        if search_offset > 0:
+            response_message = "더 이상 조건에 맞는 문제가 없어요. 새 문제를 생성해볼까요?"
+        else:
+            response_message = "조건에 맞는 문제를 찾지 못했어요. 다른 조건으로 시도해볼까요?"
+        action_data = {"status": "not_found", "search_offset": search_offset}
         action_trigger = None
 
     return {
@@ -166,6 +223,7 @@ async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
         "response_message": response_message,
         "action_data": action_data,
         "action_trigger": action_trigger,
+        "search_offset": search_offset,
         "awaiting_selection": True,  # 선택 대기 상태
         "next_node": "handle_selection",
     }
@@ -174,12 +232,15 @@ async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
 async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     CodeGen을 통해 새 문제를 생성합니다.
+    RAG 검색 결과가 없을 때 fallback으로 호출됩니다.
     """
-    from ..services.openrouter import openrouter_service
-    from ..prompts.code_gen_agent import CODE_GEN_SYSTEM_PROMPT
+    from ..services.rag import rag_service
+    from ..config import get_settings
     import json
 
+    settings = get_settings()
     collected_info = state.get("collected_info", {})
+    search_results = state.get("search_results", [])  # RAG에서 찾은 유사 문제 (fallback용 참고)
 
     user_request = {
         "topics": collected_info.get("topics", ["기초"]),
@@ -188,43 +249,57 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
         "specific_needs": collected_info.get("specific_needs", ""),
     }
 
-    print(f"[DiscoveryGraph:CodeGen] Starting generation...")
+    # Fallback 알림 메시지
+    topics_str = ", ".join(collected_info.get("topics", ["기초"]))
+    fallback_message = f"'{topics_str}' 관련 문제를 찾지 못했어요. 유사한 새로운 문제를 생성하고 있어요..."
 
-    messages = [
-        {"role": "system", "content": CODE_GEN_SYSTEM_PROMPT},
-        {"role": "user", "content": json.dumps(user_request, ensure_ascii=False)},
-    ]
+    print(f"[DiscoveryGraph:CodeGen] Fallback triggered - {fallback_message}")
+    print(f"[DiscoveryGraph:CodeGen] Starting generation with RAG context...")
 
     try:
-        response = await openrouter_service.chat_completion(
-            messages=messages,
-            model="claude-sonnet",
-            response_format={"type": "json_object"},
+        # RAG 서비스를 통해 문제 생성 (유사 문제 참고)
+        user_context = state.get("user_context", {})
+        generated_result = await rag_service.generate_problem_with_rag(
+            user_request=user_request,
+            similar_problems=search_results,  # 유사도가 낮더라도 참고용으로 전달
+            user_context=user_context,
         )
-        content = openrouter_service.get_content(response)
-        result = openrouter_service.parse_json_response(content)
 
         generated_problem: ProblemInfo = {
             "id": None,
-            "title": result.get("title", "새 문제"),
-            "description": result.get("description", ""),
-            "difficulty": result.get("difficulty", collected_info.get("difficulty", "easy")),
-            "topics": result.get("topics", collected_info.get("topics", [])),
-            "code": result.get("code", {}),
+            "title": generated_result.get("title", "새 문제"),
+            "title_en": generated_result.get("title_en"),
+            "description": generated_result.get("description", ""),
+            "difficulty": generated_result.get("difficulty", collected_info.get("difficulty", "easy")),
+            "topics": generated_result.get("topics", collected_info.get("topics", [])),
+            "code": generated_result.get("code", {}),
+            "input_format": generated_result.get("input_format"),
+            "output_format": generated_result.get("output_format"),
+            "examples": generated_result.get("examples", []),
+            "constraints": generated_result.get("constraints", []),
+            "key_concepts": generated_result.get("key_concepts", []),
         }
 
-        response_message = f"새로 만든 문제예요:\n  • {generated_problem['title']} ({generated_problem['difficulty']})\n\n이 문제를 풀어볼까요?"
+        response_message = (
+            f"요청하신 조건에 맞는 문제를 DB에서 찾지 못해서, 새로운 문제를 생성했어요!\n\n"
+            f"**{generated_problem['title']}** ({generated_problem['difficulty']})\n\n"
+            f"이 문제를 풀어볼까요?"
+        )
         action_data = {
             "status": "generated",
             "generated_problem": generated_problem,
+            "is_fallback": True,
+            "fallback_message": fallback_message,
         }
         action_trigger = "generated"
 
     except Exception as e:
         print(f"[DiscoveryGraph:CodeGen] Error: {e}")
+        import traceback
+        traceback.print_exc()
         generated_problem = None
         response_message = "문제 생성 중 오류가 발생했어요. 다른 조건으로 다시 시도해볼까요?"
-        action_data = {"status": "error", "error": str(e)}
+        action_data = {"status": "error", "error": str(e), "is_fallback": True}
         action_trigger = None
 
     return {
@@ -232,6 +307,8 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
         "response_message": response_message,
         "action_data": action_data,
         "action_trigger": action_trigger,
+        "is_fallback": True,
+        "fallback_message": fallback_message,
         "awaiting_selection": True,  # 선택 대기 상태
         "next_node": "handle_selection",
     }
@@ -241,10 +318,14 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     사용자의 문제 선택을 처리합니다.
 
-    - 선택 대기 상태 (awaiting_selection): respond로 이동하여 목록 표시
-    - 선택 정보 있음: confirm_problem으로 이동
+    매칭 우선순위:
+    1. state에서 전달받은 selection_index (intent_tool에서 이미 감지됨)
+    2. collected_info의 선택 정보
+    3. 패턴 매칭 (폴백)
+    4. 단순 긍정 응답 → 첫 번째 문제
     """
-    message = state.get("message", "").lower()
+    message = state.get("message", "")
+    message_lower = message.lower()
     search_results = state.get("search_results", [])
     filtered_results = state.get("filtered_results", [])
     generated_problem = state.get("generated_problem")
@@ -253,7 +334,7 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
     awaiting_selection = state.get("awaiting_selection", False)
 
     # 선택 대기 상태: 목록만 보여주고 respond로 이동
-    if awaiting_selection and not _has_selection_info(message, collected_info):
+    if awaiting_selection and not state.get("selection_index") and not _has_selection_info(message_lower, collected_info):
         return {"next_node": "respond"}
 
     # filtered_results나 user_context에서 search_results 확인
@@ -264,40 +345,47 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
     selected_name = None
     selected_index = None
 
-    # 1. collected_info에서 선택 정보 확인
-    if collected_info.get("selected_problem"):
-        selected_name = collected_info["selected_problem"]
-    if collected_info.get("selected_problem_index"):
-        selected_index = collected_info["selected_problem_index"]
+    # 1. state에서 selection_index 확인 (intent_tool에서 전달)
+    if state.get("selection_index"):
+        selected_index = state["selection_index"]
+        print(f"[DiscoveryGraph] Using pre-detected selection_index: {selected_index}")
 
-    # 2. 메시지에서 번호 추출
+    # 2. collected_info에서 선택 정보 확인
     if not selected_index:
-        num_match = re.search(r'(\d+)\s*번', message)
+        if collected_info.get("selected_problem"):
+            selected_name = collected_info["selected_problem"]
+        if collected_info.get("selected_problem_index"):
+            selected_index = collected_info["selected_problem_index"]
+
+    # 3. 폴백: 패턴 매칭
+    if not selected_index and not selected_name:
+        num_match = re.search(r'(\d+)\s*번', message_lower)
         if num_match:
             selected_index = int(num_match.group(1))
         else:
             ordinal_map = {"첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5}
             for word, idx in ordinal_map.items():
-                if word in message:
+                if word in message_lower:
                     selected_index = idx
                     break
             if not selected_index:
-                simple_num = re.search(r'\b([1-5])\b', message)
+                simple_num = re.search(r'\b([1-5])\b', message_lower)
                 if simple_num:
                     selected_index = int(simple_num.group(1))
 
-    # 3. 메시지에서 문제 이름 추출
-    if not selected_name:
-        name_match = re.search(r'(taco_\d+)', message, re.IGNORECASE)
+    # 4. 메시지에서 문제 이름 추출
+    if not selected_name and not selected_index:
+        name_match = re.search(r'(taco_\d+)', message_lower, re.IGNORECASE)
         if name_match:
             selected_name = name_match.group(1)
 
-    # 4. 문제 찾기
-    if selected_index and search_results:
+    # 5. 문제 찾기 (인덱스 기반)
+    if not selected_problem and selected_index and search_results:
         idx = selected_index - 1
         if 0 <= idx < len(search_results):
             selected_problem = search_results[idx]
 
+    # 6. 문제 찾기 (이름 기반)
     if not selected_problem and selected_name and search_results:
         for p in search_results:
             if (p.get("name", "").lower() == selected_name.lower() or
@@ -305,14 +393,14 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
                 selected_problem = p
                 break
 
-    # 5. generated_problem 확인
+    # 7. generated_problem 확인
     if not selected_problem and generated_problem:
-        if any(kw in message for kw in ["할게", "풀게", "좋아", "네", "그거", "응"]):
+        if any(kw in message_lower for kw in ["할게", "풀게", "좋아", "네", "그거", "응"]):
             selected_problem = generated_problem
 
-    # 6. 첫 번째 문제 default
+    # 8. 첫 번째 문제 default
     if not selected_problem and search_results:
-        if any(kw in message for kw in ["할게", "풀게", "좋아", "네", "첫", "응"]):
+        if any(kw in message_lower for kw in ["할게", "풀게", "좋아", "네", "첫", "응"]):
             selected_problem = search_results[0]
 
     if selected_problem:
@@ -411,7 +499,7 @@ def _has_selection_info(message: str, collected_info: dict) -> bool:
 def route_after_discovery_intent(state: DiscoveryState) -> str:
     """진입점 후 라우팅"""
     next_node = state.get("next_node", "search_problems")
-    valid_nodes = {"search_problems", "handle_selection", "filter_results"}
+    valid_nodes = {"search_problems", "handle_selection", "filter_results", "generate_problem"}
     return next_node if next_node in valid_nodes else "search_problems"
 
 
@@ -461,6 +549,7 @@ def create_discovery_graph() -> StateGraph:
             "search_problems": "search_problems",
             "handle_selection": "handle_selection",
             "filter_results": "filter_results",
+            "generate_problem": "generate_problem",
         }
     )
 
@@ -535,6 +624,7 @@ class DiscoveryGraph:
         conversation_history: list = None,
         user_context: dict = None,
         search_results: list = None,
+        selection_index: int = None,
     ) -> Dict[str, Any]:
         """
         그래프를 실행합니다.
@@ -546,6 +636,7 @@ class DiscoveryGraph:
             conversation_history: 대화 히스토리
             user_context: 사용자 컨텍스트
             search_results: 이전 검색 결과 (있으면)
+            selection_index: intent_tool에서 감지한 선택 인덱스 (1-based)
 
         Returns:
             {
@@ -565,6 +656,7 @@ class DiscoveryGraph:
             "conversation_history": conversation_history or [],
             "user_context": user_context or {},
             "search_results": search_results or [],
+            "selection_index": selection_index,  # 오케스트레이터에서 전달받은 선택 인덱스
         }
 
         result = await self.graph.ainvoke(initial_state)

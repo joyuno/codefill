@@ -38,6 +38,11 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USER_INFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
+GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_USER_URL = "https://api.github.com/user"
+GITHUB_EMAILS_URL = "https://api.github.com/user/emails"
+
 
 @router.post("/signup", response_model=TokenResponse)
 async def signup(request: SignupRequest, db=Depends(get_db)):
@@ -99,6 +104,40 @@ async def signup(request: SignupRequest, db=Depends(get_db)):
 
         # Note: user_stats and user_preferences are created by database trigger
         # handle_new_user() - no need to create them manually
+
+        # Create solved_ac_profiles record if solved_ac_id is provided
+        if request.onboarding_data and request.onboarding_data.solved_ac_id:
+            try:
+                # Fetch profile from solved.ac API
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"https://solved.ac/api/v3/user/show",
+                        params={"handle": request.onboarding_data.solved_ac_id},
+                        timeout=10.0
+                    )
+                    if response.status_code == 200:
+                        profile = response.json()
+                        from datetime import datetime
+                        now = datetime.utcnow().isoformat()
+                        db.table("solved_ac_profiles").insert({
+                            "user_id": user_id,
+                            "handle": profile.get("handle", request.onboarding_data.solved_ac_id),
+                            "bio": profile.get("bio"),
+                            "profile_image_url": profile.get("profileImageUrl"),
+                            "tier": profile.get("tier", 0),
+                            "rating": profile.get("rating", 0),
+                            "class": profile.get("class", 0),
+                            "class_decoration": profile.get("classDecoration"),
+                            "solved_count": profile.get("solvedCount", 0),
+                            "exp": profile.get("exp", 0),
+                            "rank": profile.get("rank"),
+                            "max_streak": profile.get("maxStreak", 0),
+                            "organizations": profile.get("organizations"),
+                            "last_synced_at": now,
+                        }).execute()
+            except Exception as e:
+                # Don't fail signup if solved.ac integration fails
+                print(f"Failed to create solved_ac_profile: {e}")
 
         # Update preferences if provided
         if request.preferred_language:
@@ -791,9 +830,12 @@ async def kakao_callback(
             if email:
                 email_user = db.table("users").select("*").ilike("email", email).is_("deleted_at", "null").execute()
                 if email_user.data and len(email_user.data) > 0:
+                    # Same email exists - just login, don't overwrite provider
                     user = email_user.data[0]
                     user_id = user["id"]
-                    db.table("users").update({"provider": "kakao", "provider_id": kakao_id, "avatar_url": profile_image or user.get("avatar_url")}).eq("id", user_id).execute()
+                    # Only update avatar if not set
+                    if not user.get("avatar_url") and profile_image:
+                        db.table("users").update({"avatar_url": profile_image}).eq("id", user_id).execute()
                 else:
                     user_id = _create_kakao_user(db, kakao_id, email, nickname, profile_image)
                     is_new_user = True
@@ -924,14 +966,12 @@ async def google_callback(
             if email:
                 email_user = db.table("users").select("*").ilike("email", email).is_("deleted_at", "null").execute()
                 if email_user.data and len(email_user.data) > 0:
+                    # Same email exists - just login, don't overwrite provider
                     user = email_user.data[0]
                     user_id = user["id"]
-                    # Update provider info
-                    db.table("users").update({
-                        "provider": "google",
-                        "provider_id": google_id,
-                        "avatar_url": profile_image or user.get("avatar_url")
-                    }).eq("id", user_id).execute()
+                    # Only update avatar if not set
+                    if not user.get("avatar_url") and profile_image:
+                        db.table("users").update({"avatar_url": profile_image}).eq("id", user_id).execute()
                 else:
                     user_id = _create_google_user(db, google_id, email, name, profile_image)
                     is_new_user = True
@@ -966,5 +1006,192 @@ def _create_google_user(db, google_id: str, email: str, name: str, profile_image
         "avatar_url": profile_image,
         "provider": "google",
         "provider_id": google_id
+    }).execute()
+    return user_id
+
+
+# =====================================================
+# GitHub OAuth Endpoints
+# =====================================================
+
+@router.get("/github/login")
+async def github_login():
+    """
+    Redirect to GitHub OAuth authorization page.
+    """
+    state = secrets.token_urlsafe(32)
+    github_auth_url = (
+        f"{GITHUB_AUTH_URL}"
+        f"?client_id={settings.github_client_id}"
+        f"&redirect_uri={settings.github_redirect_uri}"
+        f"&scope=read:user user:email"
+        f"&state={state}"
+    )
+    return RedirectResponse(url=github_auth_url)
+
+
+@router.get("/github/callback")
+async def github_callback(
+    code: str = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
+    db=Depends(get_db)
+):
+    """
+    Handle GitHub OAuth callback.
+    Exchange authorization code for tokens, get user info, and redirect to frontend.
+    """
+    if error:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error={error}&message={error_description}")
+
+    if not code:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=no_code&message=Authorization code not provided")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # 1. Exchange authorization code for access token
+            token_response = await client.post(
+                GITHUB_TOKEN_URL,
+                json={
+                    "client_id": settings.github_client_id,
+                    "client_secret": settings.github_client_secret,
+                    "code": code,
+                },
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+            )
+            if token_response.status_code != 200:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to get GitHub token: {token_response.text}")
+
+            token_data = token_response.json()
+
+            # Check for error in token response
+            if "error" in token_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"GitHub OAuth error: {token_data.get('error_description', token_data['error'])}"
+                )
+
+            github_access_token = token_data["access_token"]
+
+            # 2. Get user info from GitHub
+            user_response = await client.get(
+                GITHUB_USER_URL,
+                headers={
+                    "Authorization": f"Bearer {github_access_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                }
+            )
+            if user_response.status_code != 200:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get GitHub user info")
+            github_user = user_response.json()
+
+            # 3. Get user emails from GitHub (separate API call required)
+            emails_response = await client.get(
+                GITHUB_EMAILS_URL,
+                headers={
+                    "Authorization": f"Bearer {github_access_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                }
+            )
+
+            email = None
+            if emails_response.status_code == 200:
+                emails = emails_response.json()
+                # Find primary verified email
+                primary_email = next(
+                    (e["email"] for e in emails if e.get("primary") and e.get("verified")),
+                    None
+                )
+                if primary_email:
+                    email = primary_email
+                elif emails:
+                    # Fallback to first verified email
+                    verified_email = next(
+                        (e["email"] for e in emails if e.get("verified")),
+                        None
+                    )
+                    email = verified_email or emails[0].get("email")
+
+            # Fallback to public email from user profile
+            if not email:
+                email = github_user.get("email")
+
+        # 4. Extract user info
+        github_id = str(github_user["id"])
+        login = github_user.get("login", f"github_{github_id}")
+        name = github_user.get("name") or login
+        avatar_url = github_user.get("avatar_url")
+
+        # 4.5. Check for withdrawn user - redirect to recovery confirmation page
+        recovery_info = _check_withdrawn_user_for_recovery(db, email=email, provider="github", provider_id=github_id)
+        if recovery_info:
+            from urllib.parse import quote
+            redirect_url = (
+                f"{settings.frontend_url}/auth/recover"
+                f"?provider=github"
+                f"&provider_id={github_id}"
+                f"&email={quote(recovery_info.get('email', ''))}"
+                f"&days={recovery_info['days_remaining']}"
+            )
+            return RedirectResponse(url=redirect_url)
+
+        # 5. Check if user exists in our database (exclude soft-deleted users)
+        existing_user = db.table("users").select("*").eq("provider", "github").eq("provider_id", github_id).is_("deleted_at", "null").execute()
+        is_new_user = False
+
+        if existing_user.data and len(existing_user.data) > 0:
+            user = existing_user.data[0]
+            user_id = user["id"]
+        else:
+            # Check if email already exists (link accounts, exclude soft-deleted)
+            if email:
+                email_user = db.table("users").select("*").ilike("email", email).is_("deleted_at", "null").execute()
+                if email_user.data and len(email_user.data) > 0:
+                    # Same email exists - just login, don't overwrite provider
+                    user = email_user.data[0]
+                    user_id = user["id"]
+                    # Only update avatar if not set
+                    if not user.get("avatar_url") and avatar_url:
+                        db.table("users").update({"avatar_url": avatar_url}).eq("id", user_id).execute()
+                else:
+                    user_id = _create_github_user(db, github_id, email, name, avatar_url)
+                    is_new_user = True
+            else:
+                # No email available, generate a placeholder
+                generated_email = f"github_{github_id}@codefill.local"
+                user_id = _create_github_user(db, github_id, generated_email, name, avatar_url)
+                is_new_user = True
+
+        # 6. Generate JWT tokens using utility functions
+        from ..utils.security import create_access_token, create_refresh_token
+        access_token = create_access_token(user_id)
+        refresh_token = create_refresh_token(user_id)
+
+        # 7. Redirect to frontend with tokens (include is_new_user flag)
+        redirect_url = f"{settings.frontend_url}/auth/callback?access_token={access_token}&refresh_token={refresh_token}&expires_in={settings.access_token_expire_minutes * 60}&is_new_user={str(is_new_user).lower()}"
+        return RedirectResponse(url=redirect_url)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=github_login_failed&message={str(e)}")
+
+
+def _create_github_user(db, github_id: str, email: str, name: str, avatar_url: Optional[str]) -> str:
+    """Create a new user from GitHub OAuth data."""
+    user_id = str(uuid.uuid4())
+    db.table("users").insert({
+        "id": user_id,
+        "email": email,
+        "name": name,
+        "avatar_url": avatar_url,
+        "provider": "github",
+        "provider_id": github_id
     }).execute()
     return user_id

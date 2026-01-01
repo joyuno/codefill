@@ -40,6 +40,10 @@ export interface BaseProblemListItem {
   difficulty: string;
   tags: string[];
   source: string | null;
+  input_output: {
+    inputs?: string[];
+    outputs?: string[];
+  } | null;
 }
 
 export interface BaseProblemDetail {
