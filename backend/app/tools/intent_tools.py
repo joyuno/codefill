@@ -189,9 +189,18 @@ class IntentTool:
                 return selection_result
 
         # ============================================================
-        # 3. 풀이 중 힌트 요청
+        # 3. 풀이 중 요청 (힌트, 요약, 질문 등)
         # ============================================================
         if session_state.get("current_problem"):
+            # 문제 요약 요청
+            if any(kw in msg_lower for kw in ["요약", "summary", "간단히", "정리", "문제 설명"]):
+                return IntentResult(
+                    category=IntentCategory.SOLVING,
+                    action=ActionType.ASK_QUESTION,  # solving graph에서 summarize_problem으로 라우팅됨
+                    confidence=0.95,
+                    suggested_route="solving",
+                )
+            # 힌트 요청
             if any(h in msg_lower for h in ["힌트", "모르겠", "어려워", "도와줘"]):
                 return IntentResult(
                     category=IntentCategory.SOLVING,
@@ -220,7 +229,14 @@ class IntentTool:
                 )
 
         # ============================================================
-        # 5. 임베딩 기반 주제/난이도/언어 감지
+        # 5. 학습 목표/레벨 언급 감지 (대기업, 코테, 취업 등)
+        # ============================================================
+        goal_result = self._check_goal_or_level_mention(message, session_state)
+        if goal_result:
+            return goal_result
+
+        # ============================================================
+        # 6. 임베딩 기반 주제/난이도/언어 감지
         # ============================================================
         embedding_result = await self._classify_with_embeddings(message, session_state)
         if embedding_result and embedding_result.confidence >= 0.70:
@@ -337,6 +353,76 @@ class IntentTool:
                     confidence=0.95,
                     suggested_route="collection",
                 )
+
+        return None
+
+    def _check_goal_or_level_mention(
+        self,
+        message: str,
+        session_state: Dict[str, Any],
+    ) -> Optional[IntentResult]:
+        """
+        학습 목표나 레벨 언급 감지
+
+        "대기업 코테", "취업 준비", "입문자", "초보" 등
+        → 이 정보를 컨텍스트에 반영하고 개인화 추천으로 연결
+        """
+        msg_lower = message.lower().strip()
+
+        extracted = {}
+
+        # ============================================================
+        # 학습 목표 (learning_goal) 감지
+        # ============================================================
+        # 대기업 목표
+        if any(kw in msg_lower for kw in ["대기업", "빅테크", "네카라쿠배", "삼성", "카카오", "네이버", "라인"]):
+            extracted["learning_goal"] = "big_tech"
+
+        # 스타트업/중소기업 목표
+        elif any(kw in msg_lower for kw in ["스타트업", "중소기업", "중견기업", "실무"]):
+            extracted["learning_goal"] = "mid_startup"
+
+        # 실력 향상 목표
+        elif any(kw in msg_lower for kw in ["실력 향상", "공부", "학습", "배우", "연습"]):
+            extracted["learning_goal"] = "skill_up"
+
+        # ============================================================
+        # 경험 레벨 (experience_level) 감지
+        # ============================================================
+        # 입문자/초보
+        if any(kw in msg_lower for kw in ["입문", "초보", "초심자", "처음", "시작", "기초부터"]):
+            extracted["experience_level"] = "beginner"
+
+        # 초급
+        elif any(kw in msg_lower for kw in ["초급", "기본", "쉬운 것부터"]):
+            extracted["experience_level"] = "elementary"
+
+        # 중급
+        elif any(kw in msg_lower for kw in ["중급", "어느정도", "좀 해봤", "경험 있"]):
+            extracted["experience_level"] = "intermediate"
+
+        # 고급
+        elif any(kw in msg_lower for kw in ["고급", "어려운", "상급", "챌린지", "전문"]):
+            extracted["experience_level"] = "advanced"
+
+        # ============================================================
+        # 코딩 테스트 관련 키워드
+        # ============================================================
+        if any(kw in msg_lower for kw in ["코테", "코딩테스트", "코딩 테스트", "알고리즘 테스트"]):
+            # 코테 언급 시 기본적으로 big_tech 목표로 설정 (없으면)
+            if "learning_goal" not in extracted:
+                extracted["learning_goal"] = "big_tech"
+
+        # 추출된 값이 있으면 INFO_COLLECTION으로 분류
+        if extracted:
+            print(f"[IntentTool] Goal/Level detected: {extracted}")
+            return IntentResult(
+                category=IntentCategory.INFO_COLLECTION,
+                action=ActionType.ASK_RECOMMENDATION,
+                confidence=0.85,
+                extracted_values=extracted,
+                suggested_route="collection",
+            )
 
         return None
 

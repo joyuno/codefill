@@ -56,6 +56,7 @@ async def search_problems(state: ChatState) -> Dict[str, Any]:
     for r in results:
         search_results.append({
             "id": r.get("id"),
+            "original_id": r.get("original_id"),  # 문제 유형 생성 시 필요!
             "name": r.get("name") or r.get("original_id"),
             "title": r.get("title") or r.get("name"),
             "question": r.get("question"),
@@ -64,6 +65,7 @@ async def search_problems(state: ChatState) -> Dict[str, Any]:
             "tags": r.get("tags", []),
             "topics": r.get("topics", []),
             "solutions": r.get("solutions", []),
+            "input_output": r.get("input_output"),  # 테스트 케이스용
             "similarity": r.get("similarity"),
         })
 

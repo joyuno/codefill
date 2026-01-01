@@ -25,6 +25,7 @@ LangGraph Discovery Graph Definition (Stage 2)
                   respond → END
 """
 import re
+import json
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 
@@ -142,6 +143,22 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     # ProblemInfo 형식으로 변환
     search_results: List[ProblemInfo] = []
     for r in results:
+        # input_output이 JSON 문자열인 경우 파싱
+        input_output = r.get("input_output")
+        if isinstance(input_output, str):
+            try:
+                input_output = json.loads(input_output)
+            except (json.JSONDecodeError, TypeError):
+                input_output = None
+
+        # tags가 JSON 문자열인 경우 파싱
+        tags = r.get("tags", [])
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except (json.JSONDecodeError, TypeError):
+                tags = []
+
         search_results.append({
             "id": r.get("id"),
             "original_id": r.get("original_id"),
@@ -150,10 +167,10 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
             "question": r.get("question"),
             "description": r.get("description"),
             "difficulty": r.get("difficulty", "medium"),
-            "tags": r.get("tags", []),
+            "tags": tags if isinstance(tags, list) else [],
             "topics": r.get("topics", []),
             "solutions": r.get("solutions", []),
-            "input_output": r.get("input_output"),  # 입출력 예제 추가
+            "input_output": input_output,  # 파싱된 입출력 예제
             "similarity": r.get("similarity"),
         })
 
@@ -233,8 +250,11 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     CodeGen을 통해 새 문제를 생성합니다.
     RAG 검색 결과가 없을 때 fallback으로 호출됩니다.
+
+    생성된 문제는 base_problems 테이블에 저장되어 이후 문제 유형 생성 시 참조됩니다.
     """
     from ..services.rag import rag_service
+    from ..services.problem_save import get_problem_save_service
     from ..config import get_settings
     import json
 
@@ -265,20 +285,64 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
             user_context=user_context,
         )
 
+        # ============================================================
+        # CodeGen 문제를 base_problems에 저장 (Feature 1)
+        # - title 필드가 name 컬럼으로 저장됨
+        # - 이후 문제 유형 생성 시 base_problem_id로 참조
+        # ============================================================
+        problem_save_service = get_problem_save_service()
+        saved_base_id = await problem_save_service.save_codegen_to_base_problems(
+            generated_problem=generated_result,
+            collected_info=collected_info,
+        )
+
+        if saved_base_id:
+            print(f"[DiscoveryGraph:CodeGen] Saved to base_problems: {saved_base_id}")
+            # saved_base_id (UUID)를 id로 설정
+            problem_id = saved_base_id
+            # original_id 조회
+            original_id = None
+            try:
+                result = problem_save_service.supabase.table("base_problems") \
+                    .select("original_id") \
+                    .eq("id", saved_base_id) \
+                    .limit(1) \
+                    .execute()
+                if result.data:
+                    original_id = result.data[0].get("original_id")
+            except Exception:
+                pass
+        else:
+            print(f"[DiscoveryGraph:CodeGen] Warning: Failed to save to base_problems")
+            problem_id = None
+            original_id = None
+
         generated_problem: ProblemInfo = {
-            "id": None,
+            "id": problem_id,
+            "original_id": original_id,
             "title": generated_result.get("title", "새 문제"),
+            "name": generated_result.get("title", "새 문제"),  # name도 title과 동일하게
             "title_en": generated_result.get("title_en"),
             "description": generated_result.get("description", ""),
+            "question": generated_result.get("description", ""),  # question도 추가
             "difficulty": generated_result.get("difficulty", collected_info.get("difficulty", "easy")),
             "topics": generated_result.get("topics", collected_info.get("topics", [])),
+            "tags": generated_result.get("topics", collected_info.get("topics", [])),  # tags도 동일
             "code": generated_result.get("code", {}),
+            "solutions": [],  # solutions 형식으로 변환
             "input_format": generated_result.get("input_format"),
             "output_format": generated_result.get("output_format"),
             "examples": generated_result.get("examples", []),
             "constraints": generated_result.get("constraints", []),
             "key_concepts": generated_result.get("key_concepts", []),
         }
+
+        # solutions 형식으로 code 변환
+        code_data = generated_result.get("code", {})
+        if isinstance(code_data, dict):
+            for lang, code in code_data.items():
+                if code:
+                    generated_problem["solutions"].append({"language": lang, "code": code})
 
         response_message = (
             f"요청하신 조건에 맞는 문제를 DB에서 찾지 못해서, 새로운 문제를 생성했어요!\n\n"

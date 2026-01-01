@@ -18,6 +18,8 @@ from ..services.openrouter import openrouter_service
 from ..services.rag import rag_service
 from ..services.embedding import embedding_service
 from ..services.problem_save import get_problem_save_service
+from ..services.hint_service import get_hint_service
+from ..services.feedback_service import get_feedback_service
 from ..intents import intent_classifier, IntentType, INTENT_DEFINITIONS
 
 # LLM 모델 설정
@@ -63,7 +65,338 @@ from ..models.agent import (
     SolvingRequest,
     SolvingResponse,
     SolvingIntentInfo,
+    # Feedback
+    FeedbackRequest,
+    FeedbackResponse,
 )
+
+
+# ============================================================
+# 퍼즐 블록 후처리 헬퍼 함수
+# ============================================================
+
+def _calculate_base_indent(fixed_start: str) -> int:
+    """
+    fixed_start의 마지막 줄을 분석하여 블록의 기본 들여쓰기 레벨 계산
+
+    예:
+    - "class Solution:\\n    def solve(self):" → base_indent = 2
+    - "def main():" → base_indent = 1
+    """
+    if not fixed_start:
+        return 0
+
+    lines = fixed_start.split('\n')
+    last_line = lines[-1] if lines else ""
+
+    # 마지막 줄의 들여쓰기 계산 (4칸 = 1레벨)
+    leading_spaces = len(last_line) - len(last_line.lstrip())
+    base_indent = leading_spaces // 4
+
+    # 마지막 줄이 ':'로 끝나면 +1
+    if last_line.rstrip().endswith(':'):
+        base_indent += 1
+
+    return base_indent
+
+
+def _analyze_block_indent(code: str, base_indent: int, prev_code: str = "") -> int:
+    """
+    블록 코드를 분석하여 적절한 indent 레벨 계산
+
+    Python 코드 패턴 기반:
+    - return, break, continue, pass → 현재 레벨 유지
+    - if, for, while, def, class, try, except, else, elif → 현재 레벨, 다음 블록 +1
+    - 일반 코드 → base_indent 사용
+    """
+    code_stripped = code.strip()
+
+    # 이전 블록이 ':'로 끝나면 +1
+    if prev_code and prev_code.strip().endswith(':'):
+        return base_indent + 1
+
+    # 코드 시작 패턴 분석
+    if code_stripped.startswith(('return ', 'return\n', 'break', 'continue', 'pass')):
+        return base_indent
+    if code_stripped.startswith(('if ', 'for ', 'while ', 'try:', 'except', 'else:', 'elif ')):
+        return base_indent
+    if code_stripped.startswith('def ') or code_stripped.startswith('class '):
+        return max(base_indent - 1, 0)  # 함수/클래스 정의는 상위 레벨
+
+    return base_indent
+
+
+def _process_block_indents(blocks: list, base_indent: int) -> list:
+    """
+    모든 블록의 indent를 분석하여 적절한 값으로 설정
+
+    전략:
+    1. indent가 없거나 0이면 base_indent 사용
+    2. 코드 패턴에 따라 조정 (if/for 다음은 +1, return/break은 유지)
+    """
+    if not blocks:
+        return blocks
+
+    result = []
+    prev_code = ""
+
+    for i, block in enumerate(blocks):
+        new_block = dict(block)
+        code = block.get("code", "")
+        current_indent = block.get("indent")
+
+        # indent가 없거나 0이면 계산
+        if current_indent is None or current_indent == 0:
+            # 이전 블록이 ':'로 끝나면 +1
+            if prev_code.strip().endswith(':'):
+                new_indent = base_indent + 1
+            else:
+                new_indent = base_indent
+
+            # 특수 패턴 확인
+            code_stripped = code.strip()
+            if code_stripped.startswith(('return ', 'return\n', 'return')):
+                # return은 현재 레벨 유지 (조건문/반복문 내부일 수 있음)
+                new_indent = base_indent
+
+            new_block["indent"] = new_indent
+        else:
+            # 기존 indent 유지
+            pass
+
+        result.append(new_block)
+        prev_code = code
+
+    return result
+
+
+def _merge_puzzle_blocks(blocks: list, max_blocks: int) -> list:
+    """
+    블록 수가 max_blocks를 초과할 경우 연속된 블록을 병합
+
+    병합 전략:
+    1. 같은 indent를 가진 연속된 블록을 병합
+    2. 짧은 블록들 (1줄)을 우선 병합
+    """
+    if len(blocks) <= max_blocks:
+        return blocks
+
+    # 병합해야 할 횟수
+    merge_count = len(blocks) - max_blocks
+
+    # 블록을 리스트로 복사
+    result = list(blocks)
+
+    for _ in range(merge_count):
+        if len(result) <= max_blocks:
+            break
+
+        # 병합할 최적의 위치 찾기: 같은 indent를 가진 연속 블록
+        best_merge_idx = -1
+        best_score = -1
+
+        for i in range(len(result) - 1):
+            curr = result[i]
+            next_block = result[i + 1]
+
+            # 같은 indent면 병합 가능
+            curr_indent = curr.get("indent", 0)
+            next_indent = next_block.get("indent", 0)
+
+            if curr_indent == next_indent:
+                # 짧은 블록일수록 병합 우선순위 높음
+                curr_lines = curr.get("code", "").count('\n') + 1
+                next_lines = next_block.get("code", "").count('\n') + 1
+                score = 10 - min(curr_lines + next_lines, 10)  # 짧을수록 높은 점수
+
+                if score > best_score:
+                    best_score = score
+                    best_merge_idx = i
+
+        # 같은 indent가 없으면 그냥 첫 번째 연속 블록 병합
+        if best_merge_idx == -1:
+            best_merge_idx = 0
+
+        # 병합 실행
+        merged_block = {
+            "id": result[best_merge_idx]["id"],
+            "code": result[best_merge_idx].get("code", "") + "\n" + result[best_merge_idx + 1].get("code", ""),
+            "indent": result[best_merge_idx].get("indent", 0),
+        }
+
+        # 병합된 블록으로 교체
+        result = result[:best_merge_idx] + [merged_block] + result[best_merge_idx + 2:]
+
+    # id 재할당 (1부터 순차적으로)
+    for i, block in enumerate(result):
+        block["id"] = i + 1
+
+    return result
+
+
+def _is_incomplete_code(code: str) -> bool:
+    """
+    코드가 불완전한 구문인지 검사 (한 줄 코드가 잘못 분리된 경우)
+
+    예:
+    - "if n % i == 0]" → True (조건문 조각)
+    - "return [i for i in range(1, n + 1, 2)" → True (괄호 불균형)
+    - "for i in range(n):" → False (완전한 구문)
+    """
+    code = code.strip()
+
+    # 빈 코드
+    if not code:
+        return True
+
+    # 괄호 균형 체크
+    open_parens = code.count('(') + code.count('[') + code.count('{')
+    close_parens = code.count(')') + code.count(']') + code.count('}')
+
+    if open_parens != close_parens:
+        return True
+
+    # 닫는 괄호로 시작하면 불완전
+    if code[0] in ')]}>':
+        return True
+
+    # 키워드로만 시작하고 의미 있는 구문이 아닌 경우
+    # 예: "if n % i == 0]" → 조건만 있고 : 없음
+    if code.startswith(('if ', 'elif ', 'while ', 'for ')) and not code.rstrip().endswith(':'):
+        # list comprehension 내부 조건일 수 있음 (예: "if n % i == 0")
+        # 하지만 ]로 끝나면 불완전
+        if code.endswith(']') or code.endswith(')'):
+            return True
+
+    return False
+
+
+def _fix_split_blocks(blocks: list) -> list:
+    """
+    불완전하게 분리된 블록들을 병합
+
+    예:
+    [
+        {"code": "return [i for i in range(1, n + 1, 2)"},
+        {"code": "if n % i == 0]"}
+    ]
+    →
+    [
+        {"code": "return [i for i in range(1, n + 1, 2) if n % i == 0]"}
+    ]
+    """
+    if not blocks or len(blocks) < 2:
+        return blocks
+
+    result = []
+    i = 0
+
+    while i < len(blocks):
+        current = dict(blocks[i])
+        current_code = current.get("code", "")
+
+        # 현재 블록이 불완전하면 다음 블록과 병합 시도
+        while i + 1 < len(blocks) and _is_incomplete_code(current_code):
+            next_block = blocks[i + 1]
+            next_code = next_block.get("code", "")
+
+            # 공백/줄바꿈 없이 연결 (같은 줄)
+            # 여는 괄호로 끝나고 닫는 괄호로 시작하면 공백으로 연결
+            if current_code.rstrip().endswith((',', '(', '[', '{')):
+                current_code = current_code + " " + next_code
+            else:
+                current_code = current_code + " " + next_code
+
+            current["code"] = current_code
+            i += 1
+
+        # 다음 블록이 불완전하면 (닫는 괄호로 시작) 현재 블록과 병합
+        if i + 1 < len(blocks):
+            next_block = blocks[i + 1]
+            next_code = next_block.get("code", "").strip()
+
+            if next_code and next_code[0] in ')]}>':
+                current_code = current_code + " " + next_code
+                current["code"] = current_code
+                i += 1
+
+        result.append(current)
+        i += 1
+
+    # id 재할당
+    for idx, block in enumerate(result):
+        block["id"] = idx + 1
+
+    return result
+
+
+def _remove_fixed_end_duplicates(blocks: list, fixed_end: str) -> tuple:
+    """
+    fixed_end와 중복되는 블록 제거
+
+    Returns:
+        (cleaned_blocks, new_fixed_end)
+
+    규칙:
+    1. blocks를 합쳤을 때 fixed_end와 완전히 일치하면 → fixed_end 제거
+    2. 블록 중 fixed_end와 중복되는 코드가 있으면 → 해당 블록 제거
+    3. 블록이 1-2개만 남으면 → fixed_end를 없애고 전체를 블록으로
+    """
+    if not fixed_end or not blocks:
+        return blocks, fixed_end
+
+    fixed_end_normalized = fixed_end.strip().replace('\n', ' ').replace('  ', ' ')
+
+    # 모든 블록 코드를 공백으로 연결해서 비교
+    all_blocks_code = " ".join(b.get("code", "").strip() for b in blocks)
+    all_blocks_normalized = all_blocks_code.replace('\n', ' ').replace('  ', ' ')
+
+    # 블록을 합친 것이 fixed_end와 같으면 → fixed_end 제거, 블록 유지
+    if all_blocks_normalized == fixed_end_normalized:
+        print(f"[Puzzle Fix] blocks match fixed_end exactly, removing fixed_end")
+        return blocks, None
+
+    # 블록 중에서 fixed_end와 중복되는 것 제거
+    cleaned_blocks = []
+    for block in blocks:
+        block_code = block.get("code", "").strip()
+        block_normalized = block_code.replace('\n', ' ').replace('  ', ' ')
+
+        # fixed_end에 블록 코드가 포함되어 있는지 확인
+        if block_normalized in fixed_end_normalized:
+            print(f"[Puzzle Fix] Removing duplicate block: {block_code[:50]}...")
+            continue
+
+        # fixed_end가 블록 코드에 포함되어 있는지도 확인
+        if fixed_end_normalized in block_normalized:
+            print(f"[Puzzle Fix] Block contains fixed_end, removing overlap")
+            # 블록에서 fixed_end 부분 제거
+            new_code = block_code.replace(fixed_end.strip(), "").strip()
+            if new_code:
+                block["code"] = new_code
+                cleaned_blocks.append(block)
+            continue
+
+        cleaned_blocks.append(block)
+
+    # id 재할당
+    for idx, block in enumerate(cleaned_blocks):
+        block["id"] = idx + 1
+
+    # 블록이 너무 적으면 (1-2개) fixed_end도 블록으로 전환
+    if len(cleaned_blocks) <= 2 and fixed_end:
+        print(f"[Puzzle Fix] Only {len(cleaned_blocks)} blocks, converting fixed_end to block")
+        # fixed_end를 블록으로 추가
+        new_block = {
+            "id": len(cleaned_blocks) + 1,
+            "code": fixed_end.strip(),
+            "indent": cleaned_blocks[0].get("indent", 0) if cleaned_blocks else 0,
+        }
+        cleaned_blocks.append(new_block)
+        return cleaned_blocks, None
+
+    return cleaned_blocks, fixed_end
+
 
 router = APIRouter()
 
@@ -145,6 +478,9 @@ class ChatResponse(BaseModel):
     action_data: Optional[Dict[str, Any]] = None
     next_stage: Optional[str] = None
     is_complete: bool = False
+    # 정보 수집 단계: 네/아니오 응답 대기
+    awaiting_confirmation: bool = False
+    suggested_value: Optional[str] = None
     # Solving 결과
     hint_level: Optional[int] = None
     is_correct: Optional[bool] = None
@@ -232,6 +568,9 @@ async def chat_agent(
             action_data=result.get("action_data"),
             next_stage=result.get("next_stage"),
             is_complete=result.get("is_complete", False),
+            # 정보 수집 단계: 네/아니오 응답 대기
+            awaiting_confirmation=result.get("awaiting_confirmation", False),
+            suggested_value=result.get("suggested_value"),
             hint_level=result.get("hint_level"),
             is_correct=result.get("is_correct"),
         )
@@ -365,10 +704,13 @@ async def generate_blank_problem(
     try:
         bp = request.base_problem
         language = request.language.value
-        original_id = bp.id or bp.name
+        # original_id 우선 사용 (프론트엔드에서 전달), 없으면 id, name 순으로 fallback
+        original_id = bp.original_id or bp.id or bp.name
 
         # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
         creator_id = str(current_user_id) if current_user_id else None
+
+        print(f"[Blank Gen] original_id: {original_id}, creator_id: {creator_id}")
 
         # ============================================================
         # Cache-First 로직
@@ -377,6 +719,7 @@ async def generate_blank_problem(
 
         # base_problem_id 조회 (UUID)
         base_problem_id = problem_save_service.get_base_problem_id(original_id)
+        print(f"[Blank Gen] base_problem_id from DB: {base_problem_id}")
 
         if base_problem_id:
             # 1. 유저가 이미 가지고 있는지 확인
@@ -471,6 +814,11 @@ async def generate_blank_problem(
         # ============================================================
         # DB에 저장
         # ============================================================
+        # Note: base_problems에 저장하는 로직 제거
+        # - base_problems는 원본 문제 저장소 (Baekjoon, TACO 등)
+        # - 유형별 테이블만 저장 (problems_blank, problems_puzzle, problems_guided)
+        # - CodeGen 문제는 LangGraph의 code_gen 노드에서만 base_problems에 저장
+
         if base_problem_id and creator_id:
             try:
                 save_result = await problem_save_service.save_generated_problem(
@@ -513,16 +861,20 @@ async def generate_puzzle_problem(
     try:
         bp = request.base_problem
         language = request.language.value
-        original_id = bp.id or bp.name
+        # original_id 우선 사용 (프론트엔드에서 전달), 없으면 id, name 순으로 fallback
+        original_id = bp.original_id or bp.id or bp.name
 
         # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
         creator_id = str(current_user_id) if current_user_id else None
+
+        print(f"[Puzzle Gen] original_id: {original_id}, creator_id: {creator_id}")
 
         # ============================================================
         # Cache-First 로직
         # ============================================================
         problem_save_service = get_problem_save_service()
         base_problem_id = problem_save_service.get_base_problem_id(original_id)
+        print(f"[Puzzle Gen] base_problem_id from DB: {base_problem_id}")
 
         if base_problem_id:
             if creator_id:
@@ -615,8 +967,53 @@ async def generate_puzzle_problem(
             result["language"] = language
 
         # ============================================================
+        # 후처리: 블록 검증, 중복 제거, indent 보정, 블록 수 제한
+        # ============================================================
+        blocks = result.get("blocks", [])
+        fixed_start = result.get("fixed_start", "")
+        fixed_end = result.get("fixed_end", "")
+        print(f"[Puzzle Gen] Original block count: {len(blocks)}")
+
+        # 1. 불완전하게 분리된 블록 병합 (한 줄 코드가 여러 블록으로 쪼개진 경우)
+        blocks = _fix_split_blocks(blocks)
+        if len(blocks) != len(result.get("blocks", [])):
+            print(f"[Puzzle Gen] Fixed split blocks: {len(result.get('blocks', []))} -> {len(blocks)}")
+        result["blocks"] = blocks
+
+        # 2. fixed_end와 중복되는 블록 제거
+        blocks, fixed_end = _remove_fixed_end_duplicates(blocks, fixed_end)
+        result["blocks"] = blocks
+        result["fixed_end"] = fixed_end
+        print(f"[Puzzle Gen] After duplicate removal: {len(blocks)} blocks, fixed_end: {bool(fixed_end)}")
+
+        # 3. indent 보정 (코드 패턴 기반)
+        base_indent = _calculate_base_indent(fixed_start)
+        print(f"[Puzzle Gen] Base indent from fixed_start: {base_indent}")
+
+        # 코드 패턴 분석하여 indent 설정
+        blocks = _process_block_indents(blocks, base_indent)
+        result["blocks"] = blocks
+
+        # 디버그: indent 값 출력
+        indent_info = [(b.get("id"), b.get("indent"), b.get("code", "")[:30]) for b in blocks[:5]]
+        print(f"[Puzzle Gen] Block indents (first 5): {indent_info}")
+
+        # 4. 블록 수가 15개 초과시 자동 병합
+        MAX_BLOCKS = 15
+        if len(blocks) > MAX_BLOCKS:
+            print(f"[Puzzle Gen] Merging blocks: {len(blocks)} -> {MAX_BLOCKS}")
+            blocks = _merge_puzzle_blocks(blocks, MAX_BLOCKS)
+            result["blocks"] = blocks
+            print(f"[Puzzle Gen] After merge: {len(blocks)} blocks")
+
+        # ============================================================
         # DB에 저장
         # ============================================================
+        # Note: base_problems에 저장하는 로직 제거
+        # - base_problems는 원본 문제 저장소 (Baekjoon, TACO 등)
+        # - 유형별 테이블만 저장 (problems_blank, problems_puzzle, problems_guided)
+        # - CodeGen 문제는 LangGraph의 code_gen 노드에서만 base_problems에 저장
+
         if base_problem_id and creator_id:
             try:
                 save_result = await problem_save_service.save_generated_problem(
@@ -659,16 +1056,20 @@ async def generate_guided_problem(
     try:
         bp = request.base_problem
         language = request.language.value
-        original_id = bp.id or bp.name
+        # original_id 우선 사용 (프론트엔드에서 전달), 없으면 id, name 순으로 fallback
+        original_id = bp.original_id or bp.id or bp.name
 
         # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
         creator_id = str(current_user_id) if current_user_id else None
+
+        print(f"[Guided Gen] original_id: {original_id}, creator_id: {creator_id}")
 
         # ============================================================
         # Cache-First 로직
         # ============================================================
         problem_save_service = get_problem_save_service()
         base_problem_id = problem_save_service.get_base_problem_id(original_id)
+        print(f"[Guided Gen] base_problem_id from DB: {base_problem_id}")
 
         if base_problem_id:
             if creator_id:
@@ -760,6 +1161,11 @@ async def generate_guided_problem(
         # ============================================================
         # DB에 저장
         # ============================================================
+        # Note: base_problems에 저장하는 로직 제거
+        # - base_problems는 원본 문제 저장소 (Baekjoon, TACO 등)
+        # - 유형별 테이블만 저장 (problems_blank, problems_puzzle, problems_guided)
+        # - CodeGen 문제는 LangGraph의 code_gen 노드에서만 base_problems에 저장
+
         if base_problem_id and creator_id:
             try:
                 save_result = await problem_save_service.save_generated_problem(
@@ -842,41 +1248,158 @@ async def generate_hint(request: HintAgentRequest, db=Depends(get_db)):
     """
     Generate AI-powered hint for a problem.
 
-    Uses Gemini Flash via OpenRouter.
     Supports 4 hint levels (progressive disclosure).
+    Routes to type-specific hint generators:
+    - blank: 빈칸 채우기 전용 힌트
+    - puzzle: 블록 순서 힌트 (TODO)
+    - guided: 단계별 도움 (TODO)
     """
     try:
-        system_prompt = HINT_AGENT_SYSTEM_PROMPT.format(
-            problem_info=json.dumps(request.problem_info, ensure_ascii=False),
-            user_code=request.user_code or "아직 코드 작성 안 함",
-            attempt_count=request.attempt_count,
-            hint_level=request.hint_level,
-            previous_hints=json.dumps(request.previous_hints, ensure_ascii=False),
-            user_level=request.user_level.value,
-            related_docs="[]",  # TODO: Implement Docs RAG
-        )
+        hint_service = get_hint_service()
+        problem_type = request.problem_type.value if request.problem_type else "blank"
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"레벨 {request.hint_level} 힌트를 생성해주세요."},
-        ]
+        # Blank 문제 힌트 생성
+        if problem_type == "blank":
+            result = await hint_service.generate_blank_hint(
+                problem_id=request.problem_id,
+                base_problem_id=request.base_problem_id,
+                hint_level=request.hint_level,
+                current_blank_index=request.current_blank_index or 0,
+                user_answers=request.user_answers,
+                previous_hints=request.previous_hints,
+                user_level=request.user_level.value,
+                additional_info=request.problem_info,
+            )
+            return HintAgentResponse(**result)
 
-        response = await openrouter_service.chat_completion(
-            model=settings.llm_model_hint,
-            messages=messages,
-            temperature=0.7,
-            response_format={"type": "json_object"},
-        )
+        # Puzzle 문제 힌트 생성
+        elif problem_type == "puzzle":
+            # user_order와 correct_blocks 추출 (problem_info에서)
+            user_order = request.problem_info.get("user_order", []) if request.problem_info else []
+            correct_blocks = request.problem_info.get("correct_blocks", []) if request.problem_info else []
 
-        content = openrouter_service.get_content(response)
-        result = openrouter_service.parse_json_response(content)
+            result = await hint_service.generate_puzzle_hint(
+                problem_id=request.problem_id,
+                base_problem_id=request.base_problem_id,
+                hint_level=request.hint_level,
+                user_order=user_order,
+                correct_blocks=correct_blocks,
+                previous_hints=request.previous_hints,
+                user_level=request.user_level.value,
+                additional_info=request.problem_info,
+            )
+            return HintAgentResponse(**result)
 
-        return HintAgentResponse(**result)
+        # Guided 문제 도움 생성
+        elif problem_type == "guided":
+            # current_step 추출 (problem_info에서)
+            current_step = request.problem_info.get("current_step", 0) if request.problem_info else 0
 
+            result = await hint_service.generate_guided_help(
+                problem_id=request.problem_id,
+                base_problem_id=request.base_problem_id,
+                help_level=request.hint_level,
+                current_step=current_step,
+                user_code=request.user_code,
+                previous_helps=request.previous_hints,
+                user_level=request.user_level.value,
+                additional_info=request.problem_info,
+            )
+            return HintAgentResponse(**result)
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown problem type: {problem_type}"
+            )
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Hint generation error: {str(e)}"
+        )
+
+
+# ============================================================
+# Feedback Generation (문제 풀이 완료 후 피드백)
+# ============================================================
+
+@router.post("/feedback", response_model=FeedbackResponse)
+async def generate_feedback(request: FeedbackRequest, db=Depends(get_db)):
+    """
+    문제 풀이 완료 후 피드백 생성
+
+    정답 제출 후 호출되어 다음 정보를 기반으로 피드백 생성:
+    - 풀이 시간
+    - 힌트 사용량
+    - 시도 횟수
+    - 획득 XP
+
+    Returns:
+        grade, 성과 분석, 학습 포인트, 시각화 데이터 등
+    """
+    try:
+        feedback_service = get_feedback_service()
+
+        # 문제 정보 추출
+        problem_info = None
+        if request.problem_info:
+            problem_info = {
+                "title": request.problem_info.title,
+                "difficulty": request.problem_info.difficulty,
+                "topics": request.problem_info.topics,
+            }
+
+        # 피드백 생성
+        result = await feedback_service.generate_feedback(
+            user_id=request.user_id,
+            problem_id=request.problem_id,
+            is_correct=request.is_correct,
+            solve_time_seconds=request.solve_time_seconds,
+            hints_used=request.hints_used,
+            xp_earned=request.xp_earned,
+            problem_info=problem_info,
+            problem_type=request.problem_type,
+            attempt_count=request.attempt_count,
+        )
+
+        # FeedbackResponse 형식으로 변환
+        return FeedbackResponse(
+            grade=result.get("grade", "learning"),
+            grade_emoji=result.get("grade_emoji", "🌱"),
+            grade_message=result.get("grade_message", "잘했어요!"),
+            summary={
+                "title": result.get("summary", {}).get("title", "문제 풀이 완료!"),
+                "highlight": result.get("summary", {}).get("highlight", ""),
+            },
+            performance_analysis={
+                "time_feedback": result.get("performance_analysis", {}).get("time_feedback", ""),
+                "hint_feedback": result.get("performance_analysis", {}).get("hint_feedback", ""),
+                "attempt_feedback": result.get("performance_analysis", {}).get("attempt_feedback", ""),
+            },
+            learning_points=result.get("learning_points", []),
+            improvements=result.get("improvements", []),
+            visualization={
+                "efficiency_score": result.get("visualization", {}).get("efficiency_score", 70),
+                "speed_score": result.get("visualization", {}).get("speed_score", 70),
+                "understanding_score": result.get("visualization", {}).get("understanding_score", 70),
+                "time_comparison": result.get("visualization", {}).get("time_comparison"),
+            },
+            next_steps={
+                "recommendation": result.get("next_steps", {}).get("recommendation", "다음 문제에 도전해보세요!"),
+                "similar_problems": result.get("next_steps", {}).get("similar_problems"),
+            },
+            encouragement=result.get("encouragement", "계속 도전하세요! 💪"),
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Feedback generation error: {str(e)}"
         )
 
 

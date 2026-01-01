@@ -76,8 +76,8 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         # 스마트 폴백: 현재 상태에 따라 적절한 안내 메시지 제공
         if not existing_info.get("topics"):
             fallback_message = (
-                "코딩 테스트에서 가장 자주 출제되는 유형은 **구현(Implementation)**, **그리디**, **DFS/BFS** 예요!\n\n"
-                "초보자라면 **기초**부터 시작하는 걸 추천드려요. 어떤 주제로 해볼까요?"
+                "대기업 코테에서 가장 자주 출제되는 유형은 **DP**, **그래프**, **구현** 이에요!\n\n"
+                "어떤 주제로 해볼까요? 회원님의 목표에 맞게 추천해드릴게요."
             )
         elif not existing_info.get("difficulty"):
             fallback_message = "난이도를 선택해주세요! 실버, 골드, 플래티넘, 다이아, 마스터 중에 어떤 게 좋을까요?"
@@ -132,17 +132,17 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         user_context = state.get("user_context", {})
         user_level = user_context.get("level", "beginner")
 
-        # 1. 주제가 없으면 추천
+        # 1. 주제가 없으면 추천 (회원 프로필 기반 - 기초 하드코딩 제거)
         if not merged_info.get("topics"):
             is_complete = False
             response_message = (
                 "어떤 알고리즘을 연습해볼까요?\n\n"
-                "• **기초** - 조건문, 반복문, 배열\n"
+                "• **DP** - 동적 프로그래밍 (대기업 필수!)\n"
+                "• **그래프** - BFS, DFS 탐색\n"
+                "• **구현** - 시뮬레이션, 완전탐색\n"
                 "• **정렬** - 버블, 퀵, 병합 정렬\n"
-                "• **탐색** - 이분탐색, BFS, DFS\n"
-                "• **DP** - 동적 프로그래밍\n"
-                "• **그리디** - 탐욕 알고리즘\n\n"
-                "잘 모르겠으면 '기초'로 시작해볼까요?"
+                "• **이분탐색** - 효율적 검색\n\n"
+                "회원님의 목표에 맞게 추천해드릴게요!"
             )
             next_node = "respond"
         # 2. 난이도가 없으면 유저 레벨 기반 추천

@@ -55,6 +55,10 @@ async def classify_solving_intent(state: SolvingState) -> Dict[str, Any]:
 
 def _classify_by_keywords(message: str) -> str:
     """키워드 기반 빠른 분류"""
+    # 문제 요약 요청
+    if any(kw in message for kw in ["요약", "summary", "간단히", "정리", "문제 설명"]):
+        return "summarize_problem"
+
     # 힌트 요청
     if any(kw in message for kw in ["힌트", "hint", "도움", "모르겠", "어려워", "막혔"]):
         return "hint_request"

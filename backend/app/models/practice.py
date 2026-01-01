@@ -115,7 +115,66 @@ class Attempt(BaseModel):
 
 
 class XPConfig:
-    """XP configuration for different problem types."""
-    BLANK_CORRECT = 50     # 빈칸 채우기 정답
-    PUZZLE_CORRECT = 70    # 퍼즐(Parsons) 정답 - 더 복잡하므로 XP 높음
-    HINT_PENALTY = 10      # 힌트 사용시 페널티
+    """XP configuration for different problem types and difficulties."""
+
+    # 난이도별 XP 획득량
+    DIFFICULTY_XP = {
+        "easy": 20,
+        "medium": 40,
+        "medium_hard": 70,
+        "hard": 100,
+        "very_hard": 150,
+    }
+
+    # 문제 유형별 기본 XP (난이도 없을 때 fallback)
+    BLANK_CORRECT = 40     # 빈칸 채우기 기본
+    PUZZLE_CORRECT = 50    # 퍼즐(Parsons) 기본
+    GUIDED_CORRECT = 60    # 가이드 문제 기본
+
+    # 힌트 페널티
+    HINT_COST = 5          # 힌트 사용 시 -5 XP
+
+    @classmethod
+    def get_xp_for_difficulty(cls, difficulty: str, problem_type: str = "blank") -> int:
+        """난이도에 따른 XP 반환, 없으면 문제 유형별 기본값"""
+        if difficulty in cls.DIFFICULTY_XP:
+            return cls.DIFFICULTY_XP[difficulty]
+        # fallback to problem type default
+        type_defaults = {
+            "blank": cls.BLANK_CORRECT,
+            "puzzle": cls.PUZZLE_CORRECT,
+            "guided": cls.GUIDED_CORRECT,
+        }
+        return type_defaults.get(problem_type, 40)
+
+
+class RecordSubmission(BaseModel):
+    """Simple submission for recording problem solve (XP & grass)."""
+    problem_id: str  # UUID or generated problem ID
+    problem_type: str = "blank"  # blank, puzzle, guided
+    difficulty: Optional[str] = None  # easy, medium, medium_hard, hard, very_hard
+    is_correct: bool = True
+    xp_earned: Optional[int] = None  # None이면 난이도 기반 자동 계산
+
+
+class RecordResponse(BaseModel):
+    """Response for record submission."""
+    success: bool
+    xp_earned: int
+    message: str
+
+
+class HintCheckResponse(BaseModel):
+    """Response for hint availability check."""
+    can_use: bool
+    current_xp: int
+    hint_cost: int
+    message: str
+
+
+class HintUseResponse(BaseModel):
+    """Response after using hint."""
+    success: bool
+    xp_deducted: int
+    remaining_xp: int
+    message: str

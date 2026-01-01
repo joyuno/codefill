@@ -109,6 +109,7 @@ function convertPuzzleProblem(
     id: `block-${block.id}`,
     code: block.code,
     correctOrder: block.id, // 원본 id가 정답 순서
+    indentation: block.indent || 0, // 들여쓰기 레벨
   }));
 
   // 정답 코드 찾기

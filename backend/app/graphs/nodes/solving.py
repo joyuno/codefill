@@ -405,6 +405,80 @@ async def show_solution(state: SolvingState) -> Dict[str, Any]:
     }
 
 
+async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
+    """
+    문제를 요약해서 보여줍니다.
+
+    문제의 description/question을 간단히 요약하여 제공
+    """
+    from ...services.openrouter import openrouter_service
+
+    problem_context = state.get("problem_context", {})
+
+    # 문제 정보 추출
+    title = problem_context.get("title") or problem_context.get("name", "문제")
+    description = problem_context.get("description") or problem_context.get("question", "")
+    topics = problem_context.get("topics", [])
+    difficulty = problem_context.get("difficulty", "medium")
+    problem_type = problem_context.get("problem_type", "unknown")
+
+    if not description:
+        return {
+            "response_message": "문제 설명을 찾을 수 없어요.",
+            "next_node": "respond",
+        }
+
+    system_prompt = """당신은 문제 요약 전문가입니다. 주어진 코딩 문제를 학생이 이해하기 쉽게 요약합니다.
+
+규칙:
+1. 핵심 목표를 명확히 제시하세요
+2. 입력과 출력이 무엇인지 간단히 설명하세요
+3. 핵심 알고리즘/자료구조 힌트는 포함하지 마세요 (학생이 스스로 생각하게)
+4. 2-3문장으로 간결하게 요약하세요
+
+출력 형식:
+**문제 요약:** [요약 내용]
+
+**핵심 목표:** [한 줄로 정리]
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"문제: {title}\n\n설명:\n{description[:1500]}"},
+    ]
+
+    try:
+        response = await openrouter_service.chat_completion(
+            messages=messages,
+            model="gpt-4o-mini",
+            temperature=0.3,
+        )
+        summary = openrouter_service.get_content(response)
+
+        # 추가 정보 포함
+        meta_info = f"\n\n**주제:** {', '.join(topics) if topics else '알고리즘'}\n**난이도:** {difficulty}"
+
+        return {
+            "response_message": summary + meta_info,
+            "action_trigger": "problem_summarized",
+            "action_data": {
+                "title": title,
+                "topics": topics,
+                "difficulty": difficulty,
+            },
+            "next_node": "respond",
+        }
+
+    except Exception as e:
+        print(f"[SummarizeProblem] Error: {e}")
+        # 폴백: 원본 description 일부 표시
+        short_desc = description[:500] + "..." if len(description) > 500 else description
+        return {
+            "response_message": f"**{title}**\n\n{short_desc}",
+            "next_node": "respond",
+        }
+
+
 async def answer_question(state: SolvingState) -> Dict[str, Any]:
     """
     일반 질문에 답변합니다.

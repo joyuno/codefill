@@ -41,8 +41,9 @@ FREE_CHAT_SYSTEM_PROMPT = """
 
 **중요: 사용자가 "추천해줘", "모르겠어", "뭐가 좋아?"라고 하면:**
 - 이것은 질문이지 선택이 아님!
-- collected_info를 채우지 말고 추천/설명을 해준 뒤 다시 선택 요청
-- 예: "코딩테스트에서 가장 많이 나오는 건 DP와 그래프예요! 초보자라면 **기초**를 추천드려요. 어떤 걸로 할까요?"
+- collected_info를 채우지 말고 사용자 프로필 기반 추천/설명을 해준 뒤 다시 선택 요청
+- 사용자의 learning_goal, experience_level을 참고해서 개인화 추천
+- 예: "대기업 코테에서 가장 많이 나오는 건 DP와 그래프예요! 회원님 수준에 맞게 추천해드릴게요."
 
 ### 문제 선택 의도 (중요!)
 - **problem_selection**: 문제 리스트에서 문제 선택함 → 바로 문제 유형 선택으로 진행
@@ -184,10 +185,11 @@ FREE_CHAT_SYSTEM_PROMPT = """
 ### 예시 8: 초보자가 주제를 모를 때 (중요!)
 이전 대화: "문제 풀고싶어 쉬운거로" → "어떤 주제로 풀고 싶으세요?"
 사용자: "그런거 하나도 모르는 사람이야 나는 그냥 제일 기본적인거"
-→ "알겠어요! 기초적인 쉬운 문제를 찾아볼게요!"
+→ "알겠어요! 회원님 수준에 맞는 쉬운 문제를 찾아볼게요!"
 (is_complete = true, action_trigger = "search_problems")
-(collected_info.difficulty = "easy", collected_info.topics = ["기초", "Implementation"])
+(collected_info.difficulty = "easy", collected_info.topics = ["구현", "정렬"])
 **주의: 이건 hint_request가 절대 아님! 문제 선택 단계임!**
+**주의: 무조건 "기초"가 아니라 회원 프로필에 맞게 추천!**
 
 ### 예시 7: 문제 선택 (중요!)
 의도: problem_selection
@@ -229,7 +231,7 @@ FREE_CHAT_SYSTEM_PROMPT = """
 **질문에 대한 응답 예시:**
 ```json
 {{
-  "message": "코딩 테스트에서 가장 많이 나오는 건 **DP(동적 프로그래밍)**랑 **그래프 탐색(BFS/DFS)**이에요! 초보자라면 먼저 **기초**부터 시작하는 걸 추천해요. 어떤 주제로 해볼까요?",
+  "message": "대기업 코테에서 가장 많이 나오는 건 **DP(동적 프로그래밍)**랑 **그래프 탐색(BFS/DFS)**이에요! 회원님의 목표와 수준에 맞게 추천해드릴게요. 어떤 주제로 해볼까요?",
   "collected_info": {{
     "topics": null,
     "difficulty": null,

@@ -38,14 +38,18 @@ const intensityColors = {
   4: 'bg-[#216e39] dark:bg-[#39d353]',
 };
 
-function calculateIntensity(count: number, maxCount: number): 0 | 1 | 2 | 3 | 4 {
+function calculateIntensity(count: number): 0 | 1 | 2 | 3 | 4 {
+  // 절대적 기준으로 색상 결정
+  // 0문제: 검은색 (배경)
+  // 1-2문제: 약간 초록
+  // 3-4문제: 꽤 초록
+  // 5-6문제: 초록
+  // 7문제 이상: 진한 초록
   if (count === 0) return 0;
-  if (maxCount === 0) return 0;
-  const ratio = count / maxCount;
-  if (ratio <= 0.25) return 1;
-  if (ratio <= 0.5) return 2;
-  if (ratio <= 0.75) return 3;
-  return 4;
+  if (count <= 2) return 1;  // 1-2문제: 약간 초록
+  if (count <= 4) return 2;  // 3-4문제: 꽤 초록
+  if (count <= 6) return 3;  // 5-6문제: 초록
+  return 4;                   // 7문제 이상: 진한 초록
 }
 
 function generateEmptyYear(): ActivityDay[] {
@@ -117,16 +121,13 @@ export function GrassHeatmap({ compact = false, username, publicActivityData }: 
         });
       }
 
-      // 최대값 계산 (intensity 계산용)
-      const maxCount = Math.max(...Array.from(activityMap.values()), 1);
-
-      // 데이터 채우기
+      // 데이터 채우기 (절대적 기준으로 intensity 계산)
       const filledData = emptyYear.map((day) => {
         const count = activityMap.get(day.date) || 0;
         return {
           ...day,
           count,
-          intensity: calculateIntensity(count, maxCount),
+          intensity: calculateIntensity(count),
         };
       });
 
@@ -200,6 +201,13 @@ export function GrassHeatmap({ compact = false, username, publicActivityData }: 
     () => activityData.reduce((sum, day) => sum + day.count, 0),
     [activityData]
   );
+
+  // 오늘 푼 문제 수
+  const todaySolved = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayData = activityData.find(day => day.date === today);
+    return todayData?.count || 0;
+  }, [activityData]);
 
   // 현재 연도
   const currentYear = new Date().getFullYear();
@@ -318,12 +326,12 @@ export function GrassHeatmap({ compact = false, username, publicActivityData }: 
       animate={{ opacity: 1 }}
       className="rounded-xl border border-border bg-card p-5"
     >
-      {/* 헤더: "N contributions in YYYY" */}
+      {/* 헤더: "Today solved N problems" */}
       <h3 className="text-sm font-medium text-muted-foreground mb-2">
         {isLoading ? (
           'Loading...'
         ) : (
-          <>{totalContributions.toLocaleString()} contributions in {currentYear}</>
+          <>Today solved {todaySolved} problem{todaySolved !== 1 ? 's' : ''}</>
         )}
       </h3>
 
