@@ -58,7 +58,7 @@ logs
 *.log
 
 # External folders
-Modern_Farm_v1.2/
+#Modern_Farm_v1.2/
 
 # Python
 __pycache__/
