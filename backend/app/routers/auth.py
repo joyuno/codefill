@@ -105,6 +105,40 @@ async def signup(request: SignupRequest, db=Depends(get_db)):
         # Note: user_stats and user_preferences are created by database trigger
         # handle_new_user() - no need to create them manually
 
+        # Create solved_ac_profiles record if solved_ac_id is provided
+        if request.onboarding_data and request.onboarding_data.solved_ac_id:
+            try:
+                # Fetch profile from solved.ac API
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"https://solved.ac/api/v3/user/show",
+                        params={"handle": request.onboarding_data.solved_ac_id},
+                        timeout=10.0
+                    )
+                    if response.status_code == 200:
+                        profile = response.json()
+                        from datetime import datetime
+                        now = datetime.utcnow().isoformat()
+                        db.table("solved_ac_profiles").insert({
+                            "user_id": user_id,
+                            "handle": profile.get("handle", request.onboarding_data.solved_ac_id),
+                            "bio": profile.get("bio"),
+                            "profile_image_url": profile.get("profileImageUrl"),
+                            "tier": profile.get("tier", 0),
+                            "rating": profile.get("rating", 0),
+                            "class": profile.get("class", 0),
+                            "class_decoration": profile.get("classDecoration"),
+                            "solved_count": profile.get("solvedCount", 0),
+                            "exp": profile.get("exp", 0),
+                            "rank": profile.get("rank"),
+                            "max_streak": profile.get("maxStreak", 0),
+                            "organizations": profile.get("organizations"),
+                            "last_synced_at": now,
+                        }).execute()
+            except Exception as e:
+                # Don't fail signup if solved.ac integration fails
+                print(f"Failed to create solved_ac_profile: {e}")
+
         # Update preferences if provided
         if request.preferred_language:
             db.table("user_preferences").update({

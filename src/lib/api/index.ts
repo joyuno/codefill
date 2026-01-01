@@ -140,3 +140,15 @@ export {
   type UserSearchResponse,
   type UnreadCountResponse,
 } from './friends';
+export {
+  solvedacApi,
+  tierToName,
+  getTierColor,
+  type SolvedAcOrganization,
+  type SolvedAcProfile,
+  type SolvedAcProfileDB,
+  type LinkSolvedAcRequest,
+  type LinkSolvedAcResponse,
+  type SyncSolvedAcResponse,
+  type TierInfo,
+} from './solvedac';

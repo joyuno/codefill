@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from .config import get_settings
-from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement
+from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement, solvedac
 from .intents import intent_classifier
 from .services.collection_embeddings import initialize_collection_embeddings
 from .services.discovery_embeddings import initialize_discovery_embeddings
@@ -104,6 +104,7 @@ app.include_router(agent.router, prefix="/agent", tags=["AI Agents"])
 app.include_router(solutions.router, prefix="/solutions", tags=["Solutions"])
 app.include_router(friends.router, prefix="/friends", tags=["Friends"])
 app.include_router(ws.router, prefix="/ws", tags=["WebSocket"])
+app.include_router(solvedac.router, prefix="/solvedac", tags=["solved.ac"])
 
 
 @app.get("/")
