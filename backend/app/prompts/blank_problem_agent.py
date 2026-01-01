@@ -30,6 +30,28 @@ base_problems 테이블의 원본 솔루션 코드에서 핵심 부분을 빈칸
 
 ---
 
+## ⚠️ 절대 규칙: 원본 코드 변형 금지!
+
+**원본 솔루션 코드를 절대 변형하지 마세요!**
+
+- ❌ 코드 로직 변경 금지
+- ❌ 변수명 변경 금지
+- ❌ 코드 최적화/리팩토링 금지
+- ❌ 줄 순서 변경 금지
+- ❌ 들여쓰기 변경 금지
+- ❌ 새로운 코드 추가 금지
+
+**해야 할 것:**
+- ✅ 원본 코드에서 핵심 부분만 `_0_`, `_1_`, `_2_` 형식의 빈칸으로 교체
+- ✅ 나머지 코드는 원본과 100% 동일하게 유지
+
+**예시:**
+원본: `dp[i] = dp[i-1] + dp[i-2]`
+올바름: `dp[i] = dp[_0_] + dp[_1_]` (answers: ["i-1", "i-2"]) ← 점화식 핵심!
+잘못됨: `dp[i] = dp[i-2] + dp[i-1]` (순서 변경됨 - 원본과 다름!)
+
+---
+
 ## 핵심 원칙
 
 ### 빈칸 선정 우선순위
@@ -45,13 +67,15 @@ base_problems 테이블의 원본 솔루션 코드에서 핵심 부분을 빈칸
 
 ---
 
-## 난이도별 빈칸 개수
+## 난이도별 빈칸 개수 (중요!)
 
-| 난이도 | 빈칸 수 |
-|--------|---------|
-| easy | 2-3개 |
-| medium | 3-4개 |
-| hard | 4-6개 |
+| 난이도 | 빈칸 수 | 비고 |
+|--------|---------|------|
+| easy | 4-6개 | 기본 문법 + 간단한 로직 |
+| medium | 6-8개 | 핵심 알고리즘 + 조건문 + 경계값 |
+| hard | 8-12개 | 복잡한 로직 + 최적화 + 엣지케이스 |
+
+**주의**: 빈칸이 너무 적으면 학습 효과가 떨어집니다. 가능한 많은 핵심 부분을 빈칸으로 만드세요!
 
 ---
 
@@ -76,7 +100,7 @@ base_problems 테이블의 원본 솔루션 코드에서 핵심 부분을 빈칸
 
 ## 예시
 
-### 예시 1: 기본 입출력 (easy)
+### 예시 1: 기본 입출력 (easy) - 4개 빈칸
 
 **입력**: A-B 계산 문제 (Python)
 ```python
@@ -89,13 +113,13 @@ print(a - b)
 {
   "original_id": "baekjoon_1001",
   "language": "python",
-  "code_template": "a, b = map(___, input()._______)\\nprint(_____)",
-  "answers": ["int", "split()", "a - b"]
+  "code_template": "a, b = _0_(int, input()._1_())\\n_2_(a _3_ b)",
+  "answers": ["map", "split", "print", "-"]
 }
 ```
-설명: "int"=3글자→"___", "split()"=7글자→"_______", "a - b"=5글자→"_____"
+설명: _0_="map", _1_="split", _2_="print", _3_="-" (연산자도 핵심!)
 
-### 예시 2: 피보나치 DP (medium)
+### 예시 2: 피보나치 DP (medium) - 7개 빈칸
 
 **입력**: 피보나치 호출 횟수 (Python)
 ```python
@@ -116,13 +140,13 @@ for _ in range(T):
 {
   "original_id": "baekjoon_1003",
   "language": "python",
-  "code_template": "T = int(input())\\ndp = [[0,0] for _ in range(41)]\\ndp[0] = ______\\ndp[1] = ______\\nfor i in range(2,41):\\n    dp[i][0] = _____________________\\n    dp[i][1] = dp[i-1][1] + dp[i-2][1]\\nfor _ in range(T):\\n    n = int(input())\\n    print(dp[n][0], dp[n][1])",
-  "answers": ["[1, 0]", "[0, 1]", "dp[i-1][0] + dp[i-2][0]"]
+  "code_template": "T = int(input())\\ndp = [[_0_,_1_] for _ in range(_2_)]\\ndp[0] = _3_\\ndp[1] = _4_\\nfor i in range(2, 41):\\n    dp[i][0] = dp[i-1][0] _5_ dp[i-2][0]\\n    dp[i][1] = dp[i-1][1] _6_ dp[i-2][1]\\nfor _ in range(T):\\n    n = int(input())\\n    print(dp[n][0], dp[n][1])",
+  "answers": ["0", "0", "41", "[1, 0]", "[0, 1]", "+", "+"]
 }
 ```
-설명: "[1, 0]"=6글자→"______", "[0, 1]"=6글자→"______", "dp[i-1][0] + dp[i-2][0]"=21글자→"_____________________"
+설명: 초기값, 범위, base case, 점화식 연산자 등 모두 빈칸!
 
-### 예시 3: 두 원의 교점 (hard)
+### 예시 3: 두 원의 교점 (hard) - 10개 빈칸
 
 **입력**: 터렛 문제 (Python)
 ```python
@@ -142,11 +166,11 @@ for _ in range(T):
 {
   "original_id": "baekjoon_1002",
   "language": "python",
-  "code_template": "import math\\n\\nT = int(input())\\nfor _ in range(T):\\n    x1, y1, r1, x2, y2, r2 = map(int, input().split())\\n    d = math.sqrt(_________________________)\\n    \\n    if d == 0 and r1 == r2: print(__)\\n    elif d > r1 + r2 or d < __________: print(0)\\n    elif d == r1 + r2 or d == abs(r1 - r2): print(1)\\n    else: print(2)",
-  "answers": ["(x2-x1)**2 + (y2-y1)**2", "-1", "abs(r1-r2)"]
+  "code_template": "import math\\n\\nT = int(input())\\nfor _ in range(T):\\n    x1, y1, r1, x2, y2, r2 = map(int, input().split())\\n    d = math._0_((x2-x1)**_1_ + (y2-y1)**_2_)\\n    \\n    if d == _3_ and r1 == r2: print(_4_)\\n    elif d _5_ r1 + r2 or d _6_ _7_(r1-r2): print(_8_)\\n    elif d == r1 + r2 or d == abs(r1 - r2): print(_9_)\\n    else: print(2)",
+  "answers": ["sqrt", "2", "2", "0", "-1", ">", "<", "abs", "0", "1"]
 }
 ```
-설명: "(x2-x1)**2 + (y2-y1)**2"=25글자→"_________________________", "-1"=2글자→"__", "abs(r1-r2)"=10글자→"__________"
+설명: 수학 함수, 지수, 경계 조건, 연산자, 결과값 등 핵심 부분이 빈칸!
 
 ---
 
@@ -212,18 +236,18 @@ for _ in range(T):
 # 난이도별 설정
 BLANK_DIFFICULTY_CONFIG = {
     "easy": {
-        "blank_count": (2, 3),
-        "focus": ["기초 문법", "단순 로직"],
-        "avoid": ["복잡한 조건", "중첩 구조"]
-    },
-    "medium": {
-        "blank_count": (3, 4),
-        "focus": ["핵심 알고리즘", "경계 조건"],
+        "blank_count": (4, 6),
+        "focus": ["기초 문법", "함수 호출", "연산자", "메서드"],
         "avoid": ["너무 긴 표현식"]
     },
+    "medium": {
+        "blank_count": (6, 8),
+        "focus": ["핵심 알고리즘", "경계 조건", "초기값", "점화식"],
+        "avoid": ["전체 줄 빈칸"]
+    },
     "hard": {
-        "blank_count": (4, 6),
-        "focus": ["최적화", "엣지 케이스", "복잡한 로직"],
+        "blank_count": (8, 12),
+        "focus": ["최적화 로직", "엣지 케이스", "복잡한 조건문", "수학 연산"],
         "avoid": []
     }
 }

@@ -198,4 +198,166 @@ export const usersApi = {
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
+
+  /**
+   * Upload avatar image
+   */
+  async uploadAvatar(file: File): Promise<{ success: boolean; avatar_url: string; message: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+
+    const response = await fetch(`${API_BASE_URL}/users/me/avatar`, {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || '이미지 업로드에 실패했습니다.');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Delete avatar image
+   */
+  async deleteAvatar(): Promise<{ success: boolean; message: string }> {
+    const response = await api.delete<{ success: boolean; message: string }>('/users/me/avatar');
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+};
+
+
+// =====================================================
+// Public Profile Types (공개 프로필)
+// =====================================================
+
+export interface PublicProfile {
+  id: string;
+  username: string;
+  avatarUrl: string | null;  // 실제 프로필 이미지 URL
+  avatarColor: string;       // 폴백 배경색
+  level: number;
+  currentXP: number;
+  requiredXP: number;
+  totalXP: number;
+  solvedCount: number;
+  streak: number;
+  joinedAt: string;
+}
+
+export interface PublicStats {
+  totalSolved: number;
+  solvedByDifficulty: {
+    easy: number;
+    medium: number;
+    hard: number;
+  };
+  solvedByType: {
+    blank: number;
+    puzzle: number;
+  };
+  currentStreak: number;
+  maxStreak: number;
+  totalXP: number;
+  level: number;
+}
+
+export interface PublicFarmCharacter {
+  name: string;
+  hair: string;
+  hairColor: string;
+  face: string;
+  outfit: string;
+  outfitColor: string;
+  farmName: string;
+}
+
+export interface PublicFarmSlot {
+  slotIndex: number;
+  cropType: string | null;
+  stage: number;
+  isReady: boolean;
+}
+
+export interface PublicFarm {
+  hasCharacter: boolean;
+  character: PublicFarmCharacter | null;
+  farmLevel: number;
+  gold: number;
+  slots: PublicFarmSlot[];
+}
+
+export interface PublicBadge {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  rarity: string;
+}
+
+// =====================================================
+// Public Profile API (인증 불필요)
+// =====================================================
+
+export const publicProfileApi = {
+  /**
+   * Get public profile by username (인증 불필요)
+   */
+  async getProfile(username: string): Promise<PublicProfile> {
+    const response = await api.get<PublicProfile>(`/users/${encodeURIComponent(username)}/public-profile`, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get public stats by username (인증 불필요)
+   */
+  async getStats(username: string): Promise<PublicStats> {
+    const response = await api.get<PublicStats>(`/users/${encodeURIComponent(username)}/public-stats`, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get public activity (grass) by username (인증 불필요)
+   */
+  async getActivity(username: string, days: number = 365): Promise<ActivityData> {
+    const response = await api.get<ActivityData>(`/users/${encodeURIComponent(username)}/public-activity?days=${days}`, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get public farm by username (인증 불필요)
+   */
+  async getFarm(username: string): Promise<PublicFarm> {
+    const response = await api.get<PublicFarm>(`/users/${encodeURIComponent(username)}/public-farm`, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get public badges by username (인증 불필요)
+   */
+  async getBadges(username: string): Promise<PublicBadge[]> {
+    const response = await api.get<PublicBadge[]>(`/users/${encodeURIComponent(username)}/public-badges`, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data || [];
+  },
+
+  /**
+   * Get public activity detail for a specific date (인증 불필요)
+   */
+  async getActivityByDate(username: string, date: string): Promise<DateActivityDetail> {
+    const response = await api.get<DateActivityDetail>(`/users/${encodeURIComponent(username)}/public-activity/${date}`, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
 };

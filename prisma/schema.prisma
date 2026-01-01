@@ -1,0 +1,132 @@
+// Prisma Schema for CodeFill
+// Based on Supabase PostgreSQL database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// Base Problems Table (원본 코딩 테스트 문제)
+// ============================================================
+model base_problems {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  original_id   String   @unique @db.VarChar(50)
+  name          String   @db.VarChar(255)
+  question      String
+  input_output  Json?    // {inputs: [], outputs: []}
+  difficulty    String?  @default("medium") @db.VarChar(20)
+  tags          String[] @db.Text
+  source        String?  @db.VarChar(50)
+  url           String?
+  time_limit    String?  @db.VarChar(50)
+  memory_limit  String?  @db.VarChar(50)
+  solutions     Json     // [{language, code}]
+  images        Json?    @default("[]")
+  starter_code  String?
+  explanation   String?
+  embedding     Unsupported("vector(1536)")?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  problems_blank  problems_blank[]
+  problems_puzzle problems_puzzle[]
+  problems_guided problems_guided[]
+}
+
+// ============================================================
+// Users Table
+// ============================================================
+model users {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email           String   @unique @db.VarChar(255)
+  name            String?  @db.VarChar(100)
+  profile_image   String?
+  provider        String?  @db.VarChar(50)
+  provider_id     String?  @db.VarChar(255)
+  hashed_password String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  problems_blank  problems_blank[]
+  problems_puzzle problems_puzzle[]
+  problems_guided problems_guided[]
+}
+
+// ============================================================
+// Problems Blank (빈칸 채우기 문제)
+// ============================================================
+model problems_blank {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  original_id     String   @db.VarChar(50)
+  base_problem_id String?  @db.Uuid
+  language        String   @db.VarChar(20)
+  code_template   String
+  answers         String[] @db.Text
+  creator_id      String?  @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  base_problem base_problems? @relation(fields: [base_problem_id], references: [id], onDelete: Cascade, map: "fk_blank_base_problem")
+  creator      users?         @relation(fields: [creator_id], references: [id], onDelete: SetNull, map: "fk_blank_creator")
+
+  @@unique([original_id, language])
+  @@index([original_id])
+  @@index([creator_id])
+}
+
+// ============================================================
+// Problems Puzzle (퍼즐 문제)
+// ============================================================
+model problems_puzzle {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  original_id     String   @db.VarChar(50)
+  base_problem_id String?  @db.Uuid
+  language        String   @db.VarChar(20)
+  fixed_start     String?
+  fixed_end       String?
+  blocks          Json     // [{id, code}]
+  creator_id      String?  @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  base_problem base_problems? @relation(fields: [base_problem_id], references: [id], onDelete: Cascade, map: "fk_puzzle_base_problem")
+  creator      users?         @relation(fields: [creator_id], references: [id], onDelete: SetNull, map: "fk_puzzle_creator")
+
+  @@unique([original_id, language])
+  @@index([original_id])
+  @@index([creator_id])
+}
+
+// ============================================================
+// Problems Guided (1대1 대화형 문제)
+// ============================================================
+model problems_guided {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  original_id     String   @db.VarChar(50)
+  base_problem_id String?  @db.Uuid
+  language        String   @db.VarChar(20)
+  concepts        String[] @db.Text
+  flow            String[] @db.Text
+  checkpoints     String[] @db.Text
+  creator_id      String?  @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  base_problem base_problems? @relation(fields: [base_problem_id], references: [id], onDelete: Cascade, map: "fk_guided_base_problem")
+  creator      users?         @relation(fields: [creator_id], references: [id], onDelete: SetNull, map: "fk_guided_creator")
+
+  @@unique([original_id, language])
+  @@index([original_id])
+  @@index([creator_id])
+}

@@ -12,6 +12,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Search, X, Filter } from 'lucide-react';
+import {
+  SilverIcon,
+  GoldIcon,
+  PlatinumIcon,
+  DiamondIcon,
+  MasterIcon,
+} from '@/components/icons/tiers';
 
 export interface ProblemFiltersState {
   search: string;
@@ -27,11 +34,14 @@ interface ProblemFiltersProps {
   totalCount: number;
 }
 
+// 난이도 옵션 (DB 값 기준)
 const DIFFICULTY_OPTIONS = [
-  { value: 'all', label: '모든 난이도' },
-  { value: 'easy', label: 'Easy', color: 'text-green-500' },
-  { value: 'medium', label: 'Medium', color: 'text-yellow-500' },
-  { value: 'hard', label: 'Hard', color: 'text-red-500' },
+  { value: 'all', label: '모든 난이도', Icon: null, color: '' },
+  { value: 'easy', label: '실버', Icon: SilverIcon, color: 'text-gray-500' },
+  { value: 'medium', label: '골드', Icon: GoldIcon, color: 'text-amber-500' },
+  { value: 'medium_hard', label: '플래티넘', Icon: PlatinumIcon, color: 'text-cyan-500' },
+  { value: 'hard', label: '다이아', Icon: DiamondIcon, color: 'text-violet-500' },
+  { value: 'very_hard', label: '마스터', Icon: MasterIcon, color: 'text-rose-500' },
 ];
 
 const SOURCE_OPTIONS = [
@@ -86,6 +96,9 @@ export function ProblemFilters({
     filters.tags !== 'all',
   ].filter(Boolean).length;
 
+  // 현재 선택된 난이도 옵션 찾기
+  const selectedTier = DIFFICULTY_OPTIONS.find(opt => opt.value === filters.difficulty);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
@@ -122,13 +135,23 @@ export function ProblemFilters({
           value={filters.difficulty}
           onValueChange={(v) => updateFilter('difficulty', v)}
         >
-          <SelectTrigger className="w-[130px] bg-secondary h-9">
-            <SelectValue placeholder="난이도" />
+          <SelectTrigger className="w-[140px] bg-secondary h-9">
+            <SelectValue>
+              {selectedTier && (
+                <div className="flex items-center gap-1.5">
+                  {selectedTier.Icon && <selectedTier.Icon size={14} />}
+                  <span className={selectedTier.color}>{selectedTier.label}</span>
+                </div>
+              )}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {DIFFICULTY_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
-                <span className={opt.color}>{opt.label}</span>
+                <div className="flex items-center gap-1.5">
+                  {opt.Icon && <opt.Icon size={14} />}
+                  <span className={opt.color}>{opt.label}</span>
+                </div>
               </SelectItem>
             ))}
           </SelectContent>

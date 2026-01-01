@@ -13,7 +13,7 @@ CHECKPOINT_FILE = os.path.join(BASE_DIR, "scripts", "batch_solution_system", "ch
 MAIN_FILE = os.path.join(DATA_DIR, "problems_with_github_solutions.json")
 
 # 배치 설정
-BATCH_SIZE = 10  # 한 번에 처리할 문제 수
+BATCH_SIZE = 5  # 한 번에 처리할 문제 수 (5개로 변경)
 MAX_RETRIES = 3  # 솔루션 생성 실패 시 재시도 횟수
 
 # 디렉토리 생성

@@ -300,14 +300,31 @@ class RAGService:
 
         user_context = user_context or {}
 
-        # Format similar problems for context
+        # Format similar problems for context (question + solutions 포함)
         similar_context = []
         for p in similar_problems[:3]:  # Top 3 as context
+            # solutions 코드 추출 (사용자가 선택한 언어 우선)
+            solutions = p.get("solutions", [])
+            solution_code = None
+            preferred_lang = user_request.get("language", "python")
+
+            # 선호 언어 코드 먼저 찾기
+            for sol in solutions:
+                if sol.get("language") == preferred_lang:
+                    solution_code = sol.get("code", "")[:2000]  # 2000자 제한
+                    break
+
+            # 없으면 첫 번째 솔루션 사용
+            if not solution_code and solutions:
+                solution_code = solutions[0].get("code", "")[:2000]
+
             similar_context.append({
                 "title": p.get("name", ""),
-                "description": p.get("question", "")[:500],
+                "question": p.get("question", ""),  # 전체 question 전달
                 "tags": p.get("tags", []),
                 "difficulty": p.get("difficulty", ""),
+                "solution_code": solution_code,  # 솔루션 코드 추가
+                "solution_language": preferred_lang if solution_code else None,
             })
 
         system_prompt = CODE_GEN_SYSTEM_PROMPT.format(

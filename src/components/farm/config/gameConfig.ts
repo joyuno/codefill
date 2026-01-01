@@ -63,18 +63,27 @@ export const TILES = {
   DIRT_BOTTOM_RIGHT: 73,
 };
 
-// 밭 타일 (9-patch 방식) - 9~11행, 1~3열 (1-indexed)
-// 타일 인덱스 = (row - 1) * 32 + (col - 1)
+// 밭 전용 스프라이트시트 (farm_plot.png - 3x3, 각 32x32)
+export const FARM_TILESET = {
+  key: 'farm_plot_tiles',
+  path: '/farm/terrains/farm_plot.png',
+  frameWidth: TILE_SIZE,
+  frameHeight: TILE_SIZE,
+  columns: 3,
+  rows: 3,
+};
+
+// 밭 타일 (9-patch 방식) - farm_plot.png 프레임 번호
 export const FARM_TILES = {
-  TOP_LEFT: 256,      // 9행 1열: 좌상단 모서리
-  TOP: 257,           // 9행 2열: 상단
-  TOP_RIGHT: 258,     // 9행 3열: 우상단 모서리
-  LEFT: 288,          // 10행 1열: 좌측
-  CENTER: 289,        // 10행 2열: 중앙 (심을 수 있는 칸)
-  RIGHT: 290,         // 10행 3열: 우측
-  BOTTOM_LEFT: 320,   // 11행 1열: 좌하단 모서리
-  BOTTOM: 321,        // 11행 2열: 하단
-  BOTTOM_RIGHT: 322,  // 11행 3열: 우하단 모서리
+  TOP_LEFT: 0,      // 1행 1열: 좌상단 모서리
+  TOP: 1,           // 1행 2열: 상단
+  TOP_RIGHT: 2,     // 1행 3열: 우상단 모서리
+  LEFT: 3,          // 2행 1열: 좌측
+  CENTER: 4,        // 2행 2열: 중앙 (심을 수 있는 칸)
+  RIGHT: 5,         // 2행 3열: 우측
+  BOTTOM_LEFT: 6,   // 3행 1열: 좌하단 모서리
+  BOTTOM: 7,        // 3행 2열: 하단
+  BOTTOM_RIGHT: 8,  // 3행 3열: 우하단 모서리
 };
 
 // 격자선 설정

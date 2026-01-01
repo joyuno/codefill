@@ -1,52 +1,41 @@
 """
-LangGraph Orchestrator V2 - 개선된 3단계 그래프 구조
+LangGraph Orchestrator V2 (Tool-based Refactored)
 
-기존 구조의 문제점:
-- IntentGraph의 collect_info_node가 너무 거대함 (200줄+ if/else)
-- LangGraph의 노드 분리 철학을 따르지 않음
-- 질문과 선택 구분이 불명확
-
-개선된 구조:
-- IntentGraph: 의도 분류만 담당
-- InfoCollectionGraph: 정보 수집 (topic → difficulty → language)
-- DiscoveryGraph: 문제 검색/선택
-- SolvingGraph: 문제 풀이 지원
+Tool/Function Calling 기반으로 리팩토링:
+- intent_tool: 통합 의도 분류 (4단계 → 1단계)
+- 중복 분기 로직 제거
+- 단순한 라우팅
 
 Flow:
-    Message → IntentGraph (의도 분류)
+    Message → intent_tool.classify() → suggested_route 기반 분기
                 ↓
-           [needs_info_collection?]
-                ├─ Yes → InfoCollectionGraph → [is_complete?]
-                │                                   ├─ Yes → DiscoveryGraph
-                │                                   └─ No → 응답 (추가 정보 요청)
-                └─ No → [route_to?]
-                            ├─ discovery → DiscoveryGraph
-                            ├─ solving → SolvingGraph
-                            └─ respond → 직접 응답
+           [category/action에 따라]
+                ├─ info_collection → InfoCollectionGraph
+                ├─ discovery → DiscoveryGraph
+                ├─ solving → SolvingGraph
+                └─ general → 직접 응답
 """
 from typing import Dict, Any, Optional, List
 
-from .intent_graph import IntentGraph
 from .collection import InfoCollectionGraph
 from .discovery_graph import DiscoveryGraph
 from .solving_graph import ProblemSolvingGraph
-from .intent_state import NEEDS_INFO_COLLECTION
 from ..services.problem_save import get_problem_save_service
+from ..tools.intent_tools import intent_tool, IntentCategory, ActionType
 
 
 class ChatOrchestratorV2:
     """
-    개선된 3단계 LangGraph 오케스트레이터
+    Tool 기반 LangGraph 오케스트레이터
 
+    intent_tool.classify() → 단일 호출로 의도/액션 분류
     각 그래프가 명확한 단일 책임을 가짐:
-    - IntentGraph: 의도 분류
     - InfoCollectionGraph: 정보 수집 (주제/난이도/언어)
     - DiscoveryGraph: 문제 검색/선택
     - SolvingGraph: 문제 풀이 지원
     """
 
     def __init__(self):
-        self.intent_graph = IntentGraph()
         self.collection_graph = InfoCollectionGraph()
         self.discovery_graph = DiscoveryGraph()
         self.solving_graph = ProblemSolvingGraph()
@@ -89,63 +78,105 @@ class ChatOrchestratorV2:
         current_stage = session_state.get("current_stage", "intent")
 
         # ============================================================
-        # 0. 문제 유형 선택 처리 (빈칸/퍼즐/대화형)
+        # 통합 Intent Tool로 의도 분류 (한 번에 처리)
         # ============================================================
-        problem_type = self._detect_problem_type_selection(message)
-        if problem_type and selected_problem:
-            return await self._process_problem_type_selection(
-                problem_type=problem_type,
-                selected_problem=selected_problem,
-                user_context=user_context,
-            )
+        # collected_info에서 topic 추출 (topics 배열에서 첫 번째 요소)
+        topics_list = collected_info.get("topics", [])
+        existing_topic = topics_list[0] if topics_list and isinstance(topics_list, list) and len(topics_list) > 0 else collected_info.get("topic")
 
-        # ============================================================
-        # 1. 현재 문제가 있고 풀이 중이면 바로 Solving Graph로
-        # ============================================================
-        if user_context.get("current_problem") and current_stage == "solving":
-            return await self._process_solving(
-                message=message,
-                problem_context=user_context.get("current_problem"),
-                user_progress=user_context.get("user_progress", {}),
-                conversation_history=conversation_history,
-                previous_hints=session_state.get("previous_hints", []),
-            )
-
-        # ============================================================
-        # 2. Intent Graph - 의도 분류
-        # ============================================================
-        intent_result = await self.intent_graph.invoke(
+        intent_result = await intent_tool.classify(
             message=message,
-            conversation_history=conversation_history,
-            user_context=user_context,
-            collected_info={},  # V2에서는 IntentGraph가 정보 수집 안함
+            session_state={
+                "current_step": collected_info.get("current_step"),
+                "topic": existing_topic,  # topics 배열에서 추출
+                "difficulty": collected_info.get("difficulty"),
+                "language": collected_info.get("language"),
+                "awaiting_confirmation": session_state.get("awaiting_confirmation"),
+                "suggested_value": session_state.get("suggested_value"),
+                "search_results": search_results,
+                "current_problem": user_context.get("current_problem"),
+            },
         )
 
-        intent = intent_result.get("intent_result", {}).get("intent", "unknown")
+        print(f"[Orchestrator] IntentTool: category={intent_result.category}, action={intent_result.action}, route={intent_result.suggested_route}")
 
         # ============================================================
-        # 3. 정보 수집이 필요한 의도인지 확인
+        # 1. 문제 유형 선택 처리 (빈칸/퍼즐/대화형)
         # ============================================================
-        if intent in NEEDS_INFO_COLLECTION:
+        if intent_result.action == ActionType.SELECT_PROBLEM_TYPE and selected_problem:
+            problem_type = await intent_tool.detect_problem_type(message)
+            if problem_type:
+                return await self._process_problem_type_selection(
+                    problem_type=problem_type,
+                    selected_problem=selected_problem,
+                    user_context=user_context,
+                )
+
+        # ============================================================
+        # 2. 풀이 중이면 Solving Graph로
+        # ============================================================
+        if intent_result.category == IntentCategory.SOLVING:
+            if user_context.get("current_problem"):
+                return await self._process_solving(
+                    message=message,
+                    problem_context=user_context.get("current_problem"),
+                    user_progress=user_context.get("user_progress", {}),
+                    conversation_history=conversation_history,
+                    previous_hints=session_state.get("previous_hints", []),
+                )
+
+        # ============================================================
+        # 3. 확인 응답 (긍정/부정) → InfoCollectionGraph
+        # ============================================================
+        if intent_result.category == IntentCategory.CONFIRMATION:
+            # awaiting_confirmation 상태가 아니어도 확인 응답 처리 시도
+            # (프론트엔드에서 상태 전달 누락 대비)
             return await self._process_info_collection(
                 message=message,
                 conversation_history=conversation_history,
                 user_context=user_context,
                 collected_info=collected_info,
-                intent=intent,
+                intent=intent_result.action.value,
+                session_state=session_state,
+                extracted_values=intent_result.extracted_values,  # 확인 시 추출된 값 전달
             )
 
         # ============================================================
-        # 4. route_to에 따라 분기
+        # 4. 문제 선택 → Discovery Graph
         # ============================================================
-        route_to = intent_result.get("route_to", "respond")
+        if intent_result.action == ActionType.SELECT_PROBLEM and search_results:
+            return await self._process_discovery(
+                message=message,
+                intent="problem_selection",
+                collected_info=collected_info,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                search_results=search_results,
+                selection_index=intent_result.selection_index,
+            )
 
-        if route_to == "discovery":
-            # 정보가 충분하면 Discovery로
+        # ============================================================
+        # 5. 정보 수집 필요
+        # ============================================================
+        if intent_result.category == IntentCategory.INFO_COLLECTION:
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info=collected_info,
+                intent=intent_result.action.value,
+                session_state=session_state,
+                extracted_values=intent_result.extracted_values,
+            )
+
+        # ============================================================
+        # 6. Discovery 라우팅 (정보 수집 완료 후)
+        # ============================================================
+        if intent_result.suggested_route == "discovery":
             if self._has_sufficient_info(collected_info):
                 return await self._process_discovery(
                     message=message,
-                    intent=intent,
+                    intent=intent_result.action.value,
                     collected_info=collected_info,
                     conversation_history=conversation_history,
                     user_context=user_context,
@@ -158,38 +189,40 @@ class ChatOrchestratorV2:
                     conversation_history=conversation_history,
                     user_context=user_context,
                     collected_info=collected_info,
-                    intent=intent,
+                    intent=intent_result.action.value,
+                    session_state=session_state,
                 )
 
-        elif route_to == "solving":
-            if selected_problem or user_context.get("current_problem"):
-                return await self._process_solving(
-                    message=message,
-                    problem_context=selected_problem or user_context.get("current_problem"),
-                    user_progress=user_context.get("user_progress", {}),
-                    conversation_history=conversation_history,
-                    previous_hints=session_state.get("previous_hints", []),
-                )
-            else:
-                return {
-                    "stage": "intent",
-                    "intent": intent,
-                    "collected_info": collected_info,
-                    "response_message": "먼저 문제를 선택해주세요! 어떤 문제를 풀어볼까요?",
-                    "next_stage": "discovery",
-                    "is_complete": False,
-                }
-
-        else:
-            # 직접 응답 (greeting, thanks 등)
+        # ============================================================
+        # 7. General (인사, 감사, 일반 대화)
+        # ============================================================
+        if intent_result.category == IntentCategory.GENERAL:
+            response_messages = {
+                ActionType.GREETING: "안녕하세요! 코딩 연습 도와드릴게요. 어떤 주제의 문제를 풀어볼까요?",
+                ActionType.THANKS: "도움이 됐다니 기뻐요! 더 필요한 거 있으면 말씀해주세요.",
+                ActionType.HELP: "저는 코딩 문제 추천과 풀이를 도와드려요.\n\n• 주제/난이도/언어 선택 → 문제 검색\n• 문제 선택 → 빈칸/퍼즐/대화형 중 선택\n• 힌트 요청, 질문하기\n\n어떤 주제로 시작해볼까요?",
+                ActionType.FREE_CHAT: "무엇을 도와드릴까요? 코딩 문제를 풀어보시겠어요?",
+            }
             return {
                 "stage": "intent",
-                "intent": intent,
+                "intent": intent_result.action.value,
                 "collected_info": collected_info,
-                "response_message": intent_result.get("response_message", "무엇을 도와드릴까요?"),
+                "response_message": response_messages.get(intent_result.action, "무엇을 도와드릴까요?"),
                 "next_stage": "respond",
                 "is_complete": True,
             }
+
+        # ============================================================
+        # 8. Fallback: 정보 수집 시작
+        # ============================================================
+        return await self._process_info_collection(
+            message=message,
+            conversation_history=conversation_history,
+            user_context=user_context,
+            collected_info=collected_info,
+            intent=intent_result.action.value if intent_result.action else "ask_recommendation",
+            session_state=session_state,
+        )
 
     async def _process_info_collection(
         self,
@@ -198,12 +231,18 @@ class ChatOrchestratorV2:
         user_context: dict,
         collected_info: dict,
         intent: str,
+        session_state: dict = None,
+        extracted_values: dict = None,
     ) -> Dict[str, Any]:
         """
         InfoCollectionGraph 실행
 
         topic → difficulty → language 순서로 수집
+        네/아니오 응답 대기 상태 지원
         """
+        session_state = session_state or {}
+        extracted_values = extracted_values or {}
+
         # 기존 수집 정보에서 추출
         existing_topic = None
         existing_difficulty = None
@@ -216,6 +255,44 @@ class ChatOrchestratorV2:
             existing_difficulty = collected_info.get("difficulty")
             existing_language = collected_info.get("language")
 
+        # ============================================================
+        # extracted_values 적용 (intent_tool에서 추출한 값 우선 적용)
+        # ============================================================
+        if extracted_values.get("topic"):
+            existing_topic = extracted_values["topic"]
+        if extracted_values.get("difficulty"):
+            existing_difficulty = extracted_values["difficulty"]
+        if extracted_values.get("language"):
+            existing_language = extracted_values["language"]
+
+        # ============================================================
+        # 대화 중 언급된 goal/level 정보를 user_context에 반영
+        # "대기업 코테 목표" 같은 메시지에서 추출된 정보
+        # ============================================================
+        if extracted_values.get("learning_goal"):
+            user_context = user_context.copy() if user_context else {}
+            user_context["learning_goal"] = extracted_values["learning_goal"]
+            print(f"[Orchestrator] Updated user_context.learning_goal: {extracted_values['learning_goal']}")
+
+        if extracted_values.get("experience_level"):
+            user_context = user_context.copy() if user_context else {}
+            user_context["experience_level"] = extracted_values["experience_level"]
+            print(f"[Orchestrator] Updated user_context.experience_level: {extracted_values['experience_level']}")
+
+        # 디버깅 로그
+        print(f"[Orchestrator] _process_info_collection called")
+        print(f"[Orchestrator] - message: {message}")
+        print(f"[Orchestrator] - collected_info from session: {collected_info}")
+        print(f"[Orchestrator] - extracted_values from intent: {extracted_values}")
+        print(f"[Orchestrator] - existing_topic: {existing_topic}")
+        print(f"[Orchestrator] - existing_difficulty: {existing_difficulty}")
+        print(f"[Orchestrator] - existing_language: {existing_language}")
+        print(f"[Orchestrator] - user_context (after update): {user_context}")
+
+        # 세션에서 awaiting_confirmation, suggested_value 가져오기
+        existing_awaiting_confirmation = session_state.get("awaiting_confirmation", False)
+        existing_suggested_value = session_state.get("suggested_value")
+
         # InfoCollectionGraph 실행
         result = await self.collection_graph.invoke(
             message=message,
@@ -224,6 +301,8 @@ class ChatOrchestratorV2:
             existing_topic=existing_topic,
             existing_difficulty=existing_difficulty,
             existing_language=existing_language,
+            existing_awaiting_confirmation=existing_awaiting_confirmation,
+            existing_suggested_value=existing_suggested_value,
         )
 
         # 수집된 정보 병합
@@ -245,6 +324,7 @@ class ChatOrchestratorV2:
                 search_results=[],
             )
 
+        # 응답에 awaiting_confirmation, suggested_value 포함
         return {
             "stage": "collection",
             "intent": intent,
@@ -252,6 +332,10 @@ class ChatOrchestratorV2:
             "response_message": result.get("message", ""),
             "next_stage": "collection",
             "is_complete": False,
+            # 네/아니오 칩용 정보
+            "awaiting_confirmation": result.get("awaiting_confirmation", False),
+            "suggested_value": result.get("suggested_value"),
+            "action_data": result.get("action_data"),
         }
 
     async def _process_discovery(
@@ -262,6 +346,7 @@ class ChatOrchestratorV2:
         conversation_history: list,
         user_context: dict,
         search_results: list,
+        selection_index: int = None,
     ) -> Dict[str, Any]:
         """Discovery 그래프 실행"""
         result = await self.discovery_graph.invoke(
@@ -271,6 +356,7 @@ class ChatOrchestratorV2:
             conversation_history=conversation_history,
             user_context=user_context,
             search_results=search_results,
+            selection_index=selection_index,
         )
 
         return {
@@ -324,24 +410,6 @@ class ChatOrchestratorV2:
         has_language = bool(language)
 
         return has_topic and has_difficulty and has_language
-
-    def _detect_problem_type_selection(self, message: str) -> Optional[str]:
-        """메시지에서 문제 유형 선택 감지"""
-        message_lower = message.lower()
-
-        # 빈칸 채우기
-        if any(kw in message_lower for kw in ["빈칸", "blank", "빈 칸"]):
-            return "blank"
-
-        # 퍼즐
-        if any(kw in message_lower for kw in ["퍼즐", "puzzle", "정렬", "코드 정렬"]):
-            return "puzzle"
-
-        # 대화형
-        if any(kw in message_lower for kw in ["대화형", "1대1", "guided", "가이드", "1:1"]):
-            return "guided"
-
-        return None
 
     def _convert_cached_to_generated(
         self,
@@ -426,7 +494,21 @@ class ChatOrchestratorV2:
         description = selected_problem.get("description") or selected_problem.get("question", "")
         difficulty = selected_problem.get("difficulty", "medium")
         topics = selected_problem.get("topics") or selected_problem.get("tags", [])
+
+        # input_output이 JSON 문자열인 경우 파싱
         input_output = selected_problem.get("input_output")
+        if isinstance(input_output, str):
+            try:
+                input_output = json.loads(input_output)
+            except (json.JSONDecodeError, TypeError):
+                input_output = None
+
+        # tags가 JSON 문자열인 경우 파싱
+        if isinstance(topics, str):
+            try:
+                topics = json.loads(topics)
+            except (json.JSONDecodeError, TypeError):
+                topics = []
 
         # 코드 추출
         language = "python"

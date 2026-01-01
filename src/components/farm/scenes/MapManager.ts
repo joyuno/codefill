@@ -24,12 +24,11 @@ import {
   FRUIT_TREE_DECORATIONS,
   HAY_DECORATIONS,
   FLOWER_DECORATIONS,
-  DECORATION_CONFIG,
 } from '../config/decorationConfig';
 
 export class MapManager {
   private scene: Phaser.Scene;
-  private groundSprites: Phaser.GameObjects.Sprite[] = [];
+  private groundTileSprite: Phaser.GameObjects.TileSprite | null = null;
   private decorationSprites: Phaser.GameObjects.Image[] = [];
 
   constructor(scene: Phaser.Scene) {
@@ -40,11 +39,14 @@ export class MapManager {
    * 에셋 프리로드
    */
   preload(): void {
-    // 타일셋
+    // 타일셋 (밭 타일용)
     this.scene.load.spritesheet(TILESET.key, TILESET.path, {
       frameWidth: TILESET.frameWidth,
       frameHeight: TILESET.frameHeight,
     });
+
+    // 바닥 잔디 이미지
+    this.scene.load.image('grass_floor', '/farm/terrains/grass_floor.png');
 
     // 잔디/꽃
     GRASS_DECORATIONS.forEach(grass => {
@@ -77,148 +79,22 @@ export class MapManager {
    */
   create(): void {
     this.createGrassFloor();
-    this.createGrassDecorations();
-    this.createFlowerDecorations();
-    this.createTrees();
-    this.createHayDecorations();
+    // 나무와 건초는 소유 시스템으로 전환됨 (PlacementSystem에서 처리)
   }
 
   /**
-   * 잔디 바닥 생성 - 전체 맵을 초록색 잔디로 통일
+   * 잔디 바닥 생성 - TileSprite로 효율적으로 렌더링
    */
   private createGrassFloor(): void {
-    for (let row = 0; row < MAP_ROWS; row++) {
-      for (let col = 0; col < MAP_COLS; col++) {
-        const x = col * TILE_SIZE + TILE_SIZE / 2;
-        const y = row * TILE_SIZE + TILE_SIZE / 2;
-
-        const tile = this.scene.add.sprite(x, y, TILESET.key, TILES.GRASS_GREEN);
-        tile.setDepth(DEPTH.GROUND_GRASS);
-        this.groundSprites.push(tile);
-      }
-    }
-  }
-
-  /**
-   * 잔디/꽃 장식 생성 - 랜덤 배치
-   */
-  private createGrassDecorations(): void {
-    const count = DECORATION_CONFIG.grassCount;
-    let placed = 0;
-    let attempts = 0;
-    const maxAttempts = count * 10;
-
-    while (placed < count && attempts < maxAttempts) {
-      attempts++;
-
-      // 랜덤 위치
-      const col = Math.floor(Math.random() * MAP_COLS);
-      const row = Math.floor(Math.random() * MAP_ROWS);
-
-      // 금지 구역 체크
-      if (this.isRestrictedArea(col, row)) continue;
-
-      // 랜덤 잔디 선택
-      const grassIndex = Math.floor(Math.random() * GRASS_DECORATIONS.length);
-      const grass = GRASS_DECORATIONS[grassIndex];
-
-      // 약간의 오프셋 추가 (자연스러움)
-      const offsetX = (Math.random() - 0.5) * 16;
-      const offsetY = (Math.random() - 0.5) * 16;
-
-      const x = col * TILE_SIZE + TILE_SIZE / 2 + offsetX;
-      const y = row * TILE_SIZE + TILE_SIZE / 2 + offsetY;
-
-      const sprite = this.scene.add.image(x, y, grass.key);
-      sprite.setDepth(DEPTH.GROUND_DECORATIONS);
-
-      // 투명도 높여서 잘 보이게 (0.85~1.0)
-      sprite.setAlpha(0.85 + Math.random() * 0.15);
-
-      this.decorationSprites.push(sprite);
-      placed++;
-    }
-  }
-
-  /**
-   * 꽃 장식 생성 - 4가지 색상 꽃 랜덤 배치
-   */
-  private createFlowerDecorations(): void {
-    const count = DECORATION_CONFIG.flowerCount;
-    let placed = 0;
-    let attempts = 0;
-    const maxAttempts = count * 10;
-
-    while (placed < count && attempts < maxAttempts) {
-      attempts++;
-
-      // 랜덤 위치
-      const col = Math.floor(Math.random() * MAP_COLS);
-      const row = Math.floor(Math.random() * MAP_ROWS);
-
-      // 금지 구역 체크
-      if (this.isRestrictedArea(col, row)) continue;
-
-      // 랜덤 꽃 선택
-      const flowerDef = FLOWER_DECORATIONS[Math.floor(Math.random() * FLOWER_DECORATIONS.length)];
-
-      // 약간의 오프셋 추가 (자연스러움)
-      const offsetX = (Math.random() - 0.5) * 16;
-      const offsetY = (Math.random() - 0.5) * 16;
-
-      const x = col * TILE_SIZE + TILE_SIZE / 2 + offsetX;
-      const y = row * TILE_SIZE + TILE_SIZE / 2 + offsetY;
-
-      const sprite = this.scene.add.image(x, y, flowerDef.key);
-      sprite.setDepth(DEPTH.GROUND_DECORATIONS + 1);
-
-      this.decorationSprites.push(sprite);
-      placed++;
-    }
-  }
-
-  /**
-   * 나무 배치
-   */
-  private createTrees(): void {
-    DECORATION_CONFIG.trees.forEach(treePlacement => {
-      const treeDef = [...TREE_DECORATIONS, ...FRUIT_TREE_DECORATIONS]
-        .find(t => t.key === treePlacement.type);
-
-      if (!treeDef) return;
-
-      // 나무 중앙 하단 기준 위치
-      const x = treePlacement.tileX * TILE_SIZE + treeDef.width / 2;
-      const y = treePlacement.tileY * TILE_SIZE + treeDef.height;
-
-      const sprite = this.scene.add.image(x, y, treeDef.key);
-      sprite.setOrigin(0.5, 1); // 하단 중앙
-
-      // Y좌표 기반 깊이 (건물과 같은 방식)
-      const depth = getBuildingDepth(y, MAP_HEIGHT);
-      sprite.setDepth(depth);
-
-      this.decorationSprites.push(sprite);
-    });
-  }
-
-  /**
-   * 건초 장식 배치
-   */
-  private createHayDecorations(): void {
-    DECORATION_CONFIG.hay.forEach(hayPlacement => {
-      const hayDef = HAY_DECORATIONS.find(h => h.key === hayPlacement.type);
-      if (!hayDef) return;
-
-      const x = hayPlacement.tileX * TILE_SIZE + hayDef.width / 2;
-      const y = hayPlacement.tileY * TILE_SIZE + hayDef.height;
-
-      const sprite = this.scene.add.image(x, y, hayDef.key);
-      sprite.setOrigin(0.5, 1);
-      sprite.setDepth(DEPTH.GROUND_DECORATIONS + 1);
-
-      this.decorationSprites.push(sprite);
-    });
+    // TileSprite: 하나의 이미지를 전체 맵에 반복 (600개 스프라이트 대신 1개)
+    this.groundTileSprite = this.scene.add.tileSprite(
+      MAP_WIDTH / 2,   // 중앙 x
+      MAP_HEIGHT / 2,  // 중앙 y
+      MAP_WIDTH,       // 전체 너비
+      MAP_HEIGHT,      // 전체 높이
+      'grass_floor'
+    );
+    this.groundTileSprite.setDepth(DEPTH.GROUND_GRASS);
   }
 
   /**
@@ -303,8 +179,10 @@ export class MapManager {
    * 정리
    */
   destroy(): void {
-    this.groundSprites.forEach(sprite => sprite.destroy());
-    this.groundSprites = [];
+    if (this.groundTileSprite) {
+      this.groundTileSprite.destroy();
+      this.groundTileSprite = null;
+    }
     this.decorationSprites.forEach(sprite => sprite.destroy());
     this.decorationSprites = [];
   }

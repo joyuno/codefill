@@ -24,7 +24,7 @@ export interface RawProblem {
   name: string;
   question: string;
   input_output: RawInputOutput;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   tags: string[];
   source?: string;
   url?: string;
@@ -52,6 +52,7 @@ export interface RawBlankProblem {
 export interface RawPuzzleBlock {
   id: number;
   code: string;
+  indent?: number;  // 들여쓰기 레벨 (0: 루트, 1: 함수내부, 2: 중첩블록)
 }
 
 export interface RawPuzzleProblem {
@@ -127,7 +128,7 @@ export interface ConvertedProblem {
   title: string;
   description: string;
   framework?: 'python' | 'java' | 'cpp' | 'javascript';
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   topics: string[];
   problemType: ConvertedProblemType;
 

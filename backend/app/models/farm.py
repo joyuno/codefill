@@ -59,7 +59,7 @@ class FarmSlot(BaseModel):
 # =====================================================
 
 class UserFarmResponse(BaseModel):
-    """사용자 농장 상태 응답"""
+    """사용자 농장 상태 응답 (통합 배치 시스템)"""
     id: UUID
     user_id: UUID
     character_created: bool
@@ -67,11 +67,13 @@ class UserFarmResponse(BaseModel):
     farm_unlocked: bool
     farm_level: int
     gold: int
-    farm_size: int
-    farm_slots: List[FarmSlot]
+    farm_size: int  # 배치 가능 영역 크기
     house_level: int
     created_at: datetime
     updated_at: datetime
+    # 레거시 필드 제거됨:
+    # - farm_slots → user_placed_items 사용 (GET /placement/items)
+    # - customization_data → user_placed_items 사용
 
 
 class FarmItemResponse(BaseModel):
@@ -192,6 +194,58 @@ class ExpansionCostsResponse(BaseModel):
 
 
 # =====================================================
+# Customization Models (장식, 건물, 지형)
+# =====================================================
+
+class PlacedDecoration(BaseModel):
+    """배치된 장식"""
+    id: str
+    item_key: str
+    tile_x: int
+    tile_y: int
+
+
+class BuildingPosition(BaseModel):
+    """건물 위치 및 스킨"""
+    x: int
+    y: int
+    skin: str = "default"
+
+
+class OwnedTree(BaseModel):
+    """배치된 나무/건초"""
+    id: str
+    type: str  # tree_oak_small, hay_pile 등
+    tile_x: int
+    tile_y: int
+
+
+class CustomizationData(BaseModel):
+    """농장 커스터마이징 데이터"""
+    decorations: List[PlacedDecoration] = []
+    buildings: Dict[str, BuildingPosition] = {}
+    owned_buildings: List[str] = ["house"]  # 소유한 건물 목록
+    owned_trees: List[OwnedTree] = []  # 소유한 나무/건초
+    terrain: List[Any] = []
+
+
+class CustomizationUpdateRequest(BaseModel):
+    """커스터마이징 업데이트 요청"""
+    decorations: Optional[List[PlacedDecoration]] = None
+    buildings: Optional[Dict[str, BuildingPosition]] = None
+    owned_buildings: Optional[List[str]] = None
+    owned_trees: Optional[List[OwnedTree]] = None
+    terrain: Optional[List[Any]] = None
+
+
+class CustomizationResponse(BaseModel):
+    """커스터마이징 데이터 응답"""
+    success: bool
+    message: str
+    customization: CustomizationData
+
+
+# =====================================================
 # Constants
 # =====================================================
 
@@ -207,3 +261,48 @@ EXPANSION_COSTS = {
 # 캐릭터 생성 시 초기 지급
 INITIAL_GOLD = 100
 INITIAL_SEEDS_COUNT = 5
+
+# 기본 건물 위치 (집만 기본 제공)
+DEFAULT_BUILDING_POSITIONS = {
+    "house": {"x": 23, "y": 2, "skin": "default"},
+    "chickenCoop": {"x": 2, "y": 7, "skin": "default"},
+    "scarecrow": {"x": 9, "y": 6, "skin": "default"},
+    "well": {"x": 26, "y": 8, "skin": "default"},
+    "barn": {"x": 20, "y": 12, "skin": "default"},
+}
+
+
+# =====================================================
+# Shop Models (건물/나무/건초 상점)
+# =====================================================
+
+class ShopItem(BaseModel):
+    """상점 아이템"""
+    code: str
+    name: str
+    name_ko: str
+    type: str  # building, tree, hay
+    rarity: str
+    price: int
+    owned: bool = False
+
+
+class ShopResponse(BaseModel):
+    """상점 목록 응답"""
+    success: bool
+    items: List[ShopItem]
+    gold: int
+
+
+class PurchaseItemRequest(BaseModel):
+    """아이템 구매 요청"""
+    item_code: str
+
+
+class PurchaseItemResponse(BaseModel):
+    """아이템 구매 응답"""
+    success: bool
+    message: str
+    gold: int
+    owned_buildings: List[str]
+    buildings: Dict[str, BuildingPosition]

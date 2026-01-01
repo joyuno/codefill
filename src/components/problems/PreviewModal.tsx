@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { X, Globe, ExternalLink, Loader2, Copy, Check, MessageSquare } from 'lucide-react';
+import { X, Globe, ExternalLink, Loader2, Copy, Check, MessageSquare, LogIn } from 'lucide-react';
 import Link from 'next/link';
 import { problemsApi, type BaseProblemDetail } from '@/lib/api';
+import { apiClient } from '@/lib/api/client';
 import { translateText, type LanguageCode } from '@/lib/api/translate';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -15,6 +17,14 @@ import remarkMath from 'remark-math';
 import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // Copy button component
 function CopyButton({ text }: { text: string }) {
@@ -58,14 +68,29 @@ const difficultyColors: Record<string, string> = {
 };
 
 export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
+  const router = useRouter();
   const [problem, setProblem] = useState<BaseProblemDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
 
   // Translation state
   const [translatedQuestion, setTranslatedQuestion] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [showTranslated, setShowTranslated] = useState(false);
+
+  const handleStartPractice = () => {
+    if (!problem) return;
+
+    // Check if user is logged in
+    if (!apiClient.isAuthenticated()) {
+      setShowLoginDialog(true);
+      return;
+    }
+
+    // Navigate to chat page
+    router.push(`/chat?problem_id=${problem.original_id}`);
+  };
 
   useEffect(() => {
     if (!originalId) return;
@@ -330,13 +355,38 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                   Discussion
                 </Button>
               </Link>
-              <Button onClick={() => window.location.href = `/practice?id=${problem.original_id}&type=implementation`}>
+              <Button onClick={handleStartPractice}>
                 Start Practice
               </Button>
             </div>
           )}
         </motion.div>
       </motion.div>
+
+      {/* Login Required Dialog */}
+      <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="h-5 w-5" />
+              로그인이 필요합니다
+            </DialogTitle>
+            <DialogDescription>
+              문제를 풀려면 로그인이 필요합니다.<br />
+              로그인하면 XP 획득과 잔디 기록이 저장됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setShowLoginDialog(false)}>
+              취소
+            </Button>
+            <Button onClick={() => router.push('/login')}>
+              <LogIn className="mr-2 h-4 w-4" />
+              로그인하기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AnimatePresence>
   );
 }

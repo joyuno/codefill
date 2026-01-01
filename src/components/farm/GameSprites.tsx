@@ -157,8 +157,10 @@ interface FarmerSpriteProps {
 
 /**
  * 농부 스프라이트 컴포넌트
- * - 스프라이트 시트 기반 애니메이션
- * - 행동과 방향에 따라 다른 프레임 표시
+ * - farm 페이지 PlayerController 구조 기반
+ * - 스프라이트시트: 24열 x 3행, 각 프레임 32x64
+ * - Row 0: 정적, Row 1: idle/breathing, Row 2: walking
+ * - 방향 순서: right(0), up(1), left(2), down(3)
  */
 export function FarmerSprite({
   action = 'idle',
@@ -168,116 +170,79 @@ export function FarmerSprite({
   animated = true,
 }: FarmerSpriteProps) {
   const [frame, setFrame] = useState(0);
-  
-  // 스프라이트 시트 정보
-  // Farmer_1_32x32.png: 각 캐릭터 32x32, 여러 방향/액션 프레임 포함
-  const spriteSheetConfig = {
-    idle: {
-      src: `${FARM_ASSETS.characters}/Farmer_1_32x32.png`,
-      frameCount: 3,
-      frameWidth: 32,
-      frameHeight: 32,
-      row: 0, // 첫 번째 줄: idle
-    },
-    walk: {
-      src: `${FARM_ASSETS.characters}/Farmer_1_32x32.png`,
-      frameCount: 24,
-      frameWidth: 32,
-      frameHeight: 32,
-      row: direction === 'down' ? 1 : direction === 'up' ? 2 : 3,
-    },
-    farm: {
-      src: `${FARM_ASSETS.characters}/Farmer_1_Harvesting_36_frames_32x32.png`,
-      frameCount: 36,
-      frameWidth: 32,
-      frameHeight: 32,
-      row: 0,
-    },
-    harvest: {
-      src: `${FARM_ASSETS.characters}/Farmer_1_Harvesting_36_frames_32x32.png`,
-      frameCount: 36,
-      frameWidth: 32,
-      frameHeight: 32,
-      row: 0,
-    },
-    water: {
-      src: `${FARM_ASSETS.characters}/Farmer_1_Watering_56_frames_32x32.png`,
-      frameCount: 56,
-      frameWidth: 32,
-      frameHeight: 32,
-      row: 0,
-    },
-    sleep: {
-      src: `${FARM_ASSETS.characters}/Farmer_1_32x32.png`,
-      frameCount: 1,
-      frameWidth: 32,
-      frameHeight: 32,
-      row: 0,
-    },
+
+  const FRAME_WIDTH = 32;
+  const FRAME_HEIGHT = 64;
+  const COLUMNS = 24;
+  const FRAMES_PER_DIRECTION = 6;
+
+  // 방향 인덱스
+  const directionIndex: Record<Direction, number> = {
+    right: 0,
+    up: 1,
+    left: 2,
+    down: 3,
   };
 
-  const config = spriteSheetConfig[action];
-  
+  const dirIdx = directionIndex[direction];
+
+  // Row 1: idle/breathing, Row 2: walking
+  const row = action === 'walk' ? 2 : 1;
+  const startFrame = (row * COLUMNS) + (dirIdx * FRAMES_PER_DIRECTION);
+  const frameCount = FRAMES_PER_DIRECTION;
+
   // 애니메이션 프레임 업데이트
   useEffect(() => {
     if (!animated) return;
-    
-    const fps = action === 'walk' ? 12 : action === 'farm' || action === 'harvest' ? 8 : action === 'water' ? 10 : 2;
+
+    const fps = action === 'walk' ? 10 : 4;
     const interval = setInterval(() => {
-      setFrame(prev => (prev + 1) % config.frameCount);
+      setFrame(prev => (prev + 1) % frameCount);
     }, 1000 / fps);
-    
+
     return () => clearInterval(interval);
-  }, [action, animated, config.frameCount]);
+  }, [action, animated, frameCount]);
 
-  // 방향에 따른 좌우 반전
-  const scaleX = direction === 'left' ? -1 : 1;
+  // 현재 프레임의 X, Y 위치 계산
+  const currentFrameIndex = startFrame + frame;
+  const frameX = (currentFrameIndex % COLUMNS) * FRAME_WIDTH;
+  const frameY = Math.floor(currentFrameIndex / COLUMNS) * FRAME_HEIGHT;
 
-  // 스프라이트 시트에서 현재 프레임 위치 계산
-  const frameX = (frame % config.frameCount) * config.frameWidth;
-  const frameY = config.row * config.frameHeight;
+  // 캐릭터 높이가 64px이므로 비율 유지
+  const scale = size / FRAME_WIDTH;
+  const displayHeight = FRAME_HEIGHT * scale;
 
   return (
     <div
       className={cn('relative overflow-hidden', className)}
       style={{
         width: size,
-        height: size,
-        transform: `scaleX(${scaleX})`,
+        height: displayHeight,
       }}
     >
       {/* 그림자 */}
-      <div 
+      <div
         className="absolute bottom-0 left-1/2 -translate-x-1/2 bg-black/20 rounded-full"
         style={{
           width: size * 0.7,
           height: size * 0.15,
         }}
       />
-      
+
       {/* 스프라이트 시트 이미지 */}
       <div
         style={{
           position: 'absolute',
-          width: config.frameWidth * config.frameCount,
-          height: config.frameHeight * (config.row + 1),
-          backgroundImage: `url(${config.src})`,
+          width: FRAME_WIDTH,
+          height: FRAME_HEIGHT,
+          backgroundImage: `url(${FARM_ASSETS.characters}/Farmer_1_32x32.png)`,
           backgroundRepeat: 'no-repeat',
           backgroundPosition: `-${frameX}px -${frameY}px`,
-          backgroundSize: 'auto',
-          transform: `scale(${size / config.frameWidth})`,
+          transform: `scale(${scale})`,
           transformOrigin: 'top left',
           imageRendering: 'pixelated',
         }}
       />
-      
-      {/* 간단한 픽셀 농부 폴백 (이미지 로드 실패 시) */}
-      <noscript>
-        <div 
-          className="absolute inset-0 bg-amber-600 rounded-full"
-          style={{ width: size * 0.6, height: size * 0.6, margin: 'auto' }}
-        />
-      </noscript>
     </div>
   );
 }
@@ -538,19 +503,25 @@ export function FarmMinimap({
         setFarmerAction('water');
         setTimeout(() => setFarmerAction('idle'), 1500);
       } else {
-        // 50% 확률로 걷기
+        // 50% 확률로 걷기 (가로 또는 세로 한 방향만)
         setFarmerAction('walk');
-        const newX = Math.max(10, Math.min(75, farmerPos.x + (Math.random() - 0.5) * 30));
-        const newY = Math.max(35, Math.min(75, farmerPos.y + (Math.random() - 0.5) * 20));
-        
-        // 방향 결정
-        if (newX > farmerPos.x) setFarmerDirection('right');
-        else if (newX < farmerPos.x) setFarmerDirection('left');
-        else if (newY > farmerPos.y) setFarmerDirection('down');
-        else setFarmerDirection('up');
-        
-        setFarmerPos({ x: newX, y: newY });
-        setTimeout(() => setFarmerAction('idle'), 1000);
+        const moveHorizontal = Math.random() > 0.5;
+
+        if (moveHorizontal) {
+          // 가로 이동
+          const delta = (Math.random() - 0.5) * 20;
+          const newX = Math.max(10, Math.min(75, farmerPos.x + delta));
+          setFarmerDirection(delta > 0 ? 'right' : 'left');
+          setFarmerPos({ x: newX, y: farmerPos.y });
+        } else {
+          // 세로 이동
+          const delta = (Math.random() - 0.5) * 10;
+          const newY = Math.max(35, Math.min(55, farmerPos.y + delta));
+          setFarmerDirection(delta > 0 ? 'down' : 'up');
+          setFarmerPos({ x: farmerPos.x, y: newY });
+        }
+
+        setTimeout(() => setFarmerAction('idle'), 1500);
       }
     }, 2500);
     
@@ -614,17 +585,17 @@ export function FarmMinimap({
       </div>
       
       {/* 집 */}
-      <div 
-        className="absolute right-[5%] top-[20%]"
+      <div
+        className="absolute right-[25%] top-[20%]"
         style={{
           width: `${houseSize.width * 10}%`,
           height: `${houseSize.height * 10}%`,
         }}
       >
-        <HouseSprite 
-          level={level as 1 | 2 | 3 | 4} 
-          gridSize={12} 
-          showFarmerInside={isInHouse} 
+        <HouseSprite
+          level={level as 1 | 2 | 3 | 4}
+          gridSize={60}
+          showFarmerInside={isInHouse}
         />
       </div>
       
@@ -637,18 +608,17 @@ export function FarmMinimap({
             top: `${farmerPos.y}%`,
           }}
           transition={{
-            type: 'spring',
-            stiffness: 50,
-            damping: 15,
+            duration: 1.2,
+            ease: 'easeInOut',
           }}
           style={{
             transform: 'translate(-50%, -50%)',
           }}
         >
-          <FarmerSprite 
-            action={farmerAction} 
+          <FarmerSprite
+            action={farmerAction}
             direction={farmerDirection}
-            size={28}
+            size={16}
           />
         </motion.div>
       )}

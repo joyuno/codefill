@@ -216,3 +216,70 @@ class ChangeNicknameResponse(BaseModel):
     success: bool
     message: str
     next_change_available_at: Optional[datetime] = None
+
+
+# =====================================================
+# Public Profile Models (공개 프로필)
+# =====================================================
+
+class PublicProfile(BaseModel):
+    """공개 프로필 기본 정보."""
+    id: str
+    username: str
+    avatarUrl: Optional[str] = None  # 실제 프로필 이미지 URL
+    avatarColor: str = "hsl(142, 71%, 45%)"  # 폴백 배경색
+    level: int = 1
+    currentXP: int = 0
+    requiredXP: int = 100
+    totalXP: int = 0
+    solvedCount: int = 0
+    streak: int = 0
+    joinedAt: str
+
+
+class PublicStats(BaseModel):
+    """공개 통계."""
+    totalSolved: int = 0
+    solvedByDifficulty: dict = {"easy": 0, "medium": 0, "hard": 0}
+    solvedByType: dict = {"blank": 0, "puzzle": 0}
+    currentStreak: int = 0
+    maxStreak: int = 0
+    totalXP: int = 0
+    level: int = 1
+
+
+class PublicFarmCharacter(BaseModel):
+    """공개 농장 캐릭터 정보."""
+    name: str
+    hair: str
+    hairColor: str
+    face: str
+    outfit: str
+    outfitColor: str
+    farmName: str
+
+
+class PublicFarmSlot(BaseModel):
+    """공개 농장 슬롯 정보."""
+    slotIndex: int
+    cropType: Optional[str] = None
+    stage: int = 0
+    isReady: bool = False
+
+
+class PublicFarm(BaseModel):
+    """공개 농장 미니맵 데이터."""
+    hasCharacter: bool = False
+    character: Optional[PublicFarmCharacter] = None
+    farmLevel: int = 1
+    gold: int = 0
+    slots: List[PublicFarmSlot] = []
+
+
+class PublicBadge(BaseModel):
+    """공개 뱃지."""
+    id: str
+    name: str
+    icon: str
+    description: str
+    rarity: str = "common"

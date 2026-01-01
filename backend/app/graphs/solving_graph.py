@@ -25,6 +25,7 @@ from .nodes.solving import (
     provide_feedback,
     show_solution,
     answer_question,
+    summarize_problem,
 )
 
 
@@ -41,6 +42,7 @@ def route_after_solving_intent(state: SolvingState) -> str:
         "provide_feedback",
         "show_solution",
         "answer_question",
+        "summarize_problem",
         "respond",
     }
 
@@ -74,6 +76,7 @@ def create_solving_graph() -> StateGraph:
     workflow.add_node("provide_feedback", provide_feedback)
     workflow.add_node("show_solution", show_solution)
     workflow.add_node("answer_question", answer_question)
+    workflow.add_node("summarize_problem", summarize_problem)
     workflow.add_node("respond", respond_node)
 
     # ===== 엣지 정의 =====
@@ -92,6 +95,7 @@ def create_solving_graph() -> StateGraph:
             "provide_feedback": "provide_feedback",
             "show_solution": "show_solution",
             "answer_question": "answer_question",
+            "summarize_problem": "summarize_problem",
             "respond": "respond",
         }
     )
@@ -103,6 +107,7 @@ def create_solving_graph() -> StateGraph:
     workflow.add_edge("provide_feedback", "respond")
     workflow.add_edge("show_solution", "respond")
     workflow.add_edge("answer_question", "respond")
+    workflow.add_edge("summarize_problem", "respond")
 
     # respond에서 종료
     workflow.add_edge("respond", END)

@@ -157,7 +157,6 @@ export default function ProblemsPage() {
                       <thead className="bg-muted/50">
                         <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider">
                           <th className="w-10 py-3 pl-4 pr-2"></th>
-                          <th className="w-20 py-3 px-2">번호</th>
                           <th className="py-3 px-2">제목</th>
                           <th className="w-24 py-3 px-2">난이도</th>
                           <th className="w-20 py-3 px-2">출처</th>

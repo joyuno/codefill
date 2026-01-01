@@ -56,6 +56,7 @@ export interface ChatAgentResponse {
 // Problem Generation
 export interface BaseProblemInfo {
   id?: string;
+  original_id?: string;  // 원본 문제 ID
   name?: string;  // DB에서 오는 문제 이름
   title?: string;  // 생성된 문제 제목
   description?: string;
@@ -63,9 +64,13 @@ export interface BaseProblemInfo {
   code?: string;
   solutions?: { language: string; code: string }[];  // DB 문제의 솔루션
   language?: 'python' | 'java' | 'cpp';
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   topics?: string[];
   tags?: string[];  // DB 문제의 태그
+  input_output?: {  // 입출력 예제
+    inputs: string[];
+    outputs: string[];
+  };
   time_complexity?: string;
   space_complexity?: string;
 }
@@ -89,6 +94,7 @@ export interface BlankProblemResponse {
 export interface PuzzleBlock {
   id: number;   // 정답 순서 (1, 2, 3, ...)
   code: string;
+  indent?: number;  // 들여쓰기 레벨 (0: 루트, 1: 함수내부, 2: 중첩블록)
 }
 
 export interface PuzzleProblemResponse {
@@ -139,8 +145,12 @@ export interface CodeGenerationResponse {
 // Hint Agent
 export interface HintAgentRequest {
   problem_id: string;
+  base_problem_id?: string;  // base_problems 테이블의 UUID
+  problem_type: 'blank' | 'puzzle' | 'guided';  // 문제 유형
   problem_info: Record<string, unknown>;
   user_code?: string;
+  user_answers?: Record<string, string>;  // blank: 현재 입력한 답들 {"0": "len", "1": ""}
+  current_blank_index?: number;  // blank: 현재 질문하는 빈칸 번호 (0부터)
   attempt_count: number;
   hint_level: 1 | 2 | 3 | 4;
   previous_hints: string[];
@@ -153,23 +163,33 @@ export interface RelatedConcept {
   doc_reference?: string;
 }
 
+// Blank 문제 전용 힌트 포커스
+export interface BlankFocus {
+  blank_index: number;
+  surrounding_code?: string;
+  expected_role?: string;
+}
+
 export interface HintAgentResponse {
   hint_level: number;
   hint_content: string;
-  hint_type: 'direction' | 'approach' | 'specific' | 'final';
+  hint_type: 'direction' | 'approach' | 'specific' | 'final' | 'context' | 'operation' | 'range' | 'almost';
   questions: string[];
   related_concept?: RelatedConcept;
   encouragement: string;
   next_hint_preview?: string;
   code_snippet?: string;
   common_mistake_check?: string;
+  // Blank 문제 전용 필드
+  blank_focus?: BlankFocus;
+  wrong_answer_feedback?: string;
 }
 
 // RAG Search
 export interface RAGSearchRequest {
   query: string;
   topics: string[];
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   language?: 'python' | 'java' | 'cpp';
   limit: number;
 }
@@ -195,6 +215,67 @@ export interface RecommendResponse {
   problems: Record<string, unknown>[];
   fallback_used: boolean;
   message?: string;
+}
+
+// Feedback (문제 풀이 완료 후 피드백)
+export interface FeedbackProblemInfo {
+  title?: string;
+  difficulty?: string;
+  topics: string[];
+}
+
+export interface FeedbackRequest {
+  user_id: string;
+  problem_id: string;
+  problem_type: 'blank' | 'puzzle' | 'guided';
+  is_correct: boolean;
+  solve_time_seconds: number;
+  hints_used: number;
+  xp_earned: number;
+  attempt_count?: number;
+  problem_info?: FeedbackProblemInfo;
+}
+
+export interface FeedbackSummary {
+  title: string;
+  highlight: string;
+}
+
+export interface PerformanceAnalysis {
+  time_feedback: string;
+  hint_feedback: string;
+  attempt_feedback: string;
+}
+
+export interface TimeComparison {
+  user_time: number;
+  avg_time: number;
+  percentile: string;
+}
+
+export interface FeedbackVisualization {
+  efficiency_score: number;
+  speed_score: number;
+  understanding_score: number;
+  time_comparison?: TimeComparison;
+}
+
+export interface NextSteps {
+  recommendation: string;
+  similar_problems?: string;
+}
+
+export interface FeedbackResponse {
+  grade: 'perfect' | 'excellent' | 'good' | 'keep_going' | 'learning';
+  grade_emoji: string;
+  grade_message: string;
+  summary: FeedbackSummary;
+  performance_analysis: PerformanceAnalysis;
+  learning_points: string[];
+  improvements: string[];
+  visualization: FeedbackVisualization;
+  next_steps: NextSteps;
+  encouragement: string;
 }
 
 // ============================================================
@@ -266,6 +347,10 @@ export interface ChatV2Request {
     search_results?: BaseProblemInfo[];
     selected_problem?: BaseProblemInfo;
     stage?: string;
+    // 정보 수집 단계 상태 (네/아니오 응답용)
+    awaiting_confirmation?: boolean;
+    suggested_value?: string | null;
+    [key: string]: unknown;  // Allow additional properties
   };
 }
 
@@ -292,7 +377,7 @@ export interface GeneratedPuzzleData {
   language: string;
   fixed_start?: string;
   fixed_end?: string;
-  blocks: Array<{ id: number; code: string }>;
+  blocks: Array<{ id: number; code: string; indent?: number }>;
   title: string;
   description: string;
   difficulty: string;
@@ -339,6 +424,9 @@ export interface ChatV2Response {
   is_complete: boolean;
   hint_level?: number;
   is_correct?: boolean;
+  // 정보 수집 단계: 네/아니오 확인 상태
+  awaiting_confirmation?: boolean;
+  suggested_value?: string;
 }
 
 // ============================================================
@@ -366,16 +454,6 @@ export const agentApi = {
   },
 
   /**
-   * Chat Agent V2 - 3단계 LangGraph 구조
-   * Intent → Discovery → Solving 단계별 처리
-   */
-  async chatV2(request: ChatV2Request): Promise<ChatV2Response> {
-    const response = await api.post<ChatV2Response>('/agent/chat/v2', request, false);
-    if (response.error) throw new Error(response.error.message);
-    return response.data!;
-  },
-
-  /**
    * Chat Agent - 정식 LangGraph 기반 채팅
    * 3단계 그래프: Intent → Discovery → Solving
    */
@@ -383,13 +461,6 @@ export const agentApi = {
     const response = await api.post<ChatV2Response>('/agent/chat', request, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
-  },
-
-  /**
-   * @deprecated Use chatMain instead
-   */
-  async chatV3(request: ChatV2Request): Promise<ChatV2Response> {
-    return this.chatMain(request);
   },
 
   /**
@@ -408,7 +479,7 @@ export const agentApi = {
    * Generate Blank Problem
    */
   async generateBlank(request: ProblemGenerationRequest): Promise<BlankProblemResponse> {
-    const response = await api.post<BlankProblemResponse>('/agent/generate/blank', request, false);
+    const response = await api.post<BlankProblemResponse>('/agent/generate/blank', request, true);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -417,7 +488,7 @@ export const agentApi = {
    * Generate Puzzle Problem
    */
   async generatePuzzle(request: ProblemGenerationRequest): Promise<PuzzleProblemResponse> {
-    const response = await api.post<PuzzleProblemResponse>('/agent/generate/puzzle', request, false);
+    const response = await api.post<PuzzleProblemResponse>('/agent/generate/puzzle', request, true);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -426,7 +497,7 @@ export const agentApi = {
    * Generate Guided Problem
    */
   async generateGuided(request: ProblemGenerationRequest): Promise<GuidedProblemResponse> {
-    const response = await api.post<GuidedProblemResponse>('/agent/generate/guided', request, false);
+    const response = await api.post<GuidedProblemResponse>('/agent/generate/guided', request, true);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -470,6 +541,16 @@ export const agentApi = {
       { collected_info: collectedInfo, user_context: userContext },
       false
     );
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get Feedback for completed problem
+   * 문제 풀이 완료 후 피드백 생성
+   */
+  async getFeedback(request: FeedbackRequest): Promise<FeedbackResponse> {
+    const response = await api.post<FeedbackResponse>('/agent/feedback', request, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

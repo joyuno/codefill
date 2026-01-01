@@ -109,6 +109,7 @@ function convertPuzzleProblem(
     id: `block-${block.id}`,
     code: block.code,
     correctOrder: block.id, // 원본 id가 정답 순서
+    indentation: block.indent || 0, // 들여쓰기 레벨
   }));
 
   // 정답 코드 찾기
@@ -188,13 +189,17 @@ function convertTestCases(inputOutput: {
   }));
 }
 
-function estimateTime(difficulty: 'easy' | 'medium' | 'hard'): number {
+function estimateTime(difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard'): number {
   switch (difficulty) {
     case 'easy':
       return 10;
     case 'medium':
+      return 15;
+    case 'medium_hard':
       return 20;
     case 'hard':
+      return 25;
+    case 'very_hard':
       return 30;
   }
 }
@@ -293,7 +298,7 @@ export function loadProblemsByLanguage(
  * 특정 난이도의 문제만 로드합니다.
  */
 export function loadProblemsByDifficulty(
-  difficulty: 'easy' | 'medium' | 'hard'
+  difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard'
 ): ConvertedProblem[] {
   return loadAllProblems().filter((p) => p.difficulty === difficulty);
 }

@@ -3,19 +3,22 @@ Info Collection Graph
 
 LangGraph를 사용한 정보 수집 그래프 정의
 
-Flow:
+New Flow (이미지 기반):
     START → parse_input
               ↓
          [is_question?]
-              ├─ Yes → handle_question → (현재 단계 질문 노드로)
-              ↓ No
+              ├─ True → handle_question → END (awaiting_confirmation)
+              ↓ False
          [current_step?]
-              ├─ topic → ask_topic
-              ├─ difficulty → ask_difficulty
-              ├─ language → ask_language
-              └─ complete → complete_collection
-                    ↓
-                   END
+              ├─ topic → choose_topic → END
+              ├─ difficulty → choose_difficulty → END
+              ├─ language → choose_language → END
+              └─ complete → complete_collection → END
+
+핵심 변경:
+- is_question=True: handle_question (LLM 추천 + 네/아니오 대기)
+- is_question=False: choose_* (직접 선택 확정)
+- 네/아니오 응답은 다음 턴의 parse_input에서 처리
 """
 from typing import Dict, Any, List, Optional
 from langgraph.graph import StateGraph, END
@@ -23,81 +26,90 @@ from langgraph.graph import StateGraph, END
 from .state import CollectionState, get_initial_state
 from .nodes import (
     parse_input,
-    ask_topic,
-    ask_difficulty,
-    ask_language,
     handle_question,
+    confirm_value,  # 통합된 노드
     complete_collection,
 )
 
 
 def _route_after_parse(state: CollectionState) -> str:
-    """parse_input 후 라우팅 결정"""
-    # 질문이면 handle_question으로
+    """
+    parse_input 후 라우팅 결정
+
+    - is_question=True → handle_question (LLM 추천)
+    - needs_reconfirmation=True → handle_question (재확인 질문)
+    - current_step=complete → complete
+    - else → confirm_value (값 확정)
+    """
+    # 애매한 응답 재확인 필요 → handle_question
+    if state.get("needs_reconfirmation"):
+        return "handle_question"
+
+    # 질문이면 handle_question으로 (LLM 추천 + 네/아니오 칩)
     if state.get("is_question"):
         return "handle_question"
 
-    # 현재 단계에 따라 라우팅
-    current_step = state.get("current_step", "topic")
-
-    if current_step == "complete":
+    # 완료 단계
+    if state.get("current_step") == "complete":
         return "complete"
-    elif current_step == "language":
-        return "ask_language"
-    elif current_step == "difficulty":
-        return "ask_difficulty"
-    else:
-        return "ask_topic"
+
+    # 직접 선택 → 통합 confirm_value 노드
+    return "confirm_value"
 
 
-def _route_after_question(state: CollectionState) -> str:
-    """handle_question 후 라우팅 결정 (현재 단계 질문 노드로)"""
-    current_step = state.get("current_step", "topic")
+def _route_after_handle_question(state: CollectionState) -> str:
+    """
+    handle_question 후 라우팅
 
-    if current_step == "complete":
-        return "complete"
-    elif current_step == "language":
-        return "ask_language"
-    elif current_step == "difficulty":
-        return "ask_difficulty"
-    else:
-        return "ask_topic"
+    handle_question은 항상 응답 메시지와 함께 종료
+    awaiting_confirmation=True 상태로 END
+    """
+    return END
 
 
-def _route_after_ask(state: CollectionState) -> str:
-    """ask 노드 후 라우팅 (END)"""
-    # 응답이 있으면 종료
+def _route_after_choose(state: CollectionState) -> str:
+    """
+    choose_* 노드 후 라우팅
+
+    값 확정 후:
+    - 다음 단계 값이 필요하면 → 해당 choose_* 노드로 (체인)
+    - 모든 값이 있으면 → complete
+    - 응답 메시지가 있으면 → END (사용자에게 다음 질문 표시)
+    """
+    # 응답 메시지가 있으면 일단 END (다음 턴에서 계속)
     if state.get("response_message"):
         return END
 
     # 완료 상태면 complete로
-    if state.get("current_step") == "complete":
+    if state.get("is_complete") or state.get("current_step") == "complete":
         return "complete"
 
     return END
 
 
 def create_info_collection_graph() -> StateGraph:
-    """정보 수집 그래프 생성"""
+    """
+    정보 수집 그래프 생성 (간소화된 구조)
 
-    # 그래프 빌더 생성
+    Flow:
+        parse_input → [is_question?]
+                      ├─ Yes → handle_question → END
+                      └─ No → confirm_value → END
+                              (또는 complete → END)
+    """
     builder = StateGraph(CollectionState)
 
     # ============================================================
-    # 노드 추가
+    # 노드 추가 (간소화: 3개 choose_* → 1개 confirm_value)
     # ============================================================
     builder.add_node("parse_input", parse_input)
     builder.add_node("handle_question", handle_question)
-    builder.add_node("ask_topic", ask_topic)
-    builder.add_node("ask_difficulty", ask_difficulty)
-    builder.add_node("ask_language", ask_language)
+    builder.add_node("confirm_value", confirm_value)  # 통합 노드
     builder.add_node("complete", complete_collection)
 
     # ============================================================
     # 엣지 정의
     # ============================================================
-
-    # 시작점 설정
     builder.set_entry_point("parse_input")
 
     # parse_input 후 조건부 라우팅
@@ -106,29 +118,14 @@ def create_info_collection_graph() -> StateGraph:
         _route_after_parse,
         {
             "handle_question": "handle_question",
-            "ask_topic": "ask_topic",
-            "ask_difficulty": "ask_difficulty",
-            "ask_language": "ask_language",
+            "confirm_value": "confirm_value",
             "complete": "complete",
         },
     )
 
-    # handle_question 후 현재 단계 질문 노드로
-    builder.add_conditional_edges(
-        "handle_question",
-        _route_after_question,
-        {
-            "ask_topic": "ask_topic",
-            "ask_difficulty": "ask_difficulty",
-            "ask_language": "ask_language",
-            "complete": "complete",
-        },
-    )
-
-    # ask 노드들 → END
-    builder.add_edge("ask_topic", END)
-    builder.add_edge("ask_difficulty", END)
-    builder.add_edge("ask_language", END)
+    # 모든 노드 → END
+    builder.add_edge("handle_question", END)
+    builder.add_edge("confirm_value", END)
     builder.add_edge("complete", END)
 
     return builder.compile()
@@ -148,6 +145,8 @@ class InfoCollectionGraph:
         existing_topic: str = None,
         existing_difficulty: str = None,
         existing_language: str = None,
+        existing_awaiting_confirmation: bool = False,
+        existing_suggested_value: str = None,
     ) -> Dict[str, Any]:
         """
         그래프 실행
@@ -159,6 +158,8 @@ class InfoCollectionGraph:
             existing_topic: 이전에 수집된 주제
             existing_difficulty: 이전에 수집된 난이도
             existing_language: 이전에 수집된 언어
+            existing_awaiting_confirmation: 네/아니오 응답 대기 상태
+            existing_suggested_value: 추천된 값
 
         Returns:
             {
@@ -170,6 +171,9 @@ class InfoCollectionGraph:
                 },
                 "is_complete": bool,
                 "action_trigger": str | None,
+                "awaiting_confirmation": bool,  # 네/아니오 응답 대기
+                "suggested_value": str | None,  # 추천된 값
+                "action_data": dict | None,  # 프론트엔드용 추가 데이터
             }
         """
         # 초기 상태 생성
@@ -182,10 +186,45 @@ class InfoCollectionGraph:
             existing_language=existing_language,
         )
 
+        # 기존 상태 병합 (awaiting_confirmation, suggested_value)
+        if existing_awaiting_confirmation:
+            initial_state["awaiting_confirmation"] = existing_awaiting_confirmation
+        if existing_suggested_value:
+            initial_state["suggested_value"] = existing_suggested_value
+
         # 그래프 실행
         result = await self.graph.ainvoke(initial_state)
 
         # 결과 포맷팅
+        awaiting_confirmation = result.get("awaiting_confirmation", False)
+        suggested_value = result.get("suggested_value")
+        current_step = result.get("current_step", "topic")
+
+        # action_data 생성 (프론트엔드용)
+        action_data = None
+
+        # 노드에서 반환된 chips가 있으면 사용
+        result_chips = result.get("chips")
+
+        if awaiting_confirmation and suggested_value:
+            # 확인 대기 상태 - 네/아니오 칩
+            action_data = {
+                "type": "confirmation",
+                "suggested_value": suggested_value,
+                "current_step": current_step,
+                "chips": [
+                    {"label": "네", "value": "yes", "category": "confirmation"},
+                    {"label": "아니오, 다른 거", "value": "no", "category": "confirmation"},
+                ],
+            }
+        elif result_chips:
+            # 선택지 칩이 있는 경우 - 빠른 선택용
+            action_data = {
+                "type": "selection",
+                "current_step": current_step,
+                "chips": result_chips,
+            }
+
         return {
             "message": result.get("response_message", ""),
             "collected_info": {
@@ -195,4 +234,7 @@ class InfoCollectionGraph:
             },
             "is_complete": result.get("is_complete", False),
             "action_trigger": "search_problems" if result.get("is_complete") else None,
+            "awaiting_confirmation": awaiting_confirmation,
+            "suggested_value": suggested_value,
+            "action_data": action_data,
         }

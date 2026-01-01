@@ -30,10 +30,12 @@ class LanguageEnum(str, Enum):
 
 
 class DifficultyEnum(str, Enum):
-    """Difficulty levels."""
-    EASY = "easy"
-    MEDIUM = "medium"
-    HARD = "hard"
+    """Difficulty levels (5-tier system)."""
+    EASY = "easy"           # 실버
+    MEDIUM = "medium"       # 골드
+    MEDIUM_HARD = "medium_hard"  # 플래티넘
+    HARD = "hard"           # 다이아
+    VERY_HARD = "very_hard"  # 마스터
 
 
 class UserLevelEnum(str, Enum):
@@ -88,6 +90,7 @@ class ChatAgentResponse(BaseModel):
 class BaseProblemInfo(BaseModel):
     """Base problem information for generation."""
     id: Optional[str] = None
+    original_id: Optional[str] = None  # base_problems의 original_id (예: "taco_100")
     name: Optional[str] = None  # DB에서 오는 문제 이름
     title: Optional[str] = None  # 생성된 문제 제목
     description: Optional[str] = None  # 문제 설명
@@ -221,11 +224,22 @@ class CodeGenerationResponse(BaseModel):
 # Hint Agent Models
 # ============================================================
 
+class ProblemTypeEnum(str, Enum):
+    """Problem type enum for hints."""
+    BLANK = "blank"
+    PUZZLE = "puzzle"
+    GUIDED = "guided"
+
+
 class HintAgentRequest(BaseModel):
     """Request for AI-generated hint."""
-    problem_id: str
-    problem_info: Dict[str, Any]
+    problem_id: str  # problems_blank, problems_puzzle, problems_guided 테이블의 ID
+    base_problem_id: Optional[str] = None  # base_problems 테이블의 ID
+    problem_type: ProblemTypeEnum = ProblemTypeEnum.BLANK  # 문제 유형
+    problem_info: Dict[str, Any] = {}  # 추가 문제 정보 (선택)
     user_code: Optional[str] = None
+    user_answers: Optional[Dict[str, str]] = None  # blank: 현재 입력한 답들
+    current_blank_index: Optional[int] = None  # blank: 현재 질문하는 빈칸 번호
     attempt_count: int = 0
     hint_level: int = Field(1, ge=1, le=4)
     previous_hints: List[str] = []
@@ -239,17 +253,27 @@ class RelatedConcept(BaseModel):
     doc_reference: Optional[str] = None
 
 
+class BlankFocus(BaseModel):
+    """Blank-specific hint focus info."""
+    blank_index: int
+    surrounding_code: Optional[str] = None
+    expected_role: Optional[str] = None
+
+
 class HintAgentResponse(BaseModel):
     """AI-generated hint response."""
     hint_level: int
     hint_content: str
-    hint_type: str  # direction, approach, specific, final
+    hint_type: str  # context, operation, range, almost (for blank) / direction, approach, specific, final (general)
     questions: List[str] = []
     related_concept: Optional[RelatedConcept] = None
     encouragement: str = ""
     next_hint_preview: Optional[str] = None
     code_snippet: Optional[str] = None
     common_mistake_check: Optional[str] = None
+    # Blank 전용 필드
+    blank_focus: Optional[BlankFocus] = None
+    wrong_answer_feedback: Optional[str] = None
 
 
 # ============================================================
@@ -375,3 +399,75 @@ class SolvingResponse(BaseModel):
     is_correct: Optional[bool] = None
     action_trigger: Optional[str] = None  # hint_provided, code_reviewed, correct_answer, etc.
     action_data: Optional[Dict[str, Any]] = None
+
+
+# ============================================================
+# Feedback Models (문제 풀이 완료 후 피드백)
+# ============================================================
+
+class FeedbackProblemInfo(BaseModel):
+    """피드백용 문제 정보."""
+    title: Optional[str] = None
+    difficulty: Optional[str] = None
+    topics: List[str] = []
+
+
+class FeedbackRequest(BaseModel):
+    """피드백 요청."""
+    user_id: str
+    problem_id: str
+    problem_type: str = "blank"  # blank, puzzle, guided
+    is_correct: bool = True
+    solve_time_seconds: int = 0
+    hints_used: int = 0
+    xp_earned: int = 0
+    attempt_count: Optional[int] = None  # 없으면 DB에서 조회
+    problem_info: Optional[FeedbackProblemInfo] = None
+
+
+class FeedbackSummary(BaseModel):
+    """피드백 요약."""
+    title: str
+    highlight: str
+
+
+class PerformanceAnalysis(BaseModel):
+    """성과 분석."""
+    time_feedback: str
+    hint_feedback: str
+    attempt_feedback: str
+
+
+class TimeComparison(BaseModel):
+    """시간 비교."""
+    user_time: int
+    avg_time: int
+    percentile: str
+
+
+class FeedbackVisualization(BaseModel):
+    """피드백 시각화 데이터."""
+    efficiency_score: int = 0
+    speed_score: int = 0
+    understanding_score: int = 0
+    time_comparison: Optional[TimeComparison] = None
+
+
+class NextSteps(BaseModel):
+    """다음 단계 제안."""
+    recommendation: str
+    similar_problems: Optional[str] = None
+
+
+class FeedbackResponse(BaseModel):
+    """피드백 응답."""
+    grade: str  # perfect, excellent, good, keep_going, learning
+    grade_emoji: str
+    grade_message: str
+    summary: FeedbackSummary
+    performance_analysis: PerformanceAnalysis
+    learning_points: List[str] = []
+    improvements: List[str] = []
+    visualization: FeedbackVisualization
+    next_steps: NextSteps
+    encouragement: str

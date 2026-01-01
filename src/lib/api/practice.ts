@@ -31,6 +31,33 @@ export interface RunCodeResult {
   error?: string;
 }
 
+export interface RecordSubmission {
+  problemId: string;
+  problemType: 'blank' | 'puzzle' | 'guided';
+  isCorrect: boolean;
+  xpEarned?: number;
+}
+
+export interface RecordResult {
+  success: boolean;
+  xpEarned: number;
+  message: string;
+}
+
+export interface HintCheckResult {
+  canUse: boolean;
+  currentXp: number;
+  hintCost: number;
+  message: string;
+}
+
+export interface HintUseResult {
+  success: boolean;
+  xpDeducted: number;
+  remainingXp: number;
+  message: string;
+}
+
 export const practiceApi = {
   /**
    * Run code without submitting
@@ -66,5 +93,58 @@ export const practiceApi = {
     });
     if (response.error) throw new Error(response.error.message);
     return response.data!;
+  },
+
+  /**
+   * Record problem solve for XP and grass (simple record without validation)
+   */
+  async recordSolve(submission: RecordSubmission & { difficulty?: string }): Promise<RecordResult> {
+    const response = await api.post<RecordResult>('/practice/submit/record', {
+      problem_id: submission.problemId,
+      problem_type: submission.problemType,
+      difficulty: submission.difficulty,
+      is_correct: submission.isCorrect,
+      xp_earned: submission.xpEarned,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Check if user can use a hint (has enough XP)
+   */
+  async checkHint(): Promise<HintCheckResult> {
+    const response = await api.get<{
+      can_use: boolean;
+      current_xp: number;
+      hint_cost: number;
+      message: string;
+    }>('/practice/hint/check');
+    if (response.error) throw new Error(response.error.message);
+    return {
+      canUse: response.data!.can_use,
+      currentXp: response.data!.current_xp,
+      hintCost: response.data!.hint_cost,
+      message: response.data!.message,
+    };
+  },
+
+  /**
+   * Use a hint (deducts XP)
+   */
+  async useHint(): Promise<HintUseResult> {
+    const response = await api.post<{
+      success: boolean;
+      xp_deducted: number;
+      remaining_xp: number;
+      message: string;
+    }>('/practice/hint/use');
+    if (response.error) throw new Error(response.error.message);
+    return {
+      success: response.data!.success,
+      xpDeducted: response.data!.xp_deducted,
+      remainingXp: response.data!.remaining_xp,
+      message: response.data!.message,
+    };
   },
 };

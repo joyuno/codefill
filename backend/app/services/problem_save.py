@@ -24,6 +24,9 @@ from ..database import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
+# 유효한 난이도 목록
+VALID_DIFFICULTIES = {"easy", "medium", "medium_hard", "hard", "very_hard"}
+
 
 class ProblemSaveService:
     """생성된 문제를 DB에 저장하고 조회하는 서비스"""
@@ -58,6 +61,99 @@ class ProblemSaveService:
 
         except Exception as e:
             logger.error(f"[ProblemSave] Failed to get base_problem_id: {e}")
+            return None
+
+    # ============================================================
+    # CodeGen 문제를 base_problems에 저장
+    # ============================================================
+
+    async def save_codegen_to_base_problems(
+        self,
+        generated_problem: Dict[str, Any],
+        collected_info: Dict[str, Any],
+    ) -> Optional[str]:
+        """
+        CodeGen으로 생성된 문제를 base_problems 테이블에 저장
+
+        Args:
+            generated_problem: CodeGen이 생성한 문제 데이터
+            collected_info: 사용자가 선택한 topic, difficulty, language
+
+        Returns:
+            저장된 문제의 id (UUID) 또는 None
+        """
+        import uuid
+
+        try:
+            # difficulty 검증 (필수)
+            difficulty = generated_problem.get("difficulty") or collected_info.get("difficulty")
+            if not difficulty or difficulty not in VALID_DIFFICULTIES:
+                logger.error(f"[ProblemSave] Invalid difficulty: {difficulty}")
+                return None
+
+            # original_id 생성 (codegen_UUID 형식)
+            original_id = f"codegen_{uuid.uuid4().hex[:12]}"
+
+            # solutions 형식으로 변환 (code 필드가 dict인 경우)
+            code_data = generated_problem.get("code", {})
+            solutions = []
+
+            if isinstance(code_data, dict):
+                for lang, code in code_data.items():
+                    if code:
+                        solutions.append({"language": lang, "code": code})
+            elif isinstance(code_data, str):
+                # code가 문자열인 경우
+                solutions.append({
+                    "language": collected_info.get("language", "python"),
+                    "code": code_data
+                })
+
+            # 솔루션이 없으면 저장 불가
+            if not solutions:
+                logger.warning(f"[ProblemSave] No solutions in generated problem")
+                return None
+
+            # input_output 구성 (examples에서 추출)
+            examples = generated_problem.get("examples", [])
+            input_output = None
+            if examples:
+                inputs = []
+                outputs = []
+                for ex in examples:
+                    if isinstance(ex, dict):
+                        if ex.get("input"):
+                            inputs.append(ex["input"])
+                        if ex.get("output"):
+                            outputs.append(ex["output"])
+                if inputs and outputs:
+                    input_output = {"inputs": inputs, "outputs": outputs}
+
+            # base_problems 데이터 구성
+            data = {
+                "original_id": original_id,
+                "name": generated_problem.get("title", "Generated Problem"),
+                "question": generated_problem.get("description", ""),
+                "difficulty": difficulty,  # 이미 검증됨
+                "tags": generated_problem.get("topics") or collected_info.get("topics", []),
+                "source": "codegen",
+                "solutions": solutions,
+                "input_output": input_output,
+            }
+
+            result = self.supabase.table("base_problems").insert(data).execute()
+
+            if result.data and len(result.data) > 0:
+                saved_id = result.data[0]["id"]
+                saved_original_id = result.data[0]["original_id"]
+                logger.info(f"[ProblemSave] CodeGen problem saved to base_problems: {saved_original_id}")
+                return saved_id
+            return None
+
+        except Exception as e:
+            logger.error(f"[ProblemSave] Failed to save CodeGen to base_problems: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     # ============================================================
@@ -167,7 +263,6 @@ class ProblemSaveService:
             # 복사할 데이터 준비 (id, created_at, updated_at 제외)
             copy_data = {
                 "base_problem_id": source_problem.get("base_problem_id"),
-                "original_id": source_problem.get("original_id"),
                 "language": source_problem.get("language"),
                 "creator_id": creator_id,  # 새 사용자로 변경
             }
@@ -204,7 +299,6 @@ class ProblemSaveService:
     async def save_blank_problem(
         self,
         base_problem_id: str,
-        original_id: str,
         language: str,
         code_template: str,
         answers: list,
@@ -214,7 +308,6 @@ class ProblemSaveService:
         try:
             data = {
                 "base_problem_id": base_problem_id,
-                "original_id": original_id,
                 "language": language,
                 "code_template": code_template,
                 "answers": answers,
@@ -223,7 +316,7 @@ class ProblemSaveService:
 
             result = self.supabase.table("problems_blank").insert(data).execute()
 
-            logger.info(f"[ProblemSave] Blank problem saved: {original_id} (user: {creator_id[:8]}...)")
+            logger.info(f"[ProblemSave] Blank problem saved: {base_problem_id[:8]}... (user: {creator_id[:8]}...)")
             return {"success": True, "data": result.data[0] if result.data else None}
 
         except Exception as e:
@@ -233,7 +326,6 @@ class ProblemSaveService:
     async def save_puzzle_problem(
         self,
         base_problem_id: str,
-        original_id: str,
         language: str,
         blocks: list,
         creator_id: str,
@@ -244,7 +336,6 @@ class ProblemSaveService:
         try:
             data = {
                 "base_problem_id": base_problem_id,
-                "original_id": original_id,
                 "language": language,
                 "blocks": blocks,
                 "creator_id": creator_id,
@@ -257,7 +348,7 @@ class ProblemSaveService:
 
             result = self.supabase.table("problems_puzzle").insert(data).execute()
 
-            logger.info(f"[ProblemSave] Puzzle problem saved: {original_id} (user: {creator_id[:8]}...)")
+            logger.info(f"[ProblemSave] Puzzle problem saved: {base_problem_id[:8]}... (user: {creator_id[:8]}...)")
             return {"success": True, "data": result.data[0] if result.data else None}
 
         except Exception as e:
@@ -267,7 +358,6 @@ class ProblemSaveService:
     async def save_guided_problem(
         self,
         base_problem_id: str,
-        original_id: str,
         language: str,
         concepts: list,
         flow: list,
@@ -278,7 +368,6 @@ class ProblemSaveService:
         try:
             data = {
                 "base_problem_id": base_problem_id,
-                "original_id": original_id,
                 "language": language,
                 "concepts": concepts,
                 "flow": flow,
@@ -288,7 +377,7 @@ class ProblemSaveService:
 
             result = self.supabase.table("problems_guided").insert(data).execute()
 
-            logger.info(f"[ProblemSave] Guided problem saved: {original_id} (user: {creator_id[:8]}...)")
+            logger.info(f"[ProblemSave] Guided problem saved: {base_problem_id[:8]}... (user: {creator_id[:8]}...)")
             return {"success": True, "data": result.data[0] if result.data else None}
 
         except Exception as e:
@@ -314,13 +403,11 @@ class ProblemSaveService:
         Returns:
             저장 결과
         """
-        original_id = generated_data.get("original_id", "unknown")
         language = generated_data.get("language", "python")
 
         if problem_type == "blank":
             return await self.save_blank_problem(
                 base_problem_id=base_problem_id,
-                original_id=original_id,
                 language=language,
                 code_template=generated_data.get("code_template", ""),
                 answers=generated_data.get("answers", []),
@@ -330,7 +417,6 @@ class ProblemSaveService:
         elif problem_type == "puzzle":
             return await self.save_puzzle_problem(
                 base_problem_id=base_problem_id,
-                original_id=original_id,
                 language=language,
                 blocks=generated_data.get("blocks", []),
                 creator_id=creator_id,
@@ -341,7 +427,6 @@ class ProblemSaveService:
         elif problem_type == "guided":
             return await self.save_guided_problem(
                 base_problem_id=base_problem_id,
-                original_id=original_id,
                 language=language,
                 concepts=generated_data.get("concepts", []),
                 flow=generated_data.get("flow", []),

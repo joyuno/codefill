@@ -1,5 +1,6 @@
 """
 Farm System API Router
+통합 배치 시스템 리팩토링 - 레거시 엔드포인트 제거됨
 """
 
 from fastapi import APIRouter, HTTPException, Depends, status
@@ -10,19 +11,14 @@ import random
 import json
 
 from ..database import get_db
-from ..dependencies import get_current_user_id  # 공통 인증 의존성
+from ..dependencies import get_current_user_id
 from ..models.farm import (
     CharacterCreateRequest,
     CharacterData,
     UserFarmResponse,
     FarmItemResponse,
-    FarmSlot,
     InventoryItem,
     InventoryResponse,
-    PlantRequest,
-    PlantResponse,
-    HarvestRequest,
-    HarvestResponse,
     BuyRequest,
     BuyResponse,
     SellRequest,
@@ -60,44 +56,9 @@ def get_or_create_farm(db, user_id: UUID) -> dict:
         "gold": 0,
         "farm_size": 4,
         "house_level": 1,
-        "farm_slots": json.dumps([]),
     }
     insert_result = db.table("user_farm").insert(new_farm).execute()
     return insert_result.data[0] if insert_result.data else new_farm
-
-
-def parse_farm_slots(farm_data: dict) -> List[FarmSlot]:
-    """farm_slots JSON을 FarmSlot 리스트로 변환"""
-    slots_data = farm_data.get("farm_slots", [])
-    if isinstance(slots_data, str):
-        slots_data = json.loads(slots_data)
-
-    slots = []
-    for slot_data in slots_data:
-        planted_at = slot_data.get("planted_at")
-        if planted_at and isinstance(planted_at, str):
-            planted_at = datetime.fromisoformat(planted_at.replace("Z", "+00:00"))
-        slots.append(FarmSlot(
-            slot=slot_data.get("slot", 0),
-            crop_code=slot_data.get("crop_code"),
-            planted_at=planted_at,
-            stage=slot_data.get("stage", 0),
-        ))
-    return slots
-
-
-def serialize_farm_slots(slots: List[FarmSlot]) -> str:
-    """FarmSlot 리스트를 JSON 문자열로 변환"""
-    slots_list = []
-    for slot in slots:
-        slot_dict = {
-            "slot": slot.slot,
-            "crop_code": slot.crop_code,
-            "planted_at": slot.planted_at.isoformat() if slot.planted_at else None,
-            "stage": slot.stage,
-        }
-        slots_list.append(slot_dict)
-    return json.dumps(slots_list)
 
 
 def get_inventory(db, user_id: UUID) -> List[InventoryItem]:
@@ -130,32 +91,8 @@ def get_crop_info(db, crop_code: str) -> Optional[dict]:
     return result.data[0] if result.data else None
 
 
-def calculate_crop_stage(planted_at: datetime, grow_time_seconds: int) -> int:
-    """현재 작물 성장 단계 계산"""
-    if not planted_at:
-        return 0
-
-    now = datetime.now(timezone.utc)
-    if planted_at.tzinfo is None:
-        planted_at = planted_at.replace(tzinfo=timezone.utc)
-
-    elapsed = (now - planted_at).total_seconds()
-    progress = elapsed / grow_time_seconds
-
-    if progress >= 1.0:
-        return 4  # 수확 가능
-    elif progress >= 0.75:
-        return 3
-    elif progress >= 0.5:
-        return 2
-    elif progress >= 0.25:
-        return 1
-    else:
-        return 1  # 최소 1단계
-
-
 # =====================================================
-# Farm Endpoints
+# Farm Endpoints (유지)
 # =====================================================
 
 @router.get("", response_model=UserFarmResponse)
@@ -165,16 +102,6 @@ async def get_farm(
 ):
     """농장 상태 조회"""
     farm = get_or_create_farm(db, user_id)
-    farm_slots = parse_farm_slots(farm)
-
-    # 작물 성장 단계 업데이트
-    items_result = db.table("farm_items").select("code, grow_time_seconds").eq("type", "crop").execute()
-    crop_grow_times = {item["code"]: item["grow_time_seconds"] for item in (items_result.data or [])}
-
-    for slot in farm_slots:
-        if slot.crop_code and slot.planted_at:
-            grow_time = crop_grow_times.get(slot.crop_code, 120)
-            slot.stage = calculate_crop_stage(slot.planted_at, grow_time)
 
     # character_data 파싱
     char_data = farm.get("character_data", {})
@@ -194,7 +121,6 @@ async def get_farm(
         farm_level=farm.get("farm_level", 1),
         gold=farm.get("gold", 0),
         farm_size=farm.get("farm_size", 4),
-        farm_slots=farm_slots,
         house_level=farm.get("house_level", 1),
         created_at=farm["created_at"],
         updated_at=farm["updated_at"],
@@ -207,7 +133,13 @@ async def create_character(
     user_id: UUID = Depends(get_current_user_id),
     db=Depends(get_db)
 ):
-    """캐릭터 생성 (농장 해금)"""
+    """캐릭터 생성 (농장 해금)
+
+    - 캐릭터 데이터 저장
+    - 초기 골드 지급
+    - 초기 씨앗 지급 (랜덤 5개)
+    - 트리거가 자동으로 house와 farm_plot 9개를 user_placed_items에 배치
+    """
     farm = get_or_create_farm(db, user_id)
 
     if farm.get("character_created"):
@@ -227,16 +159,12 @@ async def create_character(
         "farm_name": request.farm_name,
     }
 
-    # 초기 농장 슬롯 생성 (2x2 = 4칸)
-    initial_slots = [{"slot": i, "crop_code": None, "planted_at": None, "stage": 0} for i in range(4)]
-
-    # 농장 업데이트
+    # 농장 업데이트 (트리거가 초기 아이템 배치)
     db.table("user_farm").update({
         "character_created": True,
         "character_data": json.dumps(character_data),
         "farm_unlocked": True,
         "gold": INITIAL_GOLD,
-        "farm_slots": json.dumps(initial_slots),
     }).eq("user_id", str(user_id)).execute()
 
     # 초기 씨앗 지급 (랜덤 5개)
@@ -253,7 +181,7 @@ async def create_character(
 
 @router.get("/items", response_model=List[FarmItemResponse])
 async def get_farm_items(db=Depends(get_db)):
-    """작물/아이템 목록 조회"""
+    """작물 목록 조회 (farm_items 테이블)"""
     result = db.table("farm_items").select("*").eq("type", "crop").execute()
     return [FarmItemResponse(**item) for item in (result.data or [])]
 
@@ -266,126 +194,6 @@ async def get_user_inventory(
     """인벤토리 조회"""
     inventory = get_inventory(db, user_id)
     return InventoryResponse(items=inventory)
-
-
-@router.post("/plant", response_model=PlantResponse)
-async def plant_seed(
-    request: PlantRequest,
-    user_id: UUID = Depends(get_current_user_id),
-    db=Depends(get_db)
-):
-    """씨앗 심기"""
-    farm = get_or_create_farm(db, user_id)
-
-    if not farm.get("farm_unlocked"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="농장이 해금되지 않았습니다")
-
-    # 슬롯 범위 확인
-    if request.slot >= farm.get("farm_size", 4):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="유효하지 않은 슬롯입니다")
-
-    # 작물 존재 확인
-    crop_info = get_crop_info(db, request.crop_code)
-    if not crop_info:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="존재하지 않는 작물입니다")
-
-    # 씨앗 보유 확인
-    seed_code = f"seed_{request.crop_code}"
-    inventory = get_inventory(db, user_id)
-    seed_item = next((item for item in inventory if item.item_code == seed_code), None)
-
-    if not seed_item or seed_item.quantity < 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="씨앗이 부족합니다")
-
-    # 슬롯 상태 확인
-    farm_slots = parse_farm_slots(farm)
-    target_slot = next((s for s in farm_slots if s.slot == request.slot), None)
-
-    if not target_slot:
-        # 슬롯이 없으면 생성
-        target_slot = FarmSlot(slot=request.slot, crop_code=None, planted_at=None, stage=0)
-        farm_slots.append(target_slot)
-
-    if target_slot.crop_code:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이미 작물이 심어져 있습니다")
-
-    # 씨앗 소모
-    update_inventory(db, user_id, seed_code, -1)
-
-    # 작물 심기
-    target_slot.crop_code = request.crop_code
-    target_slot.planted_at = datetime.now(timezone.utc)
-    target_slot.stage = 1
-
-    # 농장 업데이트
-    db.table("user_farm").update({
-        "farm_slots": serialize_farm_slots(farm_slots),
-    }).eq("user_id", str(user_id)).execute()
-
-    return PlantResponse(
-        success=True,
-        message=f"{crop_info['name_ko']} 씨앗을 심었습니다",
-        farm_slots=farm_slots,
-        inventory=get_inventory(db, user_id),
-    )
-
-
-@router.post("/harvest", response_model=HarvestResponse)
-async def harvest_crop(
-    request: HarvestRequest,
-    user_id: UUID = Depends(get_current_user_id),
-    db=Depends(get_db)
-):
-    """작물 수확"""
-    farm = get_or_create_farm(db, user_id)
-    farm_slots = parse_farm_slots(farm)
-
-    target_slot = next((s for s in farm_slots if s.slot == request.slot), None)
-
-    if not target_slot or not target_slot.crop_code:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="수확할 작물이 없습니다")
-
-    # 작물 정보 조회
-    crop_info = get_crop_info(db, target_slot.crop_code)
-    if not crop_info:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="작물 정보를 찾을 수 없습니다")
-
-    # 성장 완료 확인
-    stage = calculate_crop_stage(target_slot.planted_at, crop_info["grow_time_seconds"])
-    if stage < 4:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="아직 수확할 수 없습니다")
-
-    # 보상 지급
-    gold_reward = crop_info["sell_price"]
-    xp_reward = crop_info["xp_reward"]
-    new_gold = farm.get("gold", 0) + gold_reward
-
-    # 슬롯 초기화
-    target_slot.crop_code = None
-    target_slot.planted_at = None
-    target_slot.stage = 0
-
-    # 농장 업데이트
-    db.table("user_farm").update({
-        "farm_slots": serialize_farm_slots(farm_slots),
-        "gold": new_gold,
-    }).eq("user_id", str(user_id)).execute()
-
-    # 사용자 XP 증가 (user_stats 테이블이 있는 경우)
-    try:
-        db.table("user_stats").update({
-            "total_xp": db.table("user_stats").select("total_xp").eq("user_id", str(user_id)).single().execute().data["total_xp"] + xp_reward
-        }).eq("user_id", str(user_id)).execute()
-    except Exception:
-        pass  # user_stats가 없어도 계속 진행
-
-    return HarvestResponse(
-        success=True,
-        message=f"{crop_info['name_ko']}를 수확했습니다! +{gold_reward}G +{xp_reward}XP",
-        rewards={"gold": gold_reward, "xp": xp_reward},
-        farm_slots=farm_slots,
-        gold=new_gold,
-    )
 
 
 @router.post("/shop/buy", response_model=BuyResponse)
@@ -429,7 +237,7 @@ async def sell_crops(
     user_id: UUID = Depends(get_current_user_id),
     db=Depends(get_db)
 ):
-    """작물 판매 (수확된 작물 인벤토리에서 판매)"""
+    """작물 판매 (인벤토리에서 판매)"""
     farm = get_or_create_farm(db, user_id)
     crop_info = get_crop_info(db, request.crop_code)
 
@@ -495,7 +303,11 @@ async def expand_farm(
     user_id: UUID = Depends(get_current_user_id),
     db=Depends(get_db)
 ):
-    """농장 확장"""
+    """농장 배치 영역 확장
+
+    - farm_size만 업데이트 (배치 가능 영역 확대)
+    - farm_plot은 상점에서 별도 구매 후 직접 배치
+    """
     farm = get_or_create_farm(db, user_id)
     current_size = farm.get("farm_size", 4)
     gold = farm.get("gold", 0)
@@ -511,22 +323,28 @@ async def expand_farm(
     if gold < cost:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="골드가 부족합니다")
 
-    # 기존 슬롯 + 새 슬롯
-    farm_slots = parse_farm_slots(farm)
-    for i in range(current_size, request.target_size):
-        farm_slots.append(FarmSlot(slot=i, crop_code=None, planted_at=None, stage=0))
-
     new_gold = gold - cost
 
+    # farm_size만 업데이트 (레거시 farm_slots 로직 제거)
     db.table("user_farm").update({
         "farm_size": request.target_size,
         "gold": new_gold,
-        "farm_slots": serialize_farm_slots(farm_slots),
     }).eq("user_id", str(user_id)).execute()
 
     return ExpandResponse(
         success=True,
-        message=f"농장을 {EXPANSION_COSTS[request.target_size]['name']}으로 확장했습니다!",
+        message=f"배치 영역을 {EXPANSION_COSTS[request.target_size]['name']}으로 확장했습니다!",
         farm_size=request.target_size,
         gold=new_gold,
     )
+
+
+# =====================================================
+# 레거시 엔드포인트 제거됨 (통합 배치 시스템 사용)
+# =====================================================
+# - POST /plant → POST /placement/items/{id}/plant 사용
+# - POST /harvest → POST /placement/items/{id}/harvest 사용
+# - GET /customization → GET /placement/items 사용
+# - PUT /customization → placement API 사용
+# - GET /shop/buildings → GET /shop/items 사용
+# - POST /shop/buy-building → POST /shop/buy 사용

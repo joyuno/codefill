@@ -7,21 +7,19 @@ Flow:
     START → parse_input
               ↓
          [is_question?]
-              ├─ Yes → handle_question → (현재 단계 질문으로 돌아감)
+              ├─ Yes → handle_question → END (awaiting_confirmation)
               ↓ No
          [current_step?]
-              ├─ topic → ask_topic → END
-              ├─ difficulty → ask_difficulty → END
-              ├─ language → ask_language → END
+              ├─ topic → choose_topic → END
+              ├─ difficulty → choose_difficulty → END
+              ├─ language → choose_language → END
               └─ complete → complete_collection → END
 
 노드 설명:
-- parse_input: 사용자 메시지에서 직접 정보 추출 (LLM 없이 패턴 매칭)
-- handle_question: 질문일 경우 LLM으로 답변 생성
-- ask_topic: 주제 선택 질문
-- ask_difficulty: 난이도 선택 질문
-- ask_language: 언어 선택 질문
-- complete_collection: 수집 완료, 다음 단계로 라우팅
+- parse_input: collection_tool로 값 추출/확인 분석
+- handle_question: 질문일 경우 LLM으로 답변 생성 + 추천값 제안
+- choose_*: 직접 선택 확정 + 다음 단계 질문
+- complete_collection: 수집 완료, Discovery로 라우팅
 """
 
 from .graph import InfoCollectionGraph, create_info_collection_graph

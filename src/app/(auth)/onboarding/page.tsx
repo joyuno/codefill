@@ -11,8 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import Image from 'next/image';
 import {
-  Code2,
   Loader2,
   Eye,
   EyeOff,
@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/useDebounce';
-import { authApi, type SignupData } from '@/lib/api';
+import { authApi, solvedacApi, tierToName, getTierColor, type SignupData, type SolvedAcProfile } from '@/lib/api';
 
 // Onboarding data schema
 const onboardingSchema = z.object({
@@ -118,6 +118,11 @@ export default function OnboardingPage() {
   const [nicknameAvailable, setNicknameAvailable] = useState<boolean | null>(null);
   const [nicknameChecking, setNicknameChecking] = useState(false);
   const [nicknameMessage, setNicknameMessage] = useState('');
+
+  // solved.ac verification states
+  const [solvedAcVerifying, setSolvedAcVerifying] = useState(false);
+  const [solvedAcProfile, setSolvedAcProfile] = useState<SolvedAcProfile | null>(null);
+  const [solvedAcError, setSolvedAcError] = useState('');
 
   const {
     register,
@@ -235,6 +240,43 @@ export default function OnboardingPage() {
     } else {
       setValue('strongAlgorithms', [...current, algo]);
     }
+  };
+
+  const verifySolvedAc = async () => {
+    const handle = watchedFields.solvedAcId?.trim();
+    if (!handle) {
+      setSolvedAcError('백준 아이디를 입력해주세요.');
+      return;
+    }
+
+    setSolvedAcVerifying(true);
+    setSolvedAcError('');
+    setSolvedAcProfile(null);
+
+    try {
+      const result = await solvedacApi.lookup(handle);
+      if (result.error) {
+        setSolvedAcError(result.error.message);
+        return;
+      }
+      if (result.data) {
+        setSolvedAcProfile(result.data);
+        toast({
+          title: '확인 완료',
+          description: `${result.data.handle}님의 프로필을 확인했어요!`,
+        });
+      }
+    } catch (error) {
+      setSolvedAcError('프로필 조회 중 오류가 발생했습니다.');
+    } finally {
+      setSolvedAcVerifying(false);
+    }
+  };
+
+  const clearSolvedAc = () => {
+    setSolvedAcProfile(null);
+    setSolvedAcError('');
+    setValue('solvedAcId', '');
   };
 
   const onSubmit = async (data: OnboardingData) => {
@@ -446,16 +488,69 @@ export default function OnboardingPage() {
                   <LinkIcon className="h-4 w-4" />
                   백준 아이디 (solved.ac)
                 </Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="백준 아이디 입력"
-                    className="bg-secondary"
-                    {...register('solvedAcId')}
-                  />
-                  <Button type="button" variant="outline" disabled>
-                    연동하기
-                  </Button>
-                </div>
+                {solvedAcProfile ? (
+                  // 확인된 프로필 표시
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="flex h-10 w-10 items-center justify-center rounded-full text-white font-bold text-sm"
+                          style={{ backgroundColor: getTierColor(solvedAcProfile.tier) }}
+                        >
+                          {tierToName(solvedAcProfile.tier).split(' ')[0][0]}
+                        </div>
+                        <div>
+                          <div className="font-medium">{solvedAcProfile.handle}</div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span style={{ color: getTierColor(solvedAcProfile.tier) }}>
+                              {tierToName(solvedAcProfile.tier)}
+                            </span>
+                            <span>|</span>
+                            <span>{solvedAcProfile.solvedCount}문제</span>
+                            <span>|</span>
+                            <span>Rating {solvedAcProfile.rating}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearSolvedAc}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  // 입력 폼
+                  <>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="백준 아이디 입력"
+                        className={`bg-secondary ${solvedAcError ? 'border-destructive' : ''}`}
+                        disabled={solvedAcVerifying}
+                        {...register('solvedAcId')}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={verifySolvedAc}
+                        disabled={solvedAcVerifying || !watchedFields.solvedAcId?.trim()}
+                      >
+                        {solvedAcVerifying ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          '확인'
+                        )}
+                      </Button>
+                    </div>
+                    {solvedAcError && (
+                      <p className="text-sm text-destructive">{solvedAcError}</p>
+                    )}
+                  </>
+                )}
                 <p className="text-xs text-muted-foreground">
                   연동하면 풀이 기록을 기반으로 더 정확한 추천을 받을 수 있어요
                 </p>
@@ -649,13 +744,15 @@ export default function OnboardingPage() {
       >
         {/* Logo */}
         <div className="text-center">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <Code2 className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold">
-              Code<span className="text-primary">Fill</span>
-            </span>
+          <Link href="/" className="inline-flex items-center justify-center">
+            <Image
+              src="/logo.png"
+              alt="CodeFill"
+              width={270}
+              height={72}
+              className="h-[72px] w-auto"
+              priority
+            />
           </Link>
         </div>
 

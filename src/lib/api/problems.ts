@@ -40,6 +40,10 @@ export interface BaseProblemListItem {
   difficulty: string;
   tags: string[];
   source: string | null;
+  input_output: {
+    inputs?: string[];
+    outputs?: string[];
+  } | null;
 }
 
 export interface BaseProblemDetail {
@@ -56,6 +60,7 @@ export interface BaseProblemDetail {
     outputs?: string[];
   } | string | null;
   explanation: string | null;
+  solutions?: Array<{ language: string; code: string }>;  // 문제 유형 생성 시 필요
 }
 
 export interface BaseProblemListResponse {
