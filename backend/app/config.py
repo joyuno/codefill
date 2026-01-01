@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
+    # GitHub OAuth
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    github_redirect_uri: str = "http://localhost:8000/auth/github/callback"
+
     # Azure Translator
     azure_translator_key: str = ""
     azure_translator_region: str = "koreacentral"
