@@ -10,7 +10,7 @@ import Link from 'next/link';
 import { problemsApi, type BaseProblemDetail } from '@/lib/api';
 import { apiClient } from '@/lib/api/client';
 import { translateText, type LanguageCode } from '@/lib/api/translate';
-import { cn } from '@/lib/utils';
+import { cn, preprocessLatex } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -265,7 +265,7 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                       remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                       rehypePlugins={[rehypeKatex]}
                     >
-                      {displayQuestion || ''}
+                      {preprocessLatex(displayQuestion || '')}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -334,7 +334,7 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                         remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                         rehypePlugins={[rehypeKatex]}
                       >
-                        {problem.explanation}
+                        {preprocessLatex(problem.explanation)}
                       </ReactMarkdown>
                     </div>
                   </div>

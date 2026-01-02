@@ -61,6 +61,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+import { preprocessLatex } from '@/lib/utils';
+
 // UI에서 사용하는 퍼즐 블록 (indentation 포함)
 interface UIPuzzleBlock {
   id: string;
@@ -196,7 +198,18 @@ export function UnifiedPractice({
     setShowOriginal(true);
 
     if (problemType === 'blank') {
-      setCode(problem.codeSnippet || '');
+      const snippet = problem.codeSnippet || '';
+      const blankCount = problem.blanks?.length || 0;
+      // 빈칸 패턴 검증 - _N_ 또는 ___ 패턴이 있는지 확인
+      const patternCount = (snippet.match(/_\d+_|___/g) || []).length;
+
+      if (blankCount > 0 && patternCount === 0) {
+        console.warn('[UnifiedPractice] Warning: blanks exist but no patterns found in codeSnippet');
+        console.warn(`  - blanks.length: ${blankCount}`);
+        console.warn(`  - codeSnippet (first 200 chars): ${snippet.substring(0, 200)}`);
+      }
+
+      setCode(snippet);
     } else if (problemType === 'puzzle') {
       // ConvertedPuzzleBlock을 UIPuzzleBlock으로 변환
       const uiBlocks: UIPuzzleBlock[] = (problem.puzzleBlocks || []).map(b => ({
@@ -1074,9 +1087,9 @@ export function UnifiedPractice({
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[rehypeKatex]}
                         >
-                          {showOriginal || !translatedDescription
+                          {preprocessLatex(showOriginal || !translatedDescription
                             ? problem.description || ''
-                            : translatedDescription}
+                            : translatedDescription)}
                         </ReactMarkdown>
                       </div>
                     </div>

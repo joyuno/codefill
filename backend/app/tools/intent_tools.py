@@ -189,6 +189,26 @@ class IntentTool:
                 return selection_result
 
         # ============================================================
+        # 2-1. 디스커버리 액션 감지 (새 문제 생성, 더 찾아보기)
+        # ============================================================
+        # 새 문제 생성 요청
+        if any(kw in msg_lower for kw in ["새로운 유사", "새 문제 생성", "비슷한 문제 생성", "유사한 문제 생성", "새로운 문제"]):
+            return IntentResult(
+                category=IntentCategory.DISCOVERY,
+                action=ActionType.GENERATE_NEW,
+                confidence=0.95,
+                suggested_route="discovery",
+            )
+        # 더 찾아보기 요청
+        if any(kw in msg_lower for kw in ["더 찾아", "더 보여", "다른 문제", "다음 문제", "비슷한 문제 더"]):
+            return IntentResult(
+                category=IntentCategory.DISCOVERY,
+                action=ActionType.SHOW_MORE,
+                confidence=0.95,
+                suggested_route="discovery",
+            )
+
+        # ============================================================
         # 3. 풀이 중 요청 (힌트, 요약, 질문 등)
         # ============================================================
         if session_state.get("current_problem"):

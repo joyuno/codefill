@@ -793,23 +793,60 @@ async def generate_blank_problem(
             {"role": "user", "content": "위 문제를 빈칸 채우기 문제로 변환해주세요."},
         ]
 
-        response = await openrouter_service.chat_completion(
-            model=settings.llm_model_blank_gen,
-            messages=messages,
-            temperature=0.7,
-            response_format={"type": "json_object"},
-        )
+        # ============================================================
+        # LLM 호출 + 재시도 로직 (최대 3회 시도)
+        # ============================================================
+        MAX_RETRIES = 3
+        result = None
 
-        content = openrouter_service.get_content(response)
-        print(f"[Blank Gen] LLM response: {content[:500]}...")
+        for attempt in range(MAX_RETRIES):
+            response = await openrouter_service.chat_completion(
+                model=settings.llm_model_blank_gen,
+                messages=messages,
+                temperature=0.7 + (attempt * 0.1),  # 재시도시 온도 약간 증가
+                response_format={"type": "json_object"},
+            )
 
-        result = openrouter_service.parse_json_response(content)
-        print(f"[Blank Gen] Parsed result keys: {result.keys()}")
+            content = openrouter_service.get_content(response)
+            print(f"[Blank Gen] Attempt {attempt + 1}: LLM response: {content[:300]}...")
 
-        if not result.get("original_id"):
-            result["original_id"] = original_id
-        if not result.get("language"):
-            result["language"] = language
+            result = openrouter_service.parse_json_response(content)
+            print(f"[Blank Gen] Parsed result keys: {result.keys()}")
+
+            if not result.get("original_id"):
+                result["original_id"] = original_id
+            if not result.get("language"):
+                result["language"] = language
+
+            # 빈칸 패턴 검증
+            code_template = result.get("code_template", "")
+            answers = result.get("answers", [])
+            blank_patterns = re.findall(r'_(\d+)_', code_template)
+
+            print(f"[Blank Gen] Validation: {len(blank_patterns)} patterns found, {len(answers)} answers")
+
+            # 유효한 출력인지 확인
+            if len(answers) > 0 and len(blank_patterns) > 0:
+                print(f"[Blank Gen] ✓ Valid output on attempt {attempt + 1}")
+                break
+            elif len(answers) > 0 and len(blank_patterns) == 0:
+                print(f"[Blank Gen] ⚠️ Attempt {attempt + 1}: answers exist but no _N_ patterns!")
+                print(f"[Blank Gen] code_template preview: {code_template[:200]}...")
+
+                if attempt < MAX_RETRIES - 1:
+                    print(f"[Blank Gen] Retrying... ({attempt + 2}/{MAX_RETRIES})")
+                    # 재시도 메시지 추가
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append({
+                        "role": "user",
+                        "content": "code_template에 빈칸이 없습니다. 코드의 핵심 부분을 _0_, _1_, _2_ 형식의 빈칸으로 변환해주세요. 예: 'result = _0_' 형태로요."
+                    })
+                else:
+                    print(f"[Blank Gen] ❌ All {MAX_RETRIES} attempts failed - returning as-is")
+            else:
+                # answers가 없는 경우
+                print(f"[Blank Gen] ⚠️ No answers in response")
+                break
 
         # ============================================================
         # DB에 저장

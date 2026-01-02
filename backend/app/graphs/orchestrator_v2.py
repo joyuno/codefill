@@ -173,7 +173,11 @@ class ChatOrchestratorV2:
         # 6. Discovery 라우팅 (정보 수집 완료 후)
         # ============================================================
         if intent_result.suggested_route == "discovery":
-            if self._has_sufficient_info(collected_info):
+            # 이미 검색 결과가 있고 더 찾기/새 생성 액션이면 바로 Discovery로
+            is_discovery_action = intent_result.action in [ActionType.GENERATE_NEW, ActionType.SHOW_MORE]
+            has_search_results = bool(search_results)
+
+            if self._has_sufficient_info(collected_info) or (has_search_results and is_discovery_action):
                 return await self._process_discovery(
                     message=message,
                     intent=intent_result.action.value,

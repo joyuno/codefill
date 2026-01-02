@@ -38,10 +38,10 @@ class Settings(BaseSettings):
     # LLM Models per Agent
     llm_model_chat: str = "gpt-4o-mini"           # Chat agent, intent handler
     llm_model_intent: str = "gpt-4o-mini"         # Intent classifier
-    llm_model_blank_gen: str = "gpt-4o-mini"      # Blank problem generation
-    llm_model_puzzle_gen: str = "gpt-4o-mini"     # Puzzle problem generation
+    llm_model_blank_gen: str = "gemini-3-pro"      # Blank problem generation
+    llm_model_puzzle_gen: str = "gemini-3-pro"    # Puzzle problem generation
     llm_model_guided_gen: str = "gpt-4o-mini"     # Guided problem generation
-    llm_model_code_gen: str = "claude-sonnet"     # Code generation (RAG fallback)
+    llm_model_code_gen: str = "gemini-3-pro"      # Code generation (RAG fallback)
     llm_model_hint: str = "gemini-flash"          # Hint generation
 
     # Judge0 (Code Execution)
