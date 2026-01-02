@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeFill LangGraph - Overview</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #4ade80;
+            font-size: 2.8rem;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .page-indicator {
+            background: rgba(74, 222, 128, 0.2);
+            border: 1px solid #4ade80;
+            border-radius: 20px;
+            padding: 8px 20px;
+            color: #4ade80;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+        }
+        .diagram-section {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+        }
+        .diagram-section h2 {
+            color: #60a5fa;
+            margin-bottom: 25px;
+            font-size: 1.6rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .diagram-section h2::before {
+            content: '';
+            display: inline-block;
+            width: 5px;
+            height: 28px;
+            background: linear-gradient(180deg, #60a5fa, #3b82f6);
+            border-radius: 3px;
+        }
+        .mermaid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 30px;
+            overflow-x: auto;
+        }
+        .mermaid .cluster rect {
+            fill: transparent !important;
+            stroke: rgba(255, 255, 255, 0.15) !important;
+        }
+        .mermaid .cluster .nodeLabel {
+            color: #94a3b8 !important;
+        }
+        .mermaid .edgeLabel {
+            background: transparent !important;
+            color: #fff !important;
+        }
+        .flow-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .flow-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 16px;
+            padding: 25px;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .flow-card:hover {
+            transform: translateY(-5px);
+        }
+        .flow-card.intent { border-color: #f59e0b; }
+        .flow-card.collection { border-color: #3b82f6; }
+        .flow-card.discovery { border-color: #8b5cf6; }
+        .flow-card.solving { border-color: #22c55e; }
+        .flow-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .flow-card.intent h3 { color: #f59e0b; }
+        .flow-card.collection h3 { color: #3b82f6; }
+        .flow-card.discovery h3 { color: #8b5cf6; }
+        .flow-card.solving h3 { color: #22c55e; }
+        .flow-card p {
+            color: #94a3b8;
+            line-height: 1.6;
+            font-size: 0.95rem;
+        }
+        .flow-card ul {
+            margin-top: 12px;
+            padding-left: 20px;
+        }
+        .flow-card li {
+            color: #cbd5e1;
+            margin: 8px 0;
+            font-size: 0.9rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .badge-tool { background: rgba(249, 115, 22, 0.3); color: #fb923c; }
+        .badge-graph { background: rgba(139, 92, 246, 0.3); color: #a78bfa; }
+        .badge-agent { background: rgba(34, 197, 94, 0.3); color: #4ade80; }
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        .tech-tag {
+            background: rgba(96, 165, 250, 0.15);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: #60a5fa;
+            font-size: 0.85rem;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 25px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+        .legend-text {
+            color: #cbd5e1;
+            font-size: 0.9rem;
+        }
+        /* Navigation */
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 15, 26, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+        .nav-pages {
+            display: flex;
+            gap: 8px;
+        }
+        .nav-page {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .nav-page.active {
+            background: #4ade80;
+            color: #000;
+        }
+        .nav-page:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-page:not(.active):hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-page.p1 { border-color: #4ade80; }
+        .nav-page.p2 { border-color: #3b82f6; }
+        .nav-page.p3 { border-color: #8b5cf6; }
+        .nav-page.p4 { border-color: #22c55e; }
+        .nav-page.p5 { border-color: #f59e0b; }
+        .nav-arrows {
+            display: flex;
+            gap: 10px;
+        }
+        .nav-arrow {
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-arrow.prev {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-arrow.next {
+            background: #4ade80;
+            color: #000;
+        }
+        .nav-arrow:hover {
+            transform: translateY(-2px);
+        }
+        .nav-arrow.disabled {
+            opacity: 0.3;
+            pointer-events: none;
+        }
+        .nav-title {
+            color: #cbd5e1;
+            font-size: 0.85rem;
+        }
+        body {
+            padding-bottom: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="slide-header">
+            <h1>CodeFill LangGraph Architecture</h1>
+            <span class="page-indicator">1 / 5</span>
+        </div>
+        <p class="subtitle">Python LangGraph 기반 Multi-Agent 오케스트레이션 시스템</p>
+
+        <div class="diagram-section">
+            <h2>Orchestrator - 전체 파이프라인</h2>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#22c55e', 'primaryTextColor': '#fff', 'lineColor': '#64748b'}}}%%
+flowchart LR
+    subgraph Input["🎤 User Input"]
+        MSG[/"User Message"/]
+    end
+
+    subgraph Intent["🎯 Intent Classification"]
+        IT["Intent Tool<br/><small>category + action</small>"]
+    end
+
+    subgraph Graphs["📊 LangGraph Pipelines"]
+        direction LR
+
+        subgraph G1["InfoCollectionGraph"]
+            IC["정보 수집<br/><small>topic / difficulty / language</small>"]
+        end
+
+        subgraph G2["DiscoveryGraph"]
+            DC["문제 탐색<br/><small>RAG + CodeGen</small>"]
+        end
+
+        subgraph G3["SolvingGraph"]
+            SV["문제 풀이<br/><small>Hint / Review / Check</small>"]
+        end
+    end
+
+    subgraph Output["💬 Response"]
+        RSP[/"AI Response + Actions"/]
+    end
+
+    MSG --> IT
+    IT -->|"INFO_COLLECTION"| IC
+    IT -->|"DISCOVERY"| DC
+    IT -->|"SOLVING"| SV
+    IT -->|"GENERAL"| RSP
+
+    IC -->|"complete"| DC
+    DC -->|"selected"| SV
+
+    IC --> RSP
+    DC --> RSP
+    SV --> RSP
+
+    style MSG fill:#64748b,stroke:#94a3b8,color:#fff
+    style IT fill:#f59e0b,stroke:#fbbf24,color:#000
+    style IC fill:#3b82f6,stroke:#60a5fa,color:#fff
+    style DC fill:#8b5cf6,stroke:#a78bfa,color:#fff
+    style SV fill:#22c55e,stroke:#4ade80,color:#fff
+    style RSP fill:#64748b,stroke:#94a3b8,color:#fff
+            </div>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f59e0b;"></div>
+                    <span class="legend-text">Intent Tool (분류)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3b82f6;"></div>
+                    <span class="legend-text">InfoCollectionGraph</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #8b5cf6;"></div>
+                    <span class="legend-text">DiscoveryGraph</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #22c55e;"></div>
+                    <span class="legend-text">SolvingGraph</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flow-cards">
+            <div class="flow-card intent">
+                <h3>🎯 Intent Tool <span class="badge badge-tool">Tool</span></h3>
+                <p>사용자 메시지의 의도와 액션을 분류합니다.</p>
+                <ul>
+                    <li><strong>Category:</strong> INFO_COLLECTION, DISCOVERY, SOLVING, GENERAL</li>
+                    <li><strong>Action:</strong> SET_TOPIC, SELECT_PROBLEM, REQUEST_HINT 등</li>
+                    <li><strong>Extracted Values:</strong> topic, difficulty, language</li>
+                </ul>
+            </div>
+
+            <div class="flow-card collection">
+                <h3>📋 InfoCollectionGraph <span class="badge badge-graph">Graph</span></h3>
+                <p>문제 생성에 필요한 정보를 수집합니다.</p>
+                <ul>
+                    <li><strong>수집 정보:</strong> 주제, 난이도, 언어</li>
+                    <li><strong>대화 방식:</strong> Multi-turn + 추천</li>
+                    <li><strong>완료 조건:</strong> 3가지 정보 모두 수집</li>
+                </ul>
+            </div>
+
+            <div class="flow-card discovery">
+                <h3>🔍 DiscoveryGraph <span class="badge badge-graph">Graph</span></h3>
+                <p>RAG 검색 또는 새 문제 생성을 수행합니다.</p>
+                <ul>
+                    <li><strong>RAG:</strong> 시맨틱 검색 (필터 + 벡터)</li>
+                    <li><strong>Fallback:</strong> CodeGen Agent</li>
+                    <li><strong>문제 유형:</strong> Blank, Puzzle, Guided</li>
+                </ul>
+            </div>
+
+            <div class="flow-card solving">
+                <h3>✨ SolvingGraph <span class="badge badge-graph">Graph</span></h3>
+                <p>문제 풀이 중 다양한 지원을 제공합니다.</p>
+                <ul>
+                    <li><strong>Hint Agent:</strong> 4단계 점진적 힌트</li>
+                    <li><strong>Review Agent:</strong> 코드 리뷰 (JSON)</li>
+                    <li><strong>Check:</strong> Judge0 코드 실행</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="tech-stack">
+            <span class="tech-tag">LangGraph StateGraph</span>
+            <span class="tech-tag">OpenRouter (gpt-4o-mini)</span>
+            <span class="tech-tag">Supabase pgvector</span>
+            <span class="tech-tag">Judge0 Sandbox</span>
+            <span class="tech-tag">FastAPI Backend</span>
+            <span class="tech-tag">TypedDict State</span>
+        </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-arrows">
+            <span class="nav-arrow prev disabled">← 이전</span>
+        </div>
+        <div class="nav-pages">
+            <a href="01_overview.html" class="nav-page p1 active" title="Overview">1</a>
+            <a href="02_info_collection.html" class="nav-page p2" title="InfoCollectionGraph">2</a>
+            <a href="03_discovery.html" class="nav-page p3" title="DiscoveryGraph">3</a>
+            <a href="04_solving.html" class="nav-page p4" title="SolvingGraph">4</a>
+            <a href="05_tools_agents.html" class="nav-page p5" title="Tools & Agents">5</a>
+        </div>
+        <div class="nav-arrows">
+            <a href="02_info_collection.html" class="nav-arrow next">다음 →</a>
+        </div>
+    </nav>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 20
+            }
+        });
+    </script>
+</body>
+</html>

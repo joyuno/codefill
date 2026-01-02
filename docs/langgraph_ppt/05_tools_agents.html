@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeFill LangGraph - Tools & Agents</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #f59e0b;
+            font-size: 2.8rem;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .page-indicator {
+            background: rgba(249, 115, 22, 0.2);
+            border: 1px solid #f59e0b;
+            border-radius: 20px;
+            padding: 8px 20px;
+            color: #f59e0b;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+        }
+        .diagram-section {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(249, 115, 22, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        .diagram-section h2 {
+            color: #fbbf24;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .diagram-section h2::before {
+            content: '';
+            display: inline-block;
+            width: 5px;
+            height: 28px;
+            background: linear-gradient(180deg, #f59e0b, #fbbf24);
+            border-radius: 3px;
+        }
+        .mermaid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 30px;
+            overflow-x: auto;
+        }
+        .mermaid .cluster rect {
+            fill: transparent !important;
+            stroke: rgba(255, 255, 255, 0.15) !important;
+        }
+        .mermaid .cluster .nodeLabel {
+            color: #94a3b8 !important;
+        }
+        .mermaid .edgeLabel {
+            background: transparent !important;
+            color: #fff !important;
+        }
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 25px;
+        }
+        .tool-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 14px;
+            padding: 25px;
+            border-top: 4px solid;
+            transition: all 0.3s ease;
+        }
+        .tool-card:hover {
+            transform: translateY(-3px);
+        }
+        .tool-card.intent { border-color: #f59e0b; }
+        .tool-card.collection { border-color: #3b82f6; }
+        .tool-card.user { border-color: #8b5cf6; }
+        .tool-card h4 {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .tool-card.intent h4 { color: #f59e0b; }
+        .tool-card.collection h4 { color: #3b82f6; }
+        .tool-card.user h4 { color: #8b5cf6; }
+        .tool-card .description {
+            color: #94a3b8;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin-bottom: 15px;
+        }
+        .tool-card pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            line-height: 1.5;
+            overflow-x: auto;
+        }
+        .badge-tool {
+            background: rgba(249, 115, 22, 0.3);
+            color: #fbbf24;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+        }
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+            margin-top: 25px;
+        }
+        .agent-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 14px;
+            padding: 22px;
+            border-left: 4px solid #22c55e;
+            transition: all 0.3s ease;
+        }
+        .agent-card:hover {
+            transform: translateY(-3px);
+        }
+        .agent-card h4 {
+            color: #4ade80;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .agent-card p {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .agent-card .model {
+            display: inline-block;
+            background: rgba(74, 222, 128, 0.15);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #4ade80;
+        }
+        .badge-agent {
+            background: rgba(34, 197, 94, 0.3);
+            color: #4ade80;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+        }
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+            margin-top: 25px;
+        }
+        .service-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 14px;
+            padding: 22px;
+            border-bottom: 4px solid #06b6d4;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .service-card:hover {
+            transform: translateY(-3px);
+        }
+        .service-card h4 {
+            color: #22d3ee;
+            font-size: 1rem;
+            margin-bottom: 10px;
+        }
+        .service-card p {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+        .service-card .tech {
+            display: inline-block;
+            background: rgba(6, 182, 212, 0.15);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #22d3ee;
+            margin-top: 10px;
+        }
+        .field { color: #f472b6; }
+        .type { color: #60a5fa; }
+        .comment { color: #6b7280; }
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+        .prompt-box {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .prompt-box h3 {
+            color: #4ade80;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        .prompt-box pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        .file-tree {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 12px;
+            padding: 20px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            line-height: 1.8;
+            color: #cbd5e1;
+        }
+        .file-tree .folder { color: #fbbf24; }
+        .file-tree .file { color: #60a5fa; }
+        .file-tree .agent-file { color: #4ade80; }
+        /* Navigation */
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 15, 26, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+        .nav-pages {
+            display: flex;
+            gap: 8px;
+        }
+        .nav-page {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .nav-page.active {
+            background: #f59e0b;
+            color: #000;
+        }
+        .nav-page:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-page:not(.active):hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-page.p1 { border-color: #4ade80; }
+        .nav-page.p2 { border-color: #3b82f6; }
+        .nav-page.p3 { border-color: #8b5cf6; }
+        .nav-page.p4 { border-color: #22c55e; }
+        .nav-page.p5 { border-color: #f59e0b; }
+        .nav-arrows {
+            display: flex;
+            gap: 10px;
+        }
+        .nav-arrow {
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-arrow.prev {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-arrow.prev:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-arrow.next {
+            background: #f59e0b;
+            color: #000;
+        }
+        .nav-arrow.disabled {
+            opacity: 0.3;
+            pointer-events: none;
+        }
+        body {
+            padding-bottom: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="slide-header">
+            <h1>🔧 Tools & Agents</h1>
+            <span class="page-indicator">5 / 5</span>
+        </div>
+        <p class="subtitle">LangGraph 노드에서 사용되는 Tool 클래스와 LLM Agent 프롬프트 정리</p>
+
+        <div class="diagram-section">
+            <h2>Tools Overview</h2>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#f59e0b', 'primaryTextColor': '#fff', 'lineColor': '#64748b'}}}%%
+flowchart LR
+    subgraph Tools["🔧 Tool Classes"]
+        IT["Intent Tool<br/><small>의도 + 액션 분류</small>"]
+        CT["Collection Tool<br/><small>값 추출 + 확인</small>"]
+        UT["User Tool<br/><small>프로필 + 추천</small>"]
+    end
+
+    subgraph Services["⚙️ Services"]
+        OR["OpenRouter<br/><small>LLM API</small>"]
+        RAG["RAG Service<br/><small>Semantic Search</small>"]
+        EMB["Embedding<br/><small>Vector</small>"]
+        J0["Judge0<br/><small>Code Exec</small>"]
+    end
+
+    subgraph Graphs["📊 LangGraph"]
+        IG["InfoCollectionGraph"]
+        DG["DiscoveryGraph"]
+        SG["SolvingGraph"]
+    end
+
+    IT --> IG
+    IT --> DG
+    IT --> SG
+    CT --> IG
+    UT --> IG
+
+    OR --> IG
+    OR --> DG
+    OR --> SG
+    RAG --> DG
+    EMB --> CT
+    EMB --> RAG
+    J0 --> SG
+
+    style IT fill:#f59e0b,stroke:#fbbf24,color:#000
+    style CT fill:#3b82f6,stroke:#60a5fa,color:#fff
+    style UT fill:#8b5cf6,stroke:#a78bfa,color:#fff
+    style OR fill:#22c55e,stroke:#4ade80,color:#fff
+    style RAG fill:#8b5cf6,stroke:#a78bfa,color:#fff
+    style EMB fill:#ec4899,stroke:#f472b6,color:#fff
+    style J0 fill:#ef4444,stroke:#f87171,color:#fff
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Tool Classes</h2>
+
+            <div class="tools-grid">
+                <div class="tool-card intent">
+                    <h4>🎯 Intent Tool <span class="badge-tool">Tool</span></h4>
+                    <p class="description">사용자 메시지의 의도(category)와 액션(action)을 분류하는 통합 도구</p>
+                    <pre>
+<span class="comment"># Category</span>
+<span class="type">INFO_COLLECTION</span>  <span class="comment"># 정보 수집</span>
+<span class="type">DISCOVERY</span>         <span class="comment"># 문제 탐색</span>
+<span class="type">SOLVING</span>           <span class="comment"># 문제 풀이</span>
+<span class="type">GENERAL</span>           <span class="comment"># 일반 대화</span>
+<span class="type">CONFIRMATION</span>      <span class="comment"># 네/아니오</span>
+
+<span class="comment"># Action 예시</span>
+<span class="field">SET_TOPIC</span>, <span class="field">SET_DIFFICULTY</span>
+<span class="field">SELECT_PROBLEM</span>, <span class="field">GENERATE_NEW</span>
+<span class="field">REQUEST_HINT</span>, <span class="field">SUBMIT_CODE</span></pre>
+                </div>
+
+                <div class="tool-card collection">
+                    <h4>📋 Collection Tool <span class="badge-tool">Tool</span></h4>
+                    <p class="description">메시지에서 topic/difficulty/language를 추출하고 확인/거절을 분석</p>
+                    <pre>
+<span class="comment"># 메서드</span>
+<span class="field">extract_values</span>(message, step)
+  → <span class="type">ExtractionResult</span>
+
+<span class="field">analyze_confirmation</span>(msg, value)
+  → <span class="type">"positive" | "negative" | "unclear"</span>
+
+<span class="field">analyze_rejection</span>(msg, value)
+  → reason, alternative_value
+
+<span class="comment"># 기술</span>
+Embedding 1차 매칭 → LLM 보조</pre>
+                </div>
+
+                <div class="tool-card user">
+                    <h4>👤 User Tool <span class="badge-tool">Tool</span></h4>
+                    <p class="description">사용자 프로필 조회 및 개인화된 추천 생성</p>
+                    <pre>
+<span class="comment"># 메서드</span>
+<span class="field">get_user_profile</span>(user_id)
+  → experience_level
+  → learning_goal
+  → strong_algorithms
+
+<span class="field">get_personalized_recommendations</span>()
+  → 추천 topic
+  → 추천 difficulty
+  → 추천 language</pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>LLM Agents (프롬프트 기반)</h2>
+
+            <div class="agents-grid">
+                <div class="agent-card">
+                    <h4>💡 Hint Agent <span class="badge-agent">Agent</span></h4>
+                    <p>소크라테스식 질문으로 4단계 점진적 힌트 제공</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card">
+                    <h4>🔍 Review Agent <span class="badge-agent">Agent</span></h4>
+                    <p>코드 리뷰 (문법, 로직, 스타일) JSON 출력</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card">
+                    <h4>📝 Feedback Agent <span class="badge-agent">Agent</span></h4>
+                    <p>풀이 과정 피드백 및 개선 방향 제시</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card">
+                    <h4>🤖 CodeGen Agent <span class="badge-agent">Agent</span></h4>
+                    <p>RAG 실패 시 LLM으로 새 문제 생성</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card">
+                    <h4>📝 Blank Agent <span class="badge-agent">Agent</span></h4>
+                    <p>빈칸 채우기 문제 생성 (핵심 로직 마스킹)</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card">
+                    <h4>🧩 Puzzle Agent <span class="badge-agent">Agent</span></h4>
+                    <p>코드 블록 퍼즐 문제 생성 (순서 셔플)</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card">
+                    <h4>💬 Guided Agent <span class="badge-agent">Agent</span></h4>
+                    <p>1대1 대화형 문제 생성 (단계별 진행)</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card">
+                    <h4>💬 Chat Agent <span class="badge-agent">Agent</span></h4>
+                    <p>일반 대화 및 질문 답변</p>
+                    <span class="model">gpt-4o-mini</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Services & File Structure</h2>
+
+            <div class="two-columns">
+                <div>
+                    <h3 style="color: #22d3ee; margin-bottom: 15px;">⚙️ Backend Services</h3>
+                    <div class="services-grid" style="grid-template-columns: repeat(2, 1fr);">
+                        <div class="service-card">
+                            <h4>OpenRouter</h4>
+                            <p>LLM API 호출<br/>gpt-4o-mini 기본</p>
+                            <span class="tech">openrouter.py</span>
+                        </div>
+                        <div class="service-card">
+                            <h4>RAG Service</h4>
+                            <p>시맨틱 검색<br/>필터 + 벡터</p>
+                            <span class="tech">rag.py</span>
+                        </div>
+                        <div class="service-card">
+                            <h4>Embedding</h4>
+                            <p>텍스트 임베딩<br/>pgvector 저장</p>
+                            <span class="tech">embedding.py</span>
+                        </div>
+                        <div class="service-card">
+                            <h4>Judge0</h4>
+                            <p>코드 실행 샌드박스<br/>테스트 케이스 검증</p>
+                            <span class="tech">judge0.py</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="color: #fbbf24; margin-bottom: 15px;">📁 File Structure</h3>
+                    <div class="file-tree">
+<span class="folder">backend/app/</span>
+├── <span class="folder">graphs/</span>
+│   ├── <span class="file">orchestrator_v2.py</span>
+│   ├── <span class="folder">collection/</span>
+│   │   ├── <span class="file">graph.py</span>
+│   │   └── <span class="file">state.py</span>
+│   ├── <span class="file">discovery_graph.py</span>
+│   └── <span class="file">solving_graph.py</span>
+├── <span class="folder">tools/</span>
+│   ├── <span class="file">intent_tools.py</span>
+│   ├── <span class="file">collection_tools.py</span>
+│   └── <span class="file">user_tools.py</span>
+├── <span class="folder">prompts/</span>
+│   ├── <span class="agent-file">hint_agent.py</span>
+│   ├── <span class="agent-file">code_gen_agent.py</span>
+│   ├── <span class="agent-file">blank_problem_agent.py</span>
+│   └── <span class="agent-file">feedback_agent.py</span>
+└── <span class="folder">services/</span>
+    ├── <span class="file">openrouter.py</span>
+    ├── <span class="file">rag.py</span>
+    └── <span class="file">judge0.py</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Hint Agent Prompt Example</h2>
+
+            <div class="prompt-box">
+                <h3>💡 Hint Agent System Prompt</h3>
+                <pre>
+<span class="comment">## 역할</span>
+당신은 CodeFill의 힌트 생성 에이전트입니다.
+직접 정답을 알려주지 않고, 스스로 깨달을 수 있도록 유도합니다.
+
+<span class="comment">## 힌트 제공 원칙</span>
+
+<span class="field">1. 점진적 공개 (Progressive Disclosure)</span>
+   - Level 1: 방향 제시 ("어떤 유형의 문제일까요?")
+   - Level 2: 접근법 제시 ("~~ 알고리즘을 생각해보세요")
+   - Level 3: 구체적 힌트 ("1. 먼저 ~~ 2. 그다음 ~~")
+   - Level 4: 코드 구조 (핵심 부분, 변수명 가림)
+
+<span class="field">2. 소크라테스식 질문</span>
+   - 답을 직접 주지 않고 질문으로 유도
+   - "어떤 자료구조가 O(1) 조회가 가능할까요?"
+
+<span class="field">3. 격려와 동기부여</span>
+   - 시도한 부분 칭찬
+   - 포기하지 않도록 응원
+
+<span class="field">4. 맞춤형 힌트</span>
+   - 사용자 레벨 고려
+   - 이전 힌트 참고하여 중복 방지</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-arrows">
+            <a href="04_solving.html" class="nav-arrow prev">← 이전</a>
+        </div>
+        <div class="nav-pages">
+            <a href="01_overview.html" class="nav-page p1" title="Overview">1</a>
+            <a href="02_info_collection.html" class="nav-page p2" title="InfoCollectionGraph">2</a>
+            <a href="03_discovery.html" class="nav-page p3" title="DiscoveryGraph">3</a>
+            <a href="04_solving.html" class="nav-page p4" title="SolvingGraph">4</a>
+            <a href="05_tools_agents.html" class="nav-page p5 active" title="Tools & Agents">5</a>
+        </div>
+        <div class="nav-arrows">
+            <span class="nav-arrow next disabled">다음 →</span>
+        </div>
+    </nav>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 20
+            }
+        });
+    </script>
+</body>
+</html>

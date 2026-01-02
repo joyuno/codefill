@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeFill LangGraph - SolvingGraph</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #22c55e;
+            font-size: 2.8rem;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .page-indicator {
+            background: rgba(34, 197, 94, 0.2);
+            border: 1px solid #22c55e;
+            border-radius: 20px;
+            padding: 8px 20px;
+            color: #22c55e;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+        }
+        .diagram-section {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        .diagram-section h2 {
+            color: #4ade80;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .diagram-section h2::before {
+            content: '';
+            display: inline-block;
+            width: 5px;
+            height: 28px;
+            background: linear-gradient(180deg, #22c55e, #4ade80);
+            border-radius: 3px;
+        }
+        .mermaid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 30px;
+            overflow-x: auto;
+        }
+        .mermaid .cluster rect {
+            fill: transparent !important;
+            stroke: rgba(255, 255, 255, 0.15) !important;
+        }
+        .mermaid .cluster .nodeLabel {
+            color: #94a3b8 !important;
+        }
+        .mermaid .edgeLabel {
+            background: transparent !important;
+            color: #fff !important;
+        }
+        .agent-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+            margin-top: 25px;
+        }
+        .agent-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 14px;
+            padding: 22px;
+            border-top: 4px solid;
+            transition: all 0.3s ease;
+        }
+        .agent-card:hover {
+            transform: translateY(-3px);
+        }
+        .agent-card.hint { border-color: #f59e0b; }
+        .agent-card.review { border-color: #8b5cf6; }
+        .agent-card.check { border-color: #22c55e; }
+        .agent-card.feedback { border-color: #06b6d4; }
+        .agent-card.solution { border-color: #ef4444; }
+        .agent-card.question { border-color: #3b82f6; }
+        .agent-card.summary { border-color: #ec4899; }
+        .agent-card h4 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .agent-card.hint h4 { color: #f59e0b; }
+        .agent-card.review h4 { color: #8b5cf6; }
+        .agent-card.check h4 { color: #22c55e; }
+        .agent-card.feedback h4 { color: #06b6d4; }
+        .agent-card.solution h4 { color: #ef4444; }
+        .agent-card.question h4 { color: #3b82f6; }
+        .agent-card.summary h4 { color: #ec4899; }
+        .agent-card p {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .agent-card .tech {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        .badge-agent {
+            background: rgba(34, 197, 94, 0.3);
+            color: #4ade80;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+        }
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+        .state-box {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .state-box h3 {
+            color: #4ade80;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        .state-box pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 18px;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            color: #cbd5e1;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        .field { color: #f472b6; }
+        .type { color: #60a5fa; }
+        .comment { color: #6b7280; }
+        .hint-levels {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .hint-level {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 12px;
+            padding: 18px;
+            text-align: center;
+            border: 2px solid transparent;
+        }
+        .hint-level.lv1 { border-color: #4ade80; }
+        .hint-level.lv2 { border-color: #fbbf24; }
+        .hint-level.lv3 { border-color: #f97316; }
+        .hint-level.lv4 { border-color: #ef4444; }
+        .hint-level h5 {
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+        .hint-level.lv1 h5 { color: #4ade80; }
+        .hint-level.lv2 h5 { color: #fbbf24; }
+        .hint-level.lv3 h5 { color: #f97316; }
+        .hint-level.lv4 h5 { color: #ef4444; }
+        .hint-level p {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        .intent-box {
+            background: rgba(249, 115, 22, 0.1);
+            border: 1px solid rgba(249, 115, 22, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .intent-box h3 {
+            color: #f59e0b;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        .intent-list {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .intent-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+        }
+        .intent-keyword {
+            background: rgba(249, 115, 22, 0.2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            color: #fbbf24;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+        .intent-target {
+            color: #cbd5e1;
+            font-size: 0.85rem;
+        }
+        .review-output {
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .review-output h3 {
+            color: #a78bfa;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        .review-output pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            line-height: 1.5;
+        }
+        /* Navigation */
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 15, 26, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+        .nav-pages {
+            display: flex;
+            gap: 8px;
+        }
+        .nav-page {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .nav-page.active {
+            background: #22c55e;
+            color: #000;
+        }
+        .nav-page:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-page:not(.active):hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-page.p1 { border-color: #4ade80; }
+        .nav-page.p2 { border-color: #3b82f6; }
+        .nav-page.p3 { border-color: #8b5cf6; }
+        .nav-page.p4 { border-color: #22c55e; }
+        .nav-page.p5 { border-color: #f59e0b; }
+        .nav-arrows {
+            display: flex;
+            gap: 10px;
+        }
+        .nav-arrow {
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-arrow.prev {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-arrow.prev:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-arrow.next {
+            background: #22c55e;
+            color: #000;
+        }
+        .nav-arrow:hover {
+            transform: translateY(-2px);
+        }
+        body {
+            padding-bottom: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="slide-header">
+            <h1>✨ SolvingGraph</h1>
+            <span class="page-indicator">4 / 5</span>
+        </div>
+        <p class="subtitle">문제 풀이 중 힌트, 답체크, 피드백, 요약을 제공하는 Multi-Agent 그래프</p>
+
+        <div class="diagram-section">
+            <h2>SolvingGraph</h2>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#22c55e', 'primaryTextColor': '#fff', 'lineColor': '#64748b'}}}%%
+flowchart LR
+    START((START)) --> CI
+
+    subgraph ClassifyPhase["🎯 Intent Classification"]
+        CI["classify_solving<br/>_intent<br/><small>키워드 + LLM</small>"]
+    end
+
+    CI --> Router{{"🔀 route_after<br/>_solving_intent"}}
+
+    Router -->|"hint_request"| PH
+    Router -->|"answer_check"| CA
+    Router -->|"feedback_request"| PF
+    Router -->|"summarize"| SP
+
+    subgraph AgentNodes["🤖 Agent Nodes"]
+        PH["provide_hint<br/><small>🤖 Hint Agent<br/>Level 1~4</small>"]
+        CA["check_answer<br/><small>⚡ Judge0<br/>코드 실행</small>"]
+        PF["provide_feedback<br/><small>🤖 Feedback Agent</small>"]
+        SP["summarize_problem<br/><small>🤖 Summary Agent</small>"]
+    end
+
+    PH --> RSP
+    CA --> RSP
+    PF --> RSP
+    SP --> RSP
+
+    subgraph ResponsePhase["💬 Response"]
+        RSP["respond"]
+    end
+
+    RSP --> END((END))
+
+    style START fill:#22c55e,stroke:#22c55e,color:#000
+    style END fill:#ef4444,stroke:#ef4444,color:#fff
+    style CI fill:#f59e0b,stroke:#fbbf24,color:#000
+    style Router fill:#64748b,stroke:#94a3b8,color:#fff
+    style PH fill:#f59e0b,stroke:#fbbf24,color:#000
+    style CA fill:#22c55e,stroke:#4ade80,color:#fff
+    style PF fill:#06b6d4,stroke:#22d3ee,color:#fff
+    style SP fill:#ec4899,stroke:#f472b6,color:#fff
+    style RSP fill:#64748b,stroke:#94a3b8,color:#fff
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Agent Nodes</h2>
+
+            <div class="agent-cards">
+                <div class="agent-card hint">
+                    <h4>💡 provide_hint <span class="badge-agent">Agent</span></h4>
+                    <p>4단계 점진적 힌트 제공<br/>소크라테스식 질문</p>
+                    <span class="tech">gpt-4o-mini</span>
+                    <span class="tech">Level 1~4</span>
+                </div>
+                <div class="agent-card check">
+                    <h4>✅ check_answer</h4>
+                    <p>코드 실행 및 정답 체크<br/>테스트 케이스 검증</p>
+                    <span class="tech">Judge0</span>
+                    <span class="tech">Sandbox</span>
+                </div>
+                <div class="agent-card feedback">
+                    <h4>📝 provide_feedback <span class="badge-agent">Agent</span></h4>
+                    <p>풀이 과정 피드백<br/>개선 방향 제시</p>
+                    <span class="tech">gpt-4o-mini</span>
+                </div>
+                <div class="agent-card summary">
+                    <h4>📋 summarize_problem <span class="badge-agent">Agent</span></h4>
+                    <p>문제 요약<br/>핵심 포인트 정리</p>
+                    <span class="tech">gpt-4o-mini</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Hint System & Intent Classification</h2>
+
+            <div class="two-columns">
+                <div>
+                    <h3 style="color: #f59e0b; margin-bottom: 15px;">💡 4-Level Hint System</h3>
+                    <div class="hint-levels">
+                        <div class="hint-level lv1">
+                            <h5>Level 1</h5>
+                            <p>방향 제시<br/>"어떤 유형의 문제일까요?"</p>
+                        </div>
+                        <div class="hint-level lv2">
+                            <h5>Level 2</h5>
+                            <p>접근법 제시<br/>"~~ 알고리즘을 생각해보세요"</p>
+                        </div>
+                        <div class="hint-level lv3">
+                            <h5>Level 3</h5>
+                            <p>구체적 힌트<br/>"1. 먼저 ~~ 2. 그다음 ~~"</p>
+                        </div>
+                        <div class="hint-level lv4">
+                            <h5>Level 4</h5>
+                            <p>코드 구조<br/>핵심 부분 (변수명 가림)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="intent-box">
+                    <h3>🎯 Intent Keywords → Node Routing</h3>
+                    <div class="intent-list">
+                        <div class="intent-item">
+                            <span class="intent-keyword">힌트, 도움, 막혔</span>
+                            <span class="intent-target">→ provide_hint</span>
+                        </div>
+                        <div class="intent-item">
+                            <span class="intent-keyword">제출, 정답, 채점</span>
+                            <span class="intent-target">→ check_answer</span>
+                        </div>
+                        <div class="intent-item">
+                            <span class="intent-keyword">피드백, 어때</span>
+                            <span class="intent-target">→ provide_feedback</span>
+                        </div>
+                        <div class="intent-item">
+                            <span class="intent-keyword">요약, 정리</span>
+                            <span class="intent-target">→ summarize_problem</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>SolvingState</h2>
+
+            <div class="state-box" style="max-width: 600px;">
+                <h3>📦 SolvingState (핵심 필드)</h3>
+                <pre>
+<span class="comment"># 컨텍스트</span>
+<span class="field">problem_context</span>: <span class="type">ProblemContext</span>
+  <span class="field">id</span>, <span class="field">title</span>, <span class="field">description</span>, <span class="field">difficulty</span>
+  <span class="field">problem_type</span>: <span class="type">"blank" | "puzzle" | "guided"</span>
+  <span class="field">blanks</span>, <span class="field">puzzle_blocks</span>, <span class="field">guided_steps</span>
+  <span class="field">solution_code</span>
+
+<span class="field">user_progress</span>: <span class="type">UserProgress</span>
+  <span class="field">current_code</span>: <span class="type">str</span>       <span class="comment"># 현재 작성 코드</span>
+  <span class="field">filled_blanks</span>: <span class="type">Dict</span>     <span class="comment"># blank: 채운 빈칸</span>
+  <span class="field">attempt_count</span>: <span class="type">int</span>      <span class="comment"># 시도 횟수</span>
+  <span class="field">hint_count</span>: <span class="type">int</span>         <span class="comment"># 받은 힌트 수</span>
+
+<span class="comment"># 힌트</span>
+<span class="field">hint_level</span>: <span class="type">int</span>           <span class="comment"># 1~4 (점진적)</span>
+<span class="field">previous_hints</span>: <span class="type">List[str]</span> <span class="comment"># 이전 힌트들</span></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-arrows">
+            <a href="03_discovery.html" class="nav-arrow prev">← 이전</a>
+        </div>
+        <div class="nav-pages">
+            <a href="01_overview.html" class="nav-page p1" title="Overview">1</a>
+            <a href="02_info_collection.html" class="nav-page p2" title="InfoCollectionGraph">2</a>
+            <a href="03_discovery.html" class="nav-page p3" title="DiscoveryGraph">3</a>
+            <a href="04_solving.html" class="nav-page p4 active" title="SolvingGraph">4</a>
+            <a href="05_tools_agents.html" class="nav-page p5" title="Tools & Agents">5</a>
+        </div>
+        <div class="nav-arrows">
+            <a href="05_tools_agents.html" class="nav-arrow next">다음 →</a>
+        </div>
+    </nav>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 20
+            }
+        });
+    </script>
+</body>
+</html>

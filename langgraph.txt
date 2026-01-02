@@ -381,42 +381,26 @@
       <polygon points="425,275 500,320 425,365 350,320" fill="#fecaca" stroke="#ef4444" stroke-width="2"/>
       <text x="425" y="325" text-anchor="middle" fill="#991b1b" font-size="10">Intent?</text>
 
-      <!-- Node Grid - Row 1 -->
-      <rect x="30" y="400" width="140" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
-      <text x="100" y="422" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">provide_hint</text>
-      <text x="100" y="440" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
-      <text x="100" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">Level 1-4 hints</text>
+      <!-- Node Grid - Active Nodes Only -->
+      <rect x="80" y="400" width="160" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
+      <text x="160" y="422" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">provide_hint</text>
+      <text x="160" y="440" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
+      <text x="160" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">Level 1-4 hints</text>
 
-      <rect x="185" y="400" width="140" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
-      <text x="255" y="422" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">review_code</text>
-      <text x="255" y="440" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
-      <text x="255" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">code review</text>
+      <rect x="260" y="400" width="175" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
+      <text x="347" y="422" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">provide_feedback</text>
+      <text x="347" y="440" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
+      <text x="347" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">comprehensive feedback</text>
 
-      <rect x="340" y="400" width="140" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
-      <text x="410" y="422" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">check_answer</text>
-      <text x="410" y="440" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
-      <text x="410" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">correctness check</text>
+      <rect x="455" y="400" width="170" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
+      <text x="540" y="422" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">answer_question</text>
+      <text x="540" y="440" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
+      <text x="540" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">general Q&A</text>
 
-      <rect x="495" y="400" width="155" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
-      <text x="572" y="422" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">provide_feedback</text>
-      <text x="572" y="440" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
-      <text x="572" y="458" text-anchor="middle" fill="#94a3b8" font-size="8">comprehensive feedback</text>
-
-      <!-- Node Grid - Row 2 -->
-      <rect x="30" y="490" width="140" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
-      <text x="100" y="512" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">show_solution</text>
-      <text x="100" y="530" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
-      <text x="100" y="548" text-anchor="middle" fill="#94a3b8" font-size="8">give up handler</text>
-
-      <rect x="185" y="490" width="140" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
-      <text x="255" y="512" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">answer_question</text>
-      <text x="255" y="530" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
-      <text x="255" y="548" text-anchor="middle" fill="#94a3b8" font-size="8">general Q&A</text>
-
-      <rect x="340" y="490" width="160" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
-      <text x="420" y="512" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">summarize_problem</text>
-      <text x="420" y="530" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
-      <text x="420" y="548" text-anchor="middle" fill="#94a3b8" font-size="8">problem summary</text>
+      <rect x="260" y="490" width="175" height="70" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
+      <text x="347" y="512" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">summarize_problem</text>
+      <text x="347" y="530" text-anchor="middle" fill="#64748b" font-size="9">nodes/solving.py</text>
+      <text x="347" y="548" text-anchor="middle" fill="#94a3b8" font-size="8">problem summary</text>
 
       <!-- Node: respond -->
       <rect x="250" y="600" width="250" height="45" rx="8" fill="#fecaca" stroke="#ef4444" stroke-width="2"/>
@@ -436,20 +420,17 @@
       <rect x="680" y="520" width="140" height="28" rx="4" fill="white" stroke="#f87171"/>
       <text x="750" y="539" text-anchor="middle" fill="#ef4444" font-size="10">guided (1:1 chat)</text>
 
-      <!-- Arrows from classify to nodes -->
-      <path d="M365 340 L110 395" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M385 355 L255 395" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M425 365 L410 395" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M470 355 L545 395" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
+      <!-- Arrows from classify to nodes (4 active nodes) -->
+      <path d="M370 340 L170 395" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
+      <path d="M400 355 L347 395" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
+      <path d="M460 355 L520 395" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
+      <path d="M425 365 L347 485" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
 
       <!-- Arrows from nodes to respond -->
-      <path d="M100 470 L300 595" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M255 470 L340 595" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M410 470 L375 595" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M572 470 L430 595" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M100 560 L300 595" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M255 560 L340 595" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
-      <path d="M420 560 L380 595" stroke="#ef4444" stroke-width="1" marker-end="url(#arrowRed)" fill="none"/>
+      <path d="M160 470 L310 595" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
+      <path d="M347 470 L360 595" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
+      <path d="M540 470 L420 595" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
+      <path d="M347 560 L375 595" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrowRed)" fill="none"/>
 
       <!-- Hint Level Info -->
       <rect x="30" y="580" width="180" height="80" rx="6" fill="#fef2f2" stroke="#fca5a5"/>
@@ -544,9 +525,9 @@
 
       <!-- Row 3 - Stats -->
       <text x="30" y="155" fill="#334155" font-size="12" font-weight="600">Statistics:</text>
-      <text x="130" y="155" fill="#64748b" font-size="11">Total Nodes: 22 | Graphs: 4 | Tools: 2 | Services: 4 | Router Functions: 8</text>
+      <text x="130" y="155" fill="#64748b" font-size="11">Total Nodes: 19 | Graphs: 4 | Tools: 2 | Services: 4 | Router Functions: 8</text>
     </g>
 
     <!-- Version -->
-    <text x="1750" y="2760" text-anchor="end" fill="#94a3b8" font-size="10">CodeFill LangGraph v2.0 - Detailed Architecture | 2024</text>
+    <text x="1750" y="2760" text-anchor="end" fill="#94a3b8" font-size="10">CodeFill LangGraph v2.1 - Active Nodes Only | 2025</text>
   </svg>
