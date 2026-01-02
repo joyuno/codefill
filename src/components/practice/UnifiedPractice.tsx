@@ -354,10 +354,10 @@ export function UnifiedPractice({
       return execCode;
     } else if (problemType === 'puzzle') {
       return blocks.map(b => {
-        const indent = b.indentation !== undefined && b.indentation > 0
-          ? b.indentation
-          : baseIndentation;
-        return '    '.repeat(indent) + b.code;
+        // baseIndentation + 블록의 상대적 indentation = 최종 들여쓰기
+        const relativeIndent = b.indentation || 0;
+        const totalIndent = baseIndentation + relativeIndent;
+        return '    '.repeat(totalIndent) + b.code;
       }).join('\n');
     }
     return code;
@@ -979,6 +979,7 @@ export function UnifiedPractice({
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="shrink-0 flex flex-col bg-card overflow-hidden"
+            style={{ maxWidth: sidebarWidth, minWidth: 0 }}
           >
             {/* Tabs */}
             <div className="flex border-b border-border">
@@ -1022,10 +1023,10 @@ export function UnifiedPractice({
             </div>
 
             {/* Tab Content */}
-            <ScrollArea className="flex-1">
-              <div className="p-4">
+            <ScrollArea className="flex-1 min-w-0 w-full">
+              <div className="p-4 min-w-0 w-full overflow-hidden">
                 {activeTab === 'problem' ? (
-                  <div className="space-y-4">
+                  <div className="space-y-4 w-full overflow-hidden">
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-semibold">문제 설명</h4>
@@ -1082,7 +1083,15 @@ export function UnifiedPractice({
                           </Button>
                         </div>
                       )}
-                      <div className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:bg-secondary/50 prose-code:text-primary">
+                      <div
+                        className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert prose-p:my-1 prose-pre:bg-secondary/50 prose-pre:overflow-x-auto prose-code:text-primary"
+                        style={{
+                          maxWidth: `${sidebarWidth - 32}px`,  // 32px = p-4 양쪽 패딩
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          whiteSpace: 'pre-wrap'
+                        }}
+                      >
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[rehypeKatex]}
@@ -1320,11 +1329,10 @@ export function UnifiedPractice({
               {/* 퍼즐 블록 - 하늘색 (변경 가능) */}
               <span className="text-[#9CDCFE]">
                 {blocks.map(b => {
-                  // indentation이 설정되어 있으면 그 값 사용, 없으면 baseIndentation 사용
-                  const indent = b.indentation !== undefined && b.indentation > 0
-                    ? b.indentation
-                    : baseIndentation;
-                  return '    '.repeat(indent) + b.code;
+                  // baseIndentation + 블록의 상대적 indentation = 최종 들여쓰기
+                  const relativeIndent = b.indentation || 0;
+                  const totalIndent = baseIndentation + relativeIndent;
+                  return '    '.repeat(totalIndent) + b.code;
                 }).join('\n')}
               </span>
               {/* fixed_end - 녹색 (고정) */}

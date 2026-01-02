@@ -126,44 +126,74 @@ def _analyze_block_indent(code: str, base_indent: int, prev_code: str = "") -> i
     return base_indent
 
 
+def _extract_indent_from_code(code: str) -> int:
+    """코드의 실제 들여쓰기 레벨을 추출 (4칸 = 1레벨)"""
+    if not code:
+        return 0
+    # 첫 번째 줄의 들여쓰기 확인
+    first_line = code.split('\n')[0]
+    leading_spaces = len(first_line) - len(first_line.lstrip())
+    return leading_spaces // 4
+
+
 def _process_block_indents(blocks: list, base_indent: int) -> list:
     """
     모든 블록의 indent를 분석하여 적절한 값으로 설정
 
     전략:
-    1. indent가 없거나 0이면 base_indent 사용
-    2. 코드 패턴에 따라 조정 (if/for 다음은 +1, return/break은 유지)
+    1. 코드에 실제 들여쓰기가 있으면 그 값 사용
+    2. LLM이 설정한 indent 값이 있으면 사용
+    3. 없으면 코드 패턴 기반으로 계산
     """
     if not blocks:
         return blocks
 
     result = []
     prev_code = ""
+    indent_stack = [base_indent]  # 들여쓰기 스택 (중첩 추적)
 
     for i, block in enumerate(blocks):
         new_block = dict(block)
         code = block.get("code", "")
         current_indent = block.get("indent")
 
-        # indent가 없거나 0이면 계산
-        if current_indent is None or current_indent == 0:
-            # 이전 블록이 ':'로 끝나면 +1
-            if prev_code.strip().endswith(':'):
-                new_indent = base_indent + 1
-            else:
-                new_indent = base_indent
+        # 1. 코드 자체에 들여쓰기가 있으면 그 값 사용
+        code_indent = _extract_indent_from_code(code)
+        if code_indent > 0:
+            new_block["indent"] = code_indent
+            # 코드에서 들여쓰기 제거 (나중에 프론트엔드에서 추가)
+            lines = code.split('\n')
+            stripped_lines = [line[code_indent * 4:] if len(line) > code_indent * 4 else line.lstrip() for line in lines]
+            new_block["code"] = '\n'.join(stripped_lines)
+            result.append(new_block)
+            prev_code = code
+            continue
 
-            # 특수 패턴 확인
-            code_stripped = code.strip()
-            if code_stripped.startswith(('return ', 'return\n', 'return')):
-                # return은 현재 레벨 유지 (조건문/반복문 내부일 수 있음)
-                new_indent = base_indent
+        # 2. LLM이 설정한 indent가 있고 0보다 크면 사용
+        if current_indent is not None and current_indent > 0:
+            new_block["indent"] = current_indent
+            result.append(new_block)
+            prev_code = code
+            continue
 
-            new_block["indent"] = new_indent
+        # 3. 코드 패턴 기반으로 계산
+        code_stripped = code.strip()
+
+        # 이전 블록이 ':'로 끝나면 들여쓰기 레벨 증가
+        if prev_code.strip().endswith(':'):
+            new_indent = indent_stack[-1] + 1
+            indent_stack.append(new_indent)
         else:
-            # 기존 indent 유지
-            pass
+            new_indent = indent_stack[-1]
 
+        # return, break, continue 등은 현재 레벨 유지하고, 다음 블록은 레벨 감소 가능
+        if code_stripped.startswith(('return ', 'return\n', 'return', 'break', 'continue', 'pass')):
+            new_indent = indent_stack[-1]
+            # 스택에서 pop (다음 블록은 한 레벨 아래)
+            if len(indent_stack) > 1:
+                indent_stack.pop()
+
+        new_block["indent"] = new_indent
         result.append(new_block)
         prev_code = code
 
@@ -985,18 +1015,53 @@ async def generate_puzzle_problem(
             {"role": "user", "content": "위 문제를 퍼즐(Parsons) 문제로 변환해주세요."},
         ]
 
-        response = await openrouter_service.chat_completion(
-            model=settings.llm_model_puzzle_gen,
-            messages=messages,
-            temperature=0.7,
-            response_format={"type": "json_object"},
-        )
+        # ============================================================
+        # LLM 호출 + 재시도 로직 (최대 3회 시도)
+        # ============================================================
+        MAX_RETRIES = 3
+        result = None
+        last_error = None
 
-        content = openrouter_service.get_content(response)
-        print(f"[Puzzle Gen] LLM response: {content[:500]}...")
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await openrouter_service.chat_completion(
+                    model=settings.llm_model_puzzle_gen,
+                    messages=messages,
+                    temperature=0.7 + (attempt * 0.1),
+                    response_format={"type": "json_object"},
+                )
 
-        result = openrouter_service.parse_json_response(content)
-        print(f"[Puzzle Gen] Parsed result keys: {result.keys()}")
+                content = openrouter_service.get_content(response)
+                print(f"[Puzzle Gen] Attempt {attempt + 1}: LLM response length: {len(content)}")
+
+                result = openrouter_service.parse_json_response(content)
+                print(f"[Puzzle Gen] Parsed result keys: {result.keys()}")
+
+                # 블록이 있는지 확인
+                blocks = result.get("blocks", [])
+                if len(blocks) > 0:
+                    print(f"[Puzzle Gen] ✓ Valid output on attempt {attempt + 1}: {len(blocks)} blocks")
+                    break
+                else:
+                    print(f"[Puzzle Gen] ⚠️ Attempt {attempt + 1}: No blocks in response")
+                    if attempt < MAX_RETRIES - 1:
+                        messages.append({"role": "assistant", "content": content})
+                        messages.append({
+                            "role": "user",
+                            "content": "blocks 배열이 비어있습니다. 코드를 블록 단위로 분리해서 blocks 배열에 넣어주세요."
+                        })
+
+            except ValueError as e:
+                last_error = e
+                print(f"[Puzzle Gen] ⚠️ Attempt {attempt + 1} parse error: {e}")
+                if attempt < MAX_RETRIES - 1:
+                    print(f"[Puzzle Gen] Retrying... ({attempt + 2}/{MAX_RETRIES})")
+                else:
+                    print(f"[Puzzle Gen] ❌ All {MAX_RETRIES} attempts failed")
+                    raise
+
+        if result is None:
+            raise ValueError("Failed to generate puzzle after all retries")
 
         if not result.get("original_id"):
             result["original_id"] = original_id
@@ -1180,15 +1245,52 @@ async def generate_guided_problem(
             {"role": "user", "content": "위 문제를 1대1 대화형 문제로 변환해주세요."},
         ]
 
-        response = await openrouter_service.chat_completion(
-            model=settings.llm_model_guided_gen,
-            messages=messages,
-            temperature=0.7,
-            response_format={"type": "json_object"},
-        )
+        # ============================================================
+        # LLM 호출 + 재시도 로직 (최대 3회 시도)
+        # ============================================================
+        MAX_RETRIES = 3
+        result = None
 
-        content = openrouter_service.get_content(response)
-        result = openrouter_service.parse_json_response(content)
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await openrouter_service.chat_completion(
+                    model=settings.llm_model_guided_gen,
+                    messages=messages,
+                    temperature=0.7 + (attempt * 0.1),
+                    response_format={"type": "json_object"},
+                )
+
+                content = openrouter_service.get_content(response)
+                print(f"[Guided Gen] Attempt {attempt + 1}: LLM response length: {len(content)}")
+
+                result = openrouter_service.parse_json_response(content)
+                print(f"[Guided Gen] Parsed result keys: {result.keys()}")
+
+                # 필수 필드 확인
+                concepts = result.get("concepts", [])
+                flow = result.get("flow", [])
+                if len(concepts) > 0 or len(flow) > 0:
+                    print(f"[Guided Gen] ✓ Valid output on attempt {attempt + 1}")
+                    break
+                else:
+                    print(f"[Guided Gen] ⚠️ Attempt {attempt + 1}: Empty concepts/flow")
+                    if attempt < MAX_RETRIES - 1:
+                        messages.append({"role": "assistant", "content": content})
+                        messages.append({
+                            "role": "user",
+                            "content": "concepts와 flow 배열이 비어있습니다. 핵심 개념과 학습 흐름을 채워주세요."
+                        })
+
+            except ValueError as e:
+                print(f"[Guided Gen] ⚠️ Attempt {attempt + 1} parse error: {e}")
+                if attempt < MAX_RETRIES - 1:
+                    print(f"[Guided Gen] Retrying... ({attempt + 2}/{MAX_RETRIES})")
+                else:
+                    print(f"[Guided Gen] ❌ All {MAX_RETRIES} attempts failed")
+                    raise
+
+        if result is None:
+            raise ValueError("Failed to generate guided problem after all retries")
 
         if not result.get("original_id"):
             result["original_id"] = original_id

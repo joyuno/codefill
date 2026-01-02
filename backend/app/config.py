@@ -38,9 +38,9 @@ class Settings(BaseSettings):
     # LLM Models per Agent
     llm_model_chat: str = "gpt-4o-mini"           # Chat agent, intent handler
     llm_model_intent: str = "gpt-4o-mini"         # Intent classifier
-    llm_model_blank_gen: str = "gemini-3-pro"      # Blank problem generation
-    llm_model_puzzle_gen: str = "gemini-3-pro"    # Puzzle problem generation
-    llm_model_guided_gen: str = "gpt-4o-mini"     # Guided problem generation
+    llm_model_blank_gen: str = "deepseek-v3"      # Blank problem generation
+    llm_model_puzzle_gen: str = "deepseek-v3"     # Puzzle problem generation
+    llm_model_guided_gen: str = "deepseek-v3"     # Guided problem generation
     llm_model_code_gen: str = "gemini-3-pro"      # Code generation (RAG fallback)
     llm_model_hint: str = "gemini-flash"          # Hint generation
 
