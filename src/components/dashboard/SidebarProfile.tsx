@@ -65,11 +65,11 @@ interface SidebarProfileProps {
     badges: PublicBadge[];
     farm: PublicFarm;
   };
-  /** 부모에서 전달받은 뱃지 수 (있으면 API 호출 안 함) - 중복 호출 방지용 */
-  badgeCount?: number;
+  /** 부모에서 전달받은 뱃지 배열 (있으면 API 호출 안 함) */
+  badges?: BadgeType[];
 }
 
-export function SidebarProfile({ username, publicData, badgeCount: propBadgeCount }: SidebarProfileProps) {
+export function SidebarProfile({ username, publicData, badges: propBadges }: SidebarProfileProps) {
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
   const [farm, setFarm] = useState<UserFarm | null>(null);
@@ -187,10 +187,11 @@ export function SidebarProfile({ username, publicData, badgeCount: propBadgeCoun
     }
   }, [isAuthenticated, username]);
 
-  // Fetch user badges from API (본인 프로필) - propBadgeCount가 있으면 API 호출 안 함
+  // Fetch user badges from API (본인 프로필) - propBadges가 있으면 API 호출 안 함
   useEffect(() => {
-    // propBadgeCount가 전달되었으면 API 호출 건너뜀 (page.tsx에서 이미 호출함)
-    if (propBadgeCount !== undefined) {
+    // propBadges가 전달되었으면 그 값 사용 (page.tsx에서 이미 호출함)
+    if (propBadges !== undefined) {
+      setBadges(propBadges);
       return;
     }
 
@@ -199,7 +200,7 @@ export function SidebarProfile({ username, publicData, badgeCount: propBadgeCoun
         .then(setBadges)
         .catch(() => setBadges([]));
     }
-  }, [isAuthenticated, isOwnProfile, propBadgeCount]);
+  }, [isAuthenticated, isOwnProfile, propBadges]);
 
   // 친구 추가 핸들러
   const handleAddFriend = async () => {

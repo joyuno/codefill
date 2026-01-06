@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Header } from '@/components/layout/Header';
 import { TopNav } from '@/components/layout/TopNav';
+import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User, Lock, CreditCard, Trash2, Check, X, Eye, EyeOff, BarChart3, AlertCircle, Camera, Link as LinkIcon, RefreshCw, Unlink } from 'lucide-react';
@@ -18,6 +19,7 @@ type TabType = 'profile' | 'settings';
 
 export default function MyPagePage() {
   const router = useRouter();
+  const { refreshProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -218,6 +220,8 @@ export default function MyPagePage() {
     const result = await usersApi.uploadAvatar(file);
     if (result.success && profile) {
       setProfile({ ...profile, avatarColor: result.avatar_url });
+      // 전역 프로필 캐시 갱신 (헤더 등에 즉시 반영)
+      await refreshProfile();
     }
   };
 
@@ -226,6 +230,8 @@ export default function MyPagePage() {
     await usersApi.deleteAvatar();
     if (profile) {
       setProfile({ ...profile, avatarColor: 'hsl(142, 71%, 45%)' });
+      // 전역 프로필 캐시 갱신 (헤더 등에 즉시 반영)
+      await refreshProfile();
     }
   };
 

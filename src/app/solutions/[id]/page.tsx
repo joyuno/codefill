@@ -26,11 +26,11 @@ import {
   MessageCircle,
   Eye,
 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeBlock } from '@/components/ui/code-block';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -104,9 +104,65 @@ export default function SolutionDetailPage() {
       <div className="min-h-screen bg-background">
         <Header />
         <TopNav />
-        <div className="flex items-center justify-center py-32">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
+        <main className="container max-w-4xl mx-auto px-4 py-6">
+          {/* Back button skeleton */}
+          <Skeleton className="h-5 w-40 mb-6" />
+
+          {/* Solution Header Skeleton */}
+          <div className="border border-border rounded-lg overflow-hidden bg-card mb-6">
+            {/* Author Info */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-5 w-16" />
+                  </div>
+                  <Skeleton className="h-3 w-32" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-9 w-16" />
+                <Skeleton className="h-9 w-16" />
+              </div>
+            </div>
+
+            {/* Title */}
+            <div className="px-6 py-3 border-b border-border">
+              <Skeleton className="h-6 w-2/3" />
+            </div>
+
+            {/* Description */}
+            <div className="px-6 py-4 border-b border-border space-y-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-4/5" />
+            </div>
+
+            {/* Code */}
+            <Skeleton className="h-64 w-full rounded-none" />
+          </div>
+
+          {/* Comments Section Skeleton */}
+          <div className="border border-border rounded-lg bg-card">
+            <div className="px-6 py-4 border-b border-border">
+              <Skeleton className="h-5 w-24" />
+            </div>
+            <div className="p-6 space-y-4">
+              {[1, 2].map((i) => (
+                <div key={i} className="flex gap-3">
+                  <Skeleton className="h-8 w-8 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
@@ -134,7 +190,6 @@ export default function SolutionDetailPage() {
     addSuffix: true,
     locale: ko,
   });
-  const languageForHighlighter = solution.language === 'cpp' ? 'cpp' : solution.language;
 
   return (
     <div className="min-h-screen bg-background">
@@ -224,18 +279,7 @@ export default function SolutionDetailPage() {
 
           {/* Code */}
           <div>
-            <SyntaxHighlighter
-              language={languageForHighlighter}
-              style={oneDark}
-              customStyle={{
-                margin: 0,
-                borderRadius: 0,
-                fontSize: '0.875rem',
-              }}
-              showLineNumbers
-            >
-              {solution.code}
-            </SyntaxHighlighter>
+            <CodeBlock code={solution.code} language={solution.language} />
           </div>
         </div>
 

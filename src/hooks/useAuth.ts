@@ -253,10 +253,31 @@ export function useAuth() {
         const profile = await fetchProfileFromBackend(accessToken, true);  // forceRefresh = true
         if (profile) {
           setAuthState(prev => ({ ...prev, profile }));
+          // 다른 컴포넌트의 useAuth 인스턴스에도 알림
+          window.dispatchEvent(new Event('profile-updated'));
         }
       }
     }
   }, [fetchProfileFromBackend]);
+
+  // 다른 컴포넌트에서 프로필 변경 시 감지
+  useEffect(() => {
+    const handleProfileUpdate = async () => {
+      // 캐시에서 최신 프로필 로드
+      const cachedStr = sessionStorage.getItem(PROFILE_CACHE_KEY);
+      if (cachedStr) {
+        try {
+          const cached: CachedProfile = JSON.parse(cachedStr);
+          setAuthState(prev => ({ ...prev, profile: cached.data }));
+        } catch {
+          // 파싱 실패 시 무시
+        }
+      }
+    };
+
+    window.addEventListener('profile-updated', handleProfileUpdate);
+    return () => window.removeEventListener('profile-updated', handleProfileUpdate);
+  }, []);
 
   return {
     ...authState,

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
+import type { Badge } from '@/lib/types';
 
 // ============================================
 // 랜딩 페이지 (비로그인 상태)
@@ -260,15 +261,15 @@ function LandingPage() {
 // ============================================
 
 function Dashboard() {
-  const [badgeCount, setBadgeCount] = useState(0);
+  const [badges, setBadges] = useState<Badge[]>([]);
   const { isAuthenticated } = useAuth();
 
-  // 뱃지 수를 한 번만 가져와서 StatCards와 SidebarProfile에 전달 (중복 API 호출 방지)
+  // 뱃지를 한 번만 가져와서 StatCards와 SidebarProfile에 전달 (중복 API 호출 방지)
   useEffect(() => {
     if (isAuthenticated) {
       usersApi.getBadges()
-        .then(badges => setBadgeCount(badges.length))
-        .catch(() => setBadgeCount(0));
+        .then(setBadges)
+        .catch(() => setBadges([]));
     }
   }, [isAuthenticated]);
 
@@ -278,11 +279,11 @@ function Dashboard() {
       <TopNav />
       <div className="flex">
         <aside className="hidden w-72 shrink-0 border-r border-border lg:block">
-          <SidebarProfile badgeCount={badgeCount} />
+          <SidebarProfile badges={badges} />
         </aside>
         <main className="flex-1 p-6">
           <div className="mx-auto max-w-4xl space-y-6">
-            <StatCards badgeCount={badgeCount} />
+            <StatCards badgeCount={badges.length} />
 
             {/* CTA Section */}
             <motion.div
