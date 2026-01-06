@@ -19,6 +19,8 @@ from ..models.user import (
     MypageProfile,
     MypageStats,
     MypageBadge,
+    MypageAllResponse,
+    SolvedAcProfileSimple,
     ChangeNicknameRequest,
     ChangeNicknameResponse,
     DateActivityDetail,
@@ -582,6 +584,191 @@ async def get_mypage_badges(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get badges: {str(e)}"
+        )
+
+
+# =====================================================
+# Unified Mypage API - 통합 마이페이지 API
+# =====================================================
+
+@router.get("/me/mypage-all", response_model=MypageAllResponse)
+async def get_mypage_all(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    통합 마이페이지 API - 한 번의 호출로 모든 마이페이지 데이터 반환.
+
+    기존 5개 API 호출을 1개로 통합:
+    - /me/profile
+    - /me/mypage-stats
+    - /me/mypage-badges
+    - /me/recent
+    - /solved-ac/me
+    """
+    from datetime import datetime
+
+    try:
+        # ===== 1. Profile 데이터 (users + user_stats + subscriptions) =====
+        user_result = db.table("users").select(
+            "id, email, name, avatar_url, created_at"
+        ).eq("id", str(user_id)).single().execute()
+        user_data = user_result.data
+
+        stats_result = db.table("user_stats").select(
+            "level, total_xp, problems_solved, current_streak, longest_streak, "
+            "blank_solved, bug_solved, output_solved"
+        ).eq("user_id", str(user_id)).single().execute()
+        stats_data = stats_result.data or {}
+
+        sub_result = db.table("subscriptions")\
+            .select("status, plans(code)")\
+            .eq("user_id", str(user_id))\
+            .eq("status", "active")\
+            .limit(1)\
+            .execute()
+
+        subscription = "free"
+        if sub_result.data and len(sub_result.data) > 0:
+            sub_data = sub_result.data[0]
+            if sub_data.get("plans"):
+                subscription = sub_data["plans"].get("code", "free")
+
+        level = stats_data.get("level", 1)
+        total_xp = stats_data.get("total_xp", 0)
+
+        profile = MypageProfile(
+            id=str(user_data["id"]),
+            email=user_data.get("email", ""),
+            username=user_data.get("name", "User"),
+            avatarShape="hexagon",
+            avatarColor=user_data.get("avatar_url") or "hsl(142, 71%, 45%)",
+            level=level,
+            currentXP=calculate_current_xp(total_xp, level),
+            requiredXP=calculate_required_xp(level),
+            totalXP=total_xp,
+            solvedCount=stats_data.get("problems_solved", 0),
+            streak=stats_data.get("current_streak", 0),
+            maxStreak=stats_data.get("longest_streak", 0),
+            joinedAt=user_data.get("created_at", ""),
+            subscription=subscription,
+        )
+
+        # ===== 2. Stats 데이터 (user_stats에서 이미 가져옴, 재사용) =====
+        total_solved = stats_data.get("problems_solved", 0)
+        solved_by_difficulty = {
+            "easy": total_solved // 3,
+            "medium": total_solved // 3,
+            "hard": total_solved - (total_solved // 3) * 2,
+        }
+
+        stats = MypageStats(
+            totalSolved=total_solved,
+            solvedByDifficulty=solved_by_difficulty,
+            solvedByType={
+                "blank": stats_data.get("blank_solved", 0),
+                "puzzle": stats_data.get("bug_solved", 0) + stats_data.get("output_solved", 0),
+            },
+            currentStreak=stats_data.get("current_streak", 0),
+            maxStreak=stats_data.get("longest_streak", 0),
+            totalXP=total_xp,
+            level=level,
+        )
+
+        # ===== 3. Badges 데이터 =====
+        badges_result = db.table("user_badges")\
+            .select("earned_at, badges(id, code, name, description, icon_url, rarity)")\
+            .eq("user_id", str(user_id))\
+            .execute()
+
+        icon_map = {
+            "first_problem": "🎯", "streak_7": "🔥", "streak_30": "🏆",
+            "streak_100": "👑", "problems_50": "💪", "problems_100": "🎖️",
+            "level_10": "⭐", "level_50": "🌟",
+        }
+
+        badges = []
+        for badge_entry in (badges_result.data or []):
+            badge_data = badge_entry.get("badges", {})
+            code = badge_data.get("code", "")
+            badges.append(MypageBadge(
+                id=str(badge_data.get("id", "")),
+                name=badge_data.get("name", ""),
+                icon=icon_map.get(code, "🏅"),
+                icon_url=badge_data.get("icon_url"),
+                description=badge_data.get("description", ""),
+                earnedAt=badge_entry.get("earned_at", ""),
+                rarity=badge_data.get("rarity", "common"),
+            ))
+
+        # ===== 4. Recent Activity 데이터 =====
+        activities = []
+
+        # Recent solved problems
+        attempts_result = db.table("attempts")\
+            .select("id, problem_type, xp_earned, submitted_at")\
+            .eq("user_id", str(user_id))\
+            .eq("is_correct", True)\
+            .order("submitted_at", desc=True)\
+            .limit(10)\
+            .execute()
+
+        for attempt in (attempts_result.data or []):
+            problem_type = attempt.get("problem_type", "blank") or "blank"
+            activities.append(RecentActivity(
+                id=attempt["id"],
+                type="solved",
+                title=f"Solved: {problem_type.capitalize()} Problem",
+                description=f"{problem_type.capitalize()} problem completed",
+                timestamp=attempt["submitted_at"],
+                xp_gained=attempt.get("xp_earned", 0),
+            ))
+
+        # Recent badges (별도 조회 대신 위에서 가져온 badges 활용)
+        for badge in badges[:3]:  # 최근 3개만
+            activities.append(RecentActivity(
+                id=badge.id,
+                type="badge",
+                title=f"Badge: {badge.name}",
+                description=badge.description,
+                timestamp=badge.earnedAt,
+                xp_gained=None,
+            ))
+
+        # Sort by timestamp
+        activities.sort(key=lambda x: x.timestamp if x.timestamp else "", reverse=True)
+        activities = activities[:10]  # 최대 10개
+
+        # ===== 5. Solved.ac 프로필 =====
+        solvedac_result = db.table("solved_ac_profiles")\
+            .select("handle, tier, rating, solved_count, last_synced_at")\
+            .eq("user_id", str(user_id))\
+            .limit(1)\
+            .execute()
+
+        solved_ac = None
+        if solvedac_result.data and len(solvedac_result.data) > 0:
+            sa_data = solvedac_result.data[0]
+            solved_ac = SolvedAcProfileSimple(
+                handle=sa_data["handle"],
+                tier=sa_data.get("tier", 0),
+                rating=sa_data.get("rating", 0),
+                solved_count=sa_data.get("solved_count", 0),
+                last_synced_at=sa_data.get("last_synced_at", ""),
+            )
+
+        return MypageAllResponse(
+            profile=profile,
+            stats=stats,
+            badges=badges,
+            recentActivity=activities,
+            solvedAc=solved_ac,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get mypage data: {str(e)}"
         )
 
 

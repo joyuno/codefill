@@ -175,9 +175,28 @@ class MypageBadge(BaseModel):
     id: str
     name: str
     icon: str
+    icon_url: Optional[str] = None
     description: str
     earnedAt: str
     rarity: str = "common"
+
+
+class SolvedAcProfileSimple(BaseModel):
+    """Simplified solved.ac profile for mypage."""
+    handle: str
+    tier: int = 0
+    rating: int = 0
+    solved_count: int = 0
+    last_synced_at: str
+
+
+class MypageAllResponse(BaseModel):
+    """통합 마이페이지 응답 - 한 번의 API 호출로 모든 데이터 반환."""
+    profile: MypageProfile
+    stats: MypageStats
+    badges: List[MypageBadge]
+    recentActivity: List[RecentActivity]
+    solvedAc: Optional[SolvedAcProfileSimple] = None
 
 
 # =====================================================

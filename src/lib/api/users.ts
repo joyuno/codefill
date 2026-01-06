@@ -94,9 +94,72 @@ export interface ChangeNicknameResponse {
   next_change_available_at?: string;
 }
 
+// solved.ac 프로필 (간소화)
+export interface SolvedAcProfileSimple {
+  handle: string;
+  tier: number;
+  rating: number;
+  solved_count: number;
+  last_synced_at: string;
+}
+
+// 통합 마이페이지 응답
+export interface MypageAllResponse {
+  profile: UserProfile;
+  stats: UserStats;
+  badges: Badge[];
+  recentActivity: RecentActivity[];
+  solvedAc: SolvedAcProfileSimple | null;
+}
+
+// 백엔드 응답 타입 (변환용)
+interface BackendMypageAllResponse {
+  profile: UserProfile;
+  stats: UserStats;
+  badges: BackendBadge[];
+  recentActivity: BackendRecentActivity[];
+  solvedAc: SolvedAcProfileSimple | null;
+}
+
 export const usersApi = {
   /**
+   * Get all mypage data in a single API call (recommended)
+   * Replaces: getProfile + getStats + getBadges + getRecentActivity + solvedAc
+   */
+  async getMypageAll(): Promise<MypageAllResponse> {
+    const response = await api.get<BackendMypageAllResponse>('/users/me/mypage-all');
+    if (response.error) throw new Error(response.error.message);
+
+    const data = response.data!;
+
+    // Transform backend response to frontend types
+    return {
+      profile: data.profile,
+      stats: data.stats,
+      badges: (data.badges || []).map((badge) => ({
+        id: badge.id,
+        name: badge.name,
+        icon: badge.icon,
+        iconUrl: badge.icon_url,
+        description: badge.description,
+        earnedAt: badge.earnedAt,
+        rarity: badge.rarity,
+      })),
+      recentActivity: (data.recentActivity || []).map((activity) => ({
+        id: activity.id,
+        type: activity.type,
+        title: activity.title,
+        description: activity.description,
+        timestamp: activity.timestamp,
+        xpGained: activity.xp_gained,
+      })),
+      solvedAc: data.solvedAc,
+    };
+  },
+
+  /**
    * Get current user profile (mypage optimized)
+   * @deprecated Use getMypageAll() instead for better performance
    */
   async getProfile(): Promise<UserProfile> {
     const response = await api.get<UserProfile>('/users/me/profile');

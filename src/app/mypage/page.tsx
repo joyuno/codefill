@@ -9,7 +9,7 @@ import { Trophy, Award, Flame, Zap, Target, TrendingUp, Loader2, Settings, User,
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { BadgeIcon } from '@/components/ui/badge-icon';
 import { AvatarEditModal } from '@/components/mypage/AvatarEditModal';
-import { usersApi, authApi, solvedacApi, tierToName, getTierColor, type UserProfile, type UserStats, type SolvedAcProfileDB } from '@/lib/api';
+import { usersApi, authApi, solvedacApi, tierToName, getTierColor, type UserProfile, type UserStats, type SolvedAcProfileDB, type SolvedAcProfileSimple } from '@/lib/api';
 import type { Badge as BadgeType, RecentActivity } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
@@ -50,30 +50,28 @@ export default function MyPagePage() {
   // Avatar modal state
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
 
-  // solved.ac states
+  // solved.ac states (full profile for link/sync operations)
   const [solvedAcProfile, setSolvedAcProfile] = useState<SolvedAcProfileDB | null>(null);
+  // Simple profile from unified API (for display)
+  const [solvedAcSimple, setSolvedAcSimple] = useState<SolvedAcProfileSimple | null>(null);
   const [solvedAcLoading, setSolvedAcLoading] = useState(false);
   const [solvedAcSyncing, setSolvedAcSyncing] = useState(false);
   const [solvedAcHandle, setSolvedAcHandle] = useState('');
   const [solvedAcError, setSolvedAcError] = useState('');
   const [solvedAcLinking, setSolvedAcLinking] = useState(false);
 
+  // 통합 API로 모든 데이터 한 번에 가져오기 (5 API → 1 API)
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       setError(null);
       try {
-        // Fetch from API (uses mypage-optimized endpoints)
-        const [profileData, statsData, badgesData, activityData] = await Promise.all([
-          usersApi.getProfile(),
-          usersApi.getStats(),
-          usersApi.getBadges(),
-          usersApi.getRecentActivity(),
-        ]);
-        setProfile(profileData);
-        setStats(statsData);
-        setBadges(badgesData);
-        setRecentActivity(activityData);
+        const data = await usersApi.getMypageAll();
+        setProfile(data.profile);
+        setStats(data.stats);
+        setBadges(data.badges);
+        setRecentActivity(data.recentActivity);
+        setSolvedAcSimple(data.solvedAc);
       } catch (err) {
         console.error('Failed to fetch user data:', err);
         setError('사용자 정보를 불러오는데 실패했습니다. 다시 시도해주세요.');
@@ -82,24 +80,6 @@ export default function MyPagePage() {
       }
     }
     fetchData();
-  }, []);
-
-  // Fetch solved.ac profile
-  useEffect(() => {
-    async function fetchSolvedAc() {
-      setSolvedAcLoading(true);
-      try {
-        const result = await solvedacApi.getMyProfile();
-        if (result.data) {
-          setSolvedAcProfile(result.data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch solved.ac profile:', err);
-      } finally {
-        setSolvedAcLoading(false);
-      }
-    }
-    fetchSolvedAc();
   }, []);
 
   // solved.ac 연동
@@ -151,6 +131,7 @@ export default function MyPagePage() {
     try {
       await solvedacApi.unlink();
       setSolvedAcProfile(null);
+      setSolvedAcSimple(null);
     } catch (err) {
       setSolvedAcError('연동 해제 중 오류가 발생했습니다');
     }
@@ -642,53 +623,61 @@ export default function MyPagePage() {
                 <div className="flex items-center justify-center py-4">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : solvedAcProfile ? (
+              ) : (solvedAcProfile || solvedAcSimple) ? (
                 <div className="space-y-4">
-                  {/* 연동된 프로필 */}
-                  <div className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="flex h-12 w-12 items-center justify-center rounded-full text-white font-bold"
-                        style={{ backgroundColor: getTierColor(solvedAcProfile.tier) }}
-                      >
-                        {tierToName(solvedAcProfile.tier).split(' ')[0][0]}
-                      </div>
-                      <div>
-                        <p className="font-medium">{solvedAcProfile.handle}</p>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <span style={{ color: getTierColor(solvedAcProfile.tier) }}>
-                            {tierToName(solvedAcProfile.tier)}
-                          </span>
-                          <span>|</span>
-                          <span>{solvedAcProfile.solved_count}문제</span>
-                          <span>|</span>
-                          <span>Rating {solvedAcProfile.rating}</span>
+                  {/* 연동된 프로필 - solvedAcProfile(full) 또는 solvedAcSimple(from unified API) 사용 */}
+                  {(() => {
+                    const profile = solvedAcProfile || solvedAcSimple;
+                    if (!profile) return null;
+                    return (
+                      <>
+                        <div className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
+                          <div className="flex items-center gap-4">
+                            <div
+                              className="flex h-12 w-12 items-center justify-center rounded-full text-white font-bold"
+                              style={{ backgroundColor: getTierColor(profile.tier) }}
+                            >
+                              {tierToName(profile.tier).split(' ')[0][0]}
+                            </div>
+                            <div>
+                              <p className="font-medium">{profile.handle}</p>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <span style={{ color: getTierColor(profile.tier) }}>
+                                  {tierToName(profile.tier)}
+                                </span>
+                                <span>|</span>
+                                <span>{profile.solved_count}문제</span>
+                                <span>|</span>
+                                <span>Rating {profile.rating}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleSolvedAcSync}
+                              disabled={solvedAcSyncing}
+                              className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                              title="갱신"
+                            >
+                              <RefreshCw className={`h-4 w-4 ${solvedAcSyncing ? 'animate-spin' : ''}`} />
+                              갱신
+                            </button>
+                            <button
+                              onClick={handleSolvedAcUnlink}
+                              className="flex items-center gap-2 rounded-lg border border-destructive/50 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
+                              title="연동 해제"
+                            >
+                              <Unlink className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSolvedAcSync}
-                        disabled={solvedAcSyncing}
-                        className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
-                        title="갱신"
-                      >
-                        <RefreshCw className={`h-4 w-4 ${solvedAcSyncing ? 'animate-spin' : ''}`} />
-                        갱신
-                      </button>
-                      <button
-                        onClick={handleSolvedAcUnlink}
-                        className="flex items-center gap-2 rounded-lg border border-destructive/50 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
-                        title="연동 해제"
-                      >
-                        <Unlink className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                  {/* 마지막 동기화 시간 */}
-                  <p className="text-xs text-muted-foreground">
-                    마지막 동기화: {new Date(solvedAcProfile.last_synced_at).toLocaleString('ko-KR')}
-                  </p>
+                        {/* 마지막 동기화 시간 */}
+                        <p className="text-xs text-muted-foreground">
+                          마지막 동기화: {new Date(profile.last_synced_at).toLocaleString('ko-KR')}
+                        </p>
+                      </>
+                    );
+                  })()}
                   {solvedAcError && <p className="text-sm text-destructive">{solvedAcError}</p>}
                 </div>
               ) : (
