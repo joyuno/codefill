@@ -26,65 +26,14 @@ from ..models.placement import (
     MAP_WIDTH_TILES,
     MAP_HEIGHT_TILES,
 )
+from ..services.farm_service import FarmService
 
 router = APIRouter()
 
 
 # =====================================================
-# Helper Functions
+# Helper Functions (로컬 전용)
 # =====================================================
-
-def get_user_farm(db, user_id: UUID) -> dict:
-    """사용자 농장 조회"""
-    result = db.table("user_farm").select("*").eq("user_id", str(user_id)).execute()
-    if result.data and len(result.data) > 0:
-        return result.data[0]
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="농장을 찾을 수 없습니다. 캐릭터를 먼저 생성해주세요."
-    )
-
-
-def get_user_inventory(db, user_id: UUID) -> dict:
-    """사용자 인벤토리 조회 (딕셔너리 형태)"""
-    result = db.table("user_inventory").select("item_code, quantity").eq("user_id", str(user_id)).execute()
-    return {item["item_code"]: item["quantity"] for item in (result.data or [])}
-
-
-def update_inventory(db, user_id: UUID, item_code: str, quantity_change: int):
-    """인벤토리 수량 업데이트"""
-    existing = db.table("user_inventory").select("*").eq("user_id", str(user_id)).eq("item_code", item_code).execute()
-
-    if existing.data and len(existing.data) > 0:
-        new_quantity = existing.data[0]["quantity"] + quantity_change
-        if new_quantity <= 0:
-            db.table("user_inventory").delete().eq("user_id", str(user_id)).eq("item_code", item_code).execute()
-        else:
-            db.table("user_inventory").update({"quantity": new_quantity}).eq("user_id", str(user_id)).eq("item_code", item_code).execute()
-    elif quantity_change > 0:
-        db.table("user_inventory").insert({
-            "user_id": str(user_id),
-            "item_code": item_code,
-            "quantity": quantity_change,
-        }).execute()
-
-
-def parse_metadata(metadata_json) -> ItemMetadata:
-    """메타데이터 JSON을 ItemMetadata로 변환"""
-    if isinstance(metadata_json, str):
-        metadata_json = json.loads(metadata_json) if metadata_json else {}
-
-    return ItemMetadata(
-        sprite=metadata_json.get("sprite", "default"),
-        width=metadata_json.get("width", 1),
-        height=metadata_json.get("height", 1),
-        depth=metadata_json.get("depth", 50),
-        canMove=metadata_json.get("canMove", True),
-        canDelete=metadata_json.get("canDelete", True),
-        anchor=metadata_json.get("anchor"),
-        collision=metadata_json.get("collision"),
-    )
-
 
 def parse_placed_item(item_data: dict, metadata: ItemMetadata) -> PlacedItemResponse:
     """DB 데이터를 PlacedItemResponse로 변환"""
@@ -102,17 +51,6 @@ def parse_placed_item(item_data: dict, metadata: ItemMetadata) -> PlacedItemResp
         metadata=metadata,
         placedAt=item_data.get("placed_at"),
     )
-
-
-def get_shop_item(db, item_code: str) -> dict:
-    """상점 아이템 정보 조회"""
-    result = db.table("shop_items").select("*").eq("code", item_code).execute()
-    if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="존재하지 않는 아이템입니다"
-        )
-    return result.data[0]
 
 
 def get_placed_item(db, item_id: str, user_id: UUID) -> dict:
@@ -137,7 +75,7 @@ def get_placed_item(db, item_id: str, user_id: UUID) -> dict:
 
 def check_placement_valid(db, user_id: UUID, tile_x: int, tile_y: int, width: int, height: int, exclude_id: Optional[str] = None) -> bool:
     """
-    배치 위치가 유효한지 확인 (AABB 충돌 감지)
+    배치 위치가 유효한지 확인 (AABB 충돌 감지) - 최적화됨
 
     Args:
         db: 데이터베이스 연결
@@ -154,10 +92,17 @@ def check_placement_valid(db, user_id: UUID, tile_x: int, tile_y: int, width: in
         return False
 
     # 기존 배치된 아이템 조회
-    placed_result = db.table("user_placed_items").select("id, item_code, tile_x, tile_y").eq("user_id", str(user_id)).execute()
+    placed_result = db.table("user_placed_items")\
+        .select("id, item_code, tile_x, tile_y")\
+        .eq("user_id", str(user_id))\
+        .execute()
 
     if not placed_result.data:
         return True
+
+    # 배치 쿼리로 모든 메타데이터 한 번에 조회 (N+1 방지)
+    item_codes = list(set(p["item_code"] for p in placed_result.data))
+    metadata_map = FarmService.get_shop_items_metadata(db, item_codes)
 
     # 배치할 아이템의 충돌 영역
     new_left = tile_x
@@ -171,19 +116,11 @@ def check_placement_valid(db, user_id: UUID, tile_x: int, tile_y: int, width: in
         if exclude_id and str(placed["id"]) == exclude_id:
             continue
 
-        # 기존 아이템의 메타데이터 조회
+        # 캐시된 메타데이터에서 크기 가져오기
         item_code = placed["item_code"]
-        shop_result = db.table("shop_items").select("metadata").eq("code", item_code).execute()
-
-        if shop_result.data:
-            other_metadata = shop_result.data[0].get("metadata", {})
-            if isinstance(other_metadata, str):
-                other_metadata = json.loads(other_metadata) if other_metadata else {}
-            other_width = other_metadata.get("width", 1)
-            other_height = other_metadata.get("height", 1)
-        else:
-            other_width = 1
-            other_height = 1
+        meta = metadata_map.get(item_code)
+        other_width = meta.width if meta else 1
+        other_height = meta.height if meta else 1
 
         # 기존 아이템의 충돌 영역
         other_left = placed["tile_x"]
@@ -251,7 +188,7 @@ async def get_placed_items(
 
     # 상점 아이템 메타데이터 조회
     shop_result = db.table("shop_items").select("code, metadata").in_("code", item_codes).execute()
-    metadata_map = {item["code"]: parse_metadata(item.get("metadata", {})) for item in (shop_result.data or [])}
+    metadata_map = {item["code"]: FarmService.parse_metadata(item.get("metadata", {})) for item in (shop_result.data or [])}
 
     # 작물 성장 정보 조회 (밭에 심은 작물용)
     crop_result = db.table("farm_items").select("code, grow_time_seconds").eq("type", "crop").execute()
@@ -302,7 +239,7 @@ async def place_item(
     - 인벤토리에서 차감
     - user_placed_items에 추가
     """
-    inventory = get_user_inventory(db, user_id)
+    inventory = FarmService.get_user_inventory(db, user_id)
 
     # 인벤토리 확인
     if inventory.get(request.item_code, 0) < 1:
@@ -312,8 +249,8 @@ async def place_item(
         )
 
     # 상점 아이템 정보 조회
-    shop_item = get_shop_item(db, request.item_code)
-    metadata = parse_metadata(shop_item.get("metadata", {}))
+    shop_item = FarmService.get_shop_item(db, request.item_code)
+    metadata = FarmService.parse_metadata(shop_item.get("metadata", {}))
 
     # 배치 위치 유효성 확인
     if not check_placement_valid(db, user_id, request.tile_x, request.tile_y, metadata.width, metadata.height):
@@ -323,7 +260,7 @@ async def place_item(
         )
 
     # 인벤토리 차감
-    update_inventory(db, user_id, request.item_code, -1)
+    FarmService.update_inventory(db, user_id, request.item_code, -1)
 
     # 배치
     insert_result = db.table("user_placed_items").insert({
@@ -341,7 +278,7 @@ async def place_item(
         success=True,
         message=f"{shop_item['name_ko']}을(를) 배치했습니다",
         item=parse_placed_item(placed_item, metadata),
-        inventory=get_user_inventory(db, user_id),
+        inventory=FarmService.get_user_inventory(db, user_id),
     )
 
 
@@ -358,8 +295,8 @@ async def move_item(
     - canMove가 true인 아이템만 이동 가능
     """
     placed_item = get_placed_item(db, item_id, user_id)
-    shop_item = get_shop_item(db, placed_item["item_code"])
-    metadata = parse_metadata(shop_item.get("metadata", {}))
+    shop_item = FarmService.get_shop_item(db, placed_item["item_code"])
+    metadata = FarmService.parse_metadata(shop_item.get("metadata", {}))
 
     # 이동 가능 확인
     if not metadata.canMove:
@@ -405,8 +342,8 @@ async def remove_item(
     - 인벤토리로 반환
     """
     placed_item = get_placed_item(db, item_id, user_id)
-    shop_item = get_shop_item(db, placed_item["item_code"])
-    metadata = parse_metadata(shop_item.get("metadata", {}))
+    shop_item = FarmService.get_shop_item(db, placed_item["item_code"])
+    metadata = FarmService.parse_metadata(shop_item.get("metadata", {}))
 
     # 삭제 가능 확인
     if not metadata.canDelete:
@@ -429,12 +366,12 @@ async def remove_item(
     db.table("user_placed_items").delete().eq("id", item_id).execute()
 
     # 인벤토리에 반환
-    update_inventory(db, user_id, placed_item["item_code"], 1)
+    FarmService.update_inventory(db, user_id, placed_item["item_code"], 1)
 
     return RemoveItemResponse(
         success=True,
         message=f"{shop_item['name_ko']}을(를) 인벤토리로 반환했습니다",
-        inventory=get_user_inventory(db, user_id),
+        inventory=FarmService.get_user_inventory(db, user_id),
     )
 
 
@@ -485,7 +422,7 @@ async def plant_crop(
 
     # 씨앗 확인
     seed_code = f"seed_{request.crop_code}"
-    inventory = get_user_inventory(db, user_id)
+    inventory = FarmService.get_user_inventory(db, user_id)
     if inventory.get(seed_code, 0) < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -493,7 +430,7 @@ async def plant_crop(
         )
 
     # 씨앗 차감
-    update_inventory(db, user_id, seed_code, -1)
+    FarmService.update_inventory(db, user_id, seed_code, -1)
 
     # 작물 심기
     now = datetime.now(timezone.utc)
@@ -508,8 +445,8 @@ async def plant_crop(
     }).eq("id", item_id).execute()
 
     # 메타데이터 조회
-    shop_item = get_shop_item(db, "farm_plot")
-    metadata = parse_metadata(shop_item.get("metadata", {}))
+    shop_item = FarmService.get_shop_item(db, "farm_plot")
+    metadata = FarmService.parse_metadata(shop_item.get("metadata", {}))
 
     # 업데이트된 아이템 조회
     updated = db.table("user_placed_items").select("*").eq("id", item_id).execute()
@@ -519,7 +456,7 @@ async def plant_crop(
         success=True,
         message=f"{crop_info['name_ko']} 씨앗을 심었습니다",
         item=parse_placed_item(updated_item, metadata),
-        inventory=get_user_inventory(db, user_id),
+        inventory=FarmService.get_user_inventory(db, user_id),
     )
 
 
@@ -535,7 +472,7 @@ async def harvest_crop(
     - 성장 완료된 작물만 수확 가능
     - 골드/XP 보상
     """
-    farm = get_user_farm(db, user_id)
+    farm = FarmService.get_user_farm(db, user_id)
     placed_item = get_placed_item(db, item_id, user_id)
 
     # farm_plot 확인
@@ -591,8 +528,8 @@ async def harvest_crop(
     }).eq("id", item_id).execute()
 
     # 메타데이터 조회
-    shop_item = get_shop_item(db, "farm_plot")
-    metadata = parse_metadata(shop_item.get("metadata", {}))
+    shop_item = FarmService.get_shop_item(db, "farm_plot")
+    metadata = FarmService.parse_metadata(shop_item.get("metadata", {}))
 
     # 업데이트된 아이템 조회
     updated = db.table("user_placed_items").select("*").eq("id", item_id).execute()
