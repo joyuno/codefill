@@ -25,28 +25,57 @@ import {
 } from '../config/cropConfig';
 import type { PlacedItem, ItemMetadata, FarmPlotData } from '@/lib/api/farm';
 
-// 건물 에셋 경로
-const BUILDING_PATH = '/farm/houses/';
-const DECORATION_PATH = '/farm/decorations/';
+// 에셋 경로 (기본 경로)
+const FARM_BASE_PATH = '/farm/';
 
 // 스프라이트별 파일 매핑 (metadata.sprite → 실제 파일)
-const SPRITE_FILES: Record<string, { file: string; frameWidth?: number; frameHeight?: number }> = {
-  'buildings/house': { file: 'Farmer_House_1_32x32.png' },
-  'buildings/well': { file: 'Well_Usable_Bucket_Full_32x32.png' },
-  'buildings/chickenCoop': { file: 'Chicken_Coop_32x32.png' },
-  'buildings/scarecrow': { file: 'Scarecrow_32x32.png' },
-  'buildings/barn': { file: 'Barn_Small_32x32.png' },
-  'trees/oak': { file: 'tree_oak.png' },
-  'trees/pine': { file: 'tree_pine.png' },
-  'trees/apple': { file: 'tree_apple.png' },
-  'decorations/flower_red': { file: 'flower_red.png' },
-  'decorations/flower_yellow': { file: 'flower_yellow.png' },
-  'decorations/flower_purple': { file: 'flower_purple.png' },
-  'decorations/grass': { file: 'grass.png' },
-  'decorations/hay': { file: 'hay.png' },
-  'decorations/rock': { file: 'rock.png' },
-  'fences/wood': { file: 'fence_wood.png' },
-  'fences/stone': { file: 'fence_stone.png' },
+// path: 하위 폴더, file: 파일명
+const SPRITE_FILES: Record<string, { path: string; file: string; frameWidth?: number; frameHeight?: number }> = {
+  // 건물 (houses/)
+  'buildings/house': { path: 'houses/', file: 'Farmer_House_1_32x32.png' },
+  'buildings/well': { path: 'houses/', file: 'Well_Usable_Bucket_Full_32x32.png' },
+  'buildings/chickenCoop': { path: 'houses/', file: 'Chicken_Coop_32x32.png' },
+  'buildings/scarecrow': { path: 'houses/', file: 'Scarecrow_32x32.png' },
+  'buildings/barn': { path: 'houses/', file: 'Barn_Small_32x32.png' },
+
+  // 나무 - 애니메이션 GIF (animated/)
+  'trees/oak': { path: 'animated/', file: 'Trees_Oak_Green_Big_Shake_32x32.gif' },
+  'trees/oak_small': { path: 'animated/', file: 'Trees_Oak_Green_Small_Shake_32x32.gif' },
+  'trees/oak_medium': { path: 'animated/', file: 'Trees_Oak_Green_Medium_Shake_32x32.gif' },
+  'trees/pine': { path: 'animated/', file: 'Trees_Pine_Green_Big_Shake_32x32.gif' },
+  'trees/pine_small': { path: 'animated/', file: 'Trees_Pine_Green_Small_Shake_32x32.gif' },
+  'trees/pine_medium': { path: 'animated/', file: 'Trees_Pine_Green_Medium_Shake_32x32.gif' },
+  'trees/apple': { path: 'animated/', file: 'Fruit_Tree_Apple_Ripe_Shake_32x32.gif' },
+  'trees/birch': { path: 'animated/', file: 'Trees_Birch_Green_Big_Shake_32x32.gif' },
+
+  // 꽃 (terrains/)
+  'decorations/flower_blue': { path: 'terrains/', file: 'Flower_Blue_32x32.png' },
+  'decorations/flower_pink': { path: 'terrains/', file: 'Flower_Pink_32x32.png' },
+  'decorations/flower_yellow': { path: 'terrains/', file: 'Flower_Yellow_32x32.png' },
+  'decorations/flower_green': { path: 'terrains/', file: 'Flower_Green_32x32.png' },
+
+  // 잔디 (terrains/)
+  'decorations/grass_1': { path: 'terrains/', file: 'Grass_Tufts_Flowers_32x32_1.png' },
+  'decorations/grass_2': { path: 'terrains/', file: 'Grass_Tufts_Flowers_32x32_2.png' },
+  'decorations/grass_3': { path: 'terrains/', file: 'Grass_Tufts_Flowers_32x32_3.png' },
+
+  // 건초 (terrains/)
+  'decorations/hay': { path: 'terrains/', file: 'Hay_Dry_Pile_32x32.png' },
+  'decorations/hay_pile': { path: 'terrains/', file: 'Hay_Fresh_Pile_32x32.png' },
+  'decorations/hay_small': { path: 'terrains/', file: 'Hay_Fresh_Pile_Small_32x32.png' },
+
+  // 울타리 - 개별 추출된 파일
+  'fences/wood': { path: 'terrains/', file: 'fence_wood_horizontal.png' },
+  'fences/wood_horizontal': { path: 'terrains/', file: 'fence_wood_horizontal.png' },
+  'fences/wood_vertical': { path: 'terrains/', file: 'fence_wood_vertical.png' },
+  'fences/wood_corner': { path: 'terrains/', file: 'fence_wood_corner_tl.png' },
+  'fences/post': { path: 'terrains/', file: 'fence_post_horizontal.png' },
+  'fences/post_horizontal': { path: 'terrains/', file: 'fence_post_horizontal.png' },
+  'fences/post_vertical': { path: 'terrains/', file: 'fence_post_vertical.png' },
+  'fences/post_corner': { path: 'terrains/', file: 'fence_post_corner.png' },
+  'fences/metal': { path: 'terrains/', file: 'fence_metal_horizontal.png' },
+  'fences/metal_horizontal': { path: 'terrains/', file: 'fence_metal_horizontal.png' },
+  'fences/metal_vertical': { path: 'terrains/', file: 'fence_metal_vertical.png' },
 };
 
 // 배치된 아이템 스프라이트 정보
@@ -106,6 +135,7 @@ export class UnifiedPlacementManager {
 
   // 타이머 업데이트
   private lastTimerUpdate: number = 0;
+  private activeFarmPlots: Set<string> = new Set();  // 성장 중인 밭 ID (타이머 최적화)
 
   // 배치 모드 스냅샷 및 변경 추적
   private placementSnapshot: Map<string, { tileX: number; tileY: number }> = new Map();
@@ -120,39 +150,44 @@ export class UnifiedPlacementManager {
 
   /**
    * 에셋 프리로드 (기본 에셋)
+   * 씬 재시작 시 중복 로드 방지
    */
   preload(): void {
-    // 밭 타일 스프라이트시트 로드
-    this.scene.load.spritesheet(
-      FARM_TILESET.key,
-      FARM_TILESET.path,
-      {
-        frameWidth: FARM_TILESET.frameWidth,
-        frameHeight: FARM_TILESET.frameHeight,
-      }
-    );
+    // 밭 타일 스프라이트시트 로드 (중복 체크)
+    if (!this.scene.textures.exists(FARM_TILESET.key)) {
+      this.scene.load.spritesheet(
+        FARM_TILESET.key,
+        FARM_TILESET.path,
+        {
+          frameWidth: FARM_TILESET.frameWidth,
+          frameHeight: FARM_TILESET.frameHeight,
+        }
+      );
+    }
 
-    // 건물 에셋 로드
+    // 모든 에셋 로드 (SPRITE_FILES 기반, 중복 체크)
     Object.entries(SPRITE_FILES).forEach(([key, info]) => {
       const assetKey = this.getAssetKey(key);
-      if (key.startsWith('buildings/')) {
-        this.scene.load.image(assetKey, BUILDING_PATH + info.file);
-      } else {
-        this.scene.load.image(assetKey, DECORATION_PATH + info.file);
+      if (!this.scene.textures.exists(assetKey)) {
+        const fullPath = FARM_BASE_PATH + info.path + info.file;
+        this.scene.load.image(assetKey, fullPath);
       }
       this.loadedAssets.add(assetKey);
     });
 
-    // 작물 스프라이트시트 로드
+    // 작물 스프라이트시트 로드 (중복 체크)
     Object.values(CROPS).forEach(crop => {
-      this.scene.load.spritesheet(
-        getCropSpriteKey(crop.code),
-        CROP_ASSET_PATH + crop.spritesheet,
-        {
-          frameWidth: crop.frameWidth,
-          frameHeight: crop.frameHeight,
-        }
-      );
+      const cropKey = getCropSpriteKey(crop.code);
+      if (!this.scene.textures.exists(cropKey)) {
+        this.scene.load.spritesheet(
+          cropKey,
+          CROP_ASSET_PATH + crop.spritesheet,
+          {
+            frameWidth: crop.frameWidth,
+            frameHeight: crop.frameHeight,
+          }
+        );
+      }
     });
   }
 
@@ -339,6 +374,7 @@ export class UnifiedPlacementManager {
     // 밭인 경우 타일 스프라이트 사용
     if (item.itemCode === 'farm_plot') {
       sprite = this.renderFarmPlot(item);
+      // 밭은 SOIL_TILES depth 유지 (건물 depth 적용 안함)
     } else {
       // 일반 아이템
       sprite = this.scene.add.sprite(
@@ -347,11 +383,11 @@ export class UnifiedPlacementManager {
         assetKey
       );
       sprite.setOrigin(0.5, 0.9);
-    }
 
-    // 깊이 설정 (Y 좌표 기반)
-    const calculatedDepth = getBuildingDepth(worldY, MAP_HEIGHT);
-    sprite.setDepth(calculatedDepth);
+      // 깊이 설정 (Y 좌표 기반) - 건물/장식만 해당
+      const calculatedDepth = getBuildingDepth(worldY, MAP_HEIGHT);
+      sprite.setDepth(calculatedDepth);
+    }
 
     // 데이터 저장
     sprite.setData('itemId', item.id);
@@ -398,12 +434,33 @@ export class UnifiedPlacementManager {
     const cropConfig = getCropConfig(data.cropCode);
     if (!cropConfig) return;
 
-    const { item, sprite } = placedSprite;
+    const { item } = placedSprite;
     const worldX = item.tileX * TILE_SIZE + TILE_SIZE / 2;
     const worldY = item.tileY * TILE_SIZE + TILE_SIZE / 2;
 
-    // 성장 단계 계산
-    const stage = data.stage || 0;
+    // 성장 단계 계산 (plantedAt 기반으로 실시간 계산)
+    let stage = data.stage || 1;
+    if (data.plantedAt) {
+      const plantedAt = new Date(data.plantedAt).getTime();
+      const growTimeSeconds = (data as FarmPlotData & { growTimeSeconds?: number }).growTimeSeconds || 120;
+      const growTimeMs = growTimeSeconds * 1000;
+      const elapsed = Date.now() - plantedAt;
+      const progress = Math.min(elapsed / growTimeMs, 1);
+
+      if (progress >= 1.0) {
+        stage = 4;
+      } else if (progress >= 0.75) {
+        stage = 3;
+      } else if (progress >= 0.5) {
+        stage = 2;
+      } else {
+        stage = 1;
+      }
+
+      // 데이터에도 반영
+      (placedSprite.item.data as FarmPlotData).stage = stage;
+    }
+
     const frame = getCropFrame(data.cropCode, stage);
 
     // 작물 스프라이트 생성
@@ -428,6 +485,9 @@ export class UnifiedPlacementManager {
       timerText.setOrigin(0.5, 1);
       timerText.setDepth(DEPTH.OVERLAY);
       placedSprite.timerText = timerText;
+
+      // 성장 중인 밭을 활성 목록에 추가 (타이머 최적화)
+      this.activeFarmPlots.add(item.id);
     }
   }
 
@@ -456,6 +516,17 @@ export class UnifiedPlacementManager {
         plantedAt: new Date().toISOString(),
       };
       this.renderCropOnPlot(placed, data);
+
+      // 성장 중인 작물 (stage < 4)이면 활성 목록에 추가
+      if (stage < 4) {
+        this.activeFarmPlots.add(plotId);
+      } else {
+        // 완성된 작물은 활성 목록에서 제거
+        this.activeFarmPlots.delete(plotId);
+      }
+    } else {
+      // 작물 제거 시 활성 목록에서 제거
+      this.activeFarmPlots.delete(plotId);
     }
 
     // item 데이터 업데이트
@@ -466,20 +537,32 @@ export class UnifiedPlacementManager {
 
   /**
    * 매 프레임 업데이트 (타이머 갱신)
+   * 최적화: 활성 밭(성장 중인 작물이 있는 밭)만 순회
    */
   update(): void {
     const now = Date.now();
     if (now - this.lastTimerUpdate < 1000) return;
     this.lastTimerUpdate = now;
 
-    this.placedItems.forEach(placed => {
-      if (placed.item.itemCode !== 'farm_plot') return;
+    // 활성 밭이 없으면 스킵
+    if (this.activeFarmPlots.size === 0) return;
+
+    // 완료된 밭 추적 (순회 중 제거 방지)
+    const completedPlots: string[] = [];
+
+    // 활성 밭만 순회 (최적화)
+    for (const plotId of Array.from(this.activeFarmPlots)) {
+      const placed = this.placedItems.get(plotId);
+      if (!placed) {
+        completedPlots.push(plotId);
+        continue;
+      }
 
       const data = placed.item.data as FarmPlotData;
-      if (!data.cropCode || !data.plantedAt) return;
-
-      const cropConfig = getCropConfig(data.cropCode);
-      if (!cropConfig) return;
+      if (!data.cropCode || !data.plantedAt) {
+        completedPlots.push(plotId);
+        continue;
+      }
 
       // 성장 시간 계산 (기본 120초)
       const plantedAt = new Date(data.plantedAt).getTime();
@@ -488,12 +571,39 @@ export class UnifiedPlacementManager {
       const elapsed = now - plantedAt;
       const remaining = Math.max(0, growTimeMs - elapsed);
 
-      // 완료됐으면 타이머 숨기기
+      // 성장 진행률에 따른 stage 계산 (0-100% → stage 1-4)
+      const progress = Math.min(elapsed / growTimeMs, 1);
+      let newStage: number;
+      if (progress >= 1.0) {
+        newStage = 4;
+      } else if (progress >= 0.75) {
+        newStage = 3;
+      } else if (progress >= 0.5) {
+        newStage = 2;
+      } else {
+        newStage = 1;
+      }
+
+      // stage가 변경되면 스프라이트 프레임 업데이트
+      const currentStage = data.stage || 1;
+      if (newStage !== currentStage) {
+        // 데이터 업데이트
+        (placed.item.data as FarmPlotData).stage = newStage;
+
+        // 작물 스프라이트 프레임 업데이트
+        if (placed.cropSprite && data.cropCode) {
+          const frame = getCropFrame(data.cropCode, newStage);
+          placed.cropSprite.setFrame(frame);
+        }
+      }
+
+      // 완료됐으면 타이머 숨기기 및 활성 목록에서 제거
       if (remaining <= 0) {
         if (placed.timerText) {
           placed.timerText.setVisible(false);
         }
-        return;
+        completedPlots.push(plotId);
+        continue;
       }
 
       // 타이머 텍스트 업데이트
@@ -504,7 +614,12 @@ export class UnifiedPlacementManager {
         placed.timerText.setText(`${min}:${sec.toString().padStart(2, '0')}`);
         placed.timerText.setVisible(true);
       }
-    });
+    }
+
+    // 완료된 밭 제거
+    for (const plotId of completedPlots) {
+      this.activeFarmPlots.delete(plotId);
+    }
   }
 
   /**
@@ -568,10 +683,7 @@ export class UnifiedPlacementManager {
         const finalWorldY = tileY * TILE_SIZE + height * TILE_SIZE;
         gameObject.setPosition(finalWorldX, finalWorldY);
 
-        const depth = getBuildingDepth(finalWorldY, MAP_HEIGHT);
-        gameObject.setDepth(depth);
-
-        // 밭이면 작물 스프라이트도 이동
+        // 밭이면 작물 스프라이트도 이동, 아니면 건물 depth 적용
         const placed = this.placedItems.get(this.draggedItem.item.id);
         if (placed && placed.item.itemCode === 'farm_plot') {
           const cropWorldX = tileX * TILE_SIZE + TILE_SIZE / 2;
@@ -582,6 +694,10 @@ export class UnifiedPlacementManager {
           if (placed.timerText) {
             placed.timerText.setPosition(cropWorldX, cropWorldY - 20);
           }
+        } else {
+          // 건물/장식은 Y좌표 기반 depth 적용
+          const depth = getBuildingDepth(finalWorldY, MAP_HEIGHT);
+          gameObject.setDepth(depth);
         }
 
         // 변경 추적 (API 호출하지 않음)
@@ -595,8 +711,11 @@ export class UnifiedPlacementManager {
         this.draggedItem.item.tileX = this.draggedItem.originalX;
         this.draggedItem.item.tileY = this.draggedItem.originalY;
 
-        const depth = getBuildingDepth(originalWorldY, MAP_HEIGHT);
-        gameObject.setDepth(depth);
+        // 밭이 아닌 경우에만 건물 depth 적용
+        if (this.draggedItem.item.itemCode !== 'farm_plot') {
+          const depth = getBuildingDepth(originalWorldY, MAP_HEIGHT);
+          gameObject.setDepth(depth);
+        }
       }
 
       gameObject.setAlpha(1);
@@ -1083,13 +1202,28 @@ export class UnifiedPlacementManager {
     placed.item.tileY = tileY;
 
     const { width, height } = placed.item.metadata;
-    const worldX = tileX * TILE_SIZE + (width * TILE_SIZE) / 2;
-    const worldY = tileY * TILE_SIZE + height * TILE_SIZE;
 
-    placed.sprite.setPosition(worldX, worldY);
+    if (placed.item.itemCode === 'farm_plot') {
+      // 밭은 중앙 정렬, SOIL_TILES depth 유지
+      const worldX = tileX * TILE_SIZE + TILE_SIZE / 2;
+      const worldY = tileY * TILE_SIZE + TILE_SIZE / 2;
+      placed.sprite.setPosition(worldX, worldY);
+      // 작물, 타이머도 이동
+      if (placed.cropSprite) {
+        placed.cropSprite.setPosition(worldX, worldY);
+      }
+      if (placed.timerText) {
+        placed.timerText.setPosition(worldX, worldY - 20);
+      }
+    } else {
+      // 일반 아이템은 건물 depth
+      const worldX = tileX * TILE_SIZE + (width * TILE_SIZE) / 2;
+      const worldY = tileY * TILE_SIZE + height * TILE_SIZE;
+      placed.sprite.setPosition(worldX, worldY);
 
-    const depth = getBuildingDepth(worldY, MAP_HEIGHT);
-    placed.sprite.setDepth(depth);
+      const depth = getBuildingDepth(worldY, MAP_HEIGHT);
+      placed.sprite.setDepth(depth);
+    }
   }
 
   /**
@@ -1189,6 +1323,9 @@ export class UnifiedPlacementManager {
     this.farmBorderTiles.forEach(tile => tile.destroy());
     this.farmBorderTiles = [];
     this.farmPlotPositions.clear();
+
+    // 활성 밭 목록 초기화
+    this.activeFarmPlots.clear();
   }
 
   /**

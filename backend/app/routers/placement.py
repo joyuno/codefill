@@ -136,13 +136,67 @@ def get_placed_item(db, item_id: str, user_id: UUID) -> dict:
 
 
 def check_placement_valid(db, user_id: UUID, tile_x: int, tile_y: int, width: int, height: int, exclude_id: Optional[str] = None) -> bool:
-    """배치 위치가 유효한지 확인"""
+    """
+    배치 위치가 유효한지 확인 (AABB 충돌 감지)
+
+    Args:
+        db: 데이터베이스 연결
+        user_id: 사용자 ID
+        tile_x, tile_y: 배치 시작 좌표 (좌상단)
+        width, height: 아이템 크기 (타일 단위)
+        exclude_id: 충돌 검사에서 제외할 아이템 ID (이동 시 사용)
+
+    Returns:
+        bool: 배치 가능 여부
+    """
     # 맵 범위 체크
     if tile_x < 0 or tile_y < 0 or tile_x + width > MAP_WIDTH_TILES or tile_y + height > MAP_HEIGHT_TILES:
         return False
 
-    # TODO: 충돌 체크 (다른 아이템과 겹치는지)
-    # 현재는 단순화를 위해 같은 위치에 같은 아이템만 체크
+    # 기존 배치된 아이템 조회
+    placed_result = db.table("user_placed_items").select("id, item_code, tile_x, tile_y").eq("user_id", str(user_id)).execute()
+
+    if not placed_result.data:
+        return True
+
+    # 배치할 아이템의 충돌 영역
+    new_left = tile_x
+    new_right = tile_x + width
+    new_top = tile_y
+    new_bottom = tile_y + height
+
+    # 각 기존 아이템과 AABB 충돌 검사
+    for placed in placed_result.data:
+        # 자기 자신은 제외 (이동 시)
+        if exclude_id and str(placed["id"]) == exclude_id:
+            continue
+
+        # 기존 아이템의 메타데이터 조회
+        item_code = placed["item_code"]
+        shop_result = db.table("shop_items").select("metadata").eq("code", item_code).execute()
+
+        if shop_result.data:
+            other_metadata = shop_result.data[0].get("metadata", {})
+            if isinstance(other_metadata, str):
+                other_metadata = json.loads(other_metadata) if other_metadata else {}
+            other_width = other_metadata.get("width", 1)
+            other_height = other_metadata.get("height", 1)
+        else:
+            other_width = 1
+            other_height = 1
+
+        # 기존 아이템의 충돌 영역
+        other_left = placed["tile_x"]
+        other_right = placed["tile_x"] + other_width
+        other_top = placed["tile_y"]
+        other_bottom = placed["tile_y"] + other_height
+
+        # AABB 충돌 검사
+        if (new_left < other_right and
+            new_right > other_left and
+            new_top < other_bottom and
+            new_bottom > other_top):
+            return False  # 충돌 발생
 
     return True
 

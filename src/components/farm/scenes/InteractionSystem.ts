@@ -28,7 +28,6 @@ export class InteractionSystem {
 
   constructor(
     scene: Phaser.Scene,
-    _cropManager: unknown, // 레거시 파라미터 (null)
     playerController: PlayerController
   ) {
     this.scene = scene;
