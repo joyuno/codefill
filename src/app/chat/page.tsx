@@ -108,6 +108,10 @@ export default function ChatPage() {
   // Session Tracking - Heartbeat & Beforeunload
   // ============================================================
 
+  // Session tracking state (declared before useEffects that use them)
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   // Start heartbeat when session starts
   useEffect(() => {
     if (!sessionId) return;
@@ -208,10 +212,6 @@ export default function ChatPage() {
   // Initial problem (from URL parameter) - 정보수집 단계 생략용
   const [initialBaseProblem, setInitialBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [isLoadingInitialProblem, setIsLoadingInitialProblem] = useState(false);
-
-  // Session tracking state
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Practice results (reset on new problem)
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
