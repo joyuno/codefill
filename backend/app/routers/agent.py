@@ -591,6 +591,8 @@ class ChatResponse(BaseModel):
     # 정보 수집 단계: 네/아니오 응답 대기
     awaiting_confirmation: bool = False
     suggested_value: Optional[str] = None
+    # 🚀 동적 선택지 [{label, value, description}]
+    suggested_actions: Optional[List[Dict[str, str]]] = None
     # Solving 결과
     hint_level: Optional[int] = None
     is_correct: Optional[bool] = None
@@ -805,6 +807,8 @@ async def chat_agent(
             # 정보 수집 단계: 네/아니오 응답 대기
             awaiting_confirmation=result.get("awaiting_confirmation", False),
             suggested_value=result.get("suggested_value"),
+            # 🚀 동적 선택지 (Agentic 추천)
+            suggested_actions=result.get("suggested_actions"),
             hint_level=result.get("hint_level"),
             is_correct=result.get("is_correct"),
             # 세션 추적 (클라이언트가 다음 요청에 사용)
@@ -1869,14 +1873,15 @@ async def search_problems_rag(request: RAGSearchRequest, db=Depends(get_db)):
         if request.topics:
             search_query += " " + " ".join(request.topics)
 
-        # Perform hybrid search
-        results, should_fallback = await rag_service.search_problems_hybrid(
+        # 🚀 Agentic RAG: 스마트 검색 사용
+        results, should_fallback, search_method = await rag_service.search_problems_smart(
             query=search_query,
             topics=request.topics,
             difficulty=request.difficulty.value if request.difficulty else None,
             language=request.language.value if request.language else None,
             limit=request.limit,
         )
+        print(f"[RAG-Search API] Method: {search_method}")
 
         # Convert results to response format
         search_results = []
@@ -1935,14 +1940,16 @@ async def recommend_problems(
         if specific_needs:
             search_query += " " + specific_needs
 
-        # Step 2: Perform hybrid search with RAG
-        results, should_fallback = await rag_service.search_problems_hybrid(
+        # Step 2: 🚀 Agentic RAG 스마트 검색
+        results, should_fallback, search_method = await rag_service.search_problems_smart(
             query=search_query,
             topics=topics,
             difficulty=difficulty,
             language=language,
             limit=5,
+            user_context=user_context,
         )
+        print(f"[Recommend API] Method: {search_method}")
 
         # Step 3: Get full problem data for results
         problem_ids = [r.get("problem_id") for r in results if r.get("problem_id")]
@@ -2194,7 +2201,7 @@ async def search_problems_personalized(
         user_id = str(current_user_id) if current_user_id else None
 
         if user_id:
-            # 개인화된 검색
+            # 개인화된 검색 (여전히 시맨틱 사용)
             results, should_fallback = await rag_service.search_problems_personalized(
                 query=search_query,
                 user_id=user_id,
@@ -2203,20 +2210,23 @@ async def search_problems_personalized(
                 language=request.language.value if request.language else None,
                 limit=request.limit,
             )
+            search_method = "personalized"
         else:
-            # 일반 검색
-            results, should_fallback = await rag_service.search_problems_hybrid(
+            # 🚀 Agentic RAG 스마트 검색
+            results, should_fallback, search_method = await rag_service.search_problems_smart(
                 query=search_query,
                 topics=request.topics,
                 difficulty=request.difficulty.value if request.difficulty else None,
                 language=request.language.value if request.language else None,
                 limit=request.limit,
             )
+        print(f"[Search API] Method: {search_method}")
 
         return {
             "results": results,
             "personalized": user_id is not None,
             "fallback_to_code_gen": should_fallback,
+            "search_method": search_method,  # 🚀 Agentic RAG: 사용된 검색 방법
         }
 
     except Exception as e:

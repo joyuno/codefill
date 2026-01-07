@@ -10,7 +10,11 @@ from ..state import ChatState, ProblemInfo
 
 async def search_problems(state: ChatState) -> Dict[str, Any]:
     """
-    RAG를 통해 문제를 검색합니다.
+    Agentic RAG를 통해 문제를 검색합니다.
+
+    개선된 로직:
+    - topics + difficulty가 명확하면 메타데이터 검색만 (임베딩 비용 0)
+    - 불명확하면 시맨틱 검색 (임베딩 사용)
 
     Returns:
         업데이트된 상태:
@@ -23,13 +27,14 @@ async def search_problems(state: ChatState) -> Dict[str, Any]:
     from ...services.rag import rag_service
 
     collected_info = state.get("collected_info", {})
+    user_context = state.get("user_context", {})
 
     # 검색 파라미터 구성
     topics = collected_info.get("topics", [])
     difficulty = collected_info.get("difficulty")
     language = collected_info.get("language", "python")
 
-    # 검색 쿼리 생성
+    # 검색 쿼리 생성 (시맨틱 검색 폴백용)
     query_parts = []
     if topics:
         query_parts.extend(topics)
@@ -37,15 +42,17 @@ async def search_problems(state: ChatState) -> Dict[str, Any]:
         query_parts.append(f"{difficulty} difficulty")
     query = " ".join(query_parts) if query_parts else "기초 문제"
 
-    # RAG 검색 수행
+    # 🚀 Agentic RAG: 스마트 검색 수행
     try:
-        results, should_fallback = await rag_service.search_problems_hybrid(
+        results, should_fallback, search_method = await rag_service.search_problems_smart(
             query=query,
             topics=topics,
             difficulty=difficulty,
             language=language,
-            limit=5
+            limit=5,
+            user_context=user_context,
         )
+        print(f"[Search] Method: {search_method}, Results: {len(results)}")
     except Exception as e:
         print(f"[Search] RAG search error: {e}")
         results = []
@@ -112,6 +119,7 @@ async def generate_problem_codegen(state: ChatState) -> Dict[str, Any]:
         - action_data: 프론트엔드 액션 데이터
     """
     from ...services.openrouter import openrouter_service
+    from ...services.code_validator import get_code_validator
     from ...prompts.code_gen_agent import CODE_GEN_SYSTEM_PROMPT
 
     collected_info = state.get("collected_info", {})
@@ -152,7 +160,36 @@ async def generate_problem_codegen(state: ChatState) -> Dict[str, Any]:
             "difficulty": result.get("difficulty", collected_info.get("difficulty", "easy")),
             "topics": result.get("topics", collected_info.get("topics", [])),
             "code": result.get("code", {}),
+            "examples": result.get("examples", []),  # 검증용 테스트 케이스
         }
+
+        # CodeValidator로 생성된 코드 검증
+        code_to_validate = result.get("code", {})
+        examples = result.get("examples", [])
+
+        if code_to_validate and examples:
+            try:
+                validator = get_code_validator()
+                validation_result = await validator.validate_generated_code(
+                    code=code_to_validate,
+                    examples=examples,
+                    language=collected_info.get("language", "python"),
+                    min_pass_rate=0.7,  # 70% 통과 허용 (최초 생성은 관대하게)
+                )
+
+                print(f"[CodeGen] Validation: {validation_result.passed_count}/{validation_result.total_count} passed")
+
+                if not validation_result.valid:
+                    # 검증 실패 시 경고 포함
+                    generated_problem["validation_warning"] = True
+                    generated_problem["validation_errors"] = validation_result.errors
+                    print(f"[CodeGen] Validation warning: {validation_result.errors}")
+                else:
+                    generated_problem["validated"] = True
+
+            except Exception as ve:
+                print(f"[CodeGen] Validation error (continuing anyway): {ve}")
+                # 검증 실패해도 문제는 반환 (Judge0 연결 문제일 수 있음)
 
         response_message = f"새로 만든 문제예요:\n  • {generated_problem['title']} ({generated_problem['difficulty']})\n\n이 문제를 풀어볼까요?"
 

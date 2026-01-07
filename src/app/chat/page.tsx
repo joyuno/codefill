@@ -10,11 +10,13 @@ import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn } from 'lucide-r
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { usePracticeSession } from '@/hooks/usePracticeSession';
+import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
 
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 import { CorrectAnswerPopup } from '@/components/practice/CorrectAnswerPopup';
+import { OnboardingWizard, useOnboardingCheck, type OnboardingData } from '@/components/onboarding/OnboardingWizard';
 
 import { practiceApi, agentApi, problemsApi } from '@/lib/api';
 import { apiClient } from '@/lib/api/client';
@@ -54,9 +56,15 @@ export default function ChatPage() {
     resetSession,
   } = usePracticeSession();
 
+  // Auth hook - get user info for feedback
+  const { user, profile } = useAuth();
+
   // Auth state
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Onboarding state
+  const { needsOnboarding, isLoading: isOnboardingLoading, setNeedsOnboarding } = useOnboardingCheck();
 
   // Check authentication on mount
   useEffect(() => {
@@ -83,6 +91,103 @@ export default function ChatPage() {
     }
   }, [isRestored, problem, blankAnswers, previousHints, attemptId]);
 
+  // ============================================================
+  // Session Tracking - Heartbeat & Beforeunload
+  // ============================================================
+
+  // Start heartbeat when session starts
+  useEffect(() => {
+    if (!sessionId) return;
+
+    // Clear any existing interval
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+    }
+
+    // Send heartbeat every 5 minutes (300000ms)
+    const HEARTBEAT_INTERVAL = 5 * 60 * 1000;
+
+    const sendHeartbeat = async () => {
+      try {
+        const result = await practiceApi.sessionHeartbeat({
+          sessionId,
+          hintsUsed: previousHints.length,
+          attemptCount,
+        });
+        console.log('[SessionTracker] Heartbeat:', result);
+
+        if (result.sessionStatus === 'expired' || result.sessionStatus === 'abandoned') {
+          console.log('[SessionTracker] Session expired/abandoned, clearing interval');
+          if (heartbeatIntervalRef.current) {
+            clearInterval(heartbeatIntervalRef.current);
+            heartbeatIntervalRef.current = null;
+          }
+          // 세션 만료 시 토스트 알림
+          toast({
+            title: '세션 만료',
+            description: '오랜 시간 활동이 없어 세션이 종료되었습니다. 진행 상황은 저장되어 있습니다.',
+            variant: 'default',
+          });
+        }
+      } catch (error) {
+        console.error('[SessionTracker] Heartbeat error:', error);
+      }
+    };
+
+    // Initial heartbeat
+    sendHeartbeat();
+
+    // Set interval (every 5 minutes)
+    heartbeatIntervalRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+
+    return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+    };
+  }, [sessionId, previousHints.length, attemptCount, toast]);
+
+  // Beforeunload handler - send abandon when user leaves
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Send abandon request using sendBeacon for reliability
+      const data = JSON.stringify({
+        session_id: sessionId,
+        end_type: 'abandon',
+        reason: 'page_unload',
+      });
+
+      // Use sendBeacon for reliable delivery on page close
+      navigator.sendBeacon('/api/practice/session/end', data);
+
+      // Show confirmation dialog (optional)
+      // e.preventDefault();
+      // e.returnValue = '';
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && sessionId) {
+        // Send heartbeat when tab becomes hidden (helps track focus loss)
+        practiceApi.sessionHeartbeat({
+          sessionId,
+          hintsUsed: previousHints.length,
+          attemptCount,
+        }).catch(console.error);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [sessionId, previousHints.length, attemptCount]);
+
   // Submission state (not persisted - reset on page load)
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [xpEarned, setXpEarned] = useState(0);
@@ -90,6 +195,10 @@ export default function ChatPage() {
   // Initial problem (from URL parameter) - 정보수집 단계 생략용
   const [initialBaseProblem, setInitialBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [isLoadingInitialProblem, setIsLoadingInitialProblem] = useState(false);
+
+  // Session tracking state
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Practice results (reset on new problem)
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
@@ -171,6 +280,19 @@ export default function ChatPage() {
 
   // Handle problem selection from chat
   const handleProblemSelect = useCallback(async (selectedProblem: ConvertedProblem) => {
+    // End previous session if exists
+    if (sessionId) {
+      try {
+        await practiceApi.sessionEnd({
+          sessionId,
+          endType: 'skip',
+          reason: 'new_problem_selected',
+        });
+      } catch (e) {
+        console.error('[SessionTracker] Failed to end previous session:', e);
+      }
+    }
+
     // usePracticeSession 훅을 통해 상태 설정 (localStorage 자동 저장)
     setProblem(selectedProblem);
     setBlankAnswers({});
@@ -198,15 +320,31 @@ export default function ChatPage() {
         topics: selectedProblem.topics || selectedProblem.keyConcepts,
       });
       setAttemptId(startResult.attemptId);
-      console.log('[ChatPage] Started practice session:', startResult.attemptId);
+      setSessionId(startResult.sessionId || null);
+      console.log('[ChatPage] Started practice session:', startResult.attemptId, 'sessionId:', startResult.sessionId);
     } catch (error) {
       console.error('[ChatPage] Failed to start practice session:', error);
       setAttemptId(null);
+      setSessionId(null);
     }
-  }, [setProblem, setBlankAnswers, setPreviousHints, setSolveStartTime, setAttemptCount, setAttemptId]);
+  }, [setProblem, setBlankAnswers, setPreviousHints, setSolveStartTime, setAttemptCount, setAttemptId, sessionId]);
 
   // Reset session (다음문제 풀기)
-  const handleResetSession = useCallback(() => {
+  const handleResetSession = useCallback(async () => {
+    // End current session (complete)
+    if (sessionId) {
+      try {
+        await practiceApi.sessionEnd({
+          sessionId,
+          endType: 'complete',
+          isCorrect: true,
+        });
+        console.log('[SessionTracker] Session completed:', sessionId);
+      } catch (e) {
+        console.error('[SessionTracker] Failed to end session:', e);
+      }
+    }
+
     // usePracticeSession 훅의 resetSession 사용 (localStorage도 초기화)
     resetSession();
 
@@ -219,7 +357,45 @@ export default function ChatPage() {
     setCurrentHintResponse(null);
     setShowFeedbackPopup(false);
     setFeedbackData(null);
-  }, [resetSession]);
+    setSessionId(null);  // Clear session ID
+  }, [resetSession, sessionId]);
+
+  // 포기하기 (Give up)
+  const handleGiveUp = useCallback(async () => {
+    if (!problem) return;
+
+    // End session as abandon
+    if (sessionId) {
+      try {
+        await practiceApi.sessionEnd({
+          sessionId,
+          endType: 'abandon',
+          reason: 'user_gave_up',
+          isCorrect: false,
+        });
+        console.log('[SessionTracker] Session abandoned (give up):', sessionId);
+      } catch (e) {
+        console.error('[SessionTracker] Failed to end session:', e);
+      }
+    }
+
+    toast({
+      title: '문제를 포기했습니다',
+      description: '다른 문제에 도전해보세요!',
+    });
+
+    // Reset session
+    resetSession();
+    setIsSubmitted(false);
+    setXpEarned(0);
+    setBlankResults({});
+    setPuzzleResults({});
+    setHints([]);
+    setCurrentHintResponse(null);
+    setShowFeedbackPopup(false);
+    setFeedbackData(null);
+    setSessionId(null);
+  }, [problem, sessionId, resetSession, toast]);
 
   // Fetch feedback from API
   const fetchFeedback = useCallback(async (isCorrect: boolean, earnedXp: number) => {
@@ -234,7 +410,7 @@ export default function ChatPage() {
         : 0;
 
       const response = await agentApi.getFeedback({
-        user_id: 'anonymous', // TODO: Get from auth context
+        user_id: user?.id || 'anonymous',
         problem_id: problem.id,
         problem_type: (problem.problemType || 'blank') as 'blank' | 'puzzle' | 'guided',
         is_correct: isCorrect,
@@ -276,7 +452,7 @@ export default function ChatPage() {
     } finally {
       setIsFeedbackLoading(false);
     }
-  }, [problem, solveStartTime, previousHints.length, attemptCount]);
+  }, [problem, solveStartTime, previousHints.length, attemptCount, user]);
 
   // Hint request handler - 실제 API 호출
   const handleHintRequest = useCallback(
@@ -549,6 +725,22 @@ export default function ChatPage() {
     [problem, toast, fetchFeedback, attemptId]
   );
 
+  // Handle onboarding completion
+  const handleOnboardingComplete = useCallback((data: OnboardingData) => {
+    console.log('[ChatPage] Onboarding completed:', data);
+    setNeedsOnboarding(false);
+    toast({
+      title: '설정 완료!',
+      description: '맞춤 추천을 시작합니다.',
+    });
+  }, [setNeedsOnboarding, toast]);
+
+  // Handle onboarding skip
+  const handleOnboardingSkip = useCallback(() => {
+    localStorage.setItem('onboarding_completed', 'true');
+    setNeedsOnboarding(false);
+  }, [setNeedsOnboarding]);
+
   // Render practice component based on problem type
   const renderPracticeComponent = () => {
     if (!problem) {
@@ -575,13 +767,14 @@ export default function ChatPage() {
           });
         }}
         onHintRequest={(level) => handleHintRequest(level)}
+        onGiveUp={handleGiveUp}  // 포기하기
         attemptId={attemptId || undefined}  // attempt tracking
       />
     );
   };
 
   // Show loading while checking auth or restoring session
-  if (isAuthChecking || !isRestored) {
+  if (isAuthChecking || !isRestored || isOnboardingLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2">
@@ -591,6 +784,16 @@ export default function ChatPage() {
           )}
         </div>
       </div>
+    );
+  }
+
+  // Show onboarding wizard for new users
+  if (isAuthenticated && needsOnboarding) {
+    return (
+      <OnboardingWizard
+        onComplete={handleOnboardingComplete}
+        onSkip={handleOnboardingSkip}
+      />
     );
   }
 

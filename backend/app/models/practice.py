@@ -119,11 +119,11 @@ class XPConfig:
 
     # 난이도별 XP 획득량
     DIFFICULTY_XP = {
-        "easy": 20,
-        "medium": 40,
-        "medium_hard": 70,
-        "hard": 100,
-        "very_hard": 150,
+        "easy": 40,
+        "medium": 60,
+        "medium_hard": 90,
+        "hard": 120,
+        "very_hard": 200,
     }
 
     # 문제 유형별 기본 XP (난이도 없을 때 fallback)
@@ -203,6 +203,46 @@ class StartPracticeResponse(BaseModel):
     attempt_id: str
     started_at: str
     message: str
+    session_id: Optional[str] = None  # 세션 추적용 ID
+
+
+# ============================================================
+# Session Tracking Models
+# ============================================================
+
+class SessionHeartbeatRequest(BaseModel):
+    """세션 하트비트 요청"""
+    session_id: str
+    hints_used: Optional[int] = None
+    attempt_count: Optional[int] = None
+
+
+class SessionHeartbeatResponse(BaseModel):
+    """세션 하트비트 응답"""
+    success: bool
+    session_status: str  # active, expired, abandoned
+    time_spent: Optional[int] = None
+    error: Optional[str] = None
+
+
+class SessionEndRequest(BaseModel):
+    """세션 종료 요청 (완료/스킵/포기)"""
+    session_id: str
+    end_type: str  # complete, skip, abandon
+    reason: Optional[str] = None
+    is_correct: Optional[bool] = None
+    score: Optional[int] = None
+
+
+class SessionEndResponse(BaseModel):
+    """세션 종료 응답"""
+    success: bool
+    session_id: str
+    status: str  # completed, skipped, abandoned
+    time_spent: int
+    hints_used: int = 0
+    attempt_count: int = 0
+    error: Optional[str] = None
 
 
 # ============================================================

@@ -47,6 +47,7 @@ export {
   type ActivityData,
   type DateActivityDetail,
   type SolvedProblem,
+  type SolvedAcProfileSimple,
   // Public Profile Types
   type PublicProfile,
   type PublicStats,

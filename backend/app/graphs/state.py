@@ -81,6 +81,7 @@ class ChatState(TypedDict, total=False):
     response_message: str
     action_trigger: Optional[str]  # search_problems, select_problem_type, generate_hint 등
     action_data: Optional[Dict[str, Any]]  # 프론트엔드에 전달할 액션 데이터
+    suggested_actions: Optional[List[Dict[str, str]]]  # 🚀 동적 선택지 [{label, value, description}]
 
     # === 플로우 제어 ===
     next_node: Optional[str]  # 다음으로 이동할 노드 (조건부 라우팅용)

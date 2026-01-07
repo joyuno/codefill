@@ -17,6 +17,8 @@ from ..prompts.feedback_agent import (
     calculate_grade,
     format_solve_time,
     calculate_scores,
+    calculate_xp,
+    get_difficulty_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -279,8 +281,14 @@ class FeedbackService:
         time_ratio = solve_time_seconds / avg_solve_time if avg_solve_time > 0 else 1.0
         grade, grade_emoji, grade_message = calculate_grade(hints_used, attempt_count, time_ratio)
 
-        # 3. 점수 계산
-        scores = calculate_scores(hints_used, attempt_count, solve_time_seconds, avg_solve_time)
+        # 3. 점수 계산 (난이도별 차등 적용)
+        scores = calculate_scores(
+            hints_used=hints_used,
+            attempt_count=attempt_count,
+            time_seconds=solve_time_seconds,
+            avg_time=avg_solve_time,
+            difficulty=difficulty,  # 난이도 전달
+        )
 
         # 4. 시스템 프롬프트 구성
         system_prompt = FEEDBACK_SYSTEM_PROMPT.format(
@@ -338,6 +346,17 @@ class FeedbackService:
             # attempts 테이블에 score 업데이트
             avg_score = (scores["efficiency_score"] + scores["speed_score"] + scores["understanding_score"]) // 3
             self._update_attempt_score(user_id, problem_id, avg_score, solve_time_seconds)
+
+            # 🚀 피드백 결과 저장 (활용을 위해)
+            await self._save_feedback_history(
+                user_id=user_id,
+                problem_id=problem_id,
+                result=result,
+                scores=scores,
+                difficulty=difficulty,
+                problem_type=problem_type,
+                topics=topics,
+            )
 
             logger.info(f"[FeedbackService] Feedback generated: grade={result['grade']}, avg_score={avg_score}")
             return result
@@ -449,6 +468,120 @@ class FeedbackService:
         except Exception as e:
             logger.error(f"[FeedbackService] Failed to update attempt score: {e}")
             return False
+
+    async def _save_feedback_history(
+        self,
+        user_id: str,
+        problem_id: str,
+        result: Dict[str, Any],
+        scores: Dict[str, int],
+        difficulty: str,
+        problem_type: str,
+        topics: List[str],
+    ) -> bool:
+        """
+        🚀 피드백 결과를 feedback_history 테이블에 저장
+
+        저장된 데이터는 다음 용도로 활용:
+        1. 학습 인사이트 대시보드
+        2. 개선 필요 영역 분석
+        3. 주간 리포트 생성
+        4. 추천 알고리즘 개선
+        """
+        try:
+            avg_score = (scores["efficiency_score"] + scores["speed_score"] + scores["understanding_score"]) // 3
+
+            # 최근 attempt_id 조회
+            attempt_result = self.supabase.table("attempts") \
+                .select("id") \
+                .eq("user_id", user_id) \
+                .order("created_at", desc=True) \
+                .limit(1) \
+                .execute()
+
+            attempt_id = attempt_result.data[0]["id"] if attempt_result.data else None
+
+            feedback_data = {
+                "user_id": user_id,
+                "problem_id": problem_id,
+                "attempt_id": attempt_id,
+                # 등급 정보
+                "grade": result.get("grade", "learning"),
+                "grade_emoji": result.get("grade_emoji", "🌱"),
+                "grade_message": result.get("grade_message", ""),
+                # 점수
+                "efficiency_score": scores["efficiency_score"],
+                "speed_score": scores["speed_score"],
+                "understanding_score": scores["understanding_score"],
+                "difficulty_bonus": scores.get("difficulty_bonus", 0),
+                "avg_score": avg_score,
+                # 피드백 상세
+                "summary_title": result.get("summary", {}).get("title", ""),
+                "summary_highlight": result.get("summary", {}).get("highlight", ""),
+                "learning_points": result.get("learning_points", []),
+                "improvements": result.get("improvements", []),
+                "encouragement": result.get("encouragement", ""),
+                # 메타데이터
+                "problem_type": problem_type,
+                "difficulty": difficulty,
+                "topics": topics,
+            }
+
+            self.supabase.table("feedback_history").insert(feedback_data).execute()
+
+            logger.info(f"[FeedbackService] Feedback history saved for user={user_id}, grade={result.get('grade')}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"[FeedbackService] Failed to save feedback history: {e}")
+            return False
+
+    async def get_user_learning_insights(self, user_id: str) -> Dict[str, Any]:
+        """
+        사용자 학습 인사이트 조회
+
+        피드백 데이터를 기반으로 학습 분석 제공
+        """
+        try:
+            # user_learning_insights 뷰 조회
+            result = self.supabase.rpc(
+                "get_improvement_areas",
+                {"p_user_id": user_id}
+            ).execute()
+
+            improvement_areas = result.data or []
+
+            # 주간 리포트 조회
+            weekly_result = self.supabase.rpc(
+                "get_weekly_learning_report",
+                {"p_user_id": user_id}
+            ).execute()
+
+            weekly_report = weekly_result.data or []
+
+            # 전체 통계
+            stats_result = self.supabase.table("feedback_history") \
+                .select("grade, avg_score, difficulty") \
+                .eq("user_id", user_id) \
+                .execute()
+
+            stats_data = stats_result.data or []
+            total_count = len(stats_data)
+            perfect_count = len([s for s in stats_data if s.get("grade") == "perfect"])
+            avg_overall = sum(s.get("avg_score", 0) for s in stats_data) / total_count if total_count else 0
+
+            return {
+                "total_problems": total_count,
+                "perfect_count": perfect_count,
+                "perfect_rate": round(perfect_count / total_count, 2) if total_count else 0,
+                "avg_score": round(avg_overall, 1),
+                "improvement_areas": improvement_areas,
+                "weekly_report": weekly_report,
+            }
+
+        except Exception as e:
+            logger.error(f"[FeedbackService] Failed to get learning insights: {e}")
+            return {"error": str(e)}
 
     def _fallback_feedback(
         self,

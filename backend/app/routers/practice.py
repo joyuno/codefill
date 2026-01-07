@@ -23,6 +23,11 @@ from ..models.practice import (
     StartPracticeRequest,
     StartPracticeResponse,
     AttemptDetailAction,
+    # Session tracking models
+    SessionHeartbeatRequest,
+    SessionHeartbeatResponse,
+    SessionEndRequest,
+    SessionEndResponse,
 )
 from ..models.problem import ProblemType
 
@@ -47,6 +52,112 @@ def check_blank_answers(submitted: dict, correct: list) -> tuple[bool, dict]:
     return all_correct, results
 
 
+async def resolve_base_problem_id(db, problem_id: str) -> Optional[str]:
+    """
+    problem_id에서 base_problem_id를 결정합니다.
+
+    문제 ID가 다양한 형태로 전달될 수 있습니다:
+    1. base_problems 테이블의 UUID (id)
+    2. base_problems 테이블의 original_id (예: "taco_100")
+    3. problems_blank/puzzle/guided 테이블의 UUID
+
+    이 함수는 어떤 형태든 base_problems.id로 변환합니다.
+    """
+    if not problem_id:
+        return None
+
+    from uuid import UUID as UUIDType
+
+    try:
+        # 1. UUID 형식인지 확인
+        try:
+            problem_uuid = UUIDType(problem_id)
+            uuid_str = str(problem_uuid)
+
+            # 1-1. base_problems 테이블에서 직접 조회
+            bp_result = db.table("base_problems")\
+                .select("id")\
+                .eq("id", uuid_str)\
+                .limit(1)\
+                .execute()
+
+            if bp_result.data and len(bp_result.data) > 0:
+                return bp_result.data[0]["id"]
+
+            # 1-2. problems_blank에서 original_id로 base_problems 찾기
+            blank_result = db.table("problems_blank")\
+                .select("original_id")\
+                .eq("id", uuid_str)\
+                .limit(1)\
+                .execute()
+
+            if blank_result.data and len(blank_result.data) > 0:
+                original_id = blank_result.data[0].get("original_id")
+                if original_id:
+                    bp_result = db.table("base_problems")\
+                        .select("id")\
+                        .eq("original_id", original_id)\
+                        .limit(1)\
+                        .execute()
+                    if bp_result.data:
+                        return bp_result.data[0]["id"]
+
+            # 1-3. problems_puzzle에서 찾기
+            puzzle_result = db.table("problems_puzzle")\
+                .select("original_id")\
+                .eq("id", uuid_str)\
+                .limit(1)\
+                .execute()
+
+            if puzzle_result.data and len(puzzle_result.data) > 0:
+                original_id = puzzle_result.data[0].get("original_id")
+                if original_id:
+                    bp_result = db.table("base_problems")\
+                        .select("id")\
+                        .eq("original_id", original_id)\
+                        .limit(1)\
+                        .execute()
+                    if bp_result.data:
+                        return bp_result.data[0]["id"]
+
+            # 1-4. problems_guided에서 찾기
+            guided_result = db.table("problems_guided")\
+                .select("original_id")\
+                .eq("id", uuid_str)\
+                .limit(1)\
+                .execute()
+
+            if guided_result.data and len(guided_result.data) > 0:
+                original_id = guided_result.data[0].get("original_id")
+                if original_id:
+                    bp_result = db.table("base_problems")\
+                        .select("id")\
+                        .eq("original_id", original_id)\
+                        .limit(1)\
+                        .execute()
+                    if bp_result.data:
+                        return bp_result.data[0]["id"]
+
+        except ValueError:
+            pass  # UUID 형식이 아님
+
+        # 2. original_id 형식 (예: "taco_100", "boj_1234")
+        bp_result = db.table("base_problems")\
+            .select("id")\
+            .eq("original_id", problem_id)\
+            .limit(1)\
+            .execute()
+
+        if bp_result.data and len(bp_result.data) > 0:
+            return bp_result.data[0]["id"]
+
+        return None
+
+    except Exception as e:
+        print(f"[resolve_base_problem_id] Error: {e}")
+        return None
+
+
 # ============================================================
 # Practice Start - Create Pending Attempt
 # ============================================================
@@ -58,15 +169,19 @@ async def start_practice(
     db=Depends(get_db)
 ):
     """
-    문제 풀이 시작 - pending attempt 생성
+    문제 풀이 시작 - pending attempt 생성 + 세션 추적 시작
 
     문제 풀이를 시작할 때 호출하여 attempt_id를 발급받습니다.
     이 attempt_id로 힌트 요청, 제출 등의 상세 기록을 추적합니다.
+    SessionTracker로 세션 상태(진행/포기/완료)도 추적합니다.
 
     Returns:
         attempt_id: 시도 ID (UUID)
         started_at: 시작 시간
+        session_id: 세션 ID (세션 추적용)
     """
+    from ..services.session_tracker import get_session_tracker
+
     if not user_id:
         # 비로그인 시에도 임시 attempt_id 발급 (DB 저장 없이)
         import uuid
@@ -93,12 +208,11 @@ async def start_practice(
             "total_hints_requested": 0,
         }
 
-        # problem_id가 UUID 형식이면 추가
-        try:
-            problem_uuid = UUIDType(request.problem_id)
-            attempt_data["problem_id"] = str(problem_uuid)
-        except ValueError:
-            pass  # UUID 아니면 problem_id 생략
+        # base_problem_id 결정 (핵심: 반복 풀이 체크에 사용)
+        base_problem_id = await resolve_base_problem_id(db, request.problem_id)
+        if base_problem_id:
+            attempt_data["base_problem_id"] = base_problem_id
+            print(f"[StartPractice] Resolved base_problem_id: {base_problem_id}")
 
         # attempts 테이블에 pending 레코드 생성
         result = db.table("attempts").insert(attempt_data).execute()
@@ -108,9 +222,28 @@ async def start_practice(
             started_at = result.data[0].get("created_at", datetime.utcnow().isoformat())
             print(f"[StartPractice] Created pending attempt: {attempt_id}")
 
+            # 🚀 SessionTracker 세션 시작
+            session_id = None
+            try:
+                tracker = get_session_tracker()
+                session_id = await tracker.start_session(
+                    user_id=str(user_id),
+                    problem_id=request.problem_id,
+                    problem_type=request.problem_type or "blank",
+                    metadata={
+                        "attempt_id": str(attempt_id),
+                        "difficulty": request.difficulty,
+                        "problem_name": request.problem_name,
+                    }
+                )
+                print(f"[StartPractice] Session started: {session_id}")
+            except Exception as e:
+                print(f"[StartPractice] Session tracking error (non-blocking): {e}")
+
             return StartPracticeResponse(
                 attempt_id=str(attempt_id),
                 started_at=started_at,
+                session_id=session_id,
                 message="문제 풀이를 시작합니다."
             )
 
@@ -175,6 +308,61 @@ def record_attempt_detail(
 
     except Exception as e:
         print(f"[AttemptDetail] Error recording: {e}")
+        return False
+
+
+async def record_hint_log(
+    db,
+    user_id: str,
+    problem_id: str,
+    hint_level: int,
+    hint_content: str,
+    attempt_id: str = None,
+    xp_cost: int = 5,
+) -> bool:
+    """
+    hint_logs 테이블에 힌트 사용 기록 저장
+
+    Args:
+        db: Supabase client
+        user_id: 사용자 UUID
+        problem_id: 문제 ID (UUID 또는 문자열)
+        hint_level: 힌트 레벨 (1-4)
+        hint_content: 힌트 내용
+        attempt_id: 시도 ID (선택)
+        xp_cost: XP 비용
+
+    Returns:
+        성공 여부
+    """
+    if not user_id:
+        print("[HintLog] No user_id - skipping")
+        return False
+
+    try:
+        hint_data = {
+            "user_id": str(user_id),
+            "hint_level": hint_level,
+            "hint_content": hint_content[:1000] if hint_content else None,
+            "xp_cost": xp_cost,
+        }
+
+        # base_problem_id 결정 (problem_id에서 변환)
+        base_problem_id = await resolve_base_problem_id(db, problem_id)
+        if base_problem_id:
+            hint_data["base_problem_id"] = base_problem_id
+            print(f"[HintLog] Resolved base_problem_id: {base_problem_id}")
+
+        # attempt_id가 유효하면 추가
+        if attempt_id and not attempt_id.startswith("temp_"):
+            hint_data["attempt_id"] = attempt_id
+
+        db.table("hint_logs").insert(hint_data).execute()
+        print(f"[HintLog] Recorded: user={str(user_id)[:8]}..., level={hint_level}, base_problem_id={base_problem_id}")
+        return True
+
+    except Exception as e:
+        print(f"[HintLog] Error recording: {e}")
         return False
 
 
@@ -446,22 +634,31 @@ async def record_solve(
         else:
             base_xp = 0
 
-        # 이미 푼 문제인지 확인 (problem_id로 검색)
+        # base_problem_id 결정 (핵심: 반복 풀이 체크 + 잔디에 사용)
+        # 여러 소스에서 결정: submission.base_problem_id > submission.problem_id
+        base_problem_id = None
+
+        # 1. 직접 전달된 base_problem_id 사용
+        if submission.base_problem_id:
+            base_problem_id = await resolve_base_problem_id(db, submission.base_problem_id)
+
+        # 2. problem_id로 base_problem_id 찾기
+        if not base_problem_id:
+            base_problem_id = await resolve_base_problem_id(db, submission.problem_id)
+
+        print(f"[RecordSolve] Resolved base_problem_id: {base_problem_id} (from problem_id={submission.problem_id})")
+
+        # 이미 푼 문제인지 확인 (base_problem_id로 검색 - 핵심 수정!)
         already_solved = False
         xp_earned = base_xp
 
-        try:
-            # daily_activity에서 오늘 이미 이 문제를 풀었는지 확인할 수는 없음
-            # 대신 간단히 problem_id를 키로 user_solved_problems 확인
-            # 또는 attempts 테이블에서 확인 (UUID 형식인 경우에만)
-            from uuid import UUID as UUIDType
+        if base_problem_id:
             try:
-                problem_uuid = UUIDType(submission.problem_id)
-                # UUID 형식이면 attempts 테이블에서 확인
+                # base_problem_id로 이전 정답 시도 확인
                 prev_attempt = db.table("attempts")\
                     .select("id")\
                     .eq("user_id", str(user_id))\
-                    .eq("problem_id", str(problem_uuid))\
+                    .eq("base_problem_id", base_problem_id)\
                     .eq("is_correct", True)\
                     .limit(1)\
                     .execute()
@@ -469,55 +666,14 @@ async def record_solve(
                 if prev_attempt.data and len(prev_attempt.data) > 0:
                     already_solved = True
                     xp_earned = base_xp // 4  # 1/4 XP
-                    print(f"[RecordSolve] Already solved problem, reducing XP: {base_xp} -> {xp_earned}")
-            except ValueError:
-                # UUID 형식이 아님 (예: "taco_100")
-                # 이 경우 별도의 테이블에서 확인하거나 건너뜀
-                pass
-        except Exception as check_err:
-            print(f"[RecordSolve] Error checking previous solve: {check_err}")
+                    print(f"[RecordSolve] Already solved problem (base_problem_id={base_problem_id}), reducing XP: {base_xp} -> {xp_earned}")
+            except Exception as check_err:
+                print(f"[RecordSolve] Error checking previous solve: {check_err}")
 
         # attempts 테이블에 기록 시도
         attempt_id_used = None
         try:
             from uuid import UUID as UUIDType
-
-            # base_problem_id 결정 (잔디 클릭 시 문제 정보 표시용)
-            base_problem_id = None
-
-            # 1. 직접 전달된 base_problem_id 사용
-            if submission.base_problem_id:
-                try:
-                    base_uuid = UUIDType(submission.base_problem_id)
-                    base_problem_id = str(base_uuid)
-                except ValueError:
-                    # UUID가 아니면 original_id로 간주하고 조회
-                    try:
-                        bp_result = db.table("base_problems")\
-                            .select("id")\
-                            .eq("original_id", submission.base_problem_id)\
-                            .limit(1)\
-                            .execute()
-                        if bp_result.data and len(bp_result.data) > 0:
-                            base_problem_id = bp_result.data[0]["id"]
-                            print(f"[RecordSolve] Found base_problem_id from original_id: {submission.base_problem_id} -> {base_problem_id}")
-                    except Exception as e:
-                        print(f"[RecordSolve] Failed to lookup base_problem by original_id: {e}")
-
-            # 2. problem_id로 base_problems 테이블에서 직접 조회 시도
-            if not base_problem_id:
-                try:
-                    problem_uuid = UUIDType(submission.problem_id)
-                    bp_result = db.table("base_problems")\
-                        .select("id")\
-                        .eq("id", str(problem_uuid))\
-                        .limit(1)\
-                        .execute()
-                    if bp_result.data and len(bp_result.data) > 0:
-                        base_problem_id = bp_result.data[0]["id"]
-                        print(f"[RecordSolve] problem_id is base_problem: {base_problem_id}")
-                except Exception:
-                    pass  # 조회 실패 시 무시
 
             # attempt_id가 있으면 기존 attempt 업데이트, 없으면 새로 생성
             if submission.attempt_id and not submission.attempt_id.startswith("temp_"):
@@ -614,6 +770,46 @@ async def record_solve(
                     xp_earned=0,
                     message=f"XP 업데이트 실패: {str(rpc_err)}"
                 )
+
+        # ============================================================
+        # user_skill_profiles 업데이트 (ELO-like 스킬 추적)
+        # ============================================================
+        if submission.topics and len(submission.topics) > 0:
+            try:
+                from ..services.feedback_service import get_feedback_service
+                feedback_service = get_feedback_service()
+                await feedback_service.update_skill_profile(
+                    user_id=str(user_id),
+                    problem_topics=submission.topics,
+                    difficulty=submission.difficulty or "medium",
+                    is_correct=submission.is_correct,
+                )
+                print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}")
+            except Exception as skill_err:
+                print(f"[RecordSolve] Skill profile update error (non-blocking): {skill_err}")
+
+        # ============================================================
+        # user_memories 세션 메모리 생성
+        # ============================================================
+        try:
+            from ..services.memory_service import get_memory_service
+            import uuid as uuid_module
+            memory_service = get_memory_service()
+            session_id = submission.attempt_id or str(uuid_module.uuid4())
+            await memory_service.create_problem_session_memory(
+                user_id=str(user_id),
+                session_id=session_id,
+                problem_id=submission.problem_id,
+                problem_name=submission.problem_name or "Unknown",
+                problem_type=submission.problem_type,
+                difficulty=submission.difficulty or "medium",
+                topics=submission.topics or [],
+                was_successful=submission.is_correct,
+                hints_used=submission.hints_used or 0,
+            )
+            print(f"[RecordSolve] Created session memory for user {str(user_id)[:8]}...")
+        except Exception as mem_err:
+            print(f"[RecordSolve] Memory creation error (non-blocking): {mem_err}")
 
         message = "문제 풀이가 기록되었습니다!"
         if already_solved:
@@ -842,6 +1038,18 @@ async def get_blank_hint(
                 except Exception as e:
                     print(f"[BlankHint] Failed to increment hints: {e}")
 
+        # hint_logs 테이블에 기록 (피드백 분석용)
+        if user_id:
+            await record_hint_log(
+                db=db,
+                user_id=str(user_id),
+                problem_id=request.problem_id,
+                hint_level=request.blank_index + 1,  # 1-based
+                hint_content=hint_content,
+                attempt_id=request.attempt_id,
+                xp_cost=5,
+            )
+
         return BlankHintResponse(
             blank_index=hint_result.get("blank_index", request.blank_index),
             hint_content=hint_content,
@@ -920,6 +1128,18 @@ async def get_puzzle_hint(
                     }).execute()
                 except Exception as e:
                     print(f"[PuzzleHint] Failed to increment hints: {e}")
+
+        # hint_logs 테이블에 기록 (피드백 분석용)
+        if user_id:
+            await record_hint_log(
+                db=db,
+                user_id=str(user_id),
+                problem_id=request.problem_id,
+                hint_level=request.block_index + 1,  # 1-based
+                hint_content=hint_content,
+                attempt_id=request.attempt_id,
+                xp_cost=5,
+            )
 
         return PuzzleHintResponse(
             block_index=hint_result.get("hint_index", request.block_index),
@@ -1001,6 +1221,18 @@ async def get_guided_hint(
                 except Exception as e:
                     print(f"[GuidedHint] Failed to increment hints: {e}")
 
+        # hint_logs 테이블에 기록 (피드백 분석용)
+        if user_id:
+            await record_hint_log(
+                db=db,
+                user_id=str(user_id),
+                problem_id=request.problem_id,
+                hint_level=request.step_index + 1,  # 1-based
+                hint_content=hint_content,
+                attempt_id=request.attempt_id,
+                xp_cost=5,
+            )
+
         return GuidedHintResponse(
             step_index=hint_result.get("hint_index", request.step_index),
             hint_content=hint_content,
@@ -1014,3 +1246,166 @@ async def get_guided_hint(
             hint_content=f"힌트 생성 오류: {str(e)}",
             from_cache=False,
         )
+
+
+# ============================================================
+# Session Tracking Endpoints
+# ============================================================
+
+@router.post("/session/heartbeat", response_model=SessionHeartbeatResponse)
+async def session_heartbeat(
+    request: SessionHeartbeatRequest,
+    user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+):
+    """
+    세션 하트비트 - 세션 활성 상태 유지
+
+    프론트엔드에서 30초마다 호출하여 세션이 활성 상태임을 알립니다.
+    하트비트가 15분 이상 없으면 세션은 포기(abandoned)로 처리됩니다.
+
+    Returns:
+        success: 성공 여부
+        session_status: active, expired, abandoned
+        time_spent: 현재까지 풀이 시간(초)
+    """
+    from ..services.session_tracker import get_session_tracker
+
+    if not user_id:
+        return SessionHeartbeatResponse(
+            success=False,
+            session_status="unknown",
+            error="로그인이 필요합니다."
+        )
+
+    try:
+        tracker = get_session_tracker()
+        result = await tracker.heartbeat(
+            session_id=request.session_id,
+            hints_used=request.hints_used,
+            attempt_count=request.attempt_count,
+        )
+
+        return SessionHeartbeatResponse(
+            success=result.get("success", False),
+            session_status=result.get("session_status", "unknown"),
+            time_spent=result.get("time_spent"),
+            error=result.get("error"),
+        )
+
+    except Exception as e:
+        print(f"[SessionHeartbeat] Error: {e}")
+        return SessionHeartbeatResponse(
+            success=False,
+            session_status="error",
+            error=str(e),
+        )
+
+
+@router.post("/session/end", response_model=SessionEndResponse)
+async def session_end(
+    request: SessionEndRequest,
+    user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+):
+    """
+    세션 종료 - 완료/스킵/포기
+
+    문제 풀이 종료 시 호출합니다.
+    - complete: 정답 제출 완료
+    - skip: 사용자가 문제 건너뛰기
+    - abandon: 페이지 이탈/세션 종료
+
+    Returns:
+        세션 종료 결과 (풀이 시간, 힌트 사용량 등)
+    """
+    from ..services.session_tracker import get_session_tracker
+
+    if not user_id:
+        return SessionEndResponse(
+            success=False,
+            session_id=request.session_id,
+            status="error",
+            time_spent=0,
+            error="로그인이 필요합니다."
+        )
+
+    try:
+        tracker = get_session_tracker()
+
+        if request.end_type == "complete":
+            result = await tracker.complete_session(
+                session_id=request.session_id,
+                is_correct=request.is_correct or True,
+                score=request.score or 0,
+            )
+        elif request.end_type == "skip":
+            result = await tracker.skip_session(
+                session_id=request.session_id,
+                reason=request.reason,
+            )
+        elif request.end_type == "abandon":
+            result = await tracker.abandon_session(
+                session_id=request.session_id,
+                reason=request.reason or "user_left",
+            )
+        else:
+            return SessionEndResponse(
+                success=False,
+                session_id=request.session_id,
+                status="error",
+                time_spent=0,
+                error=f"Unknown end_type: {request.end_type}"
+            )
+
+        return SessionEndResponse(
+            success=result.get("success", False),
+            session_id=request.session_id,
+            status=result.get("status", "unknown"),
+            time_spent=result.get("time_spent", 0),
+            hints_used=result.get("hints_used", 0),
+            attempt_count=result.get("attempt_count", 0),
+            error=result.get("error"),
+        )
+
+    except Exception as e:
+        print(f"[SessionEnd] Error: {e}")
+        return SessionEndResponse(
+            success=False,
+            session_id=request.session_id,
+            status="error",
+            time_spent=0,
+            error=str(e),
+        )
+
+
+@router.get("/session/stats")
+async def get_session_stats(
+    user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+    days: int = 30,
+):
+    """
+    세션 통계 조회
+
+    포기율, 완료율 등 세션 관련 통계를 조회합니다.
+
+    Args:
+        days: 조회 기간 (기본 30일)
+
+    Returns:
+        complete, skip, abandon 비율 및 상세 통계
+    """
+    from ..services.session_tracker import get_session_tracker
+
+    if not user_id:
+        return {"error": "로그인이 필요합니다."}
+
+    try:
+        tracker = get_session_tracker()
+        stats = await tracker.get_abandonment_stats(
+            user_id=str(user_id),
+            days=days,
+        )
+        return stats
+
+    except Exception as e:
+        print(f"[SessionStats] Error: {e}")
+        return {"error": str(e)}

@@ -62,6 +62,7 @@ class DiscoveryState(TypedDict, total=False):
     awaiting_selection: bool  # 선택 대기 상태
     search_offset: int  # 검색 오프셋 (더 찾아보기용)
     force_generate: bool  # 강제 생성 (새 문제 생성 버튼)
+    search_method: Optional[str]  # 🚀 Agentic RAG: metadata | semantic | hybrid
 
     # === 필터링 ===
     filtered_results: List[ProblemInfo]

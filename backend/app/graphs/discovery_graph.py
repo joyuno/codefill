@@ -97,12 +97,17 @@ async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
 
 async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     """
-    RAG를 통해 문제를 검색합니다.
-    offset을 사용하여 다음 결과를 가져올 수 있습니다.
+    Agentic RAG를 통해 문제를 검색합니다.
+
+    개선된 로직:
+    - topics + difficulty가 명확하면 메타데이터 검색만 (임베딩 비용 0)
+    - 불명확하면 시맨틱 검색 (임베딩 사용)
+    - offset을 사용하여 다음 결과를 가져올 수 있습니다.
     """
     from ..services.rag import rag_service
 
     collected_info = state.get("collected_info", {})
+    user_context = state.get("user_context", {})
     search_offset = state.get("search_offset", 0)
 
     # 검색 파라미터
@@ -110,7 +115,7 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     difficulty = collected_info.get("difficulty")
     language = collected_info.get("language", "python")
 
-    # 검색 쿼리 생성
+    # 검색 쿼리 생성 (시맨틱 검색 폴백용)
     query_parts = []
     if topics:
         query_parts.extend(topics)
@@ -118,17 +123,23 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
         query_parts.append(f"{difficulty} difficulty")
     query = " ".join(query_parts) if query_parts else "기초 알고리즘 문제"
 
-    # RAG 검색 (offset 적용: limit을 늘려서 가져온 후 슬라이싱)
+    # Agentic RAG: 스마트 검색 (메타데이터 vs 시맨틱 자동 판단)
     try:
         # offset + 5개를 가져와서 offset 이후 5개만 사용
         fetch_limit = search_offset + 5
-        results, should_fallback = await rag_service.search_problems_hybrid(
+
+        # 🚀 Agentic RAG: search_problems_smart 사용
+        results, should_fallback, search_method = await rag_service.search_problems_smart(
             query=query,
             topics=topics,
             difficulty=difficulty,
             language=language,
-            limit=fetch_limit
+            limit=fetch_limit,
+            user_context=user_context,
         )
+
+        print(f"[DiscoveryGraph:Search] Method: {search_method}, Results: {len(results)}")
+
         # offset 이후 결과만 사용
         results = results[search_offset:search_offset + 5]
 
@@ -187,6 +198,7 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     return {
         "search_results": search_results,
         "should_generate": should_generate,
+        "search_method": search_method,  # 🚀 Agentic RAG: metadata | semantic | hybrid
         "next_node": next_node,
     }
 

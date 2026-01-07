@@ -171,12 +171,24 @@ export interface Message {
   content: string;
   timestamp: string;
   chips?: QuickChip[];
+  suggestedActions?: SuggestedAction[];  // 🚀 Agentic 동적 선택지
 }
 
 export interface QuickChip {
   label: string;
   value: string;
   category: 'framework' | 'difficulty' | 'topic' | 'action' | 'language';
+}
+
+/**
+ * 🚀 Agentic 동적 선택지
+ * LLM이 생성한 개인화된 추천 버튼
+ */
+export interface SuggestedAction {
+  label: string;        // 버튼 텍스트 (예: "DP (추천)")
+  value: string;        // 선택 시 전송할 값 (예: "dp")
+  description?: string; // 추가 설명 (예: "연습 필요")
+  recommended?: boolean; // 추천 여부 (하이라이트 표시)
 }
 
 export interface ActivityDay {

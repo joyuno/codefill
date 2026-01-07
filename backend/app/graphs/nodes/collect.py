@@ -3,10 +3,326 @@ Info Collection Node
 
 사용자 메시지에서 문제 검색에 필요한 정보를 추출합니다.
 (주제, 난이도, 언어 등)
+
+🚀 Agentic 추천 시스템:
+- 하드코딩 → LLM 기반 동적 suggested_actions 생성
+- 사용자 컨텍스트 (약점, 최근 풀이, 목표) 기반 개인화
+
+🚀 협업 필터링:
+- 사용자 상호작용 로깅
+- 유사 사용자 기반 추천
 """
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from ..state import ChatState, CollectedInfo
+
+
+# ============================================================
+# 🚀 협업 필터링: 상호작용 로깅
+# ============================================================
+
+async def _log_collection_interaction(
+    user_id: Optional[str],
+    session_id: Optional[str],
+    interaction_type: str,
+    data: Dict[str, Any],
+    user_context: Dict[str, Any],
+):
+    """
+    정보 수집 단계에서 사용자 상호작용 로깅 (비차단)
+    """
+    if not user_id:
+        return
+
+    try:
+        from ...services.collaborative_filtering import get_collaborative_service
+        service = get_collaborative_service()
+
+        user_metadata = {
+            "goal": user_context.get("goal"),
+            "level": user_context.get("level"),
+        }
+
+        await service.log_interaction(
+            user_id=user_id,
+            session_id=session_id,
+            interaction_type=interaction_type,
+            data=data,
+            user_metadata=user_metadata,
+        )
+    except Exception as e:
+        print(f"[CollaborativeFiltering] Log error (non-blocking): {e}")
+
+
+# ============================================================
+# 🚀 Agentic 추천 시스템: 동적 선택지 생성
+# ============================================================
+
+async def _generate_dynamic_topic_suggestions(
+    user_context: dict,
+    personalization: dict,
+) -> tuple[str, List[dict]]:
+    """
+    LLM 기반 동적 주제 선택지 생성
+
+    하드코딩 대신 사용자 컨텍스트를 분석하여 개인화된 추천을 생성합니다.
+
+    Args:
+        user_context: 사용자 온보딩 데이터
+        personalization: 개인화 데이터 (weak_topics, recent_problems 등)
+
+    Returns:
+        (message, suggested_actions)
+        - message: 응답 메시지
+        - suggested_actions: [{label, value, description}]
+    """
+    from ...services.openrouter import openrouter_service
+
+    # 컨텍스트 추출
+    goal = user_context.get("goal", "")
+    level = user_context.get("level", "beginner")
+    weak_topics = personalization.get("skill_summary", {}).get("weak_topics", [])
+    recent_problems = personalization.get("recent_problems", [])
+    recommendations = personalization.get("recommendations", [])
+
+    # 최근 학습 주제
+    recent_topics = []
+    for p in recent_problems[:3]:
+        tags = p.get("tags") or p.get("topics") or []
+        recent_topics.extend(tags[:2])
+    recent_topics = list(set(recent_topics))[:3]
+
+    # 추천에서 주제 추출
+    recommended_topics = []
+    for rec in recommendations[:2]:
+        rec_topics = rec.get("topics", [])
+        recommended_topics.extend(rec_topics)
+
+    context_info = {
+        "goal": goal,
+        "level": level,
+        "weak_topics": weak_topics[:3],
+        "recent_topics": recent_topics,
+        "recommended_topics": recommended_topics[:2],
+        "has_history": personalization.get("has_history", False),
+    }
+
+    # LLM 프롬프트
+    system_prompt = """당신은 코딩 교육 플랫폼의 개인화 추천 엔진입니다.
+사용자 컨텍스트를 분석하여 맞춤형 주제 선택지를 생성하세요.
+
+## 사용자 컨텍스트
+{context}
+
+## 규칙
+1. 3-4개의 주제 선택지를 생성하세요
+2. 각 선택지는 사용자 상황에 맞게 개인화된 설명을 포함하세요
+3. 약점 주제가 있으면 우선 추천하세요
+4. 최근 학습 주제가 있으면 "이어서" 학습 옵션을 포함하세요
+5. 목표(대기업 코테 등)에 맞는 중요 주제를 포함하세요
+
+## 응답 형식 (JSON)
+{{
+  "message": "친근한 질문 메시지 (1-2문장)",
+  "suggested_actions": [
+    {{
+      "label": "주제명 (짧게)",
+      "value": "topic_value",
+      "description": "개인화된 이유 설명 (10자 이내)"
+    }}
+  ]
+}}
+
+## 가능한 주제 값 (value)
+- dp: 동적 프로그래밍
+- graph: 그래프 (BFS, DFS)
+- implementation: 구현/시뮬레이션
+- sorting: 정렬
+- binary_search: 이분탐색
+- string: 문자열
+- greedy: 그리디
+- data_structure: 자료구조 (스택, 큐, 해시)
+- tree: 트리
+- recursion: 재귀
+- math: 수학
+""".format(context=json.dumps(context_info, ensure_ascii=False, indent=2))
+
+    try:
+        response = await openrouter_service.chat_completion(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "사용자 컨텍스트에 맞는 주제 선택지를 생성해주세요."},
+            ],
+            temperature=0.7,
+            max_tokens=500,
+            response_format={"type": "json_object"},
+        )
+
+        content = openrouter_service.get_content(response)
+        result = openrouter_service.parse_json_response(content)
+
+        message = result.get("message", "어떤 주제로 연습해볼까요?")
+        suggested_actions = result.get("suggested_actions", [])
+
+        # 값 정규화 (한글 → 영어 값)
+        topic_value_map = {
+            "DP": "dp", "동적 프로그래밍": "dp", "dp": "dp",
+            "그래프": "graph", "graph": "graph",
+            "구현": "implementation", "implementation": "implementation",
+            "정렬": "sorting", "sorting": "sorting",
+            "이분탐색": "binary_search", "binary_search": "binary_search",
+            "문자열": "string", "string": "string",
+            "그리디": "greedy", "greedy": "greedy",
+            "자료구조": "data_structure", "data_structure": "data_structure",
+            "트리": "tree", "tree": "tree",
+            "재귀": "recursion", "recursion": "recursion",
+            "수학": "math", "math": "math",
+        }
+
+        for action in suggested_actions:
+            value = action.get("value", "")
+            action["value"] = topic_value_map.get(value, value)
+
+        print(f"[Agentic:TopicSuggestion] Generated {len(suggested_actions)} suggestions")
+        return message, suggested_actions
+
+    except Exception as e:
+        print(f"[Agentic:TopicSuggestion] LLM error, using fallback: {e}")
+        # 폴백: 기본 선택지
+        return _get_fallback_topic_suggestions(user_context, personalization)
+
+
+def _get_fallback_topic_suggestions(
+    user_context: dict,
+    personalization: dict,
+) -> tuple[str, List[dict]]:
+    """
+    LLM 실패 시 폴백 선택지 (규칙 기반)
+    """
+    goal = user_context.get("goal", "")
+    weak_topics = personalization.get("skill_summary", {}).get("weak_topics", [])
+
+    suggested_actions = []
+
+    # 약점 주제 우선
+    if weak_topics:
+        weak = weak_topics[0]
+        suggested_actions.append({
+            "label": f"{weak} (약점 보완)",
+            "value": weak.lower().replace(" ", "_"),
+            "description": "연습 필요"
+        })
+
+    # 대기업 목표면 필수 주제
+    if "대기업" in goal or "코테" in goal:
+        if not any(a.get("value") == "dp" for a in suggested_actions):
+            suggested_actions.append({
+                "label": "DP",
+                "value": "dp",
+                "description": "대기업 필수"
+            })
+        if not any(a.get("value") == "graph" for a in suggested_actions):
+            suggested_actions.append({
+                "label": "그래프",
+                "value": "graph",
+                "description": "빈출 유형"
+            })
+
+    # 기본 추가
+    default_topics = [
+        {"label": "구현", "value": "implementation", "description": "기본기 연습"},
+        {"label": "정렬", "value": "sorting", "description": "정석 알고리즘"},
+    ]
+
+    for topic in default_topics:
+        if len(suggested_actions) >= 4:
+            break
+        if not any(a.get("value") == topic["value"] for a in suggested_actions):
+            suggested_actions.append(topic)
+
+    message = "어떤 알고리즘을 연습해볼까요?"
+    return message, suggested_actions[:4]
+
+
+async def _generate_dynamic_difficulty_suggestions(
+    user_context: dict,
+    personalization: dict,
+    selected_topic: str = None,
+) -> tuple[str, List[dict]]:
+    """
+    동적 난이도 선택지 생성
+
+    사용자 실력과 선택 주제를 고려하여 적절한 난이도를 추천합니다.
+    """
+    level = user_context.get("level", "beginner")
+    skill_summary = personalization.get("skill_summary", {})
+    preferred_difficulty = skill_summary.get("preferred_difficulty", "easy")
+
+    # 난이도 순서
+    diff_order = ["easy", "medium", "medium_hard", "hard", "very_hard"]
+    diff_display = {
+        "easy": ("실버", "기본 개념 익히기"),
+        "medium": ("골드", "응용력 키우기"),
+        "medium_hard": ("플래티넘", "심화 문제 도전"),
+        "hard": ("다이아", "고급 알고리즘"),
+        "very_hard": ("마스터", "최상위 난이도"),
+    }
+
+    suggested_actions = []
+
+    # 1. 추천 난이도 (가장 먼저)
+    if preferred_difficulty in diff_display:
+        name, desc = diff_display[preferred_difficulty]
+        suggested_actions.append({
+            "label": f"{name} (추천)",
+            "value": preferred_difficulty,
+            "description": "실력에 맞춰요"
+        })
+
+    # 2. 한 단계 높은 난이도 (도전)
+    try:
+        curr_idx = diff_order.index(preferred_difficulty)
+        if curr_idx < len(diff_order) - 1:
+            next_diff = diff_order[curr_idx + 1]
+            name, desc = diff_display[next_diff]
+            suggested_actions.append({
+                "label": f"{name} (도전)",
+                "value": next_diff,
+                "description": "한 단계 업!"
+            })
+    except ValueError:
+        pass
+
+    # 3. 한 단계 낮은 난이도 (복습)
+    try:
+        curr_idx = diff_order.index(preferred_difficulty)
+        if curr_idx > 0:
+            prev_diff = diff_order[curr_idx - 1]
+            name, desc = diff_display[prev_diff]
+            suggested_actions.append({
+                "label": name,
+                "value": prev_diff,
+                "description": "기초 다지기"
+            })
+    except ValueError:
+        pass
+
+    # 4. 레벨 기반 기본 추천
+    if not suggested_actions:
+        if level in ["beginner", "elementary"]:
+            suggested_actions = [
+                {"label": "실버 (추천)", "value": "easy", "description": "기본부터"},
+                {"label": "골드", "value": "medium", "description": "도전해볼까요?"},
+            ]
+        else:
+            suggested_actions = [
+                {"label": "골드 (추천)", "value": "medium", "description": "적당한 난이도"},
+                {"label": "플래티넘", "value": "medium_hard", "description": "도전!"},
+            ]
+
+    message = "난이도를 선택해주세요!"
+    return message, suggested_actions[:4]
 
 
 async def collect_info(state: ChatState) -> Dict[str, Any]:
@@ -157,6 +473,37 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         "selected_problem_index": new_info.get("selected_problem_index") or existing_info.get("selected_problem_index"),
     }
 
+    # 🚀 협업 필터링: 새로운 선택 로깅 (비차단)
+    user_id = user_context.get("user_id")
+    session_id = state.get("session_id")
+
+    if new_info.get("topics") and new_info.get("topics") != existing_info.get("topics"):
+        await _log_collection_interaction(
+            user_id=user_id,
+            session_id=session_id,
+            interaction_type="topic_select",
+            data={"topic": new_info["topics"][0] if new_info["topics"] else None},
+            user_context=user_context,
+        )
+
+    if new_info.get("difficulty") and new_info.get("difficulty") != existing_info.get("difficulty"):
+        await _log_collection_interaction(
+            user_id=user_id,
+            session_id=session_id,
+            interaction_type="difficulty_select",
+            data={"difficulty": new_info["difficulty"]},
+            user_context=user_context,
+        )
+
+    if new_info.get("language") and new_info.get("language") != existing_info.get("language"):
+        await _log_collection_interaction(
+            user_id=user_id,
+            session_id=session_id,
+            interaction_type="language_select",
+            data={"language": new_info["language"]},
+            user_context=user_context,
+        )
+
     is_complete = result.get("is_complete", False)
     action_trigger = result.get("action_trigger")
     intent = intent_result.get("intent", "")
@@ -180,45 +527,43 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         next_node = "respond"  # 추가 질문 응답
 
     # random_recommend 의도도 단계별로 정보 수집
+    suggested_actions = None  # 🚀 동적 선택지
+
     if intent == "random_recommend":
         user_context = state.get("user_context", {})
-        user_level = user_context.get("level", "beginner")
+        personalization = user_context.get("personalization", {})
 
-        # 1. 주제가 없으면 추천 (회원 프로필 기반 - 기초 하드코딩 제거)
+        # 1. 주제가 없으면 🚀 동적 선택지 생성
         if not merged_info.get("topics"):
             is_complete = False
-            response_message = (
-                "어떤 알고리즘을 연습해볼까요?\n\n"
-                "• **DP** - 동적 프로그래밍 (대기업 필수!)\n"
-                "• **그래프** - BFS, DFS 탐색\n"
-                "• **구현** - 시뮬레이션, 완전탐색\n"
-                "• **정렬** - 버블, 퀵, 병합 정렬\n"
-                "• **이분탐색** - 효율적 검색\n\n"
-                "회원님의 목표에 맞게 추천해드릴게요!"
+            response_message, suggested_actions = await _generate_dynamic_topic_suggestions(
+                user_context=user_context,
+                personalization=personalization,
             )
             next_node = "respond"
-        # 2. 난이도가 없으면 유저 레벨 기반 추천
+
+        # 2. 난이도가 없으면 🚀 동적 난이도 선택지
         elif not merged_info.get("difficulty"):
             is_complete = False
-            # 유저 레벨에 따른 난이도 추천
-            recommended = "easy" if user_level in ["beginner", "elementary"] else "medium"
-            # 유저 레벨에 따른 추천 난이도 변환
-            tier_recommended = {"easy": "실버", "medium": "골드"}.get(recommended, "실버")
-            response_message = (
-                f"난이도는 어떻게 할까요?\n\n"
-                f"• **실버** - 기본 개념 익히기\n"
-                f"• **골드** - 응용 문제\n"
-                f"• **플래티넘** - 심화 문제\n"
-                f"• **다이아** - 도전 문제\n"
-                f"• **마스터** - 최상위 난이도\n\n"
-                f"회원님 레벨 기준으로 **{tier_recommended}** 추천드려요!"
+            selected_topic = merged_info.get("topics", [None])[0]
+            response_message, suggested_actions = await _generate_dynamic_difficulty_suggestions(
+                user_context=user_context,
+                personalization=personalization,
+                selected_topic=selected_topic,
             )
             next_node = "respond"
-        # 3. 언어가 없으면 물어보기
+
+        # 3. 언어가 없으면 물어보기 (간단한 선택지)
         elif not merged_info.get("language"):
             is_complete = False
-            response_message = "어떤 프로그래밍 언어로 풀어볼까요? (Python, Java, C++)"
+            response_message = "어떤 프로그래밍 언어로 풀어볼까요?"
+            suggested_actions = [
+                {"label": "Python", "value": "python", "description": "인기 1위"},
+                {"label": "Java", "value": "java", "description": "기업 선호"},
+                {"label": "C++", "value": "cpp", "description": "성능 최적화"},
+            ]
             next_node = "respond"
+
         # 4. 모두 있으면 검색
         else:
             next_node = "search_problems"
@@ -229,6 +574,7 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         "is_info_complete": is_complete,
         "response_message": response_message,
         "action_trigger": action_trigger,
+        "suggested_actions": suggested_actions,  # 🚀 동적 선택지 포함
         "next_node": next_node,
     }
 

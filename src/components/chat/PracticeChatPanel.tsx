@@ -15,8 +15,10 @@ import type {
   GeneratedBlankData,
   GeneratedPuzzleData,
   GeneratedGuidedData,
+  SuggestedAction,
 } from '@/lib/api/agent';
 import type { Message, QuickChip } from '@/lib/types';
+import { SuggestedActions } from './SuggestedActions';
 import type { ConvertedProblem } from '@/lib/dataTypes';
 import { Loader2, Lightbulb, BookOpen, Sparkles, GraduationCap, Code } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -1489,12 +1491,17 @@ export function PracticeChatPanel({
         setMessages(prev => [...prev, assistantMessage]);
       } else {
         // Normal chat flow
+        // 🚀 Agentic 동적 선택지 처리
+        const suggestedActions = chatResponse.suggested_actions ||
+          (backendActionData?.suggested_actions as SuggestedAction[] | undefined);
+
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
           content: responseMessage,
           timestamp: new Date().toISOString(),
           chips,
+          suggestedActions,  // 🚀 동적 선택지 추가
         };
         setMessages(prev => [...prev, assistantMessage]);
 
@@ -1514,6 +1521,12 @@ export function PracticeChatPanel({
       setIsLoading(false);
     }
   }, [isLoading, conversationHistory, getUserContext]);  // refs don't need to be in deps (stable references)
+
+  // 🚀 Handle suggested action click (Agentic 동적 선택지)
+  const handleSuggestedActionClick = useCallback((action: SuggestedAction) => {
+    // suggested action을 메시지로 전송 (label을 그대로 사용)
+    handleSendMessage(action.label);
+  }, [handleSendMessage]);
 
   // Fetch problem recommendations
   const fetchRecommendations = useCallback(async (info: CollectedInfo) => {
@@ -1629,6 +1642,7 @@ export function PracticeChatPanel({
               key={message.id}
               message={message}
               onChipClick={handleChipClick}
+              onSuggestedActionClick={handleSuggestedActionClick}
             />
           ))}
           {isLoading && (

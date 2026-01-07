@@ -21,6 +21,9 @@ class RAGService:
     # Similarity threshold for fallback to code generation
     SIMILARITY_THRESHOLD = 0.30  # Below this, trigger code generation
 
+    # Agentic RAG: Minimum metadata for skipping semantic search
+    MIN_METADATA_FOR_SKIP = 2  # topics + difficulty 있으면 메타데이터 검색만
+
     # Topic mapping (Korean -> English variations)
     TOPIC_MAPPING = {
         "DP": ["Dynamic programming", "DP", "Memoization"],
@@ -41,6 +44,198 @@ class RAGService:
 
     def __init__(self):
         self.db = get_supabase_client()
+
+    # ============================================================
+    # Agentic RAG: 검색 필요성 판단 및 스마트 검색
+    # ============================================================
+
+    def _has_sufficient_metadata(
+        self,
+        topics: List[str] = None,
+        difficulty: str = None,
+        language: str = None,
+    ) -> bool:
+        """
+        메타데이터만으로 검색이 가능한지 판단
+
+        조건:
+        - topics가 있고 + difficulty가 있으면 → 메타데이터 검색 가능
+        - 또는 topics가 2개 이상이면 → 메타데이터 검색 가능
+
+        Returns:
+            True: 메타데이터만으로 충분 (임베딩 스킵)
+            False: 시맨틱 검색 필요
+        """
+        metadata_count = 0
+        if topics and len(topics) > 0:
+            metadata_count += 1
+            if len(topics) >= 2:
+                metadata_count += 1  # 토픽이 구체적
+        if difficulty:
+            metadata_count += 1
+        if language:
+            metadata_count += 0.5  # 언어는 보조 필터
+
+        return metadata_count >= self.MIN_METADATA_FOR_SKIP
+
+    async def search_problems_metadata_only(
+        self,
+        topics: List[str] = None,
+        difficulty: str = None,
+        language: str = None,
+        limit: int = 5,
+        exclude_ids: List[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        메타데이터만으로 문제 검색 (임베딩 비용 0)
+
+        DB 필터링만 사용하여 빠르게 검색합니다.
+        topics/difficulty가 명확할 때 사용합니다.
+
+        Args:
+            topics: 주제 필터
+            difficulty: 난이도 필터
+            language: 언어 필터
+            limit: 최대 결과 수
+            exclude_ids: 제외할 문제 ID
+
+        Returns:
+            검색된 문제 목록
+        """
+        try:
+            print(f"[RAG:Metadata] Searching with metadata only: topics={topics}, diff={difficulty}, lang={language}")
+
+            db_query = self.db.table("base_problems").select("*")
+
+            # 난이도 필터
+            if difficulty:
+                db_query = db_query.eq("difficulty", difficulty)
+
+            # 토픽 필터 (확장된 토픽 사용)
+            if topics:
+                expanded_topics = self._expand_topics(topics)
+                db_query = db_query.overlaps("tags", expanded_topics)
+
+            # 충분한 결과를 위해 여유있게 가져오기
+            fetch_limit = limit * 3 if language else limit
+            db_query = db_query.limit(fetch_limit)
+
+            response = db_query.execute()
+            problems = response.data or []
+
+            # 언어 필터링 (solutions 배열 내부 검색)
+            if language and problems:
+                problems = [
+                    p for p in problems
+                    if any(s.get("language") == language for s in p.get("solutions", []))
+                ]
+
+            # 제외 ID 필터링
+            if exclude_ids and problems:
+                exclude_set = set(exclude_ids)
+                problems = [p for p in problems if p.get("id") not in exclude_set]
+
+            # 결과가 있으면 랜덤하게 섞어서 다양성 확보
+            if len(problems) > limit:
+                import random
+                random.shuffle(problems)
+
+            print(f"[RAG:Metadata] Found {len(problems)} problems (returning top {limit})")
+            return problems[:limit]
+
+        except Exception as e:
+            print(f"[RAG:Metadata] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    async def search_problems_smart(
+        self,
+        query: str,
+        topics: List[str] = None,
+        difficulty: str = None,
+        language: str = None,
+        limit: int = 5,
+        exclude_ids: List[str] = None,
+        user_context: Dict[str, Any] = None,
+    ) -> Tuple[List[Dict[str, Any]], bool, str]:
+        """
+        Agentic RAG: 검색 필요성을 판단하여 최적의 방법 선택
+
+        1단계: 메타데이터 충분성 확인
+        2단계: 충분하면 메타데이터 검색, 아니면 시맨틱 검색
+
+        Args:
+            query: 검색 쿼리
+            topics: 주제 필터
+            difficulty: 난이도 필터
+            language: 언어 필터
+            limit: 최대 결과 수
+            exclude_ids: 제외할 문제 ID
+            user_context: 개인화 컨텍스트
+
+        Returns:
+            Tuple of (results, should_fallback, search_method)
+            - results: 검색 결과
+            - should_fallback: CodeGen 필요 여부
+            - search_method: "metadata" | "semantic" | "hybrid"
+        """
+        # 개인화 컨텍스트에서 추가 정보 추출
+        enhanced_topics = topics or []
+        if user_context and not topics:
+            weak_topics = user_context.get("weak_topics", [])
+            if weak_topics:
+                enhanced_topics = weak_topics[:2]
+
+        if user_context and not difficulty:
+            difficulty = user_context.get("preferred_difficulty")
+
+        # Agentic 판단: 메타데이터만으로 충분한가?
+        if self._has_sufficient_metadata(enhanced_topics or topics, difficulty, language):
+            print(f"[RAG:Smart] Using METADATA-ONLY search (cost: $0)")
+
+            results = await self.search_problems_metadata_only(
+                topics=enhanced_topics or topics,
+                difficulty=difficulty,
+                language=language,
+                limit=limit,
+                exclude_ids=exclude_ids,
+            )
+
+            # 결과가 부족하면 시맨틱 검색으로 폴백
+            if len(results) < 2:
+                print(f"[RAG:Smart] Metadata search insufficient ({len(results)} results), falling back to semantic")
+                results, should_fallback = await self.search_problems_hybrid(
+                    query=query,
+                    topics=enhanced_topics or topics,
+                    difficulty=difficulty,
+                    language=language,
+                    limit=limit,
+                    exclude_ids=exclude_ids,
+                    user_context=user_context,
+                )
+                return results, should_fallback, "hybrid"
+
+            should_fallback = len(results) == 0
+            return results, should_fallback, "metadata"
+
+        else:
+            print(f"[RAG:Smart] Using SEMANTIC search (insufficient metadata)")
+
+            results, should_fallback = await self.search_problems_hybrid(
+                query=query,
+                topics=enhanced_topics or topics,
+                difficulty=difficulty,
+                language=language,
+                limit=limit,
+                exclude_ids=exclude_ids,
+                user_context=user_context,
+            )
+            return results, should_fallback, "semantic"
+
+    # ============================================================
+    # 기존 Hybrid Search (시맨틱 검색)
+    # ============================================================
 
     async def search_problems_hybrid(
         self,
@@ -153,6 +348,28 @@ class RAGService:
             # If we have filtered results (by topic/difficulty), don't fallback
             # Only fallback if no results at all
             should_fallback = len(results) == 0
+
+            # Step 7: 🚀 MMR 다양성 재정렬 (결과가 충분할 때만)
+            if len(results) > limit:
+                results = self._mmr_rerank(
+                    results=results,
+                    embeddings_map=embeddings_map,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                    lambda_param=0.7,  # 70% 관련성, 30% 다양성
+                )
+                print(f"[RAG:Hybrid] Applied MMR reranking for diversity")
+
+            # Step 8: 🚀 검색 품질 평가 (비동기, 로깅용)
+            await self._evaluate_search_quality(
+                request_params={
+                    "topics": topics,
+                    "difficulty": difficulty,
+                    "language": language,
+                },
+                results=results[:limit],
+                user_context=user_context,
+            )
 
             return results[:limit], should_fallback
 
@@ -595,6 +812,85 @@ class RAGService:
         v2 = np.array(vec2)
         return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
 
+    def _mmr_rerank(
+        self,
+        results: List[Dict[str, Any]],
+        embeddings_map: Dict[str, List[float]],
+        query_embedding: List[float],
+        limit: int = 5,
+        lambda_param: float = 0.7,
+    ) -> List[Dict[str, Any]]:
+        """
+        MMR (Maximal Marginal Relevance) 재정렬
+
+        다양성과 관련성의 균형을 맞추어 결과를 재정렬합니다.
+
+        Args:
+            results: 원본 검색 결과 (similarity 포함)
+            embeddings_map: 문제 ID -> 임베딩 매핑
+            query_embedding: 쿼리 임베딩
+            limit: 반환할 결과 수
+            lambda_param: 관련성 vs 다양성 가중치 (0.7 = 70% 관련성, 30% 다양성)
+
+        Returns:
+            MMR로 재정렬된 결과
+        """
+        import numpy as np
+
+        if len(results) <= limit:
+            return results
+
+        # 결과 중 임베딩이 있는 것만 필터링
+        results_with_emb = [
+            r for r in results
+            if r.get("id") in embeddings_map
+        ]
+
+        if len(results_with_emb) <= limit:
+            return results_with_emb
+
+        query_vec = np.array(query_embedding)
+        selected: List[Dict[str, Any]] = []
+        candidates = results_with_emb.copy()
+
+        while len(selected) < limit and candidates:
+            best_idx = -1
+            best_mmr = float("-inf")
+
+            for i, candidate in enumerate(candidates):
+                cand_id = candidate.get("id")
+                cand_vec = np.array(embeddings_map.get(cand_id, []))
+
+                if len(cand_vec) == 0:
+                    continue
+
+                # 쿼리와의 유사도 (관련성)
+                relevance = candidate.get("similarity", 0.5)
+
+                # 이미 선택된 문서들과의 최대 유사도 (다양성 페널티)
+                max_sim_to_selected = 0.0
+                if selected:
+                    for s in selected:
+                        s_id = s.get("id")
+                        s_vec = embeddings_map.get(s_id)
+                        if s_vec is not None:
+                            sim = self._cosine_similarity(cand_vec.tolist(), s_vec)
+                            max_sim_to_selected = max(max_sim_to_selected, sim)
+
+                # MMR 점수 = λ × 관련성 - (1-λ) × 기존 선택과의 유사도
+                mmr_score = lambda_param * relevance - (1 - lambda_param) * max_sim_to_selected
+
+                if mmr_score > best_mmr:
+                    best_mmr = mmr_score
+                    best_idx = i
+
+            if best_idx >= 0:
+                selected.append(candidates.pop(best_idx))
+            else:
+                break
+
+        return selected
+
     async def search_problems_personalized(
         self,
         query: str,
@@ -703,6 +999,44 @@ class RAGService:
             return tgt_idx == curr_idx + 1
         except ValueError:
             return False
+
+    async def _evaluate_search_quality(
+        self,
+        request_params: Dict[str, Any],
+        results: List[Dict[str, Any]],
+        user_context: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        🚀 검색 품질 평가 및 로깅
+
+        검색 결과의 품질을 측정하여 로깅합니다.
+        A/B 테스트와 연동하여 알고리즘 개선 효과를 측정합니다.
+        """
+        try:
+            from .search_quality import get_search_quality_evaluator
+
+            evaluator = get_search_quality_evaluator()
+            user_id = user_context.get("user_id") if user_context else None
+
+            score = await evaluator.evaluate_and_log(
+                request_params=request_params,
+                search_results=results,
+                user_id=user_id,
+                experiment_name="search_quality_v1",
+            )
+
+            # 로깅 (디버그용)
+            print(f"[RAG:Quality] Score: {score.overall:.3f} ({score.grade}) "
+                  f"[meta:{score.metadata_match:.2f}, hist:{score.historical_success:.2f}, div:{score.diversity:.2f}]")
+
+            # 품질이 낮으면 경고
+            if score.overall < 0.5:
+                suggestions = evaluator.get_improvement_suggestions(score)
+                print(f"[RAG:Quality] ⚠️ Low quality - Suggestions: {suggestions}")
+
+        except Exception as e:
+            # 품질 평가 실패는 검색 결과에 영향을 주지 않음
+            print(f"[RAG:Quality] Evaluation failed (non-blocking): {e}")
 
 
 # Singleton instance

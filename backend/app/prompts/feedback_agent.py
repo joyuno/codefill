@@ -203,22 +203,89 @@ def format_solve_time(seconds: int) -> str:
         minutes = (seconds % 3600) // 60
         return f"{hours}시간 {minutes}분"
 
+# 난이도별 설정값
+DIFFICULTY_CONFIG = {
+    "easy": {
+        "hint_penalty": 15,           # 힌트당 페널티 (쉬운 문제는 힌트 사용 시 감점 큼)
+        "attempt_penalty": 8,         # 추가 시도당 페널티
+        "expected_time_multiplier": 0.8,  # 평균 대비 기대 시간 (80%)
+        "base_xp": 10,                # 기본 XP
+        "perfect_bonus": 5,           # 완벽 클리어 보너스 XP
+    },
+    "medium": {
+        "hint_penalty": 10,           # 중간 난이도는 표준
+        "attempt_penalty": 5,
+        "expected_time_multiplier": 1.0,
+        "base_xp": 20,
+        "perfect_bonus": 10,
+    },
+    "medium_hard": {
+        "hint_penalty": 8,            # 어려울수록 힌트 사용에 관대
+        "attempt_penalty": 4,
+        "expected_time_multiplier": 1.2,
+        "base_xp": 30,
+        "perfect_bonus": 15,
+    },
+    "hard": {
+        "hint_penalty": 6,            # 어려운 문제는 힌트 사용해도 OK
+        "attempt_penalty": 3,
+        "expected_time_multiplier": 1.5,
+        "base_xp": 40,
+        "perfect_bonus": 20,
+    },
+    "very_hard": {
+        "hint_penalty": 4,            # 매우 어려운 문제는 힌트가 학습의 일부
+        "attempt_penalty": 2,
+        "expected_time_multiplier": 2.0,
+        "base_xp": 50,
+        "perfect_bonus": 30,
+    },
+}
+
+
+def get_difficulty_config(difficulty: str) -> dict:
+    """난이도별 설정 조회"""
+    return DIFFICULTY_CONFIG.get(difficulty.lower(), DIFFICULTY_CONFIG["medium"])
+
+
 # 점수 계산 헬퍼
-def calculate_scores(hints_used: int, attempt_count: int, time_seconds: int, avg_time: int) -> dict:
+def calculate_scores(
+    hints_used: int,
+    attempt_count: int,
+    time_seconds: int,
+    avg_time: int,
+    difficulty: str = "medium",
+) -> dict:
     """
     각종 점수를 계산합니다.
 
+    Args:
+        hints_used: 사용한 힌트 수
+        attempt_count: 시도 횟수
+        time_seconds: 실제 풀이 시간 (초)
+        avg_time: 평균 풀이 시간 (초)
+        difficulty: 난이도 (easy/medium/medium_hard/hard/very_hard)
+
     Returns:
-        {efficiency_score, speed_score, understanding_score} 딕셔너리
+        {efficiency_score, speed_score, understanding_score, difficulty_bonus} 딕셔너리
+
+    난이도별 차등:
+    - easy: 힌트/시도 페널티 높음, 시간 기준 엄격
+    - medium: 표준 기준
+    - hard: 힌트/시도에 관대, 시간 기준 느슨
+    - very_hard: 완주 자체가 대단함, 매우 관대한 기준
     """
-    # 효율성: 힌트와 시도 횟수 기반
-    hint_penalty = hints_used * 10  # 힌트당 -10점
-    attempt_penalty = max(0, (attempt_count - 1) * 5)  # 추가 시도당 -5점
+    config = get_difficulty_config(difficulty)
+
+    # 효율성: 힌트와 시도 횟수 기반 (난이도별 차등 페널티)
+    hint_penalty = hints_used * config["hint_penalty"]
+    attempt_penalty = max(0, (attempt_count - 1) * config["attempt_penalty"])
     efficiency = max(0, 100 - hint_penalty - attempt_penalty)
 
-    # 속도: 평균 대비
-    if avg_time > 0:
-        time_ratio = time_seconds / avg_time
+    # 속도: 평균 대비 (난이도별 기대 시간 조정)
+    expected_time = avg_time * config["expected_time_multiplier"]
+    if expected_time > 0:
+        time_ratio = time_seconds / expected_time
         if time_ratio < 0.5:
             speed = 100
         elif time_ratio < 1.0:
@@ -230,11 +297,64 @@ def calculate_scores(hints_used: int, attempt_count: int, time_seconds: int, avg
     else:
         speed = 70  # 평균 없으면 기본값
 
-    # 이해도: 힌트 레벨과 정답률 기반
-    understanding = max(0, 100 - (hints_used * 15) - (max(0, attempt_count - 1) * 10))
+    # 이해도: 힌트 레벨과 정답률 기반 (난이도별 차등)
+    hint_understanding_penalty = hints_used * (config["hint_penalty"] + 5)
+    attempt_understanding_penalty = max(0, attempt_count - 1) * (config["attempt_penalty"] + 5)
+    understanding = max(0, 100 - hint_understanding_penalty - attempt_understanding_penalty)
+
+    # 난이도 보너스: 어려운 문제일수록 보너스 점수
+    difficulty_bonus = {
+        "easy": 0,
+        "medium": 5,
+        "medium_hard": 10,
+        "hard": 15,
+        "very_hard": 25,
+    }.get(difficulty.lower(), 0)
 
     return {
         "efficiency_score": min(100, efficiency),
         "speed_score": min(100, speed),
         "understanding_score": min(100, understanding),
+        "difficulty_bonus": difficulty_bonus,
+        "difficulty_config": config,
     }
+
+
+def calculate_xp(
+    is_correct: bool,
+    hints_used: int,
+    attempt_count: int,
+    difficulty: str = "medium",
+) -> int:
+    """
+    획득 XP 계산 (난이도별 차등)
+
+    Args:
+        is_correct: 정답 여부
+        hints_used: 힌트 사용 수
+        attempt_count: 시도 횟수
+        difficulty: 난이도
+
+    Returns:
+        획득 XP
+    """
+    if not is_correct:
+        return 5  # 오답이어도 시도 보상
+
+    config = get_difficulty_config(difficulty)
+    base_xp = config["base_xp"]
+
+    # 힌트 페널티 (난이도별 차등)
+    hint_reduction = hints_used * (config["hint_penalty"] // 2)
+
+    # 시도 페널티
+    attempt_reduction = max(0, (attempt_count - 1) * (config["attempt_penalty"] // 2))
+
+    # 완벽 보너스
+    perfect_bonus = 0
+    if hints_used == 0 and attempt_count == 1:
+        perfect_bonus = config["perfect_bonus"]
+
+    xp = max(base_xp // 2, base_xp - hint_reduction - attempt_reduction + perfect_bonus)
+
+    return xp

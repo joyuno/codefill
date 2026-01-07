@@ -24,6 +24,7 @@ from .discovery_graph import DiscoveryGraph
 from .solving_graph import ProblemSolvingGraph
 from .checkpointer import get_checkpointer, create_thread_config
 from ..services.problem_save import get_problem_save_service
+from ..services.history_refiner import get_history_refiner
 from ..tools.intent_tools import intent_tool, IntentCategory, ActionType
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,41 @@ class ChatOrchestratorV2:
         search_results = session_state.get("search_results", [])
         selected_problem = session_state.get("selected_problem")
         current_stage = session_state.get("current_stage", "intent")
+
+        # ============================================================
+        # 🚀 히스토리 정제 (의도 분류 전)
+        # - 긴 히스토리를 의도에 맞게 필터링
+        # - 중요 컨텍스트 추출
+        # ============================================================
+        refined_history = None
+        history_context = {}
+        if len(conversation_history) > 5:
+            try:
+                history_refiner = get_history_refiner()
+                # 의도 분류 전이므로 general로 정제
+                refined = await history_refiner.refine(
+                    history=conversation_history,
+                    intent="general",
+                    max_messages=10,
+                )
+                refined_history = refined.messages
+                history_context = refined.context_summary
+                logger.debug(
+                    f"[Orchestrator] History refined: {refined.original_count} → {refined.refined_count}"
+                )
+            except Exception as e:
+                logger.warning(f"[Orchestrator] History refinement failed: {e}")
+                refined_history = conversation_history[-10:]  # fallback
+
+        # 정제된 히스토리 또는 원본 사용 (이후 모든 그래프에서 사용)
+        conversation_history = refined_history if refined_history else conversation_history
+
+        # 히스토리에서 추출된 컨텍스트를 collected_info에 병합
+        if history_context:
+            if history_context.get("topics") and not collected_info.get("topics"):
+                collected_info["topics"] = history_context["topics"]
+            if history_context.get("difficulty") and not collected_info.get("difficulty"):
+                collected_info["difficulty"] = history_context["difficulty"]
 
         # ============================================================
         # 통합 Intent Tool로 의도 분류 (한 번에 처리)

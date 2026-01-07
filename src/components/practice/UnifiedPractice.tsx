@@ -135,6 +135,7 @@ interface UnifiedPracticeProps {
   onSubmit: (code: string, results: TestResult[], hintsUsed?: number) => void;
   onRun: (code: string) => void;
   onHintRequest: (level: number) => void;
+  onGiveUp?: () => void;  // 포기하기
   attemptId?: string;  // attempt tracking for hint recording
 }
 
@@ -144,6 +145,7 @@ export function UnifiedPractice({
   onSubmit,
   onRun,
   onHintRequest,
+  onGiveUp,
   attemptId,
 }: UnifiedPracticeProps) {
   // 공통 상태
@@ -1685,6 +1687,19 @@ export function UnifiedPractice({
             )}
           </div>
           <div className="flex gap-2">
+            {/* 포기 버튼 - 제출 전에만 표시 */}
+            {!isSubmitted && onGiveUp && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onGiveUp}
+                disabled={isRunning}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                포기
+              </Button>
+            )}
             {/* 실행 버튼 - implementation에서만 표시 */}
             {problemType === 'implementation' && (
               <Button

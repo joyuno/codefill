@@ -122,6 +122,42 @@ export interface StartPracticeResult {
   attemptId: string;
   startedAt: string;
   message: string;
+  sessionId?: string;  // 세션 추적용 ID
+}
+
+// ============================================================
+// Session Tracking
+// ============================================================
+
+export interface SessionHeartbeatRequest {
+  sessionId: string;
+  hintsUsed?: number;
+  attemptCount?: number;
+}
+
+export interface SessionHeartbeatResult {
+  success: boolean;
+  sessionStatus: 'active' | 'expired' | 'abandoned';
+  timeSpent?: number;
+  error?: string;
+}
+
+export interface SessionEndRequest {
+  sessionId: string;
+  endType: 'complete' | 'skip' | 'abandon';
+  reason?: string;
+  isCorrect?: boolean;
+  score?: number;
+}
+
+export interface SessionEndResult {
+  success: boolean;
+  sessionId: string;
+  status: 'completed' | 'skipped' | 'abandoned';
+  timeSpent: number;
+  hintsUsed: number;
+  attemptCount: number;
+  error?: string;
 }
 
 export const practiceApi = {
@@ -133,6 +169,7 @@ export const practiceApi = {
       attempt_id: string;
       started_at: string;
       message: string;
+      session_id?: string;
     }>('/practice/start', {
       problem_id: request.problemId,
       problem_type: request.problemType,
@@ -145,6 +182,61 @@ export const practiceApi = {
       attemptId: response.data!.attempt_id,
       startedAt: response.data!.started_at,
       message: response.data!.message,
+      sessionId: response.data!.session_id,
+    };
+  },
+
+  /**
+   * Send session heartbeat to keep session alive
+   */
+  async sessionHeartbeat(request: SessionHeartbeatRequest): Promise<SessionHeartbeatResult> {
+    const response = await api.post<{
+      success: boolean;
+      session_status: 'active' | 'expired' | 'abandoned';
+      time_spent?: number;
+      error?: string;
+    }>('/practice/session/heartbeat', {
+      session_id: request.sessionId,
+      hints_used: request.hintsUsed,
+      attempt_count: request.attemptCount,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return {
+      success: response.data!.success,
+      sessionStatus: response.data!.session_status,
+      timeSpent: response.data!.time_spent,
+      error: response.data!.error,
+    };
+  },
+
+  /**
+   * End session (complete, skip, or abandon)
+   */
+  async sessionEnd(request: SessionEndRequest): Promise<SessionEndResult> {
+    const response = await api.post<{
+      success: boolean;
+      session_id: string;
+      status: 'completed' | 'skipped' | 'abandoned';
+      time_spent: number;
+      hints_used: number;
+      attempt_count: number;
+      error?: string;
+    }>('/practice/session/end', {
+      session_id: request.sessionId,
+      end_type: request.endType,
+      reason: request.reason,
+      is_correct: request.isCorrect,
+      score: request.score,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return {
+      success: response.data!.success,
+      sessionId: response.data!.session_id,
+      status: response.data!.status,
+      timeSpent: response.data!.time_spent,
+      hintsUsed: response.data!.hints_used,
+      attemptCount: response.data!.attempt_count,
+      error: response.data!.error,
     };
   },
 

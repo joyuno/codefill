@@ -411,6 +411,17 @@ export interface GeneratedGuidedData {
 
 export type GeneratedProblemData = GeneratedBlankData | GeneratedPuzzleData | GeneratedGuidedData;
 
+/**
+ * 🚀 Agentic 동적 선택지
+ * LLM이 생성한 개인화된 추천 버튼
+ */
+export interface SuggestedAction {
+  label: string;        // 버튼 텍스트 (예: "DP (추천)")
+  value: string;        // 선택 시 전송할 값 (예: "dp")
+  description?: string; // 추가 설명 (예: "연습 필요")
+  recommended?: boolean; // 추천 여부 (하이라이트 표시)
+}
+
 export interface ChatV2Response {
   stage: string;  // intent, discovery, solving, problem_generation
   message: string;
@@ -430,6 +441,8 @@ export interface ChatV2Response {
   // 정보 수집 단계: 네/아니오 확인 상태
   awaiting_confirmation?: boolean;
   suggested_value?: string;
+  // 🚀 Agentic 동적 선택지 (LLM 기반 개인화 추천)
+  suggested_actions?: SuggestedAction[];
   // 세션 ID (DB 기반 히스토리 관리용)
   session_id?: string;
 }
