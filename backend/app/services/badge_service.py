@@ -193,6 +193,7 @@ class BadgeService:
         if trigger_type == 'solve':
             # 문제 풀이 시 체크할 조건들
             relevant_condition_types.add('problems')  # 총 문제 수
+            relevant_condition_types.add('streak')    # 스트릭
             relevant_condition_types.add('level')     # 레벨
             relevant_condition_types.add('daily')     # 하루 집중
             relevant_condition_types.add('time')      # 시간대
@@ -467,9 +468,16 @@ class BadgeService:
 
             # 배치 INSERT
             if insert_data:
-                self.supabase.table("user_badges") \
+                logger.info(f"[BadgeService] Inserting badges: {insert_data}")
+                result = self.supabase.table("user_badges") \
                     .insert(insert_data) \
                     .execute()
+                logger.info(f"[BadgeService] Insert result: {result.data}")
+
+                # 실제로 저장됐는지 확인
+                if not result.data:
+                    logger.error(f"[BadgeService] Insert returned empty data - RLS might be blocking")
+                    return []
 
             return awarded_badges
 

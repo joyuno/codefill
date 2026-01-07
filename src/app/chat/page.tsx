@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 import { CorrectAnswerPopup } from '@/components/practice/CorrectAnswerPopup';
+import { BadgePopup } from '@/components/ui/badge-popup';
 
 import { practiceApi, agentApi, problemsApi } from '@/lib/api';
 import type { NewBadge } from '@/lib/api/practice';
@@ -32,18 +33,15 @@ export default function ChatPage() {
   const { toast } = useToast();
   const router = useRouter();
 
-  // 뱃지 획득 토스트 표시
-  const showBadgeToasts = useCallback((badges: NewBadge[] | undefined) => {
+  // 뱃지 획득 팝업 상태
+  const [earnedBadges, setEarnedBadges] = useState<NewBadge[]>([]);
+
+  // 뱃지 획득 시 팝업 표시
+  const showBadgePopup = useCallback((badges: NewBadge[] | undefined) => {
     if (!badges || badges.length === 0) return;
-    badges.forEach((badge, index) => {
-      setTimeout(() => {
-        toast({
-          title: '🏆 새 뱃지 획득!',
-          description: `${badge.name} - ${badge.rarity}`,
-        });
-      }, index * 1000); // 여러 뱃지면 1초 간격으로 표시
-    });
-  }, [toast]);
+    setEarnedBadges(badges);
+  }, []);
+
   const searchParams = useSearchParams();
 
   // ============================================================
@@ -398,7 +396,7 @@ export default function ChatPage() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
-              showBadgeToasts(recordResult.newBadges);
+              showBadgePopup(recordResult.newBadges);
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -432,7 +430,7 @@ export default function ChatPage() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
-            showBadgeToasts(recordResult.newBadges);
+            showBadgePopup(recordResult.newBadges);
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -441,7 +439,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgeToasts]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup]
   );
 
   // Puzzle submit handler
@@ -473,7 +471,7 @@ export default function ChatPage() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
-              showBadgeToasts(recordResult.newBadges);
+              showBadgePopup(recordResult.newBadges);
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -503,7 +501,7 @@ export default function ChatPage() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
-            showBadgeToasts(recordResult.newBadges);
+            showBadgePopup(recordResult.newBadges);
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -512,7 +510,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgeToasts]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup]
   );
 
   // Implementation submit handler (blank, puzzle, implementation 공통)
@@ -540,7 +538,7 @@ export default function ChatPage() {
           console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
-            showBadgeToasts(recordResult.newBadges);
+            showBadgePopup(recordResult.newBadges);
             fetchFeedback(true, recordResult.xpEarned);
             return;
           } else if (recordResult.message.includes('로그인')) {
@@ -565,7 +563,7 @@ export default function ChatPage() {
         });
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgeToasts]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup]
   );
 
   // Render practice component based on problem type
@@ -762,6 +760,14 @@ export default function ChatPage() {
         xpEarned={xpEarned}
         isLoading={isFeedbackLoading}
       />
+
+      {/* Badge Popup */}
+      {earnedBadges.length > 0 && (
+        <BadgePopup
+          badges={earnedBadges}
+          onClose={() => setEarnedBadges([])}
+        />
+      )}
     </div>
   );
 }
