@@ -5,7 +5,7 @@
  * 기존 BuildingManager + PlacementSystem + CropManager 밭 기능 통합
  */
 
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import {
   TILE_SIZE,
   MAP_WIDTH,

@@ -3,7 +3,7 @@
  * 바닥 타일 + 장식 (잔디, 꽃, 나무)
  */
 
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import {
   MAP_COLS,
   MAP_ROWS,

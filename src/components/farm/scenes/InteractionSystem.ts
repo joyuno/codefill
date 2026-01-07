@@ -5,7 +5,7 @@
  * 통합 배치 시스템 리팩토링 - CropManager 제거됨
  */
 
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { TILE_SIZE, INTERACTION_RADIUS } from '../config/gameConfig';
 import { DEPTH } from '../config/depthConfig';
 import { PlayerController } from './PlayerController';

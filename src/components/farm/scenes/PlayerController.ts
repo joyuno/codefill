@@ -3,7 +3,7 @@
  * 이동, 애니메이션, 경계 처리
  */
 
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import {
   MAP_WIDTH,
   MAP_HEIGHT,

@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { FarmScene } from './scenes/FarmScene';
 import type { PlacementChanges } from './scenes/UnifiedPlacementManager';
 import type { InventoryItem, PlacedItem, ItemMetadata } from '@/lib/api/farm';

@@ -11,7 +11,7 @@
  * - InteractionSystem: 하이라이트, 액션
  */
 
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from '../config/gameConfig';
 import { MapManager } from './MapManager';
 import { PlayerController } from './PlayerController';
