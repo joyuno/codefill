@@ -172,15 +172,24 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
                     print(f"[parse_input] Additional {step}: {value}")
     else:
         # ============================================================
-        # 값이 이미 설정되어 있고 다음 단계로 넘어가야 하는 경우
-        # → is_question=False로 confirm_value로 라우팅
+        # 값이 추출되지 않은 경우 처리
         # ============================================================
         topic = existing_values.get("topic")
         difficulty = existing_values.get("difficulty")
         language = existing_values.get("language")
+        message_lower = message.lower()
 
+        # 먼저: 추천/모르겠다 요청인지 확인 → handle_question으로 라우팅
+        recommendation_keywords = ["추천", "뭐가 좋", "알아서", "골라", "모르겠", "몰라", "수준에 맞", "레벨에 맞"]
+        is_recommendation_request = any(kw in message_lower for kw in recommendation_keywords)
+
+        if is_recommendation_request:
+            # 추천 요청 → handle_question에서 개인화 추천
+            updates["is_question"] = True
+            updates["question_type"] = "recommendation"
+            print(f"[parse_input] Recommendation request detected: {message}")
         # 이전 단계 값이 있고, 현재 단계 값이 없는 경우 → 다음 질문하러 가야 함
-        if topic and current_step == "difficulty" and not difficulty:
+        elif topic and current_step == "difficulty" and not difficulty:
             # topic이 방금 설정됨 → 난이도 물어보러 confirm_value로
             print(f"[parse_input] Topic set, moving to difficulty selection")
             updates["is_question"] = False

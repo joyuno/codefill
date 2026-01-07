@@ -36,41 +36,55 @@ export class MapManager {
   }
 
   /**
-   * 에셋 프리로드
+   * 에셋 프리로드 (씬 재시작 시 중복 로드 방지)
    */
   preload(): void {
     // 타일셋 (밭 타일용)
-    this.scene.load.spritesheet(TILESET.key, TILESET.path, {
-      frameWidth: TILESET.frameWidth,
-      frameHeight: TILESET.frameHeight,
-    });
+    if (!this.scene.textures.exists(TILESET.key)) {
+      this.scene.load.spritesheet(TILESET.key, TILESET.path, {
+        frameWidth: TILESET.frameWidth,
+        frameHeight: TILESET.frameHeight,
+      });
+    }
 
     // 바닥 잔디 이미지
-    this.scene.load.image('grass_floor', '/farm/terrains/grass_floor.png');
+    if (!this.scene.textures.exists('grass_floor')) {
+      this.scene.load.image('grass_floor', '/farm/terrains/grass_floor.png');
+    }
 
     // 잔디/꽃
     GRASS_DECORATIONS.forEach(grass => {
-      this.scene.load.image(grass.key, DECORATION_PATH + grass.file);
+      if (!this.scene.textures.exists(grass.key)) {
+        this.scene.load.image(grass.key, DECORATION_PATH + grass.file);
+      }
     });
 
     // 나무
     TREE_DECORATIONS.forEach(tree => {
-      this.scene.load.image(tree.key, DECORATION_PATH + tree.file);
+      if (!this.scene.textures.exists(tree.key)) {
+        this.scene.load.image(tree.key, DECORATION_PATH + tree.file);
+      }
     });
 
     // 과일나무
     FRUIT_TREE_DECORATIONS.forEach(tree => {
-      this.scene.load.image(tree.key, DECORATION_PATH + tree.file);
+      if (!this.scene.textures.exists(tree.key)) {
+        this.scene.load.image(tree.key, DECORATION_PATH + tree.file);
+      }
     });
 
     // 건초
     HAY_DECORATIONS.forEach(hay => {
-      this.scene.load.image(hay.key, DECORATION_PATH + hay.file);
+      if (!this.scene.textures.exists(hay.key)) {
+        this.scene.load.image(hay.key, DECORATION_PATH + hay.file);
+      }
     });
 
     // 꽃 (개별 이미지)
     FLOWER_DECORATIONS.forEach(flower => {
-      this.scene.load.image(flower.key, DECORATION_PATH + flower.file);
+      if (!this.scene.textures.exists(flower.key)) {
+        this.scene.load.image(flower.key, DECORATION_PATH + flower.file);
+      }
     });
   }
 

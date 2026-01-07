@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeFill LangGraph - InfoCollectionGraph</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #3b82f6;
+            font-size: 2.8rem;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .page-indicator {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid #3b82f6;
+            border-radius: 20px;
+            padding: 8px 20px;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+        }
+        .diagram-section {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        .diagram-section h2 {
+            color: #60a5fa;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .diagram-section h2::before {
+            content: '';
+            display: inline-block;
+            width: 5px;
+            height: 28px;
+            background: linear-gradient(180deg, #3b82f6, #60a5fa);
+            border-radius: 3px;
+        }
+        .mermaid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 30px;
+            overflow-x: auto;
+        }
+        .mermaid .cluster rect {
+            fill: transparent !important;
+            stroke: rgba(255, 255, 255, 0.15) !important;
+        }
+        .mermaid .cluster .nodeLabel {
+            color: #94a3b8 !important;
+        }
+        .mermaid .edgeLabel {
+            background: transparent !important;
+            color: #fff !important;
+        }
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-top: 30px;
+        }
+        .state-box {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .state-box h3 {
+            color: #60a5fa;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        .state-box pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 18px;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            color: #cbd5e1;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        .field { color: #f472b6; }
+        .type { color: #60a5fa; }
+        .comment { color: #6b7280; }
+        .node-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+        }
+        .node-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 14px;
+            padding: 22px;
+            border-left: 4px solid;
+            transition: all 0.3s ease;
+        }
+        .node-card:hover {
+            transform: translateY(-3px);
+        }
+        .node-card.parse { border-color: #f59e0b; }
+        .node-card.question { border-color: #8b5cf6; }
+        .node-card.confirm { border-color: #22c55e; }
+        .node-card.complete { border-color: #3b82f6; }
+        .node-card h4 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+        }
+        .node-card.parse h4 { color: #f59e0b; }
+        .node-card.question h4 { color: #8b5cf6; }
+        .node-card.confirm h4 { color: #22c55e; }
+        .node-card.complete h4 { color: #3b82f6; }
+        .node-card p {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .node-card .tech {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #cbd5e1;
+        }
+        .edge-box {
+            background: rgba(249, 115, 22, 0.1);
+            border: 1px solid rgba(249, 115, 22, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .edge-box h3 {
+            color: #f59e0b;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        .edge-list {
+            display: grid;
+            gap: 12px;
+        }
+        .edge-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+        .edge-condition {
+            background: rgba(249, 115, 22, 0.2);
+            padding: 5px 12px;
+            border-radius: 6px;
+            color: #fbbf24;
+            font-size: 0.85rem;
+            font-family: monospace;
+            white-space: nowrap;
+        }
+        .edge-arrow {
+            color: #64748b;
+            font-size: 1.2rem;
+        }
+        .edge-target {
+            color: #cbd5e1;
+            font-size: 0.9rem;
+        }
+        .values-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .value-card {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 18px;
+        }
+        .value-card h5 {
+            color: #4ade80;
+            font-size: 0.95rem;
+            margin-bottom: 10px;
+        }
+        .value-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .value-tag {
+            background: rgba(74, 222, 128, 0.15);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #4ade80;
+        }
+        /* Navigation */
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 15, 26, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+        .nav-pages {
+            display: flex;
+            gap: 8px;
+        }
+        .nav-page {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .nav-page.active {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .nav-page:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-page:not(.active):hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-page.p1 { border-color: #4ade80; }
+        .nav-page.p2 { border-color: #3b82f6; }
+        .nav-page.p3 { border-color: #8b5cf6; }
+        .nav-page.p4 { border-color: #22c55e; }
+        .nav-page.p5 { border-color: #f59e0b; }
+        .nav-arrows {
+            display: flex;
+            gap: 10px;
+        }
+        .nav-arrow {
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-arrow.prev {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-arrow.prev:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-arrow.next {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .nav-arrow:hover {
+            transform: translateY(-2px);
+        }
+        body {
+            padding-bottom: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="slide-header">
+            <h1>📋 InfoCollectionGraph</h1>
+            <span class="page-indicator">2 / 5</span>
+        </div>
+        <p class="subtitle">문제 생성에 필요한 정보(주제/난이도/언어)를 Multi-turn 대화로 수집하는 그래프</p>
+
+        <div class="diagram-section">
+            <h2>InfoCollectionGraph</h2>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#fff', 'lineColor': '#64748b'}}}%%
+flowchart LR
+    START((START)) --> PI
+
+    subgraph ParsePhase["📥 Parse Phase"]
+        PI["parse_input<br/><small>🔧 CollectionTool<br/>값 추출 + 상태 분석</small>"]
+    end
+
+    PI --> Router{{"🔀 route_after_parse"}}
+
+    Router -->|"is_question=True"| HQ
+    Router -->|"needs_reconfirmation"| HQ
+    Router -->|"current_step=complete"| COMP
+    Router -->|"extracted_value"| CV
+
+    subgraph QuestionPhase["❓ Question Phase"]
+        HQ["handle_question<br/><small>🤖 gpt-4o-mini<br/>LLM 추천 생성</small>"]
+    end
+
+    subgraph ConfirmPhase["✅ Confirm Phase"]
+        CV["confirm_value<br/><small>값 확정<br/>다음 step 이동</small>"]
+    end
+
+    subgraph CompletePhase["🎯 Complete Phase"]
+        COMP["complete<br/><small>is_complete=True<br/>→ DiscoveryGraph</small>"]
+    end
+
+    HQ --> END1((END))
+    CV --> END2((END))
+    COMP --> END3((END))
+
+    style START fill:#22c55e,stroke:#22c55e,color:#000
+    style END1 fill:#ef4444,stroke:#ef4444,color:#fff
+    style END2 fill:#ef4444,stroke:#ef4444,color:#fff
+    style END3 fill:#ef4444,stroke:#ef4444,color:#fff
+    style PI fill:#f59e0b,stroke:#fbbf24,color:#000
+    style Router fill:#64748b,stroke:#94a3b8,color:#fff
+    style HQ fill:#8b5cf6,stroke:#a78bfa,color:#fff
+    style CV fill:#22c55e,stroke:#4ade80,color:#fff
+    style COMP fill:#3b82f6,stroke:#60a5fa,color:#fff
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Nodes & Conditional Edge</h2>
+
+            <div class="node-cards">
+                <div class="node-card parse">
+                    <h4>📥 parse_input</h4>
+                    <p>메시지 파싱, 값 추출, 긍정/부정 분석</p>
+                    <p><strong>출력:</strong> extracted_value, is_question, is_positive_response</p>
+                    <span class="tech">CollectionTool</span>
+                </div>
+                <div class="node-card question">
+                    <h4>❓ handle_question</h4>
+                    <p>질문 처리, LLM 추천 생성, 확인 대기</p>
+                    <p><strong>출력:</strong> suggested_value, awaiting_confirmation</p>
+                    <span class="tech">gpt-4o-mini</span>
+                </div>
+                <div class="node-card confirm">
+                    <h4>✅ confirm_value</h4>
+                    <p>값 확정, State 업데이트, 다음 step 이동</p>
+                    <p><strong>출력:</strong> topic/difficulty/language 확정</p>
+                    <span class="tech">State Update</span>
+                </div>
+                <div class="node-card complete">
+                    <h4>🎯 complete</h4>
+                    <p>모든 정보 수집 완료, DiscoveryGraph로 이동</p>
+                    <p><strong>출력:</strong> is_complete=True, route_to="discovery"</p>
+                    <span class="tech">Route Signal</span>
+                </div>
+            </div>
+
+            <div class="two-columns" style="margin-top: 25px;">
+                <div class="edge-box">
+                    <h3>🔀 Conditional Edge: route_after_parse</h3>
+                    <div class="edge-list">
+                        <div class="edge-item">
+                            <span class="edge-condition">is_question=True</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">handle_question (LLM 추천)</span>
+                        </div>
+                        <div class="edge-item">
+                            <span class="edge-condition">needs_reconfirmation</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">handle_question (재확인)</span>
+                        </div>
+                        <div class="edge-item">
+                            <span class="edge-condition">current_step=complete</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">complete (수집 완료)</span>
+                        </div>
+                        <div class="edge-item">
+                            <span class="edge-condition">extracted_value 존재</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">confirm_value (값 확정)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="state-box">
+                    <h3>📦 CollectionState (핵심 필드)</h3>
+                    <pre>
+<span class="field">message</span>: <span class="type">str</span>               <span class="comment"># 사용자 메시지</span>
+<span class="field">topic</span>: <span class="type">Optional[str]</span>       <span class="comment"># DP, 그래프, 정렬 등</span>
+<span class="field">difficulty</span>: <span class="type">Optional[str]</span>  <span class="comment"># easy~very_hard, 티어</span>
+<span class="field">language</span>: <span class="type">Optional[str]</span>    <span class="comment"># python, java, cpp</span>
+<span class="field">current_step</span>: <span class="type">str</span>         <span class="comment"># topic→difficulty→language→complete</span>
+<span class="field">is_question</span>: <span class="type">bool</span>         <span class="comment"># 사용자가 질문했는지</span>
+<span class="field">extracted_value</span>: <span class="type">str</span>     <span class="comment"># 추출된 값</span>
+<span class="field">suggested_value</span>: <span class="type">str</span>     <span class="comment"># LLM 추천 값</span>
+<span class="field">awaiting_confirmation</span>: <span class="type">bool</span> <span class="comment"># 네/아니오 대기</span>
+<span class="field">is_complete</span>: <span class="type">bool</span>        <span class="comment"># 수집 완료 여부</span></pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Valid Values & Normalization</h2>
+
+            <div class="values-grid">
+                <div class="value-card">
+                    <h5>📚 VALID_TOPICS</h5>
+                    <div class="value-tags">
+                        <span class="value-tag">기초</span>
+                        <span class="value-tag">정렬</span>
+                        <span class="value-tag">탐색</span>
+                        <span class="value-tag">DP</span>
+                        <span class="value-tag">그리디</span>
+                        <span class="value-tag">구현</span>
+                        <span class="value-tag">문자열</span>
+                        <span class="value-tag">그래프</span>
+                        <span class="value-tag">BFS</span>
+                        <span class="value-tag">DFS</span>
+                        <span class="value-tag">이분탐색</span>
+                        <span class="value-tag">브루트포스</span>
+                    </div>
+                </div>
+                <div class="value-card">
+                    <h5>📊 VALID_DIFFICULTIES</h5>
+                    <div class="value-tags">
+                        <span class="value-tag">실버 (easy)</span>
+                        <span class="value-tag">골드 (medium)</span>
+                        <span class="value-tag">플래티넘 (medium_hard)</span>
+                        <span class="value-tag">다이아 (hard)</span>
+                        <span class="value-tag">마스터 (very_hard)</span>
+                    </div>
+                </div>
+                <div class="value-card">
+                    <h5>💻 VALID_LANGUAGES</h5>
+                    <div class="value-tags">
+                        <span class="value-tag">Python</span>
+                        <span class="value-tag">Java</span>
+                        <span class="value-tag">C++</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-arrows">
+            <a href="01_overview.html" class="nav-arrow prev">← 이전</a>
+        </div>
+        <div class="nav-pages">
+            <a href="01_overview.html" class="nav-page p1" title="Overview">1</a>
+            <a href="02_info_collection.html" class="nav-page p2 active" title="InfoCollectionGraph">2</a>
+            <a href="03_discovery.html" class="nav-page p3" title="DiscoveryGraph">3</a>
+            <a href="04_solving.html" class="nav-page p4" title="SolvingGraph">4</a>
+            <a href="05_tools_agents.html" class="nav-page p5" title="Tools & Agents">5</a>
+        </div>
+        <div class="nav-arrows">
+            <a href="03_discovery.html" class="nav-arrow next">다음 →</a>
+        </div>
+    </nav>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 20
+            }
+        });
+    </script>
+</body>
+</html>

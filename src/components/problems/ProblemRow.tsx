@@ -1,12 +1,23 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Eye, Play, Check, MessageSquare } from 'lucide-react';
+import { Eye, Play, Check, MessageSquare, LogIn } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { getTierInfo } from '@/lib/constants/tiers';
+import { apiClient } from '@/lib/api/client';
 import type { BaseProblemListItem } from '@/lib/api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface ProblemRowProps {
   problem: BaseProblemListItem;
@@ -23,12 +34,52 @@ const sourceLabels: Record<string, string> = {
 };
 
 export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
+  const router = useRouter();
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
   const tier = getTierInfo(problem.difficulty);
   const TierIcon = tier.Icon;
   const sourceLabel = sourceLabels[problem.source || ''] || problem.source || '-';
   const isSolved = false; // TODO: 실제 풀이 여부 연동
 
+  const handleStartPractice = (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // Check if user is logged in
+    if (!apiClient.isAuthenticated()) {
+      setShowLoginDialog(true);
+      return;
+    }
+
+    // Navigate to chat page
+    router.push(`/chat?problem_id=${problem.original_id}`);
+  };
+
   return (
+    <>
+      {/* Login Required Dialog */}
+      <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="h-5 w-5" />
+              로그인이 필요합니다
+            </DialogTitle>
+            <DialogDescription>
+              문제를 풀려면 로그인이 필요합니다.<br />
+              로그인하면 XP 획득과 잔디 기록이 저장됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setShowLoginDialog(false)}>
+              취소
+            </Button>
+            <Button onClick={() => router.push('/login')}>
+              <LogIn className="mr-2 h-4 w-4" />
+              로그인하기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     <motion.tr
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -124,10 +175,7 @@ export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
             variant="ghost"
             size="icon"
             className="h-7 w-7 text-primary hover:text-primary"
-            onClick={(e) => {
-              e.stopPropagation();
-              window.location.href = `/practice?id=${problem.original_id}&type=implementation`;
-            }}
+            onClick={handleStartPractice}
             title="풀기 시작"
           >
             <Play className="h-3.5 w-3.5" />
@@ -135,5 +183,6 @@ export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
         </div>
       </td>
     </motion.tr>
+    </>
   );
 }

@@ -38,11 +38,11 @@ interface UseFarmReturn {
   loadUnifiedShop: (category?: string) => Promise<void>;
   buyUnifiedItem: (itemCode: string, quantity?: number) => Promise<void>;
   loadPlacedItems: () => Promise<void>;
-  placeItem: (itemCode: string, tileX: number, tileY: number) => Promise<PlacedItem | null>;
+  placeItem: (itemCode: string, tileX: number, tileY: number) => Promise<PlacedItem>;
   moveItem: (itemId: string, tileX: number, tileY: number) => Promise<void>;
   removeItem: (itemId: string) => Promise<void>;
   plantOnPlot: (plotId: string, cropCode: string) => Promise<void>;
-  harvestFromPlot: (plotId: string) => Promise<{ gold: number; xp: number } | null>;
+  harvestFromPlot: (plotId: string) => Promise<{ gold: number; xp: number }>;
 }
 
 export function useFarm(): UseFarmReturn {
@@ -135,32 +135,18 @@ export function useFarm(): UseFarmReturn {
   }, []);
 
   // Buy seeds (legacy method, still works via /farm/shop/buy)
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const buySeed = useCallback(async (cropCode: string, quantity: number = 1) => {
-    try {
-      setError(null);
-      const result = await farmApi.buySeed(cropCode, quantity);
-
-      setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
-      setInventory(result.inventory);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '씨앗 구매에 실패했습니다';
-      setError(message);
-      throw err;
-    }
+    const result = await farmApi.buySeed(cropCode, quantity);
+    setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
+    setInventory(result.inventory);
   }, []);
 
   // Expand farm (배치 영역만 확장)
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const expand = useCallback(async (targetSize: number) => {
-    try {
-      setError(null);
-      const result = await farmApi.expand(targetSize);
-
-      setFarm(prev => prev ? { ...prev, farmSize: result.farmSize, gold: result.gold } : null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '농장 확장에 실패했습니다';
-      setError(message);
-      throw err;
-    }
+    const result = await farmApi.expand(targetSize);
+    setFarm(prev => prev ? { ...prev, farmSize: result.farmSize, gold: result.gold } : null);
   }, []);
 
   // Refresh all data
@@ -171,95 +157,65 @@ export function useFarm(): UseFarmReturn {
   // ====== Unified Placement Actions ======
 
   // Load unified shop items
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const loadUnifiedShop = useCallback(async (category?: string) => {
-    try {
-      setError(null);
-      const result = await farmApi.getUnifiedShopItems(category);
-      setUnifiedShopItems(result.items);
-      setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '상점 정보를 불러오는데 실패했습니다';
-      setError(message);
-      throw err;
-    }
+    const result = await farmApi.getUnifiedShopItems(category);
+    setUnifiedShopItems(result.items);
+    setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
   }, []);
 
   // Buy item from unified shop
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const buyUnifiedItem = useCallback(async (itemCode: string, quantity: number = 1) => {
-    try {
-      setError(null);
-      const result = await farmApi.buyShopItem(itemCode, quantity);
-      setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
+    const result = await farmApi.buyShopItem(itemCode, quantity);
+    setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
 
-      // Update inventory from response
-      const inventoryArray: InventoryItem[] = Object.entries(result.inventory).map(
-        ([code, qty]) => ({ itemCode: code, quantity: qty })
-      );
-      setInventory(inventoryArray);
+    // Update inventory from response
+    const inventoryArray: InventoryItem[] = Object.entries(result.inventory).map(
+      ([code, qty]) => ({ itemCode: code, quantity: qty })
+    );
+    setInventory(inventoryArray);
 
-      // Reload shop to update counts
-      await loadUnifiedShop();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '구매에 실패했습니다';
-      setError(message);
-      throw err;
-    }
+    // Reload shop to update counts
+    await loadUnifiedShop();
   }, [loadUnifiedShop]);
 
   // Load placed items
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const loadPlacedItems = useCallback(async () => {
-    try {
-      setError(null);
-      const items = await farmApi.getPlacedItems();
-      setPlacedItems(items);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '배치된 아이템을 불러오는데 실패했습니다';
-      setError(message);
-      throw err;
-    }
+    const items = await farmApi.getPlacedItems();
+    setPlacedItems(items);
   }, []);
 
   // Place item on map
-  const placeItem = useCallback(async (itemCode: string, tileX: number, tileY: number): Promise<PlacedItem | null> => {
-    try {
-      setError(null);
-      const response = await farmApi.placeItem(itemCode, tileX, tileY);
-      setPlacedItems(prev => [...prev, response.item]);
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
+  const placeItem = useCallback(async (itemCode: string, tileX: number, tileY: number): Promise<PlacedItem> => {
+    const response = await farmApi.placeItem(itemCode, tileX, tileY);
+    setPlacedItems(prev => [...prev, response.item]);
 
-      // Update shop inventory
-      setUnifiedShopItems(prev => prev.map(item =>
-        item.code === itemCode
-          ? { ...item, owned: item.owned - 1, placed: item.placed + 1 }
-          : item
-      ));
+    // Update shop inventory
+    setUnifiedShopItems(prev => prev.map(item =>
+      item.code === itemCode
+        ? { ...item, owned: item.owned - 1, placed: item.placed + 1 }
+        : item
+    ));
 
-      // Update inventory
-      const inventoryArray: InventoryItem[] = Object.entries(response.inventory).map(
-        ([code, qty]) => ({ itemCode: code, quantity: qty })
-      );
-      setInventory(inventoryArray);
+    // Update inventory
+    const inventoryArray: InventoryItem[] = Object.entries(response.inventory).map(
+      ([code, qty]) => ({ itemCode: code, quantity: qty })
+    );
+    setInventory(inventoryArray);
 
-      return response.item;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '아이템 배치에 실패했습니다';
-      setError(message);
-      return null;
-    }
+    return response.item;
   }, []);
 
   // Move placed item
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const moveItem = useCallback(async (itemId: string, tileX: number, tileY: number) => {
-    try {
-      setError(null);
-      await farmApi.moveItem(itemId, tileX, tileY);
-      setPlacedItems(prev => prev.map(item =>
-        item.id === itemId ? { ...item, tileX, tileY } : item
-      ));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '아이템 이동에 실패했습니다';
-      setError(message);
-      throw err;
-    }
+    await farmApi.moveItem(itemId, tileX, tileY);
+    setPlacedItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, tileX, tileY } : item
+    ));
   }, []);
 
   // Remove placed item (return to inventory)
@@ -289,52 +245,40 @@ export function useFarm(): UseFarmReturn {
   }, []);
 
   // Plant crop on farm plot
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const plantOnPlot = useCallback(async (plotId: string, cropCode: string) => {
-    try {
-      setError(null);
-      const result = await farmApi.plantOnPlot(plotId, cropCode);
+    const result = await farmApi.plantOnPlot(plotId, cropCode);
 
-      // Update the placed item with crop data
-      setPlacedItems(prev => prev.map(item =>
-        item.id === plotId
-          ? { ...item, data: { cropCode, plantedAt: new Date().toISOString(), stage: 1 } }
-          : item
-      ));
+    // Update the placed item with crop data
+    setPlacedItems(prev => prev.map(item =>
+      item.id === plotId
+        ? { ...item, data: { cropCode, plantedAt: new Date().toISOString(), stage: 1 } }
+        : item
+    ));
 
-      // Update inventory
-      const inventoryArray: InventoryItem[] = Object.entries(result.inventory).map(
-        ([code, qty]) => ({ itemCode: code, quantity: qty })
-      );
-      setInventory(inventoryArray);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '씨앗 심기에 실패했습니다';
-      setError(message);
-      throw err;
-    }
+    // Update inventory
+    const inventoryArray: InventoryItem[] = Object.entries(result.inventory).map(
+      ([code, qty]) => ({ itemCode: code, quantity: qty })
+    );
+    setInventory(inventoryArray);
   }, []);
 
   // Harvest crop from farm plot
-  const harvestFromPlot = useCallback(async (plotId: string): Promise<{ gold: number; xp: number } | null> => {
-    try {
-      setError(null);
-      const result = await farmApi.harvestFromPlot(plotId);
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
+  const harvestFromPlot = useCallback(async (plotId: string): Promise<{ gold: number; xp: number }> => {
+    const result = await farmApi.harvestFromPlot(plotId);
 
-      // Clear the plot's crop data
-      setPlacedItems(prev => prev.map(item =>
-        item.id === plotId
-          ? { ...item, data: {} }
-          : item
-      ));
+    // Clear the plot's crop data
+    setPlacedItems(prev => prev.map(item =>
+      item.id === plotId
+        ? { ...item, data: {} }
+        : item
+    ));
 
-      // Update gold
-      setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
+    // Update gold
+    setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
 
-      return result.rewards;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '수확에 실패했습니다';
-      setError(message);
-      return null;
-    }
+    return result.rewards;
   }, []);
 
   return {

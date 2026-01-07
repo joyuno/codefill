@@ -52,78 +52,104 @@ async def list_friends(
     db=Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    """친구 목록 조회."""
+    """친구 목록 조회 - 최적화됨 (N+1 쿼리 해결)."""
     try:
         user_id = current_user["id"]
 
-        # accepted 상태이고 차단되지 않은 친구 관계 조회
+        # 1. 친구 관계 조회
         result = db.table("friendship_details")\
-            .select("*")\
+            .select("id, requester_id, addressee_id, requester_name, addressee_name, "
+                    "requester_avatar, addressee_avatar, updated_at")\
             .eq("status", "accepted")\
             .is_("blocked_at", "null")\
             .or_(f"requester_id.eq.{user_id},addressee_id.eq.{user_id}")\
             .order("updated_at", desc=True)\
             .execute()
 
-        friends = []
-        for f in (result.data or []):
-            # 상대방 정보 추출
-            if f["requester_id"] == user_id:
-                friend_id = f["addressee_id"]
-                friend_name = f["addressee_name"]
-                friend_avatar = f["addressee_avatar"]
-            else:
-                friend_id = f["requester_id"]
-                friend_name = f["requester_name"]
-                friend_avatar = f["requester_avatar"]
+        if not result.data:
+            return FriendListResponse(friends=[], total=0)
 
-            # 안 읽은 메시지 수 조회
+        # 2. 친구 ID 목록 및 매핑 데이터 추출
+        friend_ids = []
+        friend_map = {}
+        for f in result.data:
+            if f["requester_id"] == user_id:
+                fid = f["addressee_id"]
+                friend_map[fid] = {
+                    "name": f["addressee_name"],
+                    "avatar": f["addressee_avatar"],
+                    "friendship_id": f["id"],
+                    "since": f["updated_at"],
+                }
+            else:
+                fid = f["requester_id"]
+                friend_map[fid] = {
+                    "name": f["requester_name"],
+                    "avatar": f["requester_avatar"],
+                    "friendship_id": f["id"],
+                    "since": f["updated_at"],
+                }
+            friend_ids.append(fid)
+
+        # 3. 읽지 않은 메시지 수 - 배치 쿼리
+        unread_counts = {}
+        if friend_ids:
             unread_result = db.table("direct_messages")\
-                .select("id", count="exact")\
-                .eq("sender_id", friend_id)\
+                .select("sender_id")\
                 .eq("receiver_id", user_id)\
                 .eq("is_read", False)\
                 .eq("deleted_by_receiver", False)\
+                .in_("sender_id", friend_ids)\
                 .execute()
-            unread_count = unread_result.count if unread_result.count else 0
 
-            # 마지막 메시지 조회
-            last_msg_result = db.table("direct_messages")\
-                .select("content, sender_id, created_at")\
+            for msg in (unread_result.data or []):
+                sid = msg["sender_id"]
+                unread_counts[sid] = unread_counts.get(sid, 0) + 1
+
+        # 4. 마지막 메시지 - 배치 쿼리
+        last_messages = {}
+        if friend_ids:
+            # 친구들과의 모든 최근 메시지 조회 (양방향)
+            messages_result = db.table("direct_messages")\
+                .select("sender_id, receiver_id, content, created_at")\
                 .or_(
-                    f"and(sender_id.eq.{friend_id},receiver_id.eq.{user_id},deleted_by_receiver.eq.false),"
-                    f"and(sender_id.eq.{user_id},receiver_id.eq.{friend_id},deleted_by_sender.eq.false)"
+                    f"and(sender_id.eq.{user_id},receiver_id.in.({','.join(friend_ids)}),deleted_by_sender.eq.false),"
+                    f"and(receiver_id.eq.{user_id},sender_id.in.({','.join(friend_ids)}),deleted_by_receiver.eq.false)"
                 )\
                 .order("created_at", desc=True)\
-                .limit(1)\
+                .limit(len(friend_ids) * 2)\
                 .execute()
 
-            last_message = None
-            last_message_at = None
-            last_message_is_mine = None
-            if last_msg_result.data:
-                lm = last_msg_result.data[0]
-                last_message = lm["content"][:50]  # 최대 50자
-                last_message_at = lm["created_at"]
-                last_message_is_mine = lm["sender_id"] == user_id
+            # 친구별 최신 메시지만 유지
+            for msg in (messages_result.data or []):
+                friend_id = msg["receiver_id"] if msg["sender_id"] == user_id else msg["sender_id"]
+                if friend_id not in last_messages:
+                    last_messages[friend_id] = {
+                        "content": msg["content"][:50],
+                        "created_at": msg["created_at"],
+                        "is_mine": msg["sender_id"] == user_id,
+                    }
+
+        # 5. 결과 조합
+        friends = []
+        for fid in friend_ids:
+            data = friend_map[fid]
+            lm = last_messages.get(fid)
 
             friends.append(Friend(
-                user_id=friend_id,
-                name=friend_name,
-                avatar_url=friend_avatar,
-                friendship_id=f["id"],
-                since=f["updated_at"],
+                user_id=fid,
+                name=data["name"],
+                avatar_url=data["avatar"],
+                friendship_id=data["friendship_id"],
+                since=data["since"],
                 is_blocked=False,
-                unread_count=unread_count,
-                last_message=last_message,
-                last_message_at=last_message_at,
-                last_message_is_mine=last_message_is_mine,
+                unread_count=unread_counts.get(fid, 0),
+                last_message=lm["content"] if lm else None,
+                last_message_at=lm["created_at"] if lm else None,
+                last_message_is_mine=lm["is_mine"] if lm else None,
             ))
 
-        return FriendListResponse(
-            friends=friends,
-            total=len(friends),
-        )
+        return FriendListResponse(friends=friends, total=len(friends))
 
     except Exception as e:
         raise HTTPException(

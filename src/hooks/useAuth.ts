@@ -61,6 +61,15 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+// 프로필 캐시 설정
+const PROFILE_CACHE_KEY = 'codefill_profile_cache';
+const CACHE_TTL = 5 * 60 * 1000; // 5분
+
+interface CachedProfile {
+  data: UserProfile;
+  timestamp: number;
+}
+
 export function useAuth() {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
@@ -71,9 +80,25 @@ export function useAuth() {
 
   const initializedRef = useRef(false);
 
-  // 백엔드 API로 프로필 조회 (JWT 토큰 사용)
-  const fetchProfileFromBackend = useCallback(async (token: string): Promise<UserProfile | null> => {
+  // 백엔드 API로 프로필 조회 (JWT 토큰 사용, 캐싱 지원)
+  const fetchProfileFromBackend = useCallback(async (token: string, forceRefresh = false): Promise<UserProfile | null> => {
     try {
+      // 캐시 확인 (forceRefresh가 아닌 경우)
+      if (!forceRefresh && typeof window !== 'undefined') {
+        const cachedStr = sessionStorage.getItem(PROFILE_CACHE_KEY);
+        if (cachedStr) {
+          try {
+            const cached: CachedProfile = JSON.parse(cachedStr);
+            const age = Date.now() - cached.timestamp;
+            if (age < CACHE_TTL) {
+              return cached.data;
+            }
+          } catch {
+            // 캐시 파싱 실패 시 무시
+          }
+        }
+      }
+
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const response = await fetch(`${API_BASE_URL}/users/me/profile`, {
         headers: {
@@ -88,7 +113,7 @@ export function useAuth() {
       }
 
       const data = await response.json();
-      return {
+      const profile: UserProfile = {
         id: data.id,
         email: data.email,
         username: data.username || data.name || data.email?.split('@')[0] || 'User',
@@ -103,6 +128,16 @@ export function useAuth() {
         subscription_expires_at: data.subscription_expires_at,
         created_at: data.created_at || data.joinedAt,
       };
+
+      // 캐시 저장
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({
+          data: profile,
+          timestamp: Date.now(),
+        } as CachedProfile));
+      }
+
+      return profile;
     } catch (error) {
       console.error('프로필 조회 중 오류:', error);
       return null;
@@ -190,12 +225,13 @@ export function useAuth() {
   // 로그아웃
   const signOut = useCallback(async () => {
     try {
-      // localStorage 토큰 삭제
+      // localStorage 토큰 및 캐시 삭제
       if (typeof window !== 'undefined') {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('codefill_character');
         localStorage.removeItem('codefill_farm_level');
+        sessionStorage.removeItem(PROFILE_CACHE_KEY);  // 프로필 캐시 삭제
       }
 
       setAuthState({
@@ -209,18 +245,39 @@ export function useAuth() {
     }
   }, []);
 
-  // 프로필 새로고침
+  // 프로필 새로고침 (캐시 무시하고 강제 갱신)
   const refreshProfile = useCallback(async () => {
     if (typeof window !== 'undefined') {
       const accessToken = localStorage.getItem('access_token');
       if (accessToken && !isTokenExpired(accessToken)) {
-        const profile = await fetchProfileFromBackend(accessToken);
+        const profile = await fetchProfileFromBackend(accessToken, true);  // forceRefresh = true
         if (profile) {
           setAuthState(prev => ({ ...prev, profile }));
+          // 다른 컴포넌트의 useAuth 인스턴스에도 알림
+          window.dispatchEvent(new Event('profile-updated'));
         }
       }
     }
   }, [fetchProfileFromBackend]);
+
+  // 다른 컴포넌트에서 프로필 변경 시 감지
+  useEffect(() => {
+    const handleProfileUpdate = async () => {
+      // 캐시에서 최신 프로필 로드
+      const cachedStr = sessionStorage.getItem(PROFILE_CACHE_KEY);
+      if (cachedStr) {
+        try {
+          const cached: CachedProfile = JSON.parse(cachedStr);
+          setAuthState(prev => ({ ...prev, profile: cached.data }));
+        } catch {
+          // 파싱 실패 시 무시
+        }
+      }
+    };
+
+    window.addEventListener('profile-updated', handleProfileUpdate);
+    return () => window.removeEventListener('profile-updated', handleProfileUpdate);
+  }, []);
 
   return {
     ...authState,

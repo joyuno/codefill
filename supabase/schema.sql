@@ -385,6 +385,7 @@ CREATE TRIGGER on_auth_user_created
     FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
 -- Function to increment user stats after solving a problem
+-- Level scaling: 2x (100, 200, 400, 800...)
 CREATE OR REPLACE FUNCTION increment_user_stats(
     p_user_id UUID,
     p_xp INTEGER,
@@ -394,6 +395,8 @@ RETURNS VOID AS $$
 DECLARE
     v_new_xp INTEGER;
     v_new_level INTEGER;
+    v_xp_for_level INTEGER;
+    v_remaining_xp INTEGER;
     v_current_date DATE := CURRENT_DATE;
 BEGIN
     -- Update user_stats
@@ -423,11 +426,15 @@ BEGIN
     WHERE user_id = p_user_id
     RETURNING total_xp INTO v_new_xp;
 
-    -- Calculate new level (100 XP per level, increasing by 50 each level)
+    -- Calculate new level (2x scaling: 100, 200, 400, 800...)
     v_new_level := 1;
-    WHILE v_new_xp >= (v_new_level * 100 + (v_new_level - 1) * 50) LOOP
-        v_new_xp := v_new_xp - (v_new_level * 100 + (v_new_level - 1) * 50);
+    v_remaining_xp := v_new_xp;
+    v_xp_for_level := 100;  -- First level needs 100 XP
+
+    WHILE v_remaining_xp >= v_xp_for_level LOOP
+        v_remaining_xp := v_remaining_xp - v_xp_for_level;
         v_new_level := v_new_level + 1;
+        v_xp_for_level := v_xp_for_level * 2;  -- 2x for next level
     END LOOP;
 
     -- Update level
@@ -455,6 +462,60 @@ BEGIN
         bug_count = daily_activity.bug_count + CASE WHEN p_problem_type = 'bug' THEN 1 ELSE 0 END,
         output_count = daily_activity.output_count + CASE WHEN p_problem_type = 'output' THEN 1 ELSE 0 END,
         refactor_count = daily_activity.refactor_count + CASE WHEN p_problem_type = 'refactor' THEN 1 ELSE 0 END;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- Function to deduct XP for hint usage
+-- Returns TRUE if successful, FALSE if not enough XP
+CREATE OR REPLACE FUNCTION deduct_hint_xp(
+    p_user_id UUID,
+    p_xp_cost INTEGER DEFAULT 5
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_current_xp INTEGER;
+    v_current_level INTEGER;
+BEGIN
+    SELECT total_xp, level INTO v_current_xp, v_current_level
+    FROM user_stats
+    WHERE user_id = p_user_id;
+
+    -- Check if user has enough XP (can't go below 0 at level 1)
+    IF v_current_level = 1 AND v_current_xp < p_xp_cost THEN
+        RETURN FALSE;
+    END IF;
+
+    -- Deduct XP (minimum 0)
+    UPDATE user_stats
+    SET total_xp = GREATEST(0, total_xp - p_xp_cost)
+    WHERE user_id = p_user_id;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- Function to check if user can use hint
+CREATE OR REPLACE FUNCTION can_use_hint(
+    p_user_id UUID,
+    p_xp_cost INTEGER DEFAULT 5
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_current_xp INTEGER;
+    v_current_level INTEGER;
+BEGIN
+    SELECT total_xp, level INTO v_current_xp, v_current_level
+    FROM user_stats
+    WHERE user_id = p_user_id;
+
+    -- Level 1 with less than hint cost XP = can't use hint
+    IF v_current_level = 1 AND v_current_xp < p_xp_cost THEN
+        RETURN FALSE;
+    END IF;
+
+    RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

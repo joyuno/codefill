@@ -86,6 +86,49 @@ export class FarmScene extends Phaser.Scene {
     return item?.quantity || 0;
   }
 
+  // ====== 공통 농작업 메서드 ======
+
+  /**
+   * 작물 심기 (공통 로직)
+   */
+  private async plantCrop(plotId: string, cropCode: string): Promise<boolean> {
+    // 씨앗 보유량 체크
+    const seedCount = this.getSeedCount(cropCode);
+    if (seedCount <= 0) {
+      this.farmData.onNotify('씨앗이 부족합니다!', 'error');
+      return false;
+    }
+
+    try {
+      await this.playerController.playHarvestAnimation();
+      await this.farmData.onPlantOnPlot(plotId, cropCode);
+      this.unifiedPlacementManager.updateCrop(plotId, cropCode, 1);
+      return true;
+    } catch {
+      this.farmData.onNotify('심기에 실패했습니다', 'error');
+      return false;
+    }
+  }
+
+  /**
+   * 작물 수확 (공통 로직)
+   */
+  private async harvestCrop(plotId: string): Promise<boolean> {
+    try {
+      await this.playerController.playHarvestAnimation();
+      const result = await this.farmData.onHarvestFromPlot(plotId);
+      if (result) {
+        this.unifiedPlacementManager.updateCrop(plotId, '', 0);
+        this.farmData.onNotify(`+${result.gold}G, +${result.xp}XP`, 'success');
+        return true;
+      }
+      return false;
+    } catch {
+      this.farmData.onNotify('수확에 실패했습니다', 'error');
+      return false;
+    }
+  }
+
   /**
    * 에셋 프리로드
    */
@@ -128,10 +171,9 @@ export class FarmScene extends Phaser.Scene {
 
     this.playerController.create();
 
-    // 상호작용 시스템 초기화 (player 필요, crop manager 대신 unified 사용)
+    // 상호작용 시스템 초기화
     this.interactionSystem = new InteractionSystem(
       this,
-      null, // 레거시 CropManager 제거됨
       this.playerController
     );
     // UnifiedPlacementManager 참조 전달
@@ -218,31 +260,10 @@ export class FarmScene extends Phaser.Scene {
 
     if (plotData?.cropCode && plotData?.stage === 4) {
       // 수확 가능한 작물이 있으면 수확
-      try {
-        await this.playerController.playHarvestAnimation();
-        const result = await this.farmData.onHarvestFromPlot(plot.id);
-        if (result) {
-          this.unifiedPlacementManager.updateCrop(plot.id, '', 0);
-          this.farmData.onNotify(`+${result.gold}G, +${result.xp}XP`, 'success');
-        }
-      } catch {
-        this.farmData.onNotify('수확에 실패했습니다', 'error');
-      }
+      await this.harvestCrop(plot.id);
     } else if (!plotData?.cropCode && this.selectedSeed) {
       // 빈 밭이고 씨앗이 선택되어 있으면 심기
-      const seedCount = this.getSeedCount(this.selectedSeed);
-      if (seedCount <= 0) {
-        this.farmData.onNotify('씨앗이 부족합니다!', 'error');
-        return;
-      }
-
-      try {
-        await this.playerController.playHarvestAnimation();
-        await this.farmData.onPlantOnPlot(plot.id, this.selectedSeed);
-        this.unifiedPlacementManager.updateCrop(plot.id, this.selectedSeed, 1);
-      } catch {
-        this.farmData.onNotify('심기에 실패했습니다', 'error');
-      }
+      await this.plantCrop(plot.id, this.selectedSeed);
     }
   }
 
@@ -273,44 +294,20 @@ export class FarmScene extends Phaser.Scene {
 
     if (!currentPlot) return;
 
-    try {
-      if (interaction === 'plant' && this.selectedSeed) {
-        // 씨앗 체크 먼저
-        const seedCount = this.getSeedCount(this.selectedSeed);
-        if (seedCount <= 0) {
-          this.farmData.onNotify('씨앗이 부족합니다!', 'error');
-          return;
-        }
-
-        // 심기 애니메이션 + API 호출
-        await this.playerController.playHarvestAnimation();
-        await this.farmData.onPlantOnPlot(currentPlot.id, this.selectedSeed);
-
-        // 로컬 업데이트 (API 응답 전 즉시 표시)
-        this.unifiedPlacementManager.updateCrop(currentPlot.id, this.selectedSeed, 1);
-
-      } else if (interaction === 'harvest') {
-        // 수확 가능 여부 체크
-        const plotData = currentPlot.data as { cropCode?: string; stage?: number } | undefined;
-        if (!plotData?.cropCode) {
-          this.farmData.onNotify('수확할 작물이 없습니다!', 'error');
-          return;
-        }
-        if ((plotData.stage || 0) < 4) {
-          this.farmData.onNotify('아직 다 자라지 않았습니다!', 'error');
-          return;
-        }
-
-        // 수확 애니메이션 + API 호출
-        await this.playerController.playHarvestAnimation();
-        await this.farmData.onHarvestFromPlot(currentPlot.id);
-
-        // 작물 제거
-        this.unifiedPlacementManager.updateCrop(currentPlot.id, null, 0);
+    if (interaction === 'plant' && this.selectedSeed) {
+      await this.plantCrop(currentPlot.id, this.selectedSeed);
+    } else if (interaction === 'harvest') {
+      // 수확 가능 여부 체크
+      const plotData = currentPlot.data as { cropCode?: string; stage?: number } | undefined;
+      if (!plotData?.cropCode) {
+        this.farmData.onNotify('수확할 작물이 없습니다!', 'error');
+        return;
       }
-    } catch (error) {
-      console.error('Action failed:', error);
-      this.farmData.onNotify('작업에 실패했습니다', 'error');
+      if ((plotData.stage || 0) < 4) {
+        this.farmData.onNotify('아직 다 자라지 않았습니다!', 'error');
+        return;
+      }
+      await this.harvestCrop(currentPlot.id);
     }
   }
 

@@ -317,6 +317,12 @@ class CollectionTool:
         Returns:
             ConfirmationResult
         """
+        # 0. 명확한 거절 패턴 먼저 체크 ("X말고", "X 대신", "X 빼고")
+        explicit_rejection = self._check_explicit_rejection_pattern(message, awaiting_value)
+        if explicit_rejection:
+            print(f"[CollectionTool] Explicit rejection pattern detected: {message}")
+            return explicit_rejection
+
         # 1. 임베딩 기반 빠른 체크
         embedding_result = await self._check_confirmation_embedding(message)
 
@@ -336,6 +342,68 @@ class CollectionTool:
 
         # 2. 애매하면 LLM 사용
         return await self._analyze_confirmation_llm(message, awaiting_value, current_step)
+
+    def _check_explicit_rejection_pattern(
+        self,
+        message: str,
+        awaiting_value: Optional[str] = None,
+    ) -> Optional[ConfirmationResult]:
+        """
+        명확한 거절 패턴 감지 ("X말고", "X 대신", "X 빼고", "다른거", "싫어" 등)
+
+        "기초말고 다른거" → 기초 거절, negative 반환
+        "그거 말고" → 대기 중인 값 거절, negative 반환
+        "다른거 해줘" → 현재 값 거절, negative 반환
+
+        Returns:
+            ConfirmationResult if rejection detected, None otherwise
+        """
+        message_lower = message.lower().strip()
+
+        # 패턴 1: "X말고", "X 말고" - X가 언급됨
+        import re
+        malgo_patterns = [
+            r'(\S+)\s*말고',      # "기초말고", "기초 말고"
+            r'(\S+)\s*대신',      # "DP대신", "DP 대신"
+            r'(\S+)\s*빼고',      # "그래프빼고"
+            r'(\S+)\s*안하고',    # "정렬안하고"
+        ]
+
+        for pattern in malgo_patterns:
+            match = re.search(pattern, message_lower)
+            if match:
+                rejected_word = match.group(1)
+                # 거절된 단어가 의미 있는 값인지 확인 (조사 제거)
+                rejected_word = rejected_word.rstrip('은는이가을를')
+                print(f"[CollectionTool] Rejection pattern matched: '{rejected_word}' from '{message}'")
+                return ConfirmationResult(
+                    response="negative",
+                    confidence=0.95,
+                    extracted_value=None,  # 거절된 값이므로 None
+                    has_additional_info=False,
+                )
+
+        # 패턴 2: "말고", "대신", "다른거" 등 단독 - 대기 중인 값 거절
+        rejection_keywords = [
+            "말고", "대신", "빼고", "싫어", "안해", "아니",
+            "다른거", "다른것", "다른 거", "다른 것",
+            "딴거", "딴 거", "그거 말고", "그건 말고",
+            "ㄴㄴ", "노노", "아닙니다", "아니요", "안 할래", "안할래",
+            "패스", "pass", "no", "nope", "별로",
+        ]
+
+        for keyword in rejection_keywords:
+            if keyword in message_lower:
+                print(f"[CollectionTool] Rejection keyword matched: '{keyword}' in '{message}'")
+                return ConfirmationResult(
+                    response="negative",
+                    confidence=0.90,
+                    extracted_value=None,
+                    has_additional_info=False,
+                )
+
+        # 거절 패턴 없음
+        return None
 
     async def _check_confirmation_embedding(self, message: str) -> ConfirmationResult:
         """임베딩 기반 긍정/부정 체크"""

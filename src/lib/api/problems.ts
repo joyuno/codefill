@@ -60,6 +60,7 @@ export interface BaseProblemDetail {
     outputs?: string[];
   } | string | null;
   explanation: string | null;
+  solutions?: Array<{ language: string; code: string }>;  // 문제 유형 생성 시 필요
 }
 
 export interface BaseProblemListResponse {

@@ -89,23 +89,29 @@ export class PlayerController {
    * 에셋 프리로드
    */
   preload(): void {
-    // 기본 idle/walk
-    this.scene.load.spritesheet(ASSETS.IDLE, ASSET_PATH + SPRITE_CONFIG.idle.file, {
-      frameWidth: SPRITE_CONFIG.idle.frameWidth,
-      frameHeight: SPRITE_CONFIG.idle.frameHeight,
-    });
+    // 기본 idle/walk (중복 로드 방지)
+    if (!this.scene.textures.exists(ASSETS.IDLE)) {
+      this.scene.load.spritesheet(ASSETS.IDLE, ASSET_PATH + SPRITE_CONFIG.idle.file, {
+        frameWidth: SPRITE_CONFIG.idle.frameWidth,
+        frameHeight: SPRITE_CONFIG.idle.frameHeight,
+      });
+    }
 
-    // 수확 애니메이션
-    this.scene.load.spritesheet(ASSETS.HARVEST, ASSET_PATH + SPRITE_CONFIG.harvest.file, {
-      frameWidth: SPRITE_CONFIG.harvest.frameWidth,
-      frameHeight: SPRITE_CONFIG.harvest.frameHeight,
-    });
+    // 수확 애니메이션 (중복 로드 방지)
+    if (!this.scene.textures.exists(ASSETS.HARVEST)) {
+      this.scene.load.spritesheet(ASSETS.HARVEST, ASSET_PATH + SPRITE_CONFIG.harvest.file, {
+        frameWidth: SPRITE_CONFIG.harvest.frameWidth,
+        frameHeight: SPRITE_CONFIG.harvest.frameHeight,
+      });
+    }
 
-    // 물주기 애니메이션
-    this.scene.load.spritesheet(ASSETS.WATER, ASSET_PATH + SPRITE_CONFIG.water.file, {
-      frameWidth: SPRITE_CONFIG.water.frameWidth,
-      frameHeight: SPRITE_CONFIG.water.frameHeight,
-    });
+    // 물주기 애니메이션 (중복 로드 방지)
+    if (!this.scene.textures.exists(ASSETS.WATER)) {
+      this.scene.load.spritesheet(ASSETS.WATER, ASSET_PATH + SPRITE_CONFIG.water.file, {
+        frameWidth: SPRITE_CONFIG.water.frameWidth,
+        frameHeight: SPRITE_CONFIG.water.frameHeight,
+      });
+    }
   }
 
   /**

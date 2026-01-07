@@ -24,6 +24,49 @@ from ..database import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
+# 유효한 난이도 목록
+VALID_DIFFICULTIES = {"easy", "medium", "medium_hard", "hard", "very_hard"}
+
+
+def _validate_blank_problem(data: Dict[str, Any]) -> bool:
+    """
+    빈칸 문제 캐시 데이터가 유효한지 검증
+
+    조건:
+    1. code_template에 _N_ 패턴이 있어야 함
+    2. answers 배열이 있어야 함
+    3. 패턴 수와 answers 수가 일치해야 함
+
+    Returns:
+        True if valid, False if invalid (should regenerate)
+    """
+    import re
+
+    code_template = data.get("code_template", "")
+    answers = data.get("answers", [])
+
+    if not code_template or not answers:
+        logger.warning("[CacheValidation] Empty code_template or answers")
+        return False
+
+    # _N_ 패턴 찾기 (예: _0_, _1_, _2_)
+    blank_patterns = re.findall(r'_(\d+)_', code_template)
+
+    if len(blank_patterns) == 0 and len(answers) > 0:
+        logger.warning(f"[CacheValidation] ❌ Invalid cache: {len(answers)} answers but 0 patterns in code_template")
+        logger.warning(f"[CacheValidation] code_template preview: {code_template[:200]}...")
+        return False
+
+    if len(blank_patterns) != len(answers):
+        logger.warning(f"[CacheValidation] ⚠️ Pattern/answer mismatch: {len(blank_patterns)} patterns vs {len(answers)} answers")
+        # 패턴이 있지만 수가 다른 경우는 경고만 (부분 유효)
+        # 하지만 패턴이 0개면 완전히 무효
+        if len(blank_patterns) == 0:
+            return False
+
+    logger.info(f"[CacheValidation] ✓ Valid cache: {len(blank_patterns)} patterns, {len(answers)} answers")
+    return True
+
 
 class ProblemSaveService:
     """생성된 문제를 DB에 저장하고 조회하는 서비스"""
@@ -61,6 +104,99 @@ class ProblemSaveService:
             return None
 
     # ============================================================
+    # CodeGen 문제를 base_problems에 저장
+    # ============================================================
+
+    async def save_codegen_to_base_problems(
+        self,
+        generated_problem: Dict[str, Any],
+        collected_info: Dict[str, Any],
+    ) -> Optional[str]:
+        """
+        CodeGen으로 생성된 문제를 base_problems 테이블에 저장
+
+        Args:
+            generated_problem: CodeGen이 생성한 문제 데이터
+            collected_info: 사용자가 선택한 topic, difficulty, language
+
+        Returns:
+            저장된 문제의 id (UUID) 또는 None
+        """
+        import uuid
+
+        try:
+            # difficulty 검증 (필수)
+            difficulty = generated_problem.get("difficulty") or collected_info.get("difficulty")
+            if not difficulty or difficulty not in VALID_DIFFICULTIES:
+                logger.error(f"[ProblemSave] Invalid difficulty: {difficulty}")
+                return None
+
+            # original_id 생성 (codegen_UUID 형식)
+            original_id = f"codegen_{uuid.uuid4().hex[:12]}"
+
+            # solutions 형식으로 변환 (code 필드가 dict인 경우)
+            code_data = generated_problem.get("code", {})
+            solutions = []
+
+            if isinstance(code_data, dict):
+                for lang, code in code_data.items():
+                    if code:
+                        solutions.append({"language": lang, "code": code})
+            elif isinstance(code_data, str):
+                # code가 문자열인 경우
+                solutions.append({
+                    "language": collected_info.get("language", "python"),
+                    "code": code_data
+                })
+
+            # 솔루션이 없으면 저장 불가
+            if not solutions:
+                logger.warning(f"[ProblemSave] No solutions in generated problem")
+                return None
+
+            # input_output 구성 (examples에서 추출)
+            examples = generated_problem.get("examples", [])
+            input_output = None
+            if examples:
+                inputs = []
+                outputs = []
+                for ex in examples:
+                    if isinstance(ex, dict):
+                        if ex.get("input"):
+                            inputs.append(ex["input"])
+                        if ex.get("output"):
+                            outputs.append(ex["output"])
+                if inputs and outputs:
+                    input_output = {"inputs": inputs, "outputs": outputs}
+
+            # base_problems 데이터 구성
+            data = {
+                "original_id": original_id,
+                "name": generated_problem.get("title", "Generated Problem"),
+                "question": generated_problem.get("description", ""),
+                "difficulty": difficulty,  # 이미 검증됨
+                "tags": generated_problem.get("topics") or collected_info.get("topics", []),
+                "source": "codegen",
+                "solutions": solutions,
+                "input_output": input_output,
+            }
+
+            result = self.supabase.table("base_problems").insert(data).execute()
+
+            if result.data and len(result.data) > 0:
+                saved_id = result.data[0]["id"]
+                saved_original_id = result.data[0]["original_id"]
+                logger.info(f"[ProblemSave] CodeGen problem saved to base_problems: {saved_original_id}")
+                return saved_id
+            return None
+
+        except Exception as e:
+            logger.error(f"[ProblemSave] Failed to save CodeGen to base_problems: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    # ============================================================
     # 조회 메서드 (Cache-First 로직용)
     # base_problem_id + language로 조회 (creator_id 무관)
     # ============================================================
@@ -80,7 +216,7 @@ class ProblemSaveService:
             language: 프로그래밍 언어
 
         Returns:
-            문제 데이터 또는 None
+            문제 데이터 또는 None (캐시 무효일 경우에도 None)
         """
         table_name = f"problems_{problem_type}"
 
@@ -93,8 +229,25 @@ class ProblemSaveService:
                 .execute()
 
             if result.data and len(result.data) > 0:
+                cached_data = result.data[0]
+
+                # 빈칸 문제의 경우 캐시 유효성 검증
+                if problem_type == "blank":
+                    if not _validate_blank_problem(cached_data):
+                        logger.warning(f"[ProblemCache] Invalid blank cache for {base_problem_id}, will regenerate")
+                        # 무효한 캐시는 삭제
+                        try:
+                            self.supabase.table(table_name) \
+                                .delete() \
+                                .eq("id", cached_data.get("id")) \
+                                .execute()
+                            logger.info(f"[ProblemCache] Deleted invalid cache: {cached_data.get('id')}")
+                        except Exception as del_err:
+                            logger.warning(f"[ProblemCache] Failed to delete invalid cache: {del_err}")
+                        return None  # 캐시 미스로 처리하여 재생성 유도
+
                 logger.info(f"[ProblemCache] {problem_type} problem found: {base_problem_id} ({language})")
-                return result.data[0]
+                return cached_data
             return None
 
         except Exception as e:
@@ -118,7 +271,7 @@ class ProblemSaveService:
             creator_id: 사용자 UUID
 
         Returns:
-            문제 데이터 또는 None
+            문제 데이터 또는 None (캐시 무효일 경우에도 None)
         """
         table_name = f"problems_{problem_type}"
 
@@ -132,8 +285,25 @@ class ProblemSaveService:
                 .execute()
 
             if result.data and len(result.data) > 0:
+                cached_data = result.data[0]
+
+                # 빈칸 문제의 경우 캐시 유효성 검증
+                if problem_type == "blank":
+                    if not _validate_blank_problem(cached_data):
+                        logger.warning(f"[ProblemCache] User's invalid blank cache for {base_problem_id}, will regenerate")
+                        # 무효한 캐시는 삭제
+                        try:
+                            self.supabase.table(table_name) \
+                                .delete() \
+                                .eq("id", cached_data.get("id")) \
+                                .execute()
+                            logger.info(f"[ProblemCache] Deleted user's invalid cache: {cached_data.get('id')}")
+                        except Exception as del_err:
+                            logger.warning(f"[ProblemCache] Failed to delete invalid cache: {del_err}")
+                        return None  # 캐시 미스로 처리하여 재생성 유도
+
                 logger.info(f"[ProblemCache] User already has {problem_type}: {base_problem_id}")
-                return result.data[0]
+                return cached_data
             return None
 
         except Exception as e:
@@ -167,7 +337,6 @@ class ProblemSaveService:
             # 복사할 데이터 준비 (id, created_at, updated_at 제외)
             copy_data = {
                 "base_problem_id": source_problem.get("base_problem_id"),
-                "original_id": source_problem.get("original_id"),
                 "language": source_problem.get("language"),
                 "creator_id": creator_id,  # 새 사용자로 변경
             }
@@ -204,26 +373,29 @@ class ProblemSaveService:
     async def save_blank_problem(
         self,
         base_problem_id: str,
-        original_id: str,
         language: str,
         code_template: str,
         answers: list,
         creator_id: str,
     ) -> Dict[str, Any]:
-        """빈칸 채우기 문제 저장"""
+        """빈칸 채우기 문제 저장 (저장 전 유효성 검증)"""
         try:
             data = {
                 "base_problem_id": base_problem_id,
-                "original_id": original_id,
                 "language": language,
                 "code_template": code_template,
                 "answers": answers,
                 "creator_id": creator_id,
             }
 
+            # 저장 전 유효성 검증 - 무효한 데이터는 저장하지 않음
+            if not _validate_blank_problem(data):
+                logger.error(f"[ProblemSave] ❌ Refusing to save invalid blank problem: {base_problem_id[:8]}...")
+                return {"success": False, "error": "Invalid blank problem: code_template has no _N_ patterns"}
+
             result = self.supabase.table("problems_blank").insert(data).execute()
 
-            logger.info(f"[ProblemSave] Blank problem saved: {original_id} (user: {creator_id[:8]}...)")
+            logger.info(f"[ProblemSave] Blank problem saved: {base_problem_id[:8]}... (user: {creator_id[:8]}...)")
             return {"success": True, "data": result.data[0] if result.data else None}
 
         except Exception as e:
@@ -233,7 +405,6 @@ class ProblemSaveService:
     async def save_puzzle_problem(
         self,
         base_problem_id: str,
-        original_id: str,
         language: str,
         blocks: list,
         creator_id: str,
@@ -244,7 +415,6 @@ class ProblemSaveService:
         try:
             data = {
                 "base_problem_id": base_problem_id,
-                "original_id": original_id,
                 "language": language,
                 "blocks": blocks,
                 "creator_id": creator_id,
@@ -257,7 +427,7 @@ class ProblemSaveService:
 
             result = self.supabase.table("problems_puzzle").insert(data).execute()
 
-            logger.info(f"[ProblemSave] Puzzle problem saved: {original_id} (user: {creator_id[:8]}...)")
+            logger.info(f"[ProblemSave] Puzzle problem saved: {base_problem_id[:8]}... (user: {creator_id[:8]}...)")
             return {"success": True, "data": result.data[0] if result.data else None}
 
         except Exception as e:
@@ -267,7 +437,6 @@ class ProblemSaveService:
     async def save_guided_problem(
         self,
         base_problem_id: str,
-        original_id: str,
         language: str,
         concepts: list,
         flow: list,
@@ -278,7 +447,6 @@ class ProblemSaveService:
         try:
             data = {
                 "base_problem_id": base_problem_id,
-                "original_id": original_id,
                 "language": language,
                 "concepts": concepts,
                 "flow": flow,
@@ -288,7 +456,7 @@ class ProblemSaveService:
 
             result = self.supabase.table("problems_guided").insert(data).execute()
 
-            logger.info(f"[ProblemSave] Guided problem saved: {original_id} (user: {creator_id[:8]}...)")
+            logger.info(f"[ProblemSave] Guided problem saved: {base_problem_id[:8]}... (user: {creator_id[:8]}...)")
             return {"success": True, "data": result.data[0] if result.data else None}
 
         except Exception as e:
@@ -314,13 +482,11 @@ class ProblemSaveService:
         Returns:
             저장 결과
         """
-        original_id = generated_data.get("original_id", "unknown")
         language = generated_data.get("language", "python")
 
         if problem_type == "blank":
             return await self.save_blank_problem(
                 base_problem_id=base_problem_id,
-                original_id=original_id,
                 language=language,
                 code_template=generated_data.get("code_template", ""),
                 answers=generated_data.get("answers", []),
@@ -330,7 +496,6 @@ class ProblemSaveService:
         elif problem_type == "puzzle":
             return await self.save_puzzle_problem(
                 base_problem_id=base_problem_id,
-                original_id=original_id,
                 language=language,
                 blocks=generated_data.get("blocks", []),
                 creator_id=creator_id,
@@ -341,7 +506,6 @@ class ProblemSaveService:
         elif problem_type == "guided":
             return await self.save_guided_problem(
                 base_problem_id=base_problem_id,
-                original_id=original_id,
                 language=language,
                 concepts=generated_data.get("concepts", []),
                 flow=generated_data.get("flow", []),

@@ -119,8 +119,9 @@ async def get_base_problem(original_id: str, db=Depends(get_db)):
     original_id로 조회 (예: "baekjoon_1001", "taco_1")
     """
     try:
+        # 필요한 컬럼만 선택
         result = db.table("base_problems")\
-            .select("*")\
+            .select("id, original_id, name, question, difficulty, tags, source, url, input_output, explanation, solutions")\
             .eq("original_id", original_id)\
             .single()\
             .execute()
@@ -273,9 +274,13 @@ async def get_problem(problem_id: UUID, db=Depends(get_db)):
     - Related concepts and docs
     """
     try:
-        # Get problem with code
+        # Get problem with code (필요한 컬럼만 선택)
         result = db.table("problems")\
-            .select("*, codes(*)")\
+            .select(
+                "id, code_id, problem_type, problem_code, difficulty, "
+                "times_attempted, times_solved, avg_solve_time, answer_data, created_at, "
+                "codes(id, title, description, framework, tags, original_code, solution_code, base_problem_id)"
+            )\
             .eq("id", str(problem_id))\
             .single()\
             .execute()

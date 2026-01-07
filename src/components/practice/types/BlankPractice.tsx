@@ -37,14 +37,18 @@ export function BlankPractice({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [hintLevels, setHintLevels] = useState<Record<string, number>>({});
 
+  // Generate placeholder with underscores matching answer length
+  const getPlaceholder = (answer: string): string => {
+    return '_'.repeat(answer.length);
+  };
+
   // Parse code and replace blanks with input fields
   const renderCodeWithBlanks = () => {
     const parts: JSX.Element[] = [];
     let lastIndex = 0;
-    let blankIndex = 0;
 
-    // Find all ___ patterns
-    const blankPattern = /___/g;
+    // Find all _N_ patterns (e.g., _0_, _1_, _2_, etc.) or legacy ___ pattern
+    const blankPattern = /_(\d+)_|___/g;
     let match;
 
     while ((match = blankPattern.exec(code)) !== null) {
@@ -58,10 +62,24 @@ export function BlankPractice({
       }
 
       // Get corresponding blank info
+      // If _N_ pattern, use N as index. Otherwise use sequential index
+      let blankIndex: number;
+      if (match[1] !== undefined) {
+        // _N_ pattern - use the number directly
+        blankIndex = parseInt(match[1], 10);
+      } else {
+        // Legacy ___ pattern - use sequential index
+        blankIndex = parts.filter((p) => p.key?.toString().startsWith('blank-')).length;
+      }
+
       const blank = blanks[blankIndex];
       if (blank) {
         const isCorrect = results?.[blank.id];
         const currentHintLevel = hintLevels[blank.id] || 0;
+        const placeholder = getPlaceholder(blank.answer);
+
+        // Dynamic width based on answer length (min 60px, max 200px)
+        const inputWidth = Math.min(200, Math.max(60, blank.answer.length * 10 + 20));
 
         parts.push(
           <span key={`blank-${blank.id}`} className="inline-flex items-center gap-1">
@@ -71,14 +89,15 @@ export function BlankPractice({
                 onChange={(e) =>
                   setAnswers((prev) => ({ ...prev, [blank.id]: e.target.value }))
                 }
-                className={`inline-block h-7 w-32 rounded border px-2 py-0 font-mono text-sm ${
+                style={{ width: `${inputWidth}px` }}
+                className={`inline-block h-7 rounded border px-2 py-0 font-mono text-sm ${
                   isSubmitted
                     ? isCorrect
                       ? 'border-green-500 bg-green-500/10'
                       : 'border-red-500 bg-red-500/10'
                     : 'border-primary/50 bg-code-bg'
                 }`}
-                placeholder="___"
+                placeholder={placeholder}
                 disabled={isSubmitted}
               />
               {isSubmitted && (
@@ -127,8 +146,7 @@ export function BlankPractice({
         );
       }
 
-      lastIndex = match.index + 3; // "___".length
-      blankIndex++;
+      lastIndex = match.index + match[0].length;
     }
 
     // Add remaining code

@@ -90,4 +90,5 @@ SOLVING_INTENT_TO_NODE = {
     "give_up": "show_solution",
     "next_step": "guide_next_step",  # guided 문제 전용
     "question": "answer_question",  # 일반 질문
+    "summarize_problem": "summarize_problem",  # 문제 요약
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +47,19 @@ import {
 } from '@/components/ui/collapsible';
 import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
 import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
-import { CodeEditor } from './CodeEditor';
+
+// CodeEditor 동적 임포트 (Monaco Editor 번들 분리 - 초기 로딩 성능 향상)
+const CodeEditor = dynamic(
+  () => import('./CodeEditor').then(mod => mod.CodeEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center bg-[#1e1e1e]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  }
+);
 import { translateText, LANGUAGE_LABELS, type LanguageCode } from '@/lib/api/translate';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -60,6 +73,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+
+import { preprocessLatex } from '@/lib/utils';
 
 // UI에서 사용하는 퍼즐 블록 (indentation 포함)
 interface UIPuzzleBlock {
@@ -196,13 +211,24 @@ export function UnifiedPractice({
     setShowOriginal(true);
 
     if (problemType === 'blank') {
-      setCode(problem.codeSnippet || '');
+      const snippet = problem.codeSnippet || '';
+      const blankCount = problem.blanks?.length || 0;
+      // 빈칸 패턴 검증 - _N_ 또는 ___ 패턴이 있는지 확인
+      const patternCount = (snippet.match(/_\d+_|___/g) || []).length;
+
+      if (blankCount > 0 && patternCount === 0) {
+        console.warn('[UnifiedPractice] Warning: blanks exist but no patterns found in codeSnippet');
+        console.warn(`  - blanks.length: ${blankCount}`);
+        console.warn(`  - codeSnippet (first 200 chars): ${snippet.substring(0, 200)}`);
+      }
+
+      setCode(snippet);
     } else if (problemType === 'puzzle') {
       // ConvertedPuzzleBlock을 UIPuzzleBlock으로 변환
       const uiBlocks: UIPuzzleBlock[] = (problem.puzzleBlocks || []).map(b => ({
         id: b.id,
         code: b.code,
-        indentation: 0, // 기본 indentation
+        indentation: b.indentation || 0, // 블록의 들여쓰기 레벨 사용
         correctOrder: b.correctOrder,
       }));
       // 랜덤 셔플
@@ -215,23 +241,56 @@ export function UnifiedPractice({
     }
   }, [problem.id, problemType]);
 
-  // 블록 순서 변경 시 코드 업데이트
+  // 블록 순서 변경 시 코드 업데이트 (baseIndentation 적용)
   useEffect(() => {
     if (problemType === 'puzzle' && blocks.length > 0) {
+      // baseIndentation은 fixed_start 기준으로 계산됨
+      const fixedStartLines = problem.fixedStart?.split('\n') || [];
+      const lastLine = fixedStartLines[fixedStartLines.length - 1] || '';
+      const leadingSpaces = lastLine.match(/^(\s*)/)?.[1].length || 0;
+      let computedBaseIndent = Math.floor(leadingSpaces / 4);
+      if (lastLine.trimEnd().endsWith(':')) {
+        computedBaseIndent += 1;
+      }
+
       const assembledCode = blocks
-        .map(b => '    '.repeat(b.indentation || 0) + b.code)
+        .map(b => '    '.repeat(computedBaseIndent + (b.indentation || 0)) + b.code)
         .join('\n');
       setCode(assembledCode);
     }
-  }, [blocks, problemType]);
+  }, [blocks, problemType, problem.fixedStart]);
+
+  // fixed_start의 마지막 줄에서 기본 들여쓰기 레벨 계산
+  const baseIndentation = useMemo((): number => {
+    if (!problem.fixedStart) return 0;
+
+    const lines = problem.fixedStart.split('\n');
+    const lastLine = lines[lines.length - 1];
+
+    // 마지막 줄의 들여쓰기 계산 (4칸 = 1레벨)
+    const leadingSpaces = lastLine.match(/^(\s*)/)?.[1].length || 0;
+    let baseIndent = Math.floor(leadingSpaces / 4);
+
+    // 마지막 줄이 ':'로 끝나면 (함수/클래스/조건문/반복문), 다음 블록은 +1 레벨
+    if (lastLine.trimEnd().endsWith(':')) {
+      baseIndent += 1;
+    }
+
+    return baseIndent;
+  }, [problem.fixedStart]);
 
   // 테스트 케이스 (타입별로 다름)
   const baseTestCases = useMemo((): ConvertedTestCase[] => {
-    if (problemType === 'implementation') {
-      return problem.testCases || [];
+    // 테스트 케이스가 있으면 사용
+    if (problem.testCases && problem.testCases.length > 0) {
+      return problem.testCases;
     }
-    // blank, puzzle은 테스트 케이스가 있으면 사용, 없으면 더미
-    return problem.testCases?.length ? problem.testCases : [{ input: 'test', expected: 'test' }];
+    // implementation 타입은 테스트 케이스가 없으면 빈 배열
+    if (problemType === 'implementation') {
+      return [];
+    }
+    // blank, puzzle, guided는 테스트 케이스가 없으면 빈 배열 (더미 데이터 제거)
+    return [];
   }, [problem, problemType]);
 
   const allTestCases = useMemo(() => {
@@ -287,13 +346,32 @@ export function UnifiedPractice({
   const getExecutableCode = (): string => {
     if (problemType === 'blank') {
       let execCode = problem.codeSnippet || '';
-      (problem.blanks || []).forEach((blank) => {
-        const answer = blankAnswers[blank.id] || '___';
-        execCode = execCode.replace('___', answer);
+      const blanks = problem.blanks || [];
+
+      // _N_ 패턴을 사용자 답변으로 교체
+      blanks.forEach((blank, idx) => {
+        const answer = blankAnswers[blank.id] || blank.answer || '';
+        // _N_ 패턴 교체 (예: _0_, _1_, _2_)
+        const pattern = new RegExp(`_${idx}_`, 'g');
+        execCode = execCode.replace(pattern, answer);
       });
+
+      // 레거시 ___ 패턴도 순차적으로 교체 (혹시 남아있는 경우)
+      let seqIdx = 0;
+      execCode = execCode.replace(/___/g, () => {
+        const blank = blanks[seqIdx];
+        seqIdx++;
+        return blank ? (blankAnswers[blank.id] || blank.answer || '') : '___';
+      });
+
       return execCode;
     } else if (problemType === 'puzzle') {
-      return blocks.map(b => '    '.repeat(b.indentation) + b.code).join('\n');
+      return blocks.map(b => {
+        // baseIndentation + 블록의 상대적 indentation = 최종 들여쓰기
+        const relativeIndent = b.indentation || 0;
+        const totalIndent = baseIndentation + relativeIndent;
+        return '    '.repeat(totalIndent) + b.code;
+      }).join('\n');
     }
     return code;
   };
@@ -588,14 +666,15 @@ export function UnifiedPractice({
   // Blank 코드 렌더링
   const renderBlankCode = () => {
     const codeLines = (problem.codeSnippet || '').split('\n');
-    let blankIndex = 0;
+    let sequentialBlankIndex = 0;  // Legacy ___ 패턴용 순차 인덱스
     const blanks = problem.blanks || [];
 
     return codeLines.map((line, lineIdx) => {
       const parts: React.ReactNode[] = [];
       let lastIndex = 0;
       let match;
-      const blankPattern = /___/g;
+      // _N_ 패턴 (예: _0_, _1_, _10_) 또는 레거시 ___ 패턴 매칭
+      const blankPattern = /_(\d+)_|___/g;
 
       while ((match = blankPattern.exec(line)) !== null) {
         if (match.index > lastIndex) {
@@ -606,10 +685,27 @@ export function UnifiedPractice({
           );
         }
 
+        // blankIndex 결정: _N_ 패턴이면 N 사용, ___ 패턴이면 순차 인덱스 사용
+        let blankIndex: number;
+        if (match[1] !== undefined) {
+          // _N_ 패턴 - 숫자를 인덱스로 사용
+          blankIndex = parseInt(match[1], 10);
+        } else {
+          // 레거시 ___ 패턴 - 순차 인덱스 사용
+          blankIndex = sequentialBlankIndex;
+          sequentialBlankIndex++;
+        }
+
         const blank = blanks[blankIndex];
         if (blank) {
           const isCorrect = blankResults[blank.id];
           const hasResult = Object.keys(blankResults).length > 0;
+
+          // 정답 길이에 맞는 언더스코어 플레이스홀더 생성
+          const answerLength = blank.answer?.length || 3;
+          const placeholder = '_'.repeat(answerLength);
+          // 동적 너비: 정답 길이에 따라 조정 (최소 50px, 최대 200px)
+          const inputWidth = Math.min(200, Math.max(50, answerLength * 10 + 20));
 
           parts.push(
             <span key={`blank-${blank.id}`} className="inline-flex items-center gap-1 mx-1">
@@ -618,14 +714,15 @@ export function UnifiedPractice({
                 onChange={(e) =>
                   setBlankAnswers((prev) => ({ ...prev, [blank.id]: e.target.value }))
                 }
-                className={`inline-block h-7 w-24 px-2 py-0 font-mono text-sm ${
+                style={{ width: `${inputWidth}px` }}
+                className={`inline-block h-7 px-2 py-0 font-mono text-sm ${
                   hasResult
                     ? isCorrect
                       ? 'border-green-500 bg-green-500/10 text-green-400'
                       : 'border-red-500 bg-red-500/10 text-red-400'
                     : 'border-primary/50 bg-[#2d2d2d] text-[#d4d4d4]'
                 }`}
-                placeholder="___"
+                placeholder={placeholder}
                 disabled={isSubmitted}
               />
               {/* 힌트 버튼 - problem.keyConcepts 사용 */}
@@ -650,10 +747,17 @@ export function UnifiedPractice({
               )}
             </span>
           );
-          blankIndex++;
+        } else {
+          // blank이 없으면 원래 텍스트 그대로 표시
+          parts.push(
+            <span key={`blank-fallback-${lineIdx}-${match.index}`} className="text-yellow-500">
+              {match[0]}
+            </span>
+          );
         }
 
-        lastIndex = match.index + 3;
+        // 매칭된 문자열 길이만큼 lastIndex 이동
+        lastIndex = match.index + match[0].length;
       }
 
       if (lastIndex < line.length) {
@@ -888,6 +992,7 @@ export function UnifiedPractice({
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="shrink-0 flex flex-col bg-card overflow-hidden"
+            style={{ maxWidth: sidebarWidth, minWidth: 0 }}
           >
             {/* Tabs */}
             <div className="flex border-b border-border">
@@ -931,10 +1036,10 @@ export function UnifiedPractice({
             </div>
 
             {/* Tab Content */}
-            <ScrollArea className="flex-1">
-              <div className="p-4">
+            <ScrollArea className="flex-1 min-w-0 w-full">
+              <div className="p-4 min-w-0 w-full overflow-hidden">
                 {activeTab === 'problem' ? (
-                  <div className="space-y-4">
+                  <div className="space-y-4 w-full overflow-hidden">
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-semibold">문제 설명</h4>
@@ -991,14 +1096,22 @@ export function UnifiedPractice({
                           </Button>
                         </div>
                       )}
-                      <div className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:bg-secondary/50 prose-code:text-primary">
+                      <div
+                        className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert prose-p:my-1 prose-pre:bg-secondary/50 prose-pre:overflow-x-auto prose-code:text-primary"
+                        style={{
+                          maxWidth: `${sidebarWidth - 32}px`,  // 32px = p-4 양쪽 패딩
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          whiteSpace: 'pre-wrap'
+                        }}
+                      >
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[rehypeKatex]}
                         >
-                          {showOriginal || !translatedDescription
+                          {preprocessLatex(showOriginal || !translatedDescription
                             ? problem.description || ''
-                            : translatedDescription}
+                            : translatedDescription)}
                         </ReactMarkdown>
                       </div>
                     </div>
@@ -1228,7 +1341,12 @@ export function UnifiedPractice({
               )}
               {/* 퍼즐 블록 - 하늘색 (변경 가능) */}
               <span className="text-[#9CDCFE]">
-                {blocks.map(b => '    '.repeat(b.indentation || 0) + b.code).join('\n')}
+                {blocks.map(b => {
+                  // baseIndentation + 블록의 상대적 indentation = 최종 들여쓰기
+                  const relativeIndent = b.indentation || 0;
+                  const totalIndent = baseIndentation + relativeIndent;
+                  return '    '.repeat(totalIndent) + b.code;
+                }).join('\n')}
               </span>
               {/* fixed_end - 녹색 (고정) */}
               {problem.fixedEnd && (
@@ -1366,18 +1484,7 @@ export function UnifiedPractice({
         </AnimatePresence>
 
         {/* Actions Bar */}
-        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-t border-border bg-card">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleHint}
-            disabled={isSubmitted || hintsUsed >= 3}
-            className="text-yellow-600 hover:text-yellow-500"
-          >
-            <Lightbulb className="mr-2 h-4 w-4" />
-            힌트 ({3 - hintsUsed}회 남음)
-          </Button>
-
+        <div className="shrink-0 flex items-center justify-end px-4 py-3 border-t border-border bg-card">
           <div className="flex gap-2">
             {/* 실행 버튼 - implementation에서만 표시 */}
             {problemType === 'implementation' && (

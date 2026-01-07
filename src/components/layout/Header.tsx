@@ -37,14 +37,14 @@ export function Header() {
   // 인증 페이지에서는 다른 헤더 표시
   const isAuthPage = pathname === '/login' || pathname === '/signup' || pathname === '/onboarding';
 
-  // 미확인 알림 수 조회 (API)
+  // 미확인 알림 수 조회 (API) - 초기 로드시에만 호출
   useEffect(() => {
     if (isAuthenticated && user) {
       friendsApi.getUnreadCounts()
         .then((res) => setApiUnreadCount(res.total))
         .catch(() => setApiUnreadCount(0));
     }
-  }, [isAuthenticated, user, friendModalOpen]);
+  }, [isAuthenticated, user]);  // friendModalOpen 제거 - WebSocket으로 실시간 업데이트됨
 
   // 총 읽지 않은 메시지 수 (API + WebSocket 실시간)
   const unreadCount = apiUnreadCount + wsUnreadCount;

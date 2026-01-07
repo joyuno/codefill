@@ -52,6 +52,7 @@ export interface RawBlankProblem {
 export interface RawPuzzleBlock {
   id: number;
   code: string;
+  indent?: number;  // 들여쓰기 레벨 (0: 루트, 1: 함수내부, 2: 중첩블록)
 }
 
 export interface RawPuzzleProblem {

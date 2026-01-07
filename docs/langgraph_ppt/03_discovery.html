@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeFill LangGraph - DiscoveryGraph</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #8b5cf6;
+            font-size: 2.8rem;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .page-indicator {
+            background: rgba(139, 92, 246, 0.2);
+            border: 1px solid #8b5cf6;
+            border-radius: 20px;
+            padding: 8px 20px;
+            color: #8b5cf6;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+        }
+        .diagram-section {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 20px;
+            padding: 35px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        .diagram-section h2 {
+            color: #a78bfa;
+            margin-bottom: 25px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .diagram-section h2::before {
+            content: '';
+            display: inline-block;
+            width: 5px;
+            height: 28px;
+            background: linear-gradient(180deg, #8b5cf6, #a78bfa);
+            border-radius: 3px;
+        }
+        .mermaid {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            padding: 30px;
+            overflow-x: auto;
+        }
+        .mermaid .cluster rect {
+            fill: transparent !important;
+            stroke: rgba(255, 255, 255, 0.15) !important;
+        }
+        .mermaid .cluster .nodeLabel {
+            color: #94a3b8 !important;
+        }
+        .mermaid .edgeLabel {
+            background: transparent !important;
+            color: #fff !important;
+        }
+        .three-columns {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 25px;
+        }
+        .node-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 14px;
+            padding: 22px;
+            border-left: 4px solid;
+            transition: all 0.3s ease;
+        }
+        .node-card:hover {
+            transform: translateY(-3px);
+        }
+        .node-card.route { border-color: #f59e0b; }
+        .node-card.search { border-color: #8b5cf6; }
+        .node-card.generate { border-color: #10b981; }
+        .node-card.filter { border-color: #06b6d4; }
+        .node-card.select { border-color: #ec4899; }
+        .node-card.confirm { border-color: #22c55e; }
+        .node-card h4 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+        }
+        .node-card.route h4 { color: #f59e0b; }
+        .node-card.search h4 { color: #8b5cf6; }
+        .node-card.generate h4 { color: #10b981; }
+        .node-card.filter h4 { color: #06b6d4; }
+        .node-card.select h4 { color: #ec4899; }
+        .node-card.confirm h4 { color: #22c55e; }
+        .node-card p {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .node-card .tech {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            margin-right: 5px;
+        }
+        .state-box {
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .state-box h3 {
+            color: #a78bfa;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        .state-box pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 18px;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            color: #cbd5e1;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+        .field { color: #f472b6; }
+        .type { color: #60a5fa; }
+        .comment { color: #6b7280; }
+        .edge-box {
+            background: rgba(249, 115, 22, 0.1);
+            border: 1px solid rgba(249, 115, 22, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .edge-box h3 {
+            color: #f59e0b;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        .edge-list {
+            display: grid;
+            gap: 10px;
+        }
+        .edge-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+        .edge-condition {
+            background: rgba(249, 115, 22, 0.2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            color: #fbbf24;
+            font-size: 0.8rem;
+            font-family: monospace;
+            white-space: nowrap;
+        }
+        .edge-arrow {
+            color: #64748b;
+            font-size: 1.2rem;
+        }
+        .edge-target {
+            color: #cbd5e1;
+            font-size: 0.85rem;
+        }
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+        .rag-box {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 16px;
+            padding: 25px;
+        }
+        .rag-box h3 {
+            color: #10b981;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        .rag-flow {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .rag-step {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 12px 18px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .rag-step .label {
+            color: #4ade80;
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+        }
+        .rag-step .detail {
+            color: #94a3b8;
+            font-size: 0.75rem;
+        }
+        .rag-arrow {
+            color: #64748b;
+            font-size: 1.5rem;
+        }
+        .problem-types {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .type-card {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .type-card:hover {
+            transform: translateY(-3px);
+        }
+        .type-card.blank { border-color: #3b82f6; }
+        .type-card.puzzle { border-color: #f59e0b; }
+        .type-card.guided { border-color: #22c55e; }
+        .type-card h5 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .type-card.blank h5 { color: #3b82f6; }
+        .type-card.puzzle h5 { color: #f59e0b; }
+        .type-card.guided h5 { color: #22c55e; }
+        .type-card p {
+            color: #94a3b8;
+            font-size: 0.85rem;
+        }
+        /* Navigation */
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 15, 26, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+        }
+        .nav-pages {
+            display: flex;
+            gap: 8px;
+        }
+        .nav-page {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .nav-page.active {
+            background: #8b5cf6;
+            color: #fff;
+        }
+        .nav-page:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-page:not(.active):hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-page.p1 { border-color: #4ade80; }
+        .nav-page.p2 { border-color: #3b82f6; }
+        .nav-page.p3 { border-color: #8b5cf6; }
+        .nav-page.p4 { border-color: #22c55e; }
+        .nav-page.p5 { border-color: #f59e0b; }
+        .nav-arrows {
+            display: flex;
+            gap: 10px;
+        }
+        .nav-arrow {
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-arrow.prev {
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+        }
+        .nav-arrow.prev:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        .nav-arrow.next {
+            background: #8b5cf6;
+            color: #fff;
+        }
+        .nav-arrow:hover {
+            transform: translateY(-2px);
+        }
+        body {
+            padding-bottom: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="slide-header">
+            <h1>🔍 DiscoveryGraph</h1>
+            <span class="page-indicator">3 / 5</span>
+        </div>
+        <p class="subtitle">RAG 시맨틱 검색 + CodeGen Fallback으로 문제를 탐색하고 선택하는 그래프</p>
+
+        <div class="diagram-section">
+            <h2>DiscoveryGraph</h2>
+
+            <div class="mermaid">
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#8b5cf6', 'primaryTextColor': '#fff', 'lineColor': '#64748b'}}}%%
+flowchart LR
+    START((START)) --> RI
+
+    subgraph RoutePhase["🎯 Route"]
+        RI["route_discovery<br/>_intent<br/><small>Intent 분석</small>"]
+    end
+
+    RI --> R1{{"🔀 route_1"}}
+
+    R1 -->|"selection_index"| HS
+    R1 -->|"force_generate"| GP
+    R1 -->|"more_search"| SP
+    R1 -->|"default"| SP
+
+    subgraph SearchPhase["🔎 Search Phase"]
+        SP["search_problems<br/><small>🔧 RAG Service<br/>Semantic Search</small>"]
+    end
+
+    SP --> R2{{"🔀 route_2"}}
+
+    R2 -->|"should_generate"| GP
+    R2 -->|"results found"| FR
+
+    subgraph GeneratePhase["🤖 CodeGen Agent"]
+        GP["generate_problem<br/><small>🤖 gpt-4o-mini<br/>새 문제 생성</small>"]
+    end
+
+    subgraph FilterPhase["📋 Filter"]
+        FR["filter_results<br/><small>Top-5 선택<br/>응답 생성</small>"]
+    end
+
+    GP --> HS
+    FR --> HS
+
+    subgraph SelectPhase["✅ Selection"]
+        HS["handle_selection<br/><small>인덱스/이름 매칭</small>"]
+    end
+
+    HS --> CP
+
+    subgraph ConfirmPhase["🎮 Type Select"]
+        CP["confirm_problem<br/><small>문제 유형 선택 UI</small>"]
+    end
+
+    CP --> END((END))
+
+    style START fill:#22c55e,stroke:#22c55e,color:#000
+    style END fill:#ef4444,stroke:#ef4444,color:#fff
+    style RI fill:#f59e0b,stroke:#fbbf24,color:#000
+    style R1 fill:#64748b,stroke:#94a3b8,color:#fff
+    style R2 fill:#64748b,stroke:#94a3b8,color:#fff
+    style SP fill:#8b5cf6,stroke:#a78bfa,color:#fff
+    style GP fill:#10b981,stroke:#4ade80,color:#fff
+    style FR fill:#06b6d4,stroke:#22d3ee,color:#fff
+    style HS fill:#ec4899,stroke:#f472b6,color:#fff
+    style CP fill:#22c55e,stroke:#4ade80,color:#fff
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Nodes Overview</h2>
+
+            <div class="three-columns">
+                <div class="node-card route">
+                    <h4>🎯 route_discovery_intent</h4>
+                    <p>Intent 기반 라우팅 결정</p>
+                    <p><strong>분기:</strong> selection, generate, more_search</p>
+                    <span class="tech">Intent Tool</span>
+                </div>
+                <div class="node-card search">
+                    <h4>🔎 search_problems</h4>
+                    <p>RAG 시맨틱 검색 (필터 + 벡터)</p>
+                    <p><strong>출력:</strong> search_results, should_generate</p>
+                    <span class="tech">RAG Service</span>
+                    <span class="tech">pgvector</span>
+                </div>
+                <div class="node-card generate">
+                    <h4>🤖 generate_problem</h4>
+                    <p>RAG 실패 시 LLM으로 새 문제 생성</p>
+                    <p><strong>출력:</strong> generated_problem</p>
+                    <span class="tech">gpt-4o-mini</span>
+                    <span class="tech">CodeGen Agent</span>
+                </div>
+                <div class="node-card filter">
+                    <h4>📋 filter_results</h4>
+                    <p>상위 5개 결과 선택 + 응답 생성</p>
+                    <p><strong>출력:</strong> filtered_results, response_message</p>
+                    <span class="tech">Top-K Filter</span>
+                </div>
+                <div class="node-card select">
+                    <h4>✅ handle_selection</h4>
+                    <p>인덱스/이름 매칭으로 문제 선택</p>
+                    <p><strong>패턴:</strong> "1번", "첫 번째", "taco_001"</p>
+                    <span class="tech">Pattern Match</span>
+                </div>
+                <div class="node-card confirm">
+                    <h4>🎮 confirm_problem</h4>
+                    <p>문제 유형 선택 UI 표시</p>
+                    <p><strong>유형:</strong> Blank, Puzzle, Guided</p>
+                    <span class="tech">Type Selector</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>Conditional Edges & State</h2>
+
+            <div class="two-columns">
+                <div class="edge-box">
+                    <h3>🔀 route_after_discovery_intent</h3>
+                    <div class="edge-list">
+                        <div class="edge-item">
+                            <span class="edge-condition">selection_index</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">handle_selection</span>
+                        </div>
+                        <div class="edge-item">
+                            <span class="edge-condition">force_generate=True</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">generate_problem</span>
+                        </div>
+                        <div class="edge-item">
+                            <span class="edge-condition">intent=more_search</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">search_problems (offset++)</span>
+                        </div>
+                    </div>
+
+                    <h3 style="margin-top: 20px;">🔀 route_after_search</h3>
+                    <div class="edge-list">
+                        <div class="edge-item">
+                            <span class="edge-condition">should_generate=True</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">generate_problem (RAG 실패)</span>
+                        </div>
+                        <div class="edge-item">
+                            <span class="edge-condition">results found</span>
+                            <span class="edge-arrow">→</span>
+                            <span class="edge-target">filter_results</span>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="state-box">
+                    <h3>📦 DiscoveryState (핵심 필드)</h3>
+                    <pre>
+<span class="field">collected_info</span>: <span class="type">CollectedInfo</span>  <span class="comment"># topics, difficulty, language</span>
+<span class="field">intent</span>: <span class="type">str</span>                   <span class="comment"># problem_selection, new_problem</span>
+
+<span class="comment"># 검색 결과</span>
+<span class="field">search_results</span>: <span class="type">List[ProblemInfo]</span>
+<span class="field">should_generate</span>: <span class="type">bool</span>        <span class="comment"># CodeGen 필요 여부</span>
+<span class="field">search_offset</span>: <span class="type">int</span>           <span class="comment"># "더 보기"용</span>
+
+<span class="comment"># 필터링 & 선택</span>
+<span class="field">filtered_results</span>: <span class="type">List[ProblemInfo]</span>
+<span class="field">selection_index</span>: <span class="type">Optional[int]</span> <span class="comment"># 1-based</span>
+<span class="field">selected_problem</span>: <span class="type">Optional[ProblemInfo]</span>
+<span class="field">problem_type</span>: <span class="type">Optional[str]</span>  <span class="comment"># blank/puzzle/guided</span>
+
+<span class="comment"># 플로우 제어</span>
+<span class="field">route_to</span>: <span class="type">Optional[str]</span>     <span class="comment"># "solving", "respond"</span></pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="diagram-section">
+            <h2>RAG Semantic Search & Problem Types</h2>
+
+            <div class="two-columns">
+                <div class="rag-box">
+                    <h3>🔎 RAG Semantic Search Flow</h3>
+                    <div class="rag-flow">
+                        <div class="rag-step">
+                            <div class="label">1. Filter</div>
+                            <div class="detail">topics, difficulty, language</div>
+                        </div>
+                        <span class="rag-arrow">→</span>
+                        <div class="rag-step">
+                            <div class="label">2. Vector</div>
+                            <div class="detail">pgvector similarity</div>
+                        </div>
+                        <span class="rag-arrow">→</span>
+                        <div class="rag-step">
+                            <div class="label">3. Rank</div>
+                            <div class="detail">Top-K 정렬</div>
+                        </div>
+                        <span class="rag-arrow">→</span>
+                        <div class="rag-step">
+                            <div class="label">4. Fallback</div>
+                            <div class="detail">similarity &lt; 0.30 → CodeGen</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="state-box">
+                    <h3>🤖 CodeGen Agent</h3>
+                    <pre>
+<span class="comment"># RAG 검색 실패 시 호출</span>
+<span class="field">generate_problem_with_rag</span>(
+    <span class="field">topics</span>: <span class="type">List[str]</span>,
+    <span class="field">difficulty</span>: <span class="type">str</span>,
+    <span class="field">language</span>: <span class="type">str</span>,
+)
+
+<span class="comment"># 생성 후 저장</span>
+→ <span class="field">save_codegen_to_base_problems</span>()
+→ <span class="field">generated_problem</span> 반환</pre>
+                </div>
+            </div>
+
+            <div class="problem-types">
+                <div class="type-card blank">
+                    <h5>📝 Blank</h5>
+                    <p>빈칸 채우기<br/>핵심 로직 마스킹</p>
+                </div>
+                <div class="type-card puzzle">
+                    <h5>🧩 Puzzle</h5>
+                    <p>코드 블록 퍼즐<br/>순서 맞추기</p>
+                </div>
+                <div class="type-card guided">
+                    <h5>💬 Guided</h5>
+                    <p>1대1 대화형<br/>단계별 진행</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-arrows">
+            <a href="02_info_collection.html" class="nav-arrow prev">← 이전</a>
+        </div>
+        <div class="nav-pages">
+            <a href="01_overview.html" class="nav-page p1" title="Overview">1</a>
+            <a href="02_info_collection.html" class="nav-page p2" title="InfoCollectionGraph">2</a>
+            <a href="03_discovery.html" class="nav-page p3 active" title="DiscoveryGraph">3</a>
+            <a href="04_solving.html" class="nav-page p4" title="SolvingGraph">4</a>
+            <a href="05_tools_agents.html" class="nav-page p5" title="Tools & Agents">5</a>
+        </div>
+        <div class="nav-arrows">
+            <a href="04_solving.html" class="nav-arrow next">다음 →</a>
+        </div>
+    </nav>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 20
+            }
+        });
+    </script>
+</body>
+</html>

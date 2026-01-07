@@ -28,8 +28,9 @@ import {
   FileText,
   TestTube,
 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { translateText, type LanguageCode } from '@/lib/api/translate';
-import { cn } from '@/lib/utils';
+import { cn, preprocessLatex } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -131,9 +132,60 @@ export default function ProblemDiscussionPage() {
       <div className="min-h-screen bg-background">
         <Header />
         <TopNav />
-        <div className="flex items-center justify-center py-32">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        {/* Skeleton Back Button */}
+        <div className="border-b border-border bg-background/95 sticky top-0 z-20">
+          <div className="container max-w-7xl mx-auto px-4 py-3">
+            <Skeleton className="h-5 w-32" />
+          </div>
         </div>
+        <main className="container max-w-7xl mx-auto px-4 py-4">
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* 왼쪽: 문제 설명 Skeleton */}
+            <div className="lg:w-1/2 space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-2 flex-1">
+                  <Skeleton className="h-7 w-3/4" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-5 w-16" />
+                    <Skeleton className="h-5 w-20" />
+                    <Skeleton className="h-5 w-14" />
+                  </div>
+                </div>
+                <Skeleton className="h-9 w-20" />
+              </div>
+              <div className="bg-muted/30 rounded-lg border border-border p-4 space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-4/5" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-32 w-full mt-4" />
+              </div>
+            </div>
+            {/* 오른쪽: Solutions Skeleton */}
+            <div className="lg:w-1/2 space-y-4">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-9 w-20" />
+              </div>
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="border border-border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Skeleton className="h-8 w-8 rounded-full" />
+                      <div className="space-y-1 flex-1">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-3 w-16" />
+                      </div>
+                      <Skeleton className="h-5 w-12" />
+                    </div>
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
@@ -229,7 +281,7 @@ export default function ProblemDiscussionPage() {
                   )}
                   <Button
                     size="sm"
-                    onClick={() => router.push(`/practice?id=${originalId}&type=implementation`)}
+                    onClick={() => router.push(`/chat?problem_id=${originalId}`)}
                   >
                     <Play className="h-4 w-4 mr-1" />
                     풀기
@@ -296,7 +348,7 @@ export default function ProblemDiscussionPage() {
                         remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                         rehypePlugins={[rehypeKatex]}
                       >
-                        {displayQuestion || ''}
+                        {preprocessLatex(displayQuestion || '')}
                       </ReactMarkdown>
                     </div>
                   ) : (

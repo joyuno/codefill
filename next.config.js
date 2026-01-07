@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+
+  // 이미지 최적화 설정
   images: {
     domains: ['localhost'],
     remotePatterns: [
@@ -9,12 +11,26 @@ const nextConfig = {
         hostname: '**.supabase.co',
       },
     ],
+    // 최신 이미지 포맷 지원 (성능 최적화)
+    formats: ['image/avif', 'image/webp'],
+    // 디바이스별 최적화 크기
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
   },
+
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',
     },
   },
+
+  // 프로덕션 빌드 최적화
+  compiler: {
+    // 프로덕션에서 console.log 제거
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
+
+  // SWC 최소화 (더 빠른 빌드)
+  swcMinify: true,
 };
 
 module.exports = nextConfig;

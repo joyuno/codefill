@@ -173,7 +173,11 @@ class ChatOrchestratorV2:
         # 6. Discovery 라우팅 (정보 수집 완료 후)
         # ============================================================
         if intent_result.suggested_route == "discovery":
-            if self._has_sufficient_info(collected_info):
+            # 이미 검색 결과가 있고 더 찾기/새 생성 액션이면 바로 Discovery로
+            is_discovery_action = intent_result.action in [ActionType.GENERATE_NEW, ActionType.SHOW_MORE]
+            has_search_results = bool(search_results)
+
+            if self._has_sufficient_info(collected_info) or (has_search_results and is_discovery_action):
                 return await self._process_discovery(
                     message=message,
                     intent=intent_result.action.value,
@@ -265,6 +269,20 @@ class ChatOrchestratorV2:
         if extracted_values.get("language"):
             existing_language = extracted_values["language"]
 
+        # ============================================================
+        # 대화 중 언급된 goal/level 정보를 user_context에 반영
+        # "대기업 코테 목표" 같은 메시지에서 추출된 정보
+        # ============================================================
+        if extracted_values.get("learning_goal"):
+            user_context = user_context.copy() if user_context else {}
+            user_context["learning_goal"] = extracted_values["learning_goal"]
+            print(f"[Orchestrator] Updated user_context.learning_goal: {extracted_values['learning_goal']}")
+
+        if extracted_values.get("experience_level"):
+            user_context = user_context.copy() if user_context else {}
+            user_context["experience_level"] = extracted_values["experience_level"]
+            print(f"[Orchestrator] Updated user_context.experience_level: {extracted_values['experience_level']}")
+
         # 디버깅 로그
         print(f"[Orchestrator] _process_info_collection called")
         print(f"[Orchestrator] - message: {message}")
@@ -273,6 +291,7 @@ class ChatOrchestratorV2:
         print(f"[Orchestrator] - existing_topic: {existing_topic}")
         print(f"[Orchestrator] - existing_difficulty: {existing_difficulty}")
         print(f"[Orchestrator] - existing_language: {existing_language}")
+        print(f"[Orchestrator] - user_context (after update): {user_context}")
 
         # 세션에서 awaiting_confirmation, suggested_value 가져오기
         existing_awaiting_confirmation = session_state.get("awaiting_confirmation", False)
@@ -479,7 +498,21 @@ class ChatOrchestratorV2:
         description = selected_problem.get("description") or selected_problem.get("question", "")
         difficulty = selected_problem.get("difficulty", "medium")
         topics = selected_problem.get("topics") or selected_problem.get("tags", [])
+
+        # input_output이 JSON 문자열인 경우 파싱
         input_output = selected_problem.get("input_output")
+        if isinstance(input_output, str):
+            try:
+                input_output = json.loads(input_output)
+            except (json.JSONDecodeError, TypeError):
+                input_output = None
+
+        # tags가 JSON 문자열인 경우 파싱
+        if isinstance(topics, str):
+            try:
+                topics = json.loads(topics)
+            except (json.JSONDecodeError, TypeError):
+                topics = []
 
         # 코드 추출
         language = "python"

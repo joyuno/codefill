@@ -19,6 +19,14 @@ from .intent_tools import (
     ActionType,
 )
 
+from .user_tools import (
+    get_user_tools,
+    UserTools,
+    UserProfileResult,
+    RecommendationResult,
+    USER_TOOLS_DEFINITIONS,
+)
+
 __all__ = [
     # Collection Tools
     "collection_tool",
@@ -30,4 +38,10 @@ __all__ = [
     "IntentResult",
     "IntentCategory",
     "ActionType",
+    # User Tools
+    "get_user_tools",
+    "UserTools",
+    "UserProfileResult",
+    "RecommendationResult",
+    "USER_TOOLS_DEFINITIONS",
 ]

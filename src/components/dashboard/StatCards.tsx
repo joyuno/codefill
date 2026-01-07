@@ -15,23 +15,31 @@ interface StatCardsProps {
     streak: number;
     badgeCount: number;
   };
+  /** 부모에서 전달받은 뱃지 수 (있으면 API 호출 안 함) - 중복 호출 방지용 */
+  badgeCount?: number;
 }
 
-export function StatCards({ username, publicData }: StatCardsProps) {
+export function StatCards({ username, publicData, badgeCount: propBadgeCount }: StatCardsProps) {
   const { profile, isLoading: authLoading, isAuthenticated } = useAuth();
-  const [badgeCount, setBadgeCount] = useState(0);
+  const [fetchedBadgeCount, setFetchedBadgeCount] = useState(0);
 
   // 본인 프로필인지 확인
   const isOwnProfile = !username;
 
-  // 본인 프로필일 때만 뱃지 수 가져오기
+  // 본인 프로필일 때 뱃지 수 가져오기 (propBadgeCount가 없을 때만)
   useEffect(() => {
+    // propBadgeCount가 전달되었으면 API 호출 안 함 (SidebarProfile에서 이미 호출함)
+    if (propBadgeCount !== undefined) {
+      setFetchedBadgeCount(propBadgeCount);
+      return;
+    }
+
     if (isOwnProfile && isAuthenticated) {
       usersApi.getBadges()
-        .then(badges => setBadgeCount(badges.length))
-        .catch(() => setBadgeCount(0));
+        .then(badges => setFetchedBadgeCount(badges.length))
+        .catch(() => setFetchedBadgeCount(0));
     }
-  }, [isOwnProfile, isAuthenticated]);
+  }, [isOwnProfile, isAuthenticated, propBadgeCount]);
 
   // 로딩 상태 (본인 프로필일 때만)
   const isLoading = isOwnProfile ? authLoading : false;
@@ -44,7 +52,7 @@ export function StatCards({ username, publicData }: StatCardsProps) {
     ? (profile?.streak ?? 0)
     : (publicData?.streak ?? 0);
   const displayBadgeCount = isOwnProfile
-    ? badgeCount
+    ? fetchedBadgeCount
     : (publicData?.badgeCount ?? 0);
 
   const stats = [
