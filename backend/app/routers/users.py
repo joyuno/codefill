@@ -504,20 +504,19 @@ async def get_mypage_stats(
 ):
     """Get user stats formatted for mypage."""
     try:
-        # Get stats (필요한 컬럼만 선택)
+        # Get stats (필요한 컬럼만 선택) - puzzle_solved, guided_solved 추가
         stats_result = db.table("user_stats").select(
             "level, total_xp, problems_solved, current_streak, longest_streak, "
-            "blank_solved, bug_solved, output_solved"
+            "blank_solved, puzzle_solved, guided_solved, "
+            "easy_solved, medium_solved, hard_solved"
         ).eq("user_id", str(user_id)).single().execute()
         stats_data = stats_result.data or {}
 
-        # 난이도별 통계는 user_stats의 전체 solved 수를 기반으로 추정
-        # (정확한 통계가 필요하면 별도 테이블/컬럼 추가 필요)
-        total_solved = stats_data.get("problems_solved", 0)
+        # 난이도별 통계 (실제 컬럼 사용)
         solved_by_difficulty = {
-            "easy": total_solved // 3,
-            "medium": total_solved // 3,
-            "hard": total_solved - (total_solved // 3) * 2,
+            "easy": stats_data.get("easy_solved", 0),
+            "medium": stats_data.get("medium_solved", 0),
+            "hard": stats_data.get("hard_solved", 0),
         }
 
         return MypageStats(
@@ -525,7 +524,8 @@ async def get_mypage_stats(
             solvedByDifficulty=solved_by_difficulty,
             solvedByType={
                 "blank": stats_data.get("blank_solved", 0),
-                "puzzle": stats_data.get("bug_solved", 0) + stats_data.get("output_solved", 0),
+                "puzzle": stats_data.get("puzzle_solved", 0),
+                "guided": stats_data.get("guided_solved", 0),
             },
             currentStreak=stats_data.get("current_streak", 0),
             maxStreak=stats_data.get("longest_streak", 0),
@@ -573,6 +573,7 @@ async def get_mypage_badges(
                     id=str(badge_data.get("id", "")),
                     name=badge_data.get("name", "Badge"),
                     icon=icon_map.get(code, "🏅"),
+                    icon_url=badge_data.get("icon_url"),
                     description=badge_data.get("description", ""),
                     earnedAt=badge_entry.get("earned_at", ""),
                     rarity=badge_data.get("rarity", "common"),
@@ -617,7 +618,8 @@ async def get_mypage_all(
 
         stats_result = db.table("user_stats").select(
             "level, total_xp, problems_solved, current_streak, longest_streak, "
-            "blank_solved, bug_solved, output_solved"
+            "blank_solved, puzzle_solved, guided_solved, "
+            "easy_solved, medium_solved, hard_solved"
         ).eq("user_id", str(user_id)).single().execute()
         stats_data = stats_result.data or {}
 
@@ -657,9 +659,9 @@ async def get_mypage_all(
         # ===== 2. Stats 데이터 (user_stats에서 이미 가져옴, 재사용) =====
         total_solved = stats_data.get("problems_solved", 0)
         solved_by_difficulty = {
-            "easy": total_solved // 3,
-            "medium": total_solved // 3,
-            "hard": total_solved - (total_solved // 3) * 2,
+            "easy": stats_data.get("easy_solved", 0),
+            "medium": stats_data.get("medium_solved", 0),
+            "hard": stats_data.get("hard_solved", 0),
         }
 
         stats = MypageStats(
@@ -667,7 +669,8 @@ async def get_mypage_all(
             solvedByDifficulty=solved_by_difficulty,
             solvedByType={
                 "blank": stats_data.get("blank_solved", 0),
-                "puzzle": stats_data.get("bug_solved", 0) + stats_data.get("output_solved", 0),
+                "puzzle": stats_data.get("puzzle_solved", 0),
+                "guided": stats_data.get("guided_solved", 0),
             },
             currentStreak=stats_data.get("current_streak", 0),
             maxStreak=stats_data.get("longest_streak", 0),
@@ -1034,20 +1037,21 @@ async def get_public_stats(
 
         user_id = user["id"]
 
-        # Get stats (필요한 컬럼만 선택)
+        # Get stats (필요한 컬럼만 선택) - puzzle_solved, guided_solved 추가
         stats_result = db.table("user_stats")\
-            .select("level, total_xp, problems_solved, current_streak, longest_streak, blank_solved, bug_solved, output_solved")\
+            .select("level, total_xp, problems_solved, current_streak, longest_streak, "
+                    "blank_solved, puzzle_solved, guided_solved, "
+                    "easy_solved, medium_solved, hard_solved")\
             .eq("user_id", str(user_id))\
             .single()\
             .execute()
         stats_data = stats_result.data or {}
 
-        # 난이도별 통계 추정
-        total_solved = stats_data.get("problems_solved", 0)
+        # 난이도별 통계 (실제 컬럼 사용)
         solved_by_difficulty = {
-            "easy": total_solved // 3,
-            "medium": total_solved // 3,
-            "hard": total_solved - (total_solved // 3) * 2,
+            "easy": stats_data.get("easy_solved", 0),
+            "medium": stats_data.get("medium_solved", 0),
+            "hard": stats_data.get("hard_solved", 0),
         }
 
         return PublicStats(
@@ -1055,7 +1059,8 @@ async def get_public_stats(
             solvedByDifficulty=solved_by_difficulty,
             solvedByType={
                 "blank": stats_data.get("blank_solved", 0),
-                "puzzle": stats_data.get("bug_solved", 0) + stats_data.get("output_solved", 0),
+                "puzzle": stats_data.get("puzzle_solved", 0),
+                "guided": stats_data.get("guided_solved", 0),
             },
             currentStreak=stats_data.get("current_streak", 0),
             maxStreak=stats_data.get("longest_streak", 0),
@@ -1312,6 +1317,7 @@ async def get_public_badges(
                 id=str(badge_data.get("id", "")),
                 name=badge_data.get("name", "Badge"),
                 icon=icon_map.get(code, "🏅"),
+                icon_url=badge_data.get("icon_url"),
                 description=badge_data.get("description", ""),
                 rarity=badge_data.get("rarity", "common"),
             ))

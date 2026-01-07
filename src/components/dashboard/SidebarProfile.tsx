@@ -278,6 +278,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
     id: b.id,
     name: b.name,
     icon: b.icon,
+    iconUrl: b.iconUrl,
     description: b.description,
     rarity: b.rarity as 'common' | 'rare' | 'epic' | 'legendary',
   }));

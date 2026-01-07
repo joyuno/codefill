@@ -130,6 +130,23 @@ class FeedbackService:
     # 시도 기록 저장
     # ============================================================
 
+    def _get_next_attempt_number(self, user_id: str, problem_id: str) -> int:
+        """동일 문제에 대한 다음 시도 번호 계산"""
+        try:
+            result = self.supabase.table("attempts")\
+                .select("attempt_number")\
+                .eq("user_id", user_id)\
+                .eq("problem_id", problem_id)\
+                .order("attempt_number", desc=True)\
+                .limit(1)\
+                .execute()
+
+            if result.data and len(result.data) > 0:
+                return (result.data[0].get("attempt_number") or 0) + 1
+            return 1
+        except Exception:
+            return 1
+
     async def save_attempt(
         self,
         user_id: str,
@@ -145,6 +162,9 @@ class FeedbackService:
     ) -> Optional[str]:
         """시도 기록을 DB에 저장"""
         try:
+            # 동일 문제 시도 번호 계산
+            attempt_number = self._get_next_attempt_number(user_id, problem_id)
+
             data = {
                 "user_id": user_id,
                 "problem_id": problem_id,
@@ -155,6 +175,7 @@ class FeedbackService:
                 "time_spent": time_spent,
                 "hints_used": hints_used,
                 "xp_earned": xp_earned,
+                "attempt_number": attempt_number,
             }
 
             if started_at:

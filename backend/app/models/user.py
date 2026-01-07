@@ -164,7 +164,7 @@ class MypageStats(BaseModel):
     """User stats for mypage."""
     totalSolved: int = 0
     solvedByDifficulty: dict = {"easy": 0, "medium": 0, "hard": 0}
-    solvedByType: dict = {"blank": 0, "puzzle": 0}
+    solvedByType: dict = {"blank": 0, "puzzle": 0, "guided": 0}
     currentStreak: int = 0
     maxStreak: int = 0
     totalXP: int = 0
@@ -261,7 +261,7 @@ class PublicStats(BaseModel):
     """공개 통계."""
     totalSolved: int = 0
     solvedByDifficulty: dict = {"easy": 0, "medium": 0, "hard": 0}
-    solvedByType: dict = {"blank": 0, "puzzle": 0}
+    solvedByType: dict = {"blank": 0, "puzzle": 0, "guided": 0}
     currentStreak: int = 0
     maxStreak: int = 0
     totalXP: int = 0
@@ -301,5 +301,6 @@ class PublicBadge(BaseModel):
     id: str
     name: str
     icon: str
+    icon_url: Optional[str] = None
     description: str
     rarity: str = "common"

@@ -49,6 +49,27 @@ def check_blank_answers(submitted: dict, correct: list) -> tuple[bool, dict]:
     return all_correct, results
 
 
+def get_next_attempt_number(db, user_id: str, problem_id: str) -> int:
+    """
+    동일 문제에 대한 다음 시도 번호 계산.
+    첫 시도면 1, 이후 2, 3, ... 반환.
+    """
+    try:
+        result = db.table("attempts")\
+            .select("attempt_number")\
+            .eq("user_id", user_id)\
+            .eq("problem_id", problem_id)\
+            .order("attempt_number", desc=True)\
+            .limit(1)\
+            .execute()
+
+        if result.data and len(result.data) > 0:
+            return (result.data[0].get("attempt_number") or 0) + 1
+        return 1
+    except Exception:
+        return 1
+
+
 # ============================================================
 # Practice Start - Create Pending Attempt
 # ============================================================
@@ -95,12 +116,16 @@ async def start_practice(
             "total_hints_requested": 0,
         }
 
-        # problem_id가 UUID 형식이면 추가
+        # problem_id가 UUID 형식이면 추가 + attempt_number 계산
         try:
             problem_uuid = UUIDType(request.problem_id)
             attempt_data["problem_id"] = str(problem_uuid)
+            # 동일 문제 시도 번호 계산
+            attempt_data["attempt_number"] = get_next_attempt_number(
+                db, str(user_id), str(problem_uuid)
+            )
         except ValueError:
-            pass  # UUID 아니면 problem_id 생략
+            attempt_data["attempt_number"] = 1  # UUID 아니면 첫 시도로 간주
 
         # attempts 테이블에 pending 레코드 생성
         result = db.table("attempts").insert(attempt_data).execute()
@@ -211,13 +236,15 @@ async def submit_blank(
         # Calculate XP
         xp_earned = XPConfig.BLANK_CORRECT if is_correct else 0
 
-        # Save attempt
+        # Save attempt with attempt_number
+        attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
         db.table("attempts").insert({
             "user_id": str(user_id),
             "problem_id": str(submission.problem_id),
             "is_correct": is_correct,
             "submitted_answer": str(submission.answers),
             "xp_earned": xp_earned,
+            "attempt_number": attempt_number,
         }).execute()
 
         # Update user stats and check badges if correct
@@ -316,13 +343,15 @@ async def submit_puzzle(
         # Calculate XP
         xp_earned = XPConfig.PUZZLE_CORRECT if all_correct else 0
 
-        # Save attempt
+        # Save attempt with attempt_number
+        attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
         db.table("attempts").insert({
             "user_id": str(user_id),
             "problem_id": str(submission.problem_id),
             "is_correct": all_correct,
             "submitted_answer": str([{"id": b.id, "indent": b.indentation} for b in submission.block_order]),
             "xp_earned": xp_earned,
+            "attempt_number": attempt_number,
         }).execute()
 
         # Update user stats and check badges if correct
@@ -583,12 +612,16 @@ async def record_solve(
                     "topics": submission.topics,
                 }
 
-                # problem_id가 UUID 형식이면 추가
+                # problem_id가 UUID 형식이면 추가 + attempt_number 계산
                 try:
                     problem_uuid = UUIDType(submission.problem_id)
                     attempt_data["problem_id"] = str(problem_uuid)
+                    # 동일 문제 시도 번호 계산
+                    attempt_data["attempt_number"] = get_next_attempt_number(
+                        db, str(user_id), str(problem_uuid)
+                    )
                 except ValueError:
-                    pass
+                    attempt_data["attempt_number"] = 1  # UUID 아니면 첫 시도로 간주
 
                 if base_problem_id:
                     attempt_data["base_problem_id"] = base_problem_id
