@@ -1,10 +1,10 @@
 """
-Security utilities for password hashing and JWT token management.
+보안 유틸리티 - 비밀번호 해싱 및 JWT 토큰 관리
 
-This module provides:
-- Password hashing with bcrypt
-- JWT access/refresh token creation
-- Token verification
+제공 기능:
+- bcrypt를 사용한 비밀번호 해싱
+- JWT Access/Refresh 토큰 생성
+- 토큰 검증
 """
 
 from passlib.context import CryptContext
@@ -15,33 +15,33 @@ from typing import Optional, Union
 
 from ..config import get_settings
 
-# Password hashing context using bcrypt
+# bcrypt를 사용한 비밀번호 해싱 컨텍스트
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
     """
-    Hash a password using bcrypt.
+    bcrypt를 사용하여 비밀번호를 해싱합니다.
 
     Args:
-        password: Plain text password
+        password: 평문 비밀번호
 
     Returns:
-        Hashed password string
+        해싱된 비밀번호 문자열
     """
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verify a plain password against a hashed password.
+    평문 비밀번호와 해싱된 비밀번호를 비교 검증합니다.
 
     Args:
-        plain_password: Plain text password to verify
-        hashed_password: Hashed password to compare against
+        plain_password: 검증할 평문 비밀번호
+        hashed_password: 비교할 해싱된 비밀번호
 
     Returns:
-        True if password matches, False otherwise
+        비밀번호가 일치하면 True, 아니면 False
     """
     try:
         return pwd_context.verify(plain_password, hashed_password)
@@ -51,13 +51,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(user_id: Union[UUID, str]) -> str:
     """
-    Create a JWT access token.
+    JWT Access 토큰을 생성합니다.
 
     Args:
-        user_id: User ID to encode in the token
+        user_id: 토큰에 인코딩할 사용자 ID
 
     Returns:
-        JWT access token string
+        JWT Access 토큰 문자열
     """
     settings = get_settings()
     expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
@@ -77,13 +77,13 @@ def create_access_token(user_id: Union[UUID, str]) -> str:
 
 def create_refresh_token(user_id: Union[UUID, str]) -> str:
     """
-    Create a JWT refresh token.
+    JWT Refresh 토큰을 생성합니다.
 
     Args:
-        user_id: User ID to encode in the token
+        user_id: 토큰에 인코딩할 사용자 ID
 
     Returns:
-        JWT refresh token string
+        JWT Refresh 토큰 문자열
     """
     settings = get_settings()
     expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
@@ -103,13 +103,13 @@ def create_refresh_token(user_id: Union[UUID, str]) -> str:
 
 def verify_token(token: str) -> Optional[dict]:
     """
-    Verify and decode a JWT token.
+    JWT 토큰을 검증하고 디코딩합니다.
 
     Args:
-        token: JWT token string to verify
+        token: 검증할 JWT 토큰 문자열
 
     Returns:
-        Decoded token payload if valid, None otherwise
+        유효한 경우 디코딩된 토큰 페이로드, 아니면 None
     """
     settings = get_settings()
 
@@ -126,13 +126,13 @@ def verify_token(token: str) -> Optional[dict]:
 
 def get_user_id_from_token(token: str) -> Optional[str]:
     """
-    Extract user ID from a valid JWT token.
+    유효한 JWT 토큰에서 사용자 ID를 추출합니다.
 
     Args:
-        token: JWT token string
+        token: JWT 토큰 문자열
 
     Returns:
-        User ID string if token is valid, None otherwise
+        토큰이 유효하면 사용자 ID 문자열, 아니면 None
     """
     payload = verify_token(token)
     if payload:

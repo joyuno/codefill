@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +47,19 @@ import {
 } from '@/components/ui/collapsible';
 import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
 import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
-import { CodeEditor } from './CodeEditor';
+
+// CodeEditor 동적 임포트 (Monaco Editor 번들 분리 - 초기 로딩 성능 향상)
+const CodeEditor = dynamic(
+  () => import('./CodeEditor').then(mod => mod.CodeEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center bg-[#1e1e1e]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  }
+);
 import { translateText, LANGUAGE_LABELS, type LanguageCode } from '@/lib/api/translate';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

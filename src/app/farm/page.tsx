@@ -82,6 +82,19 @@ export default function FarmPage() {
   // FarmGame 핸들 (배치 저장/취소용) - dynamic import라서 콜백으로 받음
   const [farmGameHandle, setFarmGameHandle] = useState<FarmGameHandle | null>(null);
 
+  // 클로저 문제 방지를 위한 refs
+  // Phaser 씬에 전달된 콜백이 항상 최신 상태를 참조하도록 함
+  const unifiedShopItemsRef = useRef(unifiedShopItems);
+  const farmGameHandleRef = useRef(farmGameHandle);
+
+  useEffect(() => {
+    unifiedShopItemsRef.current = unifiedShopItems;
+  }, [unifiedShopItems]);
+
+  useEffect(() => {
+    farmGameHandleRef.current = farmGameHandle;
+  }, [farmGameHandle]);
+
   // FarmGame ready 콜백
   const handleFarmGameReady = useCallback((handle: FarmGameHandle) => {
     setFarmGameHandle(handle);
@@ -89,7 +102,9 @@ export default function FarmPage() {
 
   // 캐릭터 미생성 시 리다이렉트
   useEffect(() => {
+    console.log('[Farm] Redirect check:', { isLoading, hasFarm: !!farm, characterCreated: farm?.characterCreated });
     if (!isLoading && farm && !farm.characterCreated) {
+      console.warn('[Farm] Redirecting - character not created');
       router.push('/');
     }
   }, [isLoading, farm, router]);
@@ -156,20 +171,32 @@ export default function FarmPage() {
   }, [buyUnifiedItem, addToast]);
 
   // 아이템 로컬 배치 (API 호출 없음, 모드 전환 시 저장)
+  // ref를 사용하여 클로저 문제 방지 - Phaser 씬에 전달된 콜백이 항상 최신 상태 참조
   const handlePlaceItemLocally = useCallback((itemCode: string, tileX: number, tileY: number): string | null => {
-    if (!farmGameHandle) return null;
+    try {
+      // ref에서 최신 핸들 가져오기 (클로저 문제 방지)
+      const handle = farmGameHandleRef.current;
+      if (!handle) {
+        console.warn('[PlaceItem] Handle not ready yet');
+        return null;
+      }
 
-    // 상점 데이터에서 아이템 메타데이터 가져오기
-    const shopItem = unifiedShopItems.find(item => item.code === itemCode);
-    if (!shopItem) {
-      console.error('Item not found in shop:', itemCode);
+      // ref에서 최신 상점 데이터 가져오기 (클로저 문제 방지)
+      const shopItems = unifiedShopItemsRef.current || [];
+      const shopItem = shopItems.find(item => item.code === itemCode);
+      if (!shopItem) {
+        console.warn('[PlaceItem] Item not found:', itemCode, 'Available:', shopItems.length);
+        return null;
+      }
+
+      // 핸들을 통해 로컬 배치 수행 (상점 아이템의 메타데이터 사용)
+      const tempId = handle.placeItemLocally(itemCode, tileX, tileY, shopItem.metadata);
+      return tempId;
+    } catch (err) {
+      console.error('[PlaceItem] Error:', err);
       return null;
     }
-
-    // 핸들을 통해 로컬 배치 수행 (상점 아이템의 메타데이터 사용)
-    const tempId = farmGameHandle.placeItemLocally(itemCode, tileX, tileY, shopItem.metadata);
-    return tempId;
-  }, [farmGameHandle, unifiedShopItems]);
+  }, []);
 
   // Phaser에서 알림 표시
   const handleNotify = useCallback((message: string, type: 'success' | 'error') => {
@@ -190,20 +217,26 @@ export default function FarmPage() {
 
     setIsSavingPlacement(true);
     try {
-      // 새로 생성된 아이템들 저장
+      // 병렬 처리를 위한 Promise 배열 생성
+      const promises: Promise<unknown>[] = [];
+
+      // 새로 생성된 아이템들 (병렬)
       for (const item of changes.created) {
-        await placeItem(item.itemCode, item.tileX, item.tileY);
+        promises.push(placeItem(item.itemCode, item.tileX, item.tileY));
       }
 
-      // 이동된 아이템들 저장
+      // 이동된 아이템들 (병렬)
       for (const item of changes.moved) {
-        await moveItem(item.id, item.tileX, item.tileY);
+        promises.push(moveItem(item.id, item.tileX, item.tileY));
       }
 
-      // 삭제된 아이템들 저장
+      // 삭제된 아이템들 (병렬)
       for (const itemId of changes.deleted) {
-        await removeItem(itemId);
+        promises.push(removeItem(itemId));
       }
+
+      // 모든 변경 사항 병렬 실행
+      await Promise.all(promises);
 
       // 변경 확정
       farmGameHandle.confirmPlacementChanges();
@@ -282,6 +315,7 @@ export default function FarmPage() {
 
   // 캐릭터 미생성
   if (!farm?.characterCreated) {
+    console.warn('[Farm] Showing redirect screen - farm:', farm);
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-green-800">
         <Sprout className="w-12 h-12 text-white animate-bounce" />

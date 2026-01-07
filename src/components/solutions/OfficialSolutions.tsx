@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Check, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import type { OfficialSolution } from '@/lib/api';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeBlock } from '@/components/ui/code-block';
 import { getLanguageLabel, getLanguageColor } from './constants';
 
 interface OfficialSolutionsProps {
@@ -54,8 +53,6 @@ function OfficialSolutionCard({ solution, index, expanded, onToggle }: OfficialS
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const languageForHighlighter = solution.language === 'cpp' ? 'cpp' : solution.language;
 
   return (
     <div className="border border-border rounded-lg overflow-hidden bg-card">
@@ -105,17 +102,7 @@ function OfficialSolutionCard({ solution, index, expanded, onToggle }: OfficialS
               )}
             </Button>
           </div>
-          <SyntaxHighlighter
-            language={languageForHighlighter}
-            style={oneDark}
-            customStyle={{
-              margin: 0,
-              borderRadius: 0,
-              fontSize: '0.875rem',
-            }}
-          >
-            {solution.code}
-          </SyntaxHighlighter>
+          <CodeBlock code={solution.code} language={solution.language} showLineNumbers={false} />
         </div>
       )}
     </div>

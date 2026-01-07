@@ -41,7 +41,11 @@ router = APIRouter()
 
 def get_or_create_farm(db, user_id: UUID) -> dict:
     """사용자 농장 조회 또는 생성"""
-    result = db.table("user_farm").select("*").eq("user_id", str(user_id)).execute()
+    result = db.table("user_farm").select(
+        "id, user_id, character_created, character_data, "
+        "farm_unlocked, farm_level, gold, farm_size, house_level, "
+        "created_at, updated_at"
+    ).eq("user_id", str(user_id)).execute()
 
     if result.data and len(result.data) > 0:
         return result.data[0]
@@ -69,7 +73,7 @@ def get_inventory(db, user_id: UUID) -> List[InventoryItem]:
 
 def update_inventory(db, user_id: UUID, item_code: str, quantity_change: int):
     """인벤토리 수량 업데이트"""
-    existing = db.table("user_inventory").select("*").eq("user_id", str(user_id)).eq("item_code", item_code).execute()
+    existing = db.table("user_inventory").select("quantity").eq("user_id", str(user_id)).eq("item_code", item_code).execute()
 
     if existing.data and len(existing.data) > 0:
         new_quantity = existing.data[0]["quantity"] + quantity_change
@@ -87,7 +91,10 @@ def update_inventory(db, user_id: UUID, item_code: str, quantity_change: int):
 
 def get_crop_info(db, crop_code: str) -> Optional[dict]:
     """작물 정보 조회"""
-    result = db.table("farm_items").select("*").eq("code", crop_code).eq("type", "crop").execute()
+    result = db.table("farm_items").select(
+        "id, code, name, name_ko, type, rarity, image_url, "
+        "seed_cost, sell_price, xp_reward, grow_time_seconds"
+    ).eq("code", crop_code).eq("type", "crop").execute()
     return result.data[0] if result.data else None
 
 
@@ -182,7 +189,10 @@ async def create_character(
 @router.get("/items", response_model=List[FarmItemResponse])
 async def get_farm_items(db=Depends(get_db)):
     """작물 목록 조회 (farm_items 테이블)"""
-    result = db.table("farm_items").select("*").eq("type", "crop").execute()
+    result = db.table("farm_items").select(
+        "id, code, name, name_ko, type, rarity, image_url, "
+        "seed_cost, sell_price, xp_reward, grow_time_seconds"
+    ).eq("type", "crop").execute()
     return [FarmItemResponse(**item) for item in (result.data or [])]
 
 

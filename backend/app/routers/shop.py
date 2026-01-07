@@ -6,75 +6,18 @@ Unified Shop API Router
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 from typing import Optional
 from uuid import UUID
-import json
 
 from ..database import get_db
 from ..dependencies import get_current_user_id
 from ..models.placement import (
-    ItemMetadata,
     ShopItemResponse,
     ShopListResponse,
     BuyItemRequest,
     BuyItemResponse,
 )
+from ..services.farm_service import FarmService
 
 router = APIRouter()
-
-
-# =====================================================
-# Helper Functions
-# =====================================================
-
-def get_user_farm(db, user_id: UUID) -> dict:
-    """사용자 농장 조회"""
-    result = db.table("user_farm").select("*").eq("user_id", str(user_id)).execute()
-    if result.data and len(result.data) > 0:
-        return result.data[0]
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="농장을 찾을 수 없습니다. 캐릭터를 먼저 생성해주세요."
-    )
-
-
-def get_user_inventory(db, user_id: UUID) -> dict:
-    """사용자 인벤토리 조회 (딕셔너리 형태)"""
-    result = db.table("user_inventory").select("item_code, quantity").eq("user_id", str(user_id)).execute()
-    return {item["item_code"]: item["quantity"] for item in (result.data or [])}
-
-
-def update_inventory(db, user_id: UUID, item_code: str, quantity_change: int):
-    """인벤토리 수량 업데이트"""
-    existing = db.table("user_inventory").select("*").eq("user_id", str(user_id)).eq("item_code", item_code).execute()
-
-    if existing.data and len(existing.data) > 0:
-        new_quantity = existing.data[0]["quantity"] + quantity_change
-        if new_quantity <= 0:
-            db.table("user_inventory").delete().eq("user_id", str(user_id)).eq("item_code", item_code).execute()
-        else:
-            db.table("user_inventory").update({"quantity": new_quantity}).eq("user_id", str(user_id)).eq("item_code", item_code).execute()
-    elif quantity_change > 0:
-        db.table("user_inventory").insert({
-            "user_id": str(user_id),
-            "item_code": item_code,
-            "quantity": quantity_change,
-        }).execute()
-
-
-def parse_metadata(metadata_json) -> ItemMetadata:
-    """메타데이터 JSON을 ItemMetadata로 변환"""
-    if isinstance(metadata_json, str):
-        metadata_json = json.loads(metadata_json) if metadata_json else {}
-
-    return ItemMetadata(
-        sprite=metadata_json.get("sprite", "default"),
-        width=metadata_json.get("width", 1),
-        height=metadata_json.get("height", 1),
-        depth=metadata_json.get("depth", 50),
-        canMove=metadata_json.get("canMove", True),
-        canDelete=metadata_json.get("canDelete", True),
-        anchor=metadata_json.get("anchor"),
-        collision=metadata_json.get("collision"),
-    )
 
 
 # =====================================================
@@ -93,8 +36,8 @@ async def get_shop_items(
     - category: 카테고리 필터 (선택사항)
     - 인벤토리 보유량, 배치된 개수, 구매 가능 여부 포함
     """
-    farm = get_user_farm(db, user_id)
-    inventory = get_user_inventory(db, user_id)
+    farm = FarmService.get_user_farm(db, user_id)
+    inventory = FarmService.get_user_inventory(db, user_id)
 
     # 배치된 아이템 개수 조회
     placed_result = db.table("user_placed_items").select("item_code").eq("user_id", str(user_id)).execute()
@@ -143,7 +86,7 @@ async def get_shop_items(
             owned=owned,
             placed=placed,
             canBuy=can_buy,
-            metadata=parse_metadata(item.get("metadata", {})),
+            metadata=FarmService.parse_metadata(item.get("metadata", {})),
         ))
 
     return ShopListResponse(
@@ -166,8 +109,8 @@ async def buy_item(
     - 인벤토리에 추가
     - max_quantity 체크
     """
-    farm = get_user_farm(db, user_id)
-    inventory = get_user_inventory(db, user_id)
+    farm = FarmService.get_user_farm(db, user_id)
+    inventory = FarmService.get_user_inventory(db, user_id)
 
     # 아이템 정보 조회
     item_result = db.table("shop_items").select("*").eq("code", request.item_code).execute()
@@ -215,10 +158,10 @@ async def buy_item(
     db.table("user_farm").update({"gold": new_gold}).eq("user_id", str(user_id)).execute()
 
     # 인벤토리에 추가
-    update_inventory(db, user_id, request.item_code, request.quantity)
+    FarmService.update_inventory(db, user_id, request.item_code, request.quantity)
 
     # 업데이트된 인벤토리 조회
-    updated_inventory = get_user_inventory(db, user_id)
+    updated_inventory = FarmService.get_user_inventory(db, user_id)
 
     return BuyItemResponse(
         success=True,

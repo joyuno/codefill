@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
@@ -8,13 +9,14 @@ import { SidebarProfile } from '@/components/dashboard/SidebarProfile';
 import { StatCards } from '@/components/dashboard/StatCards';
 import { GrassHeatmap } from '@/components/dashboard/GrassHeatmap';
 import { Button } from '@/components/ui/button';
-import { 
-  Play, 
-  Sparkles, 
-  Code2, 
-  BookOpen, 
-  Trophy, 
-  Users, 
+import { usersApi } from '@/lib/api/users';
+import {
+  Play,
+  Sparkles,
+  Code2,
+  BookOpen,
+  Trophy,
+  Users,
   Zap,
   CheckCircle,
   ArrowRight,
@@ -22,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
+import type { Badge } from '@/lib/types';
 
 // ============================================
 // 랜딩 페이지 (비로그인 상태)
@@ -258,17 +261,29 @@ function LandingPage() {
 // ============================================
 
 function Dashboard() {
+  const [badges, setBadges] = useState<Badge[]>([]);
+  const { isAuthenticated } = useAuth();
+
+  // 뱃지를 한 번만 가져와서 StatCards와 SidebarProfile에 전달 (중복 API 호출 방지)
+  useEffect(() => {
+    if (isAuthenticated) {
+      usersApi.getBadges()
+        .then(setBadges)
+        .catch(() => setBadges([]));
+    }
+  }, [isAuthenticated]);
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <TopNav />
       <div className="flex">
         <aside className="hidden w-72 shrink-0 border-r border-border lg:block">
-          <SidebarProfile />
+          <SidebarProfile badges={badges} />
         </aside>
         <main className="flex-1 p-6">
           <div className="mx-auto max-w-4xl space-y-6">
-            <StatCards />
+            <StatCards badgeCount={badges.length} />
 
             {/* CTA Section */}
             <motion.div

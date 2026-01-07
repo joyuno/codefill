@@ -21,6 +21,7 @@ interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   requireAuth?: boolean;
+  timeout?: number;  // 타임아웃 (ms), 기본값 30초
 }
 
 class ApiClient {
@@ -103,13 +104,13 @@ class ApiClient {
   }
 
   /**
-   * Make an API request
+   * Make an API request with timeout support
    */
   async request<T>(
     endpoint: string,
     options: RequestOptions = {}
   ): Promise<ApiResponse<T>> {
-    const { method = 'GET', body, headers = {}, requireAuth = true } = options;
+    const { method = 'GET', body, headers = {}, requireAuth = true, timeout = 30000 } = options;
 
     const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -120,30 +121,67 @@ class ApiClient {
       requestHeaders['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
+    // AbortController를 사용한 타임아웃 설정
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
         method,
         headers: requestHeaders,
         body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       // Handle 401 Unauthorized - try to refresh token
       if (response.status === 401 && requireAuth && this.refreshToken) {
         const refreshed = await this.refreshAccessToken();
         if (refreshed) {
-          // Retry the request with new token
-          requestHeaders['Authorization'] = `Bearer ${this.accessToken}`;
-          const retryResponse = await fetch(`${this.baseUrl}${endpoint}`, {
-            method,
-            headers: requestHeaders,
-            body: body ? JSON.stringify(body) : undefined,
-          });
-          return this.handleResponse<T>(retryResponse);
+          // Retry the request with new token (새로운 타임아웃 적용)
+          const retryController = new AbortController();
+          const retryTimeoutId = setTimeout(() => retryController.abort(), timeout);
+
+          try {
+            requestHeaders['Authorization'] = `Bearer ${this.accessToken}`;
+            const retryResponse = await fetch(`${this.baseUrl}${endpoint}`, {
+              method,
+              headers: requestHeaders,
+              body: body ? JSON.stringify(body) : undefined,
+              signal: retryController.signal,
+            });
+            clearTimeout(retryTimeoutId);
+            return this.handleResponse<T>(retryResponse);
+          } catch (retryError) {
+            clearTimeout(retryTimeoutId);
+            if (retryError instanceof DOMException && retryError.name === 'AbortError') {
+              return {
+                error: {
+                  code: 'TIMEOUT_ERROR',
+                  message: `Request timeout after ${timeout}ms`,
+                },
+              };
+            }
+            throw retryError;
+          }
         }
       }
 
       return this.handleResponse<T>(response);
     } catch (error) {
+      clearTimeout(timeoutId);
+
+      // 타임아웃 에러 처리
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return {
+          error: {
+            code: 'TIMEOUT_ERROR',
+            message: `Request timeout after ${timeout}ms`,
+          },
+        };
+      }
+
       return {
         error: {
           code: 'NETWORK_ERROR',

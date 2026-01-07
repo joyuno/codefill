@@ -47,8 +47,7 @@ import { solutionsApi, type SolutionListItem } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { CodeBlock } from '@/components/ui/code-block';
 import { getLanguageLabel, getLanguageColor } from './constants';
 
 interface SolutionListProps {
@@ -166,8 +165,6 @@ function SolutionCard({ solution, onVote, onRefresh }: SolutionCardProps) {
       setIsDeleting(false);
     }
   };
-
-  const languageForHighlighter = solution.language === 'cpp' ? 'cpp' : solution.language;
 
   return (
     <>
@@ -311,18 +308,9 @@ function SolutionCard({ solution, onVote, onRefresh }: SolutionCardProps) {
               /* 보기 모드 */
               <>
                 {/* Code */}
-                <SyntaxHighlighter
-                  language={languageForHighlighter}
-                  style={oneDark}
-                  customStyle={{
-                    margin: 0,
-                    borderRadius: 0,
-                    fontSize: '0.8rem',
-                    maxHeight: '400px',
-                  }}
-                >
-                  {solution.code}
-                </SyntaxHighlighter>
+                <div className="max-h-[400px] overflow-auto">
+                  <CodeBlock code={solution.code} language={solution.language} showLineNumbers={false} />
+                </div>
                 {/* Toolbar */}
                 <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-t border-border/50">
                   <div className="flex items-center gap-2">

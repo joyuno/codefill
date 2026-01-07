@@ -65,9 +65,11 @@ interface SidebarProfileProps {
     badges: PublicBadge[];
     farm: PublicFarm;
   };
+  /** 부모에서 전달받은 뱃지 배열 (있으면 API 호출 안 함) */
+  badges?: BadgeType[];
 }
 
-export function SidebarProfile({ username, publicData }: SidebarProfileProps) {
+export function SidebarProfile({ username, publicData, badges: propBadges }: SidebarProfileProps) {
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
   const [farm, setFarm] = useState<UserFarm | null>(null);
@@ -185,14 +187,20 @@ export function SidebarProfile({ username, publicData }: SidebarProfileProps) {
     }
   }, [isAuthenticated, username]);
 
-  // Fetch user badges from API (본인 프로필)
+  // Fetch user badges from API (본인 프로필) - propBadges가 있으면 API 호출 안 함
   useEffect(() => {
+    // propBadges가 전달되었으면 그 값 사용 (page.tsx에서 이미 호출함)
+    if (propBadges !== undefined) {
+      setBadges(propBadges);
+      return;
+    }
+
     if (isAuthenticated && isOwnProfile) {
       usersApi.getBadges()
         .then(setBadges)
         .catch(() => setBadges([]));
     }
-  }, [isAuthenticated, isOwnProfile]);
+  }, [isAuthenticated, isOwnProfile, propBadges]);
 
   // 친구 추가 핸들러
   const handleAddFriend = async () => {
