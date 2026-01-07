@@ -19,9 +19,10 @@ class OpenRouterService:
         "gpt-4o": "openai/gpt-4o",
         "gpt-4o-mini": "openai/gpt-4o-mini",
         "claude-sonnet": "anthropic/claude-sonnet-4",  # Claude Sonnet 4
-        "gemini-flash": "google/gemini-2.0-flash-001",
+        "gemini-flash": "google/gemini-3-flash-preview",
         "gemini-3-pro": "google/gemini-3-pro-preview",
         "deepseek-v3": "deepseek/deepseek-v3.2",
+
     }
 
     def __init__(self):

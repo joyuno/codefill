@@ -92,10 +92,533 @@ class HintService:
             return None
 
     # ============================================================
-    # Blank 힌트 생성
+    # 힌트 캐싱 메서드 (모든 유형 지원: blank, puzzle, guided)
+    # ============================================================
+
+    def get_cached_hint(
+        self,
+        problem_id: str,
+        problem_type: str,
+        hint_index: int,
+    ) -> Optional[Dict[str, Any]]:
+        """DB에서 캐시된 힌트 조회"""
+        try:
+            result = self.supabase.table("problem_hints") \
+                .select("hint_content") \
+                .eq("problem_id", problem_id) \
+                .eq("problem_type", problem_type) \
+                .eq("hint_index", hint_index) \
+                .single() \
+                .execute()
+
+            if result.data:
+                logger.info(f"[HintCache] HIT: {problem_type}/{problem_id}, index={hint_index}")
+                return {
+                    "hint_content": result.data.get("hint_content", ""),
+                }
+            return None
+
+        except Exception as e:
+            # 캐시 조회 실패는 무시 (LLM 생성으로 진행)
+            logger.debug(f"[HintCache] MISS or error: {e}")
+            return None
+
+    def save_hint_to_cache(
+        self,
+        problem_id: str,
+        problem_type: str,
+        hint_index: int,
+        hint_content: str,
+    ) -> bool:
+        """생성된 힌트를 DB에 캐시"""
+        try:
+            self.supabase.table("problem_hints").upsert({
+                "problem_id": problem_id,
+                "problem_type": problem_type,
+                "hint_index": hint_index,
+                "hint_content": hint_content,
+            }, on_conflict="problem_id,problem_type,hint_index").execute()
+
+            logger.info(f"[HintCache] SAVED: {problem_type}/{problem_id}, index={hint_index}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"[HintCache] Save failed: {e}")
+            return False
+
+    # ============================================================
+    # Blank 힌트 - 이유/역할 설명만 (정답 제공 안함)
     # ============================================================
 
     async def generate_blank_hint(
+        self,
+        problem_id: str,
+        blank_index: int,
+        code_template: Optional[str] = None,
+        additional_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        빈칸 힌트 - 이유/역할 설명만 제공 (정답 알려주지 않음)
+
+        Args:
+            problem_id: problems_blank 테이블의 ID
+            blank_index: 빈칸 인덱스
+            code_template: 코드 템플릿
+            additional_info: 추가 정보
+
+        Returns:
+            {
+                blank_index: int,
+                hint_content: str,  # 이유/역할 설명 (1-2줄)
+                from_cache: bool,
+            }
+        """
+        # 코드 템플릿 가져오기
+        if not code_template:
+            blank_problem = self.get_blank_problem(problem_id)
+            if blank_problem:
+                code_template = blank_problem.get("code_template", "")
+            elif additional_info:
+                code_template = additional_info.get("code_template", "")
+
+        if not code_template:
+            return {
+                "blank_index": blank_index,
+                "hint_content": "코드 정보를 불러올 수 없습니다.",
+                "from_cache": False,
+            }
+
+        # 1. 캐시에서 힌트 조회
+        cached = self.get_cached_hint(
+            problem_id=problem_id,
+            problem_type="blank",
+            hint_index=blank_index,
+        )
+
+        if cached:
+            # 캐시 HIT
+            return {
+                "hint_index": blank_index,
+                "hint_content": cached["hint_content"],
+                "from_cache": True,
+            }
+
+        # 2. 캐시 MISS: LLM으로 힌트 생성 (역할 설명만, 정답 없음)
+        hint_content = await self._generate_blank_role_hint(
+            code_template=code_template,
+            blank_index=blank_index,
+        )
+
+        # 캐시에 저장
+        self.save_hint_to_cache(
+            problem_id=problem_id,
+            problem_type="blank",
+            hint_index=blank_index,
+            hint_content=hint_content,
+        )
+
+        return {
+            "hint_index": blank_index,
+            "hint_content": hint_content,
+            "from_cache": False,
+        }
+
+    async def _generate_blank_role_hint(
+        self,
+        code_template: str,
+        blank_index: int,
+    ) -> str:
+        """
+        빈칸 역할/이유 힌트 생성 (정답 알려주지 않음)
+        """
+        try:
+            from .openrouter import openrouter_service
+
+            # 빈칸 주변 코드 추출
+            surrounding_code = self._extract_surrounding_context(code_template, blank_index)
+
+            prompt = f"""다음 코드에서 빈칸 #{blank_index + 1}에 어떤 종류의 값이 들어가야 하는지 1-2줄로 힌트를 주세요.
+
+코드 컨텍스트:
+```
+{surrounding_code}
+```
+
+규칙:
+- 정답을 직접 알려주지 마세요
+- "이 자리에는 ~하는 역할의 코드가 필요해요" 형식으로 설명
+- 예: "리스트 길이를 구하는 함수", "반복 횟수를 정하는 값", "조건을 비교하는 연산자"
+- 한국어 1-2문장으로 간결하게"""
+
+            response = await openrouter_service.chat_completion(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful coding tutor. Give hints about what KIND of code goes in the blank, without revealing the answer. Respond in Korean, 1-2 sentences only."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+                max_tokens=100,
+            )
+
+            hint = openrouter_service.get_content(response)
+            return hint.strip()
+
+        except Exception as e:
+            logger.error(f"[HintService] Blank role hint error: {e}")
+            return "이 빈칸은 코드의 핵심 로직에 필요한 부분이에요. 주변 코드를 살펴보세요."
+
+    async def _generate_blank_explanation(
+        self,
+        code_template: str,
+        blank_index: int,
+        answer: str,
+        reveal_answer: bool = False,
+    ) -> str:
+        """
+        빈칸에 해당 값이 들어가야 하는 이유 설명 (1-2줄)
+        """
+        try:
+            from .openrouter import openrouter_service
+
+            # 빈칸 주변 코드 추출 (앞뒤 3줄)
+            surrounding_code = self._extract_surrounding_context(code_template, blank_index)
+
+            if reveal_answer:
+                prompt = f"""다음 코드에서 빈칸 #{blank_index + 1}에 "{answer}"가 들어가야 하는 이유를 1-2줄로 설명하세요.
+
+코드 컨텍스트:
+```
+{surrounding_code}
+```
+
+규칙:
+- 정답 "{answer}"가 왜 필요한지 간단히 설명
+- 코드 흐름/문법적 역할 설명
+- 반드시 한국어로 1-2문장만"""
+            else:
+                prompt = f"""다음 코드에서 빈칸 #{blank_index + 1}에 들어갈 값의 역할을 1-2줄로 설명하세요. (정답을 직접 알려주지 마세요)
+
+코드 컨텍스트:
+```
+{surrounding_code}
+```
+
+규칙:
+- 이 빈칸이 어떤 역할을 하는지 힌트 제공
+- "~하는 역할이에요" 또는 "~를 위해 필요해요" 형식
+- 반드시 한국어로 1-2문장만"""
+
+            response = await openrouter_service.chat_completion(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful coding tutor. Respond in Korean, 1-2 sentences only."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+                max_tokens=100,
+            )
+
+            explanation = openrouter_service.get_content(response)
+            return explanation.strip()
+
+        except Exception as e:
+            print(f"[HintService] Blank explanation error: {e}")
+            return "이 빈칸은 코드의 핵심 로직에 필요한 부분이에요."
+
+    def _extract_surrounding_context(self, code_template: str, blank_index: int) -> str:
+        """빈칸 주변 코드 추출 - _N_ 패턴 및 레거시 ___ 패턴 지원"""
+        import re
+
+        if not code_template:
+            return ""
+
+        lines = code_template.split("\n")
+
+        # _N_ 패턴 (예: _0_, _1_, _10_) 먼저 찾기
+        indexed_pattern = re.compile(r'_(\d+)_')
+        target_line_idx = 0
+        found = False
+
+        for i, line in enumerate(lines):
+            matches = indexed_pattern.findall(line)
+            for match in matches:
+                if int(match) == blank_index:
+                    target_line_idx = i
+                    found = True
+                    break
+            if found:
+                break
+
+        # _N_ 패턴 못 찾으면 레거시 ___ 패턴으로 폴백
+        if not found:
+            blank_count = 0
+            for i, line in enumerate(lines):
+                count = line.count("___")
+                if count > 0:
+                    if blank_count <= blank_index < blank_count + count:
+                        target_line_idx = i
+                        break
+                    blank_count += count
+
+        # 앞뒤 3줄 추출
+        start = max(0, target_line_idx - 3)
+        end = min(len(lines), target_line_idx + 4)
+
+        return "\n".join(lines[start:end])
+
+    # ============================================================
+    # Puzzle 힌트 - 블록별 역할 설명 (캐싱 적용)
+    # ============================================================
+
+    async def generate_puzzle_block_hint(
+        self,
+        problem_id: str,
+        block_index: int,
+        blocks: Optional[List[Dict[str, Any]]] = None,
+        additional_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        퍼즐 블록 힌트 - 블록의 역할 설명 (순서 알려주지 않음)
+
+        Args:
+            problem_id: problems_puzzle 테이블의 ID
+            block_index: 블록 인덱스
+            blocks: 블록 배열
+            additional_info: 추가 정보
+
+        Returns:
+            {
+                hint_index: int,
+                hint_content: str,  # 블록 역할 설명
+                from_cache: bool,
+            }
+        """
+        # 블록 정보 가져오기
+        if not blocks:
+            puzzle_problem = self.get_puzzle_problem(problem_id)
+            if puzzle_problem:
+                blocks = puzzle_problem.get("blocks", [])
+            elif additional_info:
+                blocks = additional_info.get("blocks", [])
+
+        if not blocks or block_index >= len(blocks):
+            return {
+                "hint_index": block_index,
+                "hint_content": "블록 정보를 불러올 수 없습니다.",
+                "from_cache": False,
+            }
+
+        # 1. 캐시에서 힌트 조회
+        cached = self.get_cached_hint(
+            problem_id=problem_id,
+            problem_type="puzzle",
+            hint_index=block_index,
+        )
+
+        if cached:
+            return {
+                "hint_index": block_index,
+                "hint_content": cached["hint_content"],
+                "from_cache": True,
+            }
+
+        # 2. 캐시 MISS: LLM으로 힌트 생성
+        block = blocks[block_index]
+        block_code = block.get("code", "")
+
+        hint_content = await self._generate_puzzle_block_role_hint(
+            block_code=block_code,
+            block_index=block_index,
+            all_blocks=blocks,
+        )
+
+        # 캐시에 저장
+        self.save_hint_to_cache(
+            problem_id=problem_id,
+            problem_type="puzzle",
+            hint_index=block_index,
+            hint_content=hint_content,
+        )
+
+        return {
+            "hint_index": block_index,
+            "hint_content": hint_content,
+            "from_cache": False,
+        }
+
+    async def _generate_puzzle_block_role_hint(
+        self,
+        block_code: str,
+        block_index: int,
+        all_blocks: List[Dict[str, Any]],
+    ) -> str:
+        """퍼즐 블록 역할 힌트 생성 (순서 알려주지 않음)"""
+        try:
+            from .openrouter import openrouter_service
+
+            # 전체 블록 코드 (컨텍스트용)
+            all_code = "\n".join([b.get("code", "") for b in all_blocks])
+
+            prompt = f"""다음 코드 블록이 전체 프로그램에서 어떤 역할을 하는지 1-2줄로 설명하세요.
+
+블록 코드:
+```
+{block_code}
+```
+
+전체 블록들 (순서 무작위):
+```
+{all_code}
+```
+
+규칙:
+- 이 블록이 무엇을 하는지만 설명
+- 순서나 위치는 알려주지 마세요
+- "이 블록은 ~하는 역할이에요" 형식
+- 한국어 1-2문장으로 간결하게"""
+
+            response = await openrouter_service.chat_completion(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful coding tutor. Explain what the code block does without revealing its position. Respond in Korean, 1-2 sentences only."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+                max_tokens=100,
+            )
+
+            hint = openrouter_service.get_content(response)
+            return hint.strip()
+
+        except Exception as e:
+            logger.error(f"[HintService] Puzzle block hint error: {e}")
+            return "이 블록은 프로그램의 일부분을 담당해요. 코드를 잘 읽어보세요."
+
+    # ============================================================
+    # Guided 힌트 - 단계별 도움 (캐싱 적용)
+    # ============================================================
+
+    async def generate_guided_step_hint(
+        self,
+        problem_id: str,
+        step_index: int,
+        steps: Optional[List[Dict[str, Any]]] = None,
+        additional_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Guided 단계별 힌트 - 현재 단계에서 무엇을 해야 하는지 설명
+
+        Args:
+            problem_id: problems_guided 테이블의 ID
+            step_index: 단계 인덱스
+            steps: 단계 배열 (flow)
+            additional_info: 추가 정보
+
+        Returns:
+            {
+                hint_index: int,
+                hint_content: str,  # 단계별 도움
+                from_cache: bool,
+            }
+        """
+        # 단계 정보 가져오기
+        if not steps:
+            guided_problem = self.get_guided_problem(problem_id)
+            if guided_problem:
+                steps = guided_problem.get("flow", [])
+            elif additional_info:
+                steps = additional_info.get("flow", [])
+
+        if not steps or step_index >= len(steps):
+            return {
+                "hint_index": step_index,
+                "hint_content": "단계 정보를 불러올 수 없습니다.",
+                "from_cache": False,
+            }
+
+        # 1. 캐시에서 힌트 조회
+        cached = self.get_cached_hint(
+            problem_id=problem_id,
+            problem_type="guided",
+            hint_index=step_index,
+        )
+
+        if cached:
+            return {
+                "hint_index": step_index,
+                "hint_content": cached["hint_content"],
+                "from_cache": True,
+            }
+
+        # 2. 캐시 MISS: LLM으로 힌트 생성
+        current_step = steps[step_index]
+        step_content = current_step if isinstance(current_step, str) else json.dumps(current_step, ensure_ascii=False)
+
+        hint_content = await self._generate_guided_step_role_hint(
+            step_content=step_content,
+            step_index=step_index,
+            all_steps=steps,
+        )
+
+        # 캐시에 저장
+        self.save_hint_to_cache(
+            problem_id=problem_id,
+            problem_type="guided",
+            hint_index=step_index,
+            hint_content=hint_content,
+        )
+
+        return {
+            "hint_index": step_index,
+            "hint_content": hint_content,
+            "from_cache": False,
+        }
+
+    async def _generate_guided_step_role_hint(
+        self,
+        step_content: str,
+        step_index: int,
+        all_steps: List[Any],
+    ) -> str:
+        """Guided 단계 힌트 생성"""
+        try:
+            from .openrouter import openrouter_service
+
+            total_steps = len(all_steps)
+
+            prompt = f"""현재 단계 {step_index + 1}/{total_steps}에서 학습자가 무엇을 해야 하는지 1-2줄로 도움을 주세요.
+
+현재 단계:
+{step_content}
+
+규칙:
+- 직접적인 정답을 알려주지 마세요
+- "이 단계에서는 ~를 생각해보세요" 형식
+- 힌트는 소크라테스식으로 질문 형태도 좋아요
+- 한국어 1-2문장으로 간결하게"""
+
+            response = await openrouter_service.chat_completion(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a Socratic coding tutor. Guide the learner with questions without giving direct answers. Respond in Korean, 1-2 sentences only."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+                max_tokens=100,
+            )
+
+            hint = openrouter_service.get_content(response)
+            return hint.strip()
+
+        except Exception as e:
+            logger.error(f"[HintService] Guided step hint error: {e}")
+            return "이 단계에서 필요한 것이 무엇인지 천천히 생각해보세요."
+
+    # ============================================================
+    # Blank 힌트 생성 (기존 - 레거시)
+    # ============================================================
+
+    async def generate_blank_hint_legacy(
         self,
         problem_id: str,
         base_problem_id: Optional[str],
@@ -318,7 +841,224 @@ class HintService:
         }
 
     # ============================================================
-    # Puzzle 힌트 생성
+    # Puzzle 힌트 - 첫 틀린 위치 + 이유 (신규) - Smart Validator 통합
+    # ============================================================
+
+    async def generate_puzzle_hint_focused(
+        self,
+        problem_id: str,
+        user_order: List[str],
+        blocks: Optional[List[Dict[str, Any]]] = None,
+        additional_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        퍼즐 힌트 - 스마트 검증 + 첫 틀린 블록 (2줄 이내)
+
+        Args:
+            problem_id: problems_puzzle 테이블의 ID
+            user_order: 사용자가 배치한 블록 ID/인덱스 순서
+            blocks: 블록 배열 (프론트에서 전달)
+            additional_info: 추가 정보
+
+        Returns:
+            {
+                is_correct: bool,
+                hint_content: str (2줄 이내),
+                first_wrong_position: int or None,
+                correct_block_id: str or None,
+                validation_type: "smart" | "strict" | "fallback"
+            }
+        """
+        from .puzzle_validator import validate_puzzle
+
+        # 블록 정보 가져오기
+        if not blocks:
+            puzzle_problem = self.get_puzzle_problem(problem_id)
+            if puzzle_problem:
+                blocks = puzzle_problem.get("blocks", [])
+            elif additional_info:
+                blocks = additional_info.get("blocks", [])
+
+        if not blocks:
+            return {
+                "is_correct": False,
+                "hint_content": "블록 정보를 불러올 수 없습니다.",
+                "first_wrong_position": None,
+                "correct_block_id": None,
+                "validation_type": "error",
+            }
+
+        # 언어 정보
+        language = "python"
+        if additional_info:
+            language = additional_info.get("language", "python")
+
+        # 정답 순서 계산 (order 필드 기준)
+        sorted_blocks = sorted(blocks, key=lambda b: b.get("order", 0))
+        correct_order_ids = [b.get("id") for b in sorted_blocks]
+
+        # 블록 내용 추출
+        block_contents = [b.get("code", "") for b in sorted_blocks]
+
+        # user_order를 인덱스로 변환 (ID -> index)
+        id_to_idx = {b.get("id"): i for i, b in enumerate(sorted_blocks)}
+        try:
+            user_order_indices = [id_to_idx.get(uid, -1) for uid in user_order]
+            correct_order_indices = list(range(len(sorted_blocks)))
+
+            # 잘못된 ID가 있으면 폴백
+            if -1 in user_order_indices:
+                raise ValueError("Invalid block ID in user_order")
+
+        except Exception as e:
+            logger.warning(f"[HintService] Index conversion failed: {e}")
+            # 폴백: 단순 비교
+            return await self._fallback_puzzle_hint_focused(
+                user_order, blocks, correct_order_ids
+            )
+
+        # 스마트 검증 수행
+        try:
+            result = await validate_puzzle(
+                blocks=block_contents,
+                user_order=user_order_indices,
+                correct_order=correct_order_indices,
+                language=language,
+                strict_mode=False,
+            )
+
+            if result.is_correct:
+                return {
+                    "is_correct": True,
+                    "hint_content": result.feedback,
+                    "first_wrong_position": None,
+                    "correct_block_id": None,
+                    "validation_type": "smart",
+                    "score": result.score,
+                }
+
+            # 틀린 경우 상세 정보 제공
+            first_wrong_pos = result.first_wrong_position
+            if first_wrong_pos is not None and first_wrong_pos < len(sorted_blocks):
+                correct_block = sorted_blocks[correct_order_indices[first_wrong_pos]]
+                correct_code = correct_block.get("code", "")[:60]
+                correct_id = correct_block.get("id")
+
+                # 이유 생성
+                reason = await self._generate_puzzle_reason(
+                    position=first_wrong_pos,
+                    correct_code=correct_code,
+                    blocks=blocks,
+                )
+
+                hint_content = (
+                    f"블록 {first_wrong_pos + 1}번 위치가 틀렸어요.\n"
+                    f"{reason}"
+                )
+
+                return {
+                    "is_correct": False,
+                    "hint_content": hint_content,
+                    "first_wrong_position": first_wrong_pos,
+                    "correct_block_id": correct_id,
+                    "correct_code_preview": correct_code[:30],
+                    "validation_type": "smart",
+                    "score": result.score,
+                }
+
+            # first_wrong_position이 없는 경우
+            return {
+                "is_correct": False,
+                "hint_content": result.feedback,
+                "first_wrong_position": None,
+                "correct_block_id": None,
+                "validation_type": "smart",
+                "score": result.score,
+            }
+
+        except Exception as e:
+            logger.error(f"[HintService] Smart validation error: {e}")
+            return await self._fallback_puzzle_hint_focused(
+                user_order, blocks, correct_order_ids
+            )
+
+    async def _fallback_puzzle_hint_focused(
+        self,
+        user_order: List[str],
+        blocks: List[Dict[str, Any]],
+        correct_order: List[str],
+    ) -> Dict[str, Any]:
+        """스마트 검증 실패 시 폴백 힌트"""
+        user_order_str = [str(b) for b in user_order]
+        correct_order_str = [str(c) for c in correct_order]
+
+        first_wrong = None
+        for i, (user_id, correct_id) in enumerate(zip(user_order_str, correct_order_str)):
+            if user_id != correct_id:
+                first_wrong = {"position": i, "correct_block": correct_id}
+                break
+
+        if not first_wrong:
+            return {
+                "is_correct": True,
+                "hint_content": "모두 정답입니다!",
+                "first_wrong_position": None,
+                "correct_block_id": None,
+                "validation_type": "fallback",
+            }
+
+        correct_block = next(
+            (b for b in blocks if str(b.get("id")) == first_wrong["correct_block"]),
+            None
+        )
+
+        correct_code = correct_block.get("code", "")[:30] if correct_block else "?"
+
+        return {
+            "is_correct": False,
+            "hint_content": f"블록 {first_wrong['position'] + 1}번이 틀렸어요. 정답 블록을 확인해보세요.",
+            "first_wrong_position": first_wrong["position"],
+            "correct_block_id": first_wrong["correct_block"],
+            "correct_code_preview": correct_code,
+            "validation_type": "fallback",
+        }
+
+    async def _generate_puzzle_reason(
+        self,
+        position: int,
+        correct_code: str,
+        blocks: List[Dict[str, Any]],
+    ) -> str:
+        """퍼즐 오답 이유 생성 (1줄)"""
+        try:
+            # 간단한 휴리스틱 우선
+            code_lower = correct_code.lower().strip()
+
+            # 코드 패턴으로 이유 추론
+            if code_lower.startswith("def "):
+                return "함수 정의가 먼저 와야 해요."
+            elif code_lower.startswith("class "):
+                return "클래스 정의가 먼저 와야 해요."
+            elif code_lower.startswith("import ") or code_lower.startswith("from "):
+                return "import문은 보통 가장 위에 와요."
+            elif code_lower.startswith("for ") or code_lower.startswith("while "):
+                return "반복문이 이 위치에 와야 해요."
+            elif code_lower.startswith("if "):
+                return "조건문이 이 위치에 와야 해요."
+            elif code_lower.startswith("return "):
+                return "return문은 함수 마지막에 와요."
+            elif "=" in code_lower and not "==" in code_lower:
+                return "변수 초기화가 이 위치에 필요해요."
+            else:
+                # 기본 메시지
+                return "코드 실행 순서를 생각해보세요."
+
+        except Exception as e:
+            logger.error(f"[HintService] Puzzle reason generation error: {e}")
+            return "이 블록이 먼저 와야 해요."
+
+    # ============================================================
+    # Puzzle 힌트 생성 (기존)
     # ============================================================
 
     async def generate_puzzle_hint(

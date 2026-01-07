@@ -161,4 +161,8 @@ export interface ConvertedProblem {
   sourceUrl?: string;
   estimatedTime?: number;
   solvedCount?: number;       // 풀이 수 (통계용)
+
+  // 잔디 클릭 시 문제 정보 표시용
+  originalId?: string;        // base_problems.original_id (e.g., "taco_100")
+  baseProblemId?: string;     // base_problems.id (UUID)
 }

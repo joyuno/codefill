@@ -119,9 +119,10 @@ interface CustomTestCase extends ConvertedTestCase {
 interface UnifiedPracticeProps {
   problem: ConvertedProblem;
   problemType: ConvertedProblemType;
-  onSubmit: (code: string, results: TestResult[]) => void;
+  onSubmit: (code: string, results: TestResult[], hintsUsed?: number) => void;
   onRun: (code: string) => void;
   onHintRequest: (level: number) => void;
+  attemptId?: string;  // attempt tracking for hint recording
 }
 
 export function UnifiedPractice({
@@ -130,6 +131,7 @@ export function UnifiedPractice({
   onSubmit,
   onRun,
   onHintRequest,
+  attemptId,
 }: UnifiedPracticeProps) {
   // 공통 상태
   const [code, setCode] = useState('');
@@ -161,11 +163,21 @@ export function UnifiedPractice({
   const [blankAnswers, setBlankAnswers] = useState<Record<string, string>>({});
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
 
+  // Blank 힌트 상태 (빈칸별 역할 설명, 레벨 없음)
+  const [blankHints, setBlankHints] = useState<Record<number, string>>({});  // {blankIndex: hintContent}
+  const [blankHintLoading, setBlankHintLoading] = useState<number | null>(null);  // 로딩 중인 빈칸 인덱스
+  const [blankHintsUsedCount, setBlankHintsUsedCount] = useState<number>(0);  // 사용한 힌트 횟수 (제한 없음, 기록용)
+
   // Puzzle 모드 상태
   const [blocks, setBlocks] = useState<UIPuzzleBlock[]>([]);
   const [draggedBlock, setDraggedBlock] = useState<string | null>(null);
   const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
   const [showPuzzlePulse, setShowPuzzlePulse] = useState(false);
+
+  // Puzzle 힌트 상태 (순차적 힌트 - 틀린 블록 순서대로)
+  const [puzzleHintMessages, setPuzzleHintMessages] = useState<string[]>([]);  // 힌트 메시지 목록
+  const [puzzleHintLoading, setPuzzleHintLoading] = useState(false);
+  const [puzzleHintsUsedCount, setPuzzleHintsUsedCount] = useState<number>(0);  // 사용한 힌트 횟수 (기록용)
 
   // 번역 상태
   const [targetLanguage, setTargetLanguage] = useState<LanguageCode>('ko');
@@ -196,6 +208,13 @@ export function UnifiedPractice({
     // 번역 상태 초기화
     setTranslatedDescription(null);
     setShowOriginal(true);
+    // 힌트 상태 초기화
+    setBlankHints({});
+    setBlankHintLoading(null);
+    setBlankHintsUsedCount(0);  // 힌트 사용 횟수 리셋
+    setPuzzleHintMessages([]);
+    setPuzzleHintLoading(false);
+    setPuzzleHintsUsedCount(0);  // 퍼즐 힌트 사용 횟수 리셋
 
     if (problemType === 'blank') {
       const snippet = problem.codeSnippet || '';
@@ -460,7 +479,8 @@ export function UnifiedPractice({
             passed: correct,
             actual: correct ? 'correct' : 'incorrect',
           }];
-          onSubmit(getExecutableCode(), testResults);
+          // 빈칸 힌트 사용 횟수 전달
+          onSubmit(getExecutableCode(), testResults, blankHintsUsedCount);
           // 정답일 때만 수정 불가 상태로 전환
           if (correct) {
             setIsSubmitted(true);
@@ -496,7 +516,8 @@ export function UnifiedPractice({
             passed: correct,
             actual: correct ? 'correct order' : 'wrong order',
           }];
-          onSubmit(getExecutableCode(), testResults);
+          // 퍼즐 힌트 사용 횟수 전달
+          onSubmit(getExecutableCode(), testResults, puzzleHintsUsedCount);
           // 정답일 때만 수정 불가 상태로 전환
           if (correct) {
             setIsSubmitted(true);
@@ -559,6 +580,101 @@ export function UnifiedPractice({
     const newLevel = hintsUsed + 1;
     setHintsUsed(newLevel);
     onHintRequest(newLevel);
+  };
+
+  // 빈칸별 힌트 요청 핸들러 (횟수 제한 없음, 사용 기록만 추적)
+  const handleBlankHint = async (blankIndex: number) => {
+    if (blankHintLoading !== null) return;  // 이미 로딩 중
+
+    // 이미 힌트가 있으면 무시 (중복 요청 방지)
+    if (blankHints[blankIndex]) return;
+
+    setBlankHintLoading(blankIndex);
+
+    try {
+      const { practiceApi } = await import('@/lib/api/practice');
+
+      const result = await practiceApi.getBlankHint({
+        problemId: problem.id,
+        blankIndex,
+        codeTemplate: problem.codeSnippet || '',
+        attemptId,  // attempt tracking
+      });
+
+      // 힌트 저장
+      setBlankHints(prev => ({ ...prev, [blankIndex]: result.hintContent }));
+
+      // 힌트 사용 횟수 증가 (기록용, 캐시 여부와 관계없이 항상 증가)
+      setBlankHintsUsedCount(prev => prev + 1);
+
+      console.log(`[BlankHint] blank=${blankIndex+1}, fromCache=${result.fromCache}, totalUsed=${blankHintsUsedCount + 1}`);
+
+    } catch (error) {
+      console.error('[BlankHint] Error:', error);
+      setBlankHints(prev => ({
+        ...prev,
+        [blankIndex]: '힌트를 불러올 수 없습니다.'
+      }));
+    } finally {
+      setBlankHintLoading(null);
+    }
+  };
+
+  // 퍼즐 힌트 요청 핸들러 (틀린 블록 순서대로 힌트 제공, 횟수 제한 없음)
+  const handlePuzzleHint = async () => {
+    if (puzzleHintLoading) return;
+
+    // 틀린 블록들 찾기 (현재 위치 기준)
+    const wrongBlockIndices: number[] = [];
+    blocks.forEach((block, idx) => {
+      if (!puzzleResults[block.id]) {
+        wrongBlockIndices.push(idx);
+      }
+    });
+
+    if (wrongBlockIndices.length === 0) {
+      setPuzzleHintMessages(prev => [...prev, '모든 블록이 올바른 위치에 있습니다!']);
+      return;
+    }
+
+    // 아직 힌트 안 준 첫 번째 틀린 블록
+    const hintedCount = puzzleHintMessages.length;
+    if (hintedCount >= wrongBlockIndices.length) {
+      setPuzzleHintMessages(prev => [...prev, '더 이상 힌트가 없습니다. 남은 블록을 직접 배치해보세요.']);
+      return;
+    }
+
+    const targetBlockIdx = wrongBlockIndices[hintedCount];
+    const targetBlock = blocks[targetBlockIdx];
+
+    setPuzzleHintLoading(true);
+
+    try {
+      const { practiceApi } = await import('@/lib/api/practice');
+
+      const result = await practiceApi.getPuzzleHint({
+        problemId: problem.id,
+        blockIndex: targetBlockIdx,
+        blocks: blocks.map(b => ({ id: b.id, code: b.code })),
+        attemptId,  // attempt tracking
+      });
+
+      // 힌트 메시지: "N번째 위치: [블록 역할 설명]"
+      const correctPosition = targetBlock.correctOrder + 1;
+      const hintMessage = `${correctPosition}번째 위치: ${result.hintContent}`;
+      setPuzzleHintMessages(prev => [...prev, hintMessage]);
+
+      // 힌트 사용 횟수 증가 (기록용)
+      setPuzzleHintsUsedCount(prev => prev + 1);
+
+      console.log(`[PuzzleHint] blockIdx=${targetBlockIdx}, totalUsed=${puzzleHintsUsedCount + 1}`);
+
+    } catch (error) {
+      console.error('[PuzzleHint] Error:', error);
+      setPuzzleHintMessages(prev => [...prev, '힌트를 불러올 수 없습니다.']);
+    } finally {
+      setPuzzleHintLoading(false);
+    }
   };
 
   // 블록 드래그 핸들러
@@ -712,16 +828,64 @@ export function UnifiedPractice({
                 placeholder={placeholder}
                 disabled={isSubmitted}
               />
-              {/* 힌트 버튼 - problem.keyConcepts 사용 */}
-              {!isSubmitted && problem.keyConcepts?.length > 0 && (
+              {/* 빈칸별 힌트 버튼 - 팝업 내 버튼 클릭 방식 */}
+              {!isSubmitted && (
                 <Popover>
                   <PopoverTrigger asChild>
-                    <button className="text-muted-foreground hover:text-primary">
-                      <HelpCircle className="h-4 w-4" />
+                    <button
+                      className={`relative text-muted-foreground hover:text-primary transition-colors ${
+                        blankHints[blankIndex] ? 'text-blue-400' : ''
+                      }`}
+                      title="힌트 보기"
+                    >
+                      {blankHintLoading === blankIndex ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : blankHints[blankIndex] ? (
+                        <Lightbulb className="h-4 w-4" />
+                      ) : (
+                        <HelpCircle className="h-4 w-4" />
+                      )}
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-48 p-2">
-                    <p className="text-xs text-muted-foreground">{problem.keyConcepts[0]}</p>
+                  <PopoverContent className="w-80 p-4">
+                    {blankHints[blankIndex] ? (
+                      /* 힌트 내용 표시 (역할 설명만, 정답 없음) */
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2">
+                          <Lightbulb className="h-4 w-4 mt-0.5 text-blue-400 flex-shrink-0" />
+                          <p className="text-sm text-foreground leading-relaxed">
+                            {blankHints[blankIndex]}
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground text-center pt-2 border-t border-border">
+                          정답은 직접 생각해보세요!
+                        </p>
+                      </div>
+                    ) : (
+                      /* 초기 상태: 힌트 요청 버튼 */
+                      <div className="space-y-3">
+                        <div className="text-center">
+                          <HelpCircle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                          <p className="text-sm font-medium">빈칸 #{blankIndex + 1} 힌트</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => handleBlankHint(blankIndex)}
+                          disabled={blankHintLoading === blankIndex}
+                          className="w-full"
+                        >
+                          {blankHintLoading === blankIndex ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Lightbulb className="h-4 w-4 mr-2" />
+                          )}
+                          힌트 보기
+                        </Button>
+                        <p className="text-xs text-muted-foreground text-center">
+                          어떤 종류의 값이 필요한지 알려드려요
+                        </p>
+                      </div>
+                    )}
                   </PopoverContent>
                 </Popover>
               )}
@@ -1470,8 +1634,43 @@ export function UnifiedPractice({
           )}
         </AnimatePresence>
 
+        {/* Puzzle 힌트 메시지 표시 */}
+        {problemType === 'puzzle' && puzzleHintMessages.length > 0 && (
+          <div className="shrink-0 px-4 py-2 bg-blue-500/10 border-t border-blue-500/30">
+            <div className="flex items-start gap-2">
+              <Lightbulb className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 space-y-1">
+                {puzzleHintMessages.map((msg, idx) => (
+                  <p key={idx} className="text-sm text-blue-300">
+                    {idx + 1}. {msg}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Actions Bar */}
-        <div className="shrink-0 flex items-center justify-end px-4 py-3 border-t border-border bg-card">
+        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-t border-border bg-card">
+          {/* 힌트 버튼 (Puzzle 모드) */}
+          <div>
+            {problemType === 'puzzle' && !isSubmitted && Object.keys(puzzleResults).length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePuzzleHint}
+                disabled={puzzleHintLoading}
+                className="gap-2"
+              >
+                {puzzleHintLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Lightbulb className="h-4 w-4" />
+                )}
+                힌트 {puzzleHintsUsedCount > 0 ? `(${puzzleHintsUsedCount}회 사용)` : ''}
+              </Button>
+            )}
+          </div>
           <div className="flex gap-2">
             {/* 실행 버튼 - implementation에서만 표시 */}
             {problemType === 'implementation' && (

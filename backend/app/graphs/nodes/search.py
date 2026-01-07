@@ -171,6 +171,6 @@ async def generate_problem_codegen(state: ChatState) -> Dict[str, Any]:
         "generated_problem": generated_problem,
         "response_message": response_message,
         "action_data": action_data,
-        "action_trigger": "generated" if generated_problem else None,
+        "action_trigger": "problem_generated" if generated_problem else None,
         "next_node": "respond",
     }

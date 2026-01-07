@@ -5,6 +5,7 @@ Tool/Function Calling 기반으로 리팩토링:
 - intent_tool: 통합 의도 분류 (4단계 → 1단계)
 - 중복 분기 로직 제거
 - 단순한 라우팅
+- Checkpointer 기반 상태 영속화 (PostgresSaver/MemorySaver)
 
 Flow:
     Message → intent_tool.classify() → suggested_route 기반 분기
@@ -16,12 +17,16 @@ Flow:
                 └─ general → 직접 응답
 """
 from typing import Dict, Any, Optional, List
+import logging
 
 from .collection import InfoCollectionGraph
 from .discovery_graph import DiscoveryGraph
 from .solving_graph import ProblemSolvingGraph
+from .checkpointer import get_checkpointer, create_thread_config
 from ..services.problem_save import get_problem_save_service
 from ..tools.intent_tools import intent_tool, IntentCategory, ActionType
+
+logger = logging.getLogger(__name__)
 
 
 class ChatOrchestratorV2:
@@ -33,12 +38,35 @@ class ChatOrchestratorV2:
     - InfoCollectionGraph: 정보 수집 (주제/난이도/언어)
     - DiscoveryGraph: 문제 검색/선택
     - SolvingGraph: 문제 풀이 지원
+
+    Checkpointer를 통한 상태 영속화:
+    - development: MemorySaver (인메모리)
+    - production: PostgresSaver (Supabase PostgreSQL)
     """
 
     def __init__(self):
         self.collection_graph = InfoCollectionGraph()
         self.discovery_graph = DiscoveryGraph()
         self.solving_graph = ProblemSolvingGraph()
+        self.checkpointer = None
+        self._initialized = False
+
+    async def initialize(self):
+        """
+        비동기 초기화 - Checkpointer 설정
+
+        Note: __init__은 동기이므로 별도 초기화 메서드 필요
+        """
+        if self._initialized:
+            return
+
+        try:
+            self.checkpointer = await get_checkpointer()
+            logger.info("[Orchestrator] Checkpointer initialized")
+            self._initialized = True
+        except Exception as e:
+            logger.error(f"[Orchestrator] Failed to initialize checkpointer: {e}")
+            self._initialized = True  # 실패해도 진행 (fallback)
 
     async def process(
         self,
@@ -46,6 +74,7 @@ class ChatOrchestratorV2:
         conversation_history: list = None,
         user_context: dict = None,
         session_state: dict = None,
+        session_id: str = None,
     ) -> Dict[str, Any]:
         """
         메시지 처리
@@ -55,6 +84,7 @@ class ChatOrchestratorV2:
             conversation_history: 대화 히스토리
             user_context: 사용자 컨텍스트 (온보딩 데이터, 현재 상태 등)
             session_state: 세션 상태 (이전 검색 결과, 수집된 정보 등)
+            session_id: 세션 식별자 (Checkpointer용 thread_id)
 
         Returns:
             {
@@ -65,11 +95,22 @@ class ChatOrchestratorV2:
                 response_message: 응답 메시지,
                 is_complete: 정보 수집 완료 여부,
                 action_trigger: 액션 트리거,
+                session_id: 세션 ID (상태 추적용),
             }
         """
+        # Checkpointer 초기화 (필요시)
+        if not self._initialized:
+            await self.initialize()
+
         conversation_history = conversation_history or []
         user_context = user_context or {}
         session_state = session_state or {}
+
+        # session_id가 없으면 생성
+        if not session_id:
+            import uuid
+            session_id = str(uuid.uuid4())
+            logger.debug(f"[Orchestrator] Generated new session_id: {session_id}")
 
         # 세션에서 이전 상태 복원
         collected_info = session_state.get("collected_info", {})
@@ -844,11 +885,19 @@ def get_orchestrator_v2() -> ChatOrchestratorV2:
     return _orchestrator_v2
 
 
+async def initialize_orchestrator():
+    """오케스트레이터 비동기 초기화 (앱 시작 시 호출)"""
+    orchestrator = get_orchestrator_v2()
+    await orchestrator.initialize()
+    return orchestrator
+
+
 async def process_message_v2(
     message: str,
     conversation_history: list = None,
     user_context: dict = None,
     session_state: dict = None,
+    session_id: str = None,
 ) -> Dict[str, Any]:
     """
     편의 함수: 메시지 처리 V2
@@ -856,7 +905,8 @@ async def process_message_v2(
     Usage:
         result = await process_message_v2(
             message="DP 문제 풀고 싶어",
-            user_context={"level": "intermediate"}
+            user_context={"level": "intermediate"},
+            session_id="user-123-session-456"
         )
     """
     orchestrator = get_orchestrator_v2()
@@ -865,4 +915,5 @@ async def process_message_v2(
         conversation_history=conversation_history,
         user_context=user_context,
         session_state=session_state,
+        session_id=session_id,
     )

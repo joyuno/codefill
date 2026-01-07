@@ -49,6 +49,8 @@ class RAGService:
         difficulty: str = None,
         language: str = None,
         limit: int = 5,
+        exclude_ids: List[str] = None,
+        user_context: Dict[str, Any] = None,
     ) -> Tuple[List[Dict[str, Any]], bool]:
         """
         Hybrid search: Filter by tags/difficulty FIRST, then rank by vector similarity.
@@ -59,11 +61,24 @@ class RAGService:
             difficulty: Filter by difficulty (easy/medium/hard)
             language: Filter by language (python/java/cpp)
             limit: Maximum results to return
+            exclude_ids: Problem IDs to exclude (e.g., already solved)
+            user_context: Personalization context (weak_topics, skill_levels, etc.)
 
         Returns:
             Tuple of (results, should_fallback_to_generation)
         """
         try:
+            # Step 0: Enhance query with user context (personalization)
+            enhanced_topics = topics or []
+            if user_context:
+                weak_topics = user_context.get("weak_topics", [])
+                # Add weak topics to search if not already specified
+                if weak_topics and not topics:
+                    enhanced_topics = weak_topics[:2]
+                # Adjust difficulty based on skill level if not specified
+                if not difficulty and user_context.get("preferred_difficulty"):
+                    difficulty = user_context["preferred_difficulty"]
+
             # Step 1: Build base query with filters
             db_query = self.db.table("base_problems").select("*")
 
@@ -72,9 +87,12 @@ class RAGService:
                 db_query = db_query.eq("difficulty", difficulty)
 
             # Apply topic filter (using expanded topics)
-            if topics:
-                expanded_topics = self._expand_topics(topics)
+            if enhanced_topics:
+                expanded_topics = self._expand_topics(enhanced_topics)
                 # Use overlaps for array intersection
+                db_query = db_query.overlaps("tags", expanded_topics)
+            elif topics:
+                expanded_topics = self._expand_topics(topics)
                 db_query = db_query.overlaps("tags", expanded_topics)
 
             # Limit to reasonable number for embedding comparison
@@ -126,7 +144,12 @@ class RAGService:
                     if any(s.get("language") == language for s in r.get("solutions", []))
                 ]
 
-            # Step 5: Check fallback
+            # Step 5: Exclude already solved problems (personalization)
+            if exclude_ids:
+                exclude_set = set(exclude_ids)
+                results = [r for r in results if r.get("id") not in exclude_set]
+
+            # Step 6: Check fallback
             # If we have filtered results (by topic/difficulty), don't fallback
             # Only fallback if no results at all
             should_fallback = len(results) == 0
@@ -456,6 +479,230 @@ class RAGService:
                 fail_count += len(batch)
 
         return {"success": success_count, "failed": fail_count}
+
+    async def search_concepts(
+        self,
+        query: str,
+        topics: List[str] = None,
+        limit: int = 3,
+        user_id: str = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        개념/문서 검색 (Agentic RAG Guided Tutor용)
+
+        학생 질문에 관련된 개념 설명을 검색합니다.
+        base_problems 테이블의 description을 활용합니다.
+
+        Args:
+            query: 검색 쿼리 (학생 질문)
+            topics: 관련 주제
+            limit: 최대 결과 수
+            user_id: 사용자 ID (개인화용)
+
+        Returns:
+            관련 문서 목록 [{content, metadata, similarity}]
+        """
+        # 개인화 컨텍스트 조회 (옵션)
+        user_context = None
+        if user_id:
+            try:
+                from .personalization import get_personalization_service
+                ps = get_personalization_service()
+                user_context = await ps.get_rag_context(user_id)
+            except Exception as e:
+                print(f"[RAG:SearchConcepts] Personalization error: {e}")
+
+        # 개인화 컨텍스트 기반 토픽 확장
+        if user_context:
+            # 약점 토픽을 우선적으로 검색
+            if user_context.get("weak_topics"):
+                topics = list(set((topics or []) + user_context["weak_topics"]))
+            # 최근 학습 토픽도 추가
+            if user_context.get("recent_topics"):
+                topics = list(set((topics or []) + user_context["recent_topics"][:2]))
+        try:
+            # Step 1: Query embedding 생성
+            query_embedding = await embedding_service.generate_embedding(query)
+
+            # Step 2: topics가 있으면 필터링
+            if topics:
+                expanded_topics = self._expand_topics(topics)
+                # 필터링된 문제에서 검색
+                db_query = self.db.table("base_problems").select(
+                    "id, name, title, description, tags, difficulty"
+                ).overlaps("tags", expanded_topics).limit(50)
+            else:
+                db_query = self.db.table("base_problems").select(
+                    "id, name, title, description, tags, difficulty"
+                ).limit(50)
+
+            response = db_query.execute()
+            problems = response.data or []
+
+            if not problems:
+                return []
+
+            # Step 3: Embedding 유사도 계산
+            problem_ids = [p["id"] for p in problems]
+            embeddings_response = self.db.table("problem_embeddings").select(
+                "problem_id, embedding"
+            ).in_("problem_id", problem_ids).execute()
+
+            embeddings_map = {}
+            for e in (embeddings_response.data or []):
+                try:
+                    emb = e.get("embedding")
+                    if isinstance(emb, str):
+                        emb = json.loads(emb.replace("[", "[").replace("]", "]"))
+                    embeddings_map[e["problem_id"]] = emb
+                except Exception:
+                    continue
+
+            # Step 4: 유사도 계산 및 정렬
+            results = []
+            for p in problems:
+                emb = embeddings_map.get(p["id"])
+                if emb:
+                    similarity = self._cosine_similarity(query_embedding, emb)
+                else:
+                    similarity = 0.3  # 기본값
+
+                results.append({
+                    "content": f"[{p.get('title', p.get('name', ''))}] {p.get('description', '')[:300]}",
+                    "metadata": {
+                        "id": p.get("id"),
+                        "title": p.get("title") or p.get("name"),
+                        "tags": p.get("tags", []),
+                        "difficulty": p.get("difficulty"),
+                    },
+                    "similarity": similarity,
+                })
+
+            # 유사도 순 정렬
+            results.sort(key=lambda x: x["similarity"], reverse=True)
+
+            return results[:limit]
+
+        except Exception as e:
+            print(f"[RAG:SearchConcepts] Error: {e}")
+            return []
+
+
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """코사인 유사도 계산"""
+        import numpy as np
+        v1 = np.array(vec1)
+        v2 = np.array(vec2)
+        return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+
+    async def search_problems_personalized(
+        self,
+        query: str,
+        user_id: str,
+        topics: List[str] = None,
+        difficulty: str = None,
+        language: str = None,
+        limit: int = 5,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        """
+        개인화된 문제 검색
+
+        사용자 학습 프로필을 기반으로 검색 결과를 개인화합니다.
+
+        Args:
+            query: 검색 쿼리
+            user_id: 사용자 ID
+            topics: 주제 필터
+            difficulty: 난이도 필터
+            language: 언어 필터
+            limit: 결과 개수
+
+        Returns:
+            Tuple of (results, should_fallback)
+        """
+        # 1. 개인화 컨텍스트 조회
+        user_context = None
+        solved_problem_ids = []
+        try:
+            from .personalization import get_personalization_service
+            ps = get_personalization_service()
+            user_context = await ps.get_rag_context(user_id)
+
+            # 이미 푼 문제 ID 목록 조회
+            solved_ids_set = await ps._get_solved_problem_ids(user_id)
+            solved_problem_ids = list(solved_ids_set)
+        except Exception as e:
+            print(f"[RAG:PersonalizedSearch] Personalization error: {e}")
+
+        # 2. 난이도 조정 (지정되지 않았으면 선호 난이도 사용)
+        if not difficulty and user_context:
+            difficulty = user_context.get("preferred_difficulty")
+
+        # 3. 토픽 확장 (약점 토픽 우선)
+        if user_context:
+            weak_topics = user_context.get("weak_topics", [])
+            if weak_topics and not topics:
+                # 약점 토픽 중 하나를 랜덤 선택
+                import random
+                topics = [random.choice(weak_topics)]
+
+        # 4. 기본 하이브리드 검색 실행 (이미 푼 문제 제외)
+        results, should_fallback = await self.search_problems_hybrid(
+            query=query,
+            topics=topics,
+            difficulty=difficulty,
+            language=language,
+            limit=limit * 2,  # 더 많이 가져와서 필터링
+            exclude_ids=solved_problem_ids,  # 🔥 핵심: 이미 푼 문제 제외
+            user_context=user_context,
+        )
+
+        if not results:
+            return results, should_fallback
+
+        # 5. 개인화 스코어링
+        if user_context:
+            for result in results:
+                personalization_boost = 0.0
+                result_tags = result.get("tags", [])
+                result_difficulty = result.get("difficulty", "")
+
+                # 약점 토픽 매칭 시 부스트
+                weak_topics = user_context.get("weak_topics", [])
+                if weak_topics and any(t in result_tags for t in weak_topics):
+                    personalization_boost += 0.15
+
+                # 선호 난이도 또는 한 단계 높은 난이도 매칭 시 부스트
+                pref_diff = user_context.get("preferred_difficulty", "")
+                if result_difficulty == pref_diff:
+                    personalization_boost += 0.1
+                elif self._is_next_difficulty(pref_diff, result_difficulty):
+                    personalization_boost += 0.05
+
+                # 최근 학습 토픽과 관련 시 부스트
+                recent_topics = user_context.get("recent_topics", [])
+                if recent_topics and any(t in result_tags for t in recent_topics):
+                    personalization_boost += 0.05
+
+                # 원본 유사도에 개인화 부스트 추가
+                original_sim = result.get("similarity", 0.5)
+                result["similarity"] = min(1.0, original_sim + personalization_boost)
+                result["personalization_boost"] = personalization_boost
+
+            # 재정렬
+            results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+
+        return results[:limit], should_fallback
+
+    def _is_next_difficulty(self, current: str, target: str) -> bool:
+        """target이 current의 다음 난이도인지 확인"""
+        order = ["easy", "medium", "medium_hard", "hard", "very_hard"]
+        try:
+            curr_idx = order.index(current)
+            tgt_idx = order.index(target)
+            return tgt_idx == curr_idx + 1
+        except ValueError:
+            return False
 
 
 # Singleton instance

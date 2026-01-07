@@ -335,11 +335,18 @@ class FeedbackService:
             result["grade_emoji"] = result.get("grade_emoji", grade_emoji)
             result["grade_message"] = result.get("grade_message", grade_message)
 
-            logger.info(f"[FeedbackService] Feedback generated: grade={result['grade']}")
+            # attempts 테이블에 score 업데이트
+            avg_score = (scores["efficiency_score"] + scores["speed_score"] + scores["understanding_score"]) // 3
+            self._update_attempt_score(user_id, problem_id, avg_score, solve_time_seconds)
+
+            logger.info(f"[FeedbackService] Feedback generated: grade={result['grade']}, avg_score={avg_score}")
             return result
 
         except Exception as e:
             logger.error(f"[FeedbackService] Feedback generation error: {e}")
+            # fallback에서도 score 업데이트
+            avg_score = (scores["efficiency_score"] + scores["speed_score"] + scores["understanding_score"]) // 3
+            self._update_attempt_score(user_id, problem_id, avg_score, solve_time_seconds)
             return self._fallback_feedback(
                 is_correct, hints_used, attempt_count, solve_time_seconds,
                 xp_earned, grade, grade_emoji, grade_message, scores
@@ -396,6 +403,53 @@ class FeedbackService:
         else:
             return "평균 이상"
 
+    def _update_attempt_score(
+        self,
+        user_id: str,
+        problem_id: str,
+        score: int,
+        time_spent: int,
+    ) -> bool:
+        """
+        최근 attempt의 score와 time_spent 업데이트
+
+        Args:
+            user_id: 사용자 UUID
+            problem_id: 문제 ID
+            score: 평균 점수 (0-100)
+            time_spent: 풀이 시간 (초)
+        """
+        try:
+            # user_id로 최근 attempt 찾기 (problem_id가 UUID가 아닐 수 있으므로)
+            result = self.supabase.table("attempts") \
+                .select("id") \
+                .eq("user_id", user_id) \
+                .order("created_at", desc=True) \
+                .limit(1) \
+                .execute()
+
+            if not result.data or len(result.data) == 0:
+                logger.warning(f"[FeedbackService] No attempt found for user={user_id}")
+                return False
+
+            attempt_id = result.data[0]["id"]
+
+            # score와 time_spent 업데이트
+            self.supabase.table("attempts") \
+                .update({
+                    "score": score,
+                    "time_spent": time_spent,
+                }) \
+                .eq("id", attempt_id) \
+                .execute()
+
+            logger.info(f"[FeedbackService] Attempt updated: id={attempt_id}, score={score}, time_spent={time_spent}s")
+            return True
+
+        except Exception as e:
+            logger.error(f"[FeedbackService] Failed to update attempt score: {e}")
+            return False
+
     def _fallback_feedback(
         self,
         is_correct: bool,
@@ -445,6 +499,151 @@ class FeedbackService:
                 "similar_problems": None,
             },
             "encouragement": "잘했어요! 계속 도전하면 더 빠르게 성장할 수 있어요! 💪",
+        }
+
+
+    # ============================================================
+    # user_skill_profiles 업데이트 (ELO-like)
+    # ============================================================
+
+    async def update_skill_profile(
+        self,
+        user_id: str,
+        problem_topics: List[str],
+        difficulty: str,
+        is_correct: bool,
+    ) -> Dict[str, Any]:
+        """
+        사용자 스킬 프로필 업데이트 (ELO-like 알고리즘)
+
+        Args:
+            user_id: 사용자 UUID
+            problem_topics: 문제 토픽 목록
+            difficulty: 난이도 (easy/medium/hard/very_hard)
+            is_correct: 정답 여부
+
+        Returns:
+            업데이트된 스킬 정보
+        """
+        try:
+            # 1. 현재 프로파일 조회 (없으면 생성)
+            profile_result = self.supabase.table("user_skill_profiles") \
+                .select("*") \
+                .eq("user_id", user_id) \
+                .single() \
+                .execute()
+
+            if profile_result.data:
+                profile = profile_result.data
+            else:
+                # 새 프로파일 생성
+                profile = {
+                    "user_id": user_id,
+                    "skill_by_topic": {},
+                    "success_rate_by_difficulty": {},
+                    "weak_topics": [],
+                }
+
+            skill_by_topic = profile.get("skill_by_topic", {})
+            success_rate = profile.get("success_rate_by_difficulty", {})
+
+            # 2. 토픽별 실력 업데이트 (ELO-like)
+            for topic in problem_topics:
+                if not topic:
+                    continue
+
+                current_skill = skill_by_topic.get(topic, 0.5)
+
+                if is_correct:
+                    # 정답: 실력 상승 (현재 실력이 높을수록 상승폭 감소)
+                    new_skill = current_skill + 0.05 * (1 - current_skill)
+                else:
+                    # 오답: 실력 하락 (현재 실력이 낮을수록 하락폭 감소)
+                    new_skill = current_skill - 0.03 * current_skill
+
+                # 0.0 ~ 1.0 범위 유지
+                skill_by_topic[topic] = round(max(0.0, min(1.0, new_skill)), 3)
+
+            # 3. 난이도별 성공률 업데이트
+            if difficulty not in success_rate:
+                success_rate[difficulty] = {"success": 0, "total": 0}
+
+            success_rate[difficulty]["total"] += 1
+            if is_correct:
+                success_rate[difficulty]["success"] += 1
+
+            # 4. 약점 토픽 분석 (실력 0.4 미만)
+            weak_topics = [t for t, s in skill_by_topic.items() if s < 0.4]
+
+            # 5. DB 업데이트 (upsert)
+            update_data = {
+                "user_id": user_id,
+                "skill_by_topic": skill_by_topic,
+                "success_rate_by_difficulty": success_rate,
+                "weak_topics": weak_topics[:10],  # 최대 10개
+                "updated_at": "now()",
+            }
+
+            self.supabase.table("user_skill_profiles") \
+                .upsert(update_data, on_conflict="user_id") \
+                .execute()
+
+            logger.info(f"[FeedbackService] Skill profile updated for user {user_id}")
+
+            return {
+                "skill_by_topic": skill_by_topic,
+                "weak_topics": weak_topics,
+                "updated_topics": problem_topics,
+            }
+
+        except Exception as e:
+            logger.error(f"[FeedbackService] Failed to update skill profile: {e}")
+            return {"skill_by_topic": {}, "weak_topics": [], "error": str(e)}
+
+    async def save_attempt_with_skill_update(
+        self,
+        user_id: str,
+        problem_id: str,
+        is_correct: bool,
+        problem_topics: List[str] = None,
+        difficulty: str = "medium",
+        submitted_code: Optional[str] = None,
+        submitted_answer: Optional[str] = None,
+        time_spent: Optional[int] = None,
+        hints_used: int = 0,
+        xp_earned: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        시도 기록 저장 + 스킬 프로필 업데이트 (통합)
+
+        Returns:
+            {"attempt_id": str, "skill_updates": dict}
+        """
+        # 1. 시도 기록 저장
+        attempt_id = await self.save_attempt(
+            user_id=user_id,
+            problem_id=problem_id,
+            is_correct=is_correct,
+            submitted_code=submitted_code,
+            submitted_answer=submitted_answer,
+            time_spent=time_spent,
+            hints_used=hints_used,
+            xp_earned=xp_earned,
+        )
+
+        # 2. 스킬 프로필 업데이트
+        skill_updates = {}
+        if problem_topics:
+            skill_updates = await self.update_skill_profile(
+                user_id=user_id,
+                problem_topics=problem_topics,
+                difficulty=difficulty,
+                is_correct=is_correct,
+            )
+
+        return {
+            "attempt_id": attempt_id,
+            "skill_updates": skill_updates,
         }
 
 

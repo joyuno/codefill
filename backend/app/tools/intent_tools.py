@@ -480,6 +480,43 @@ class IntentTool:
                     suggested_route="discovery",
                 )
 
+        # ============================================================
+        # 문제 이름으로 선택 감지 (search_results와 매칭)
+        # "**최적의 라이벌 매칭** (medium) 문제 풀래" 같은 패턴
+        # ============================================================
+        search_results = session_state.get("search_results", [])
+        if search_results and any(kw in msg_lower for kw in ["풀래", "할래", "할게", "선택", "이거로", "그거로"]):
+            # Markdown bold 제거: **text** → text
+            clean_msg = re.sub(r'\*\*([^*]+)\*\*', r'\1', message)
+            # 난이도 표기 제거: (medium), (easy) 등
+            clean_msg = re.sub(r'\s*\([^)]+\)\s*', ' ', clean_msg)
+            clean_msg_lower = clean_msg.lower().strip()
+
+            for idx, problem in enumerate(search_results, 1):
+                # 문제 이름/제목 추출
+                problem_name = (problem.get("name") or problem.get("title") or "").lower()
+                problem_title = (problem.get("title") or problem.get("name") or "").lower()
+
+                # 문제 이름/제목이 메시지에 포함되어 있으면 선택
+                if problem_name and problem_name in clean_msg_lower:
+                    return IntentResult(
+                        category=IntentCategory.DISCOVERY,
+                        action=ActionType.SELECT_PROBLEM,
+                        confidence=0.95,
+                        selection_index=idx,
+                        selection_type="name",
+                        suggested_route="discovery",
+                    )
+                if problem_title and problem_title in clean_msg_lower:
+                    return IntentResult(
+                        category=IntentCategory.DISCOVERY,
+                        action=ActionType.SELECT_PROBLEM,
+                        confidence=0.95,
+                        selection_index=idx,
+                        selection_type="title",
+                        suggested_route="discovery",
+                    )
+
         return None
 
     async def _classify_with_embeddings(

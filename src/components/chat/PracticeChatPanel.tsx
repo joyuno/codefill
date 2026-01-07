@@ -32,6 +32,12 @@ interface PracticeChatPanelProps {
    * 이 값이 있으면 정보수집을 건너뛰고 바로 문제 유형 선택 단계로 시작
    */
   initialBaseProblem?: BaseProblemInfo | null;
+  /**
+   * 채팅 세션 ID (DB 기반 대화 히스토리 관리용)
+   * 백엔드에서 세션을 식별하여 대화 히스토리를 DB에서 로드/저장
+   */
+  sessionId?: string | null;
+  onSessionIdChange?: (sessionId: string) => void;
 }
 
 // Session state interface for LangGraph
@@ -76,6 +82,7 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
     const codeSnippet = blankData.code_template;
     return {
       id: blankData.original_id || `generated-${Date.now()}`,
+      originalId: blankData.original_id,  // 잔디 클릭 시 문제 정보 표시용
       title: blankData.title,
       description: blankData.description,
       problemType: 'blank',
@@ -101,11 +108,12 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
       id: String(b.id),
       code: b.code,
       correctOrder: b.id,
-      indentation: b.indent || 0,  // API에서 받은 indent 값 사용
+      indentation: (b as any).indentation || b.indent || 0,  // API에서 받은 indentation 값 사용
     }));
 
     return {
       id: puzzleData.original_id || `generated-${Date.now()}`,
+      originalId: puzzleData.original_id,  // 잔디 클릭 시 문제 정보 표시용
       title: puzzleData.title,
       description: puzzleData.description,
       problemType: 'puzzle',
@@ -126,6 +134,7 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
     const guidedData = data as GeneratedGuidedData;
     return {
       id: guidedData.original_id || `generated-${Date.now()}`,
+      originalId: guidedData.original_id,  // 잔디 클릭 시 문제 정보 표시용
       title: guidedData.title,
       description: guidedData.description,
       problemType: 'guided',
@@ -156,9 +165,27 @@ const initialWelcomeMessage: Message = {
   ],
 };
 
-export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hints = [], initialBaseProblem }: PracticeChatPanelProps) {
+export function PracticeChatPanel({
+  problem,
+  onHintRequest,
+  onProblemSelect,
+  hints = [],
+  initialBaseProblem,
+  sessionId: propSessionId,
+  onSessionIdChange,
+}: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile } = useAuth();
+
+  // 세션 ID 상태 (props에서 전달받거나 응답에서 설정)
+  const [sessionId, setSessionId] = useState<string | null>(propSessionId || null);
+
+  // props가 변경되면 상태 업데이트
+  useEffect(() => {
+    if (propSessionId && propSessionId !== sessionId) {
+      setSessionId(propSessionId);
+    }
+  }, [propSessionId]);
 
   // initialBaseProblem이 있으면 바로 문제 유형 선택 메시지로 시작
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -707,6 +734,8 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
         const codeSnippet = result.code_template;
         generatedProblem = {
           id: result.original_id || `generated-${Date.now()}`,
+          originalId: result.original_id,  // 잔디 클릭 시 문제 정보 표시용
+          baseProblemId: selectedBaseProblem.id,  // base_problems UUID
           title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
           description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           problemType: 'blank',
@@ -732,10 +761,12 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
           id: String(b.id),
           code: b.code,
           correctOrder: b.id,
-          indentation: b.indent || 0,  // API에서 받은 indent 값 사용
+          indentation: b.indentation || b.indent || 0,  // API에서 받은 indentation 값 사용
         }));
         generatedProblem = {
           id: result.original_id || `generated-${Date.now()}`,
+          originalId: result.original_id,  // 잔디 클릭 시 문제 정보 표시용
+          baseProblemId: selectedBaseProblem.id,  // base_problems UUID
           title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
           description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           problemType: 'puzzle',
@@ -762,6 +793,8 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
 
         generatedProblem = {
           id: result.original_id || `generated-${Date.now()}`,
+          originalId: result.original_id,  // 잔디 클릭 시 문제 정보 표시용
+          baseProblemId: selectedBaseProblem.id,  // base_problems UUID
           title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
           description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           problemType: 'guided',
@@ -828,18 +861,28 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       }
 
       // Blank/Puzzle 문제: 기존 로직 (연습 화면으로 이동)
+      // 빈칸 유형에서는 힌트 보기 칩 제거 (각 빈칸 옆 힌트로 대체)
+      const successChips = type === 'blank'
+        ? [
+            { label: '핵심 개념', value: 'concepts', category: 'action' as const },
+            { label: '문제 요약', value: 'summarize', category: 'action' as const },
+          ]
+        : [
+            { label: '힌트 보기', value: 'hint', category: 'action' as const },
+            { label: '핵심 개념', value: 'concepts', category: 'action' as const },
+            { label: '문제 요약', value: 'summarize', category: 'action' as const },
+          ];
+
       setMessages(prev => {
         const filtered = prev.filter(m => !m.id.startsWith('loading-'));
         return [...filtered, {
           id: `success-${Date.now()}`,
           role: 'assistant' as const,
-          content: `문제가 준비되었어요! 왼쪽 화면에서 문제를 풀어보세요.\n\n막히면 언제든 힌트를 요청해주세요!`,
+          content: type === 'blank'
+            ? `문제가 준비되었어요! 왼쪽 화면에서 문제를 풀어보세요.\n\n빈칸 옆 ? 버튼을 눌러 힌트를 볼 수 있어요!`
+            : `문제가 준비되었어요! 왼쪽 화면에서 문제를 풀어보세요.\n\n막히면 언제든 힌트를 요청해주세요!`,
           timestamp: new Date().toISOString(),
-          chips: [
-            { label: '힌트 보기', value: 'hint', category: 'action' },
-            { label: '핵심 개념', value: 'concepts', category: 'action' },
-            { label: '문제 요약', value: 'summarize', category: 'action' },
-          ],
+          chips: successChips,
         }];
       });
 
@@ -1147,6 +1190,8 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       });
 
       // LangGraph API 호출 (refs 사용으로 stale closure 방지)
+      // Note: session_id가 있으면 백엔드가 DB에서 대화 히스토리를 로드
+      // conversation_history는 fallback용 (비로그인 또는 세션 에러 시)
       const chatResponse = await agentApi.chatMain({
         message: content,
         conversation_history: conversationHistory,
@@ -1160,7 +1205,16 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
           suggested_value: currentSessionState.suggested_value || null,
           ...currentSessionState,
         },
+        // DB 기반 세션 관리용 session_id
+        session_id: sessionId || undefined,
       });
+
+      // 백엔드에서 반환한 session_id 저장 (새 세션이 생성된 경우)
+      if (chatResponse.session_id && chatResponse.session_id !== sessionId) {
+        setSessionId(chatResponse.session_id);
+        onSessionIdChange?.(chatResponse.session_id);
+        console.log('[Chat] Session ID updated:', chatResponse.session_id);
+      }
 
       const responseMessage = chatResponse.message;
       const responseCollectedInfo = chatResponse.collected_info || {
@@ -1221,8 +1275,31 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
       // Create assistant message with chips based on state
       let chips: QuickChip[] | undefined;
 
-      // If action_data has problems from auto-search, use them directly
-      if (actionData?.status === 'found' && actionData?.problems?.length) {
+      // "새 문제 생성" 버튼: generated_problem 우선 처리 (search_results보다 먼저!)
+      if (actionData?.action_trigger === 'problem_generated' && actionData?.generated_problem) {
+        // CodeGen generated a new problem
+        setFlowState('type_selection');
+        setRecommendedProblems([actionData.generated_problem]);
+
+        // Fallback 안내 메시지 (is_fallback이 true일 때)
+        const isFallback = (actionData as any).is_fallback === true;
+        const fallbackNotice = isFallback
+          ? '🔍 DB에서 조건에 맞는 문제를 찾지 못해서 새로운 문제를 생성했어요!\n\n'
+          : '';
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: `${fallbackNotice}${responseMessage}`,
+          timestamp: new Date().toISOString(),
+          chips: [{
+            label: `${actionData.generated_problem.title || actionData.generated_problem.name} (${actionData.generated_problem.difficulty})`,
+            value: 'problem-0',
+            category: 'action' as const,
+          }],
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      } else if (actionData?.status === 'found' && actionData?.problems?.length) {
         // 디버그: 백엔드에서 받은 문제 데이터 확인
         console.log('[processAgentResponse] Received problems from backend:',
           actionData.problems.map((p: any) => ({
@@ -1535,7 +1612,7 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
               <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
                 Step {guidedFlowStep + 1}/{guidedProblem.flow.length}
               </Badge>
-            ) : problem ? (
+            ) : problem && problem.problemType !== 'blank' ? (
               <Badge variant="outline" className="text-xs">
                 힌트 {hintLevel}/4
               </Badge>
@@ -1593,16 +1670,19 @@ export function PracticeChatPanel({ problem, onHintRequest, onProblemSelect, hin
               </>
             ) : (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={handleHintRequestInternal}
-                  disabled={hintLevel >= 4 || isLoading}
-                >
-                  <Lightbulb className="h-3.5 w-3.5" />
-                  힌트 ({4 - hintLevel}개 남음)
-                </Button>
+                {/* 빈칸 유형에서는 힌트 버튼 숨김 (각 빈칸 옆 힌트로 대체) */}
+                {problem?.problemType !== 'blank' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={handleHintRequestInternal}
+                    disabled={hintLevel >= 4 || isLoading}
+                  >
+                    <Lightbulb className="h-3.5 w-3.5" />
+                    힌트 ({4 - hintLevel}개 남음)
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

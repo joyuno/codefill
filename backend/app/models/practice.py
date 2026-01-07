@@ -128,7 +128,7 @@ class XPConfig:
 
     # 문제 유형별 기본 XP (난이도 없을 때 fallback)
     BLANK_CORRECT = 40     # 빈칸 채우기 기본
-    PUZZLE_CORRECT = 50    # 퍼즐(Parsons) 기본
+    PUZZLE_CORRECT = 40    # 퍼즐(Parsons) 기본
     GUIDED_CORRECT = 60    # 가이드 문제 기본
 
     # 힌트 페널티
@@ -151,10 +151,15 @@ class XPConfig:
 class RecordSubmission(BaseModel):
     """Simple submission for recording problem solve (XP & grass)."""
     problem_id: str  # UUID or generated problem ID
+    base_problem_id: Optional[str] = None  # base_problems 테이블의 UUID (잔디 클릭 시 문제 정보 표시용)
     problem_type: str = "blank"  # blank, puzzle, guided
     difficulty: Optional[str] = None  # easy, medium, medium_hard, hard, very_hard
     is_correct: bool = True
     xp_earned: Optional[int] = None  # None이면 난이도 기반 자동 계산
+    problem_name: Optional[str] = None  # 문제 이름 (잔디 클릭 시 표시용)
+    hints_used: Optional[int] = None  # 힌트 사용 횟수 (기록용)
+    topics: Optional[List[str]] = None  # 문제 주제/태그 (예: ["DP", "그래프"])
+    attempt_id: Optional[str] = None  # 기존 pending attempt ID (attempt_details 기록용)
 
 
 class RecordResponse(BaseModel):
@@ -178,3 +183,69 @@ class HintUseResponse(BaseModel):
     xp_deducted: int
     remaining_xp: int
     message: str
+
+
+# ============================================================
+# Start Practice (Attempt Tracking)
+# ============================================================
+
+class StartPracticeRequest(BaseModel):
+    """문제 풀이 시작 요청 - attempt 생성"""
+    problem_id: str  # UUID or generated problem ID
+    problem_type: str = "blank"  # blank, puzzle, guided
+    difficulty: Optional[str] = None
+    problem_name: Optional[str] = None
+    topics: Optional[List[str]] = None
+
+
+class StartPracticeResponse(BaseModel):
+    """문제 풀이 시작 응답"""
+    attempt_id: str
+    started_at: str
+    message: str
+
+
+# ============================================================
+# Attempt Detail Recording
+# ============================================================
+
+class AttemptDetailAction(str, Enum):
+    """attempt_details action types"""
+    BLANK_SUBMIT = "blank_submit"
+    BLANK_HINT_REQUEST = "blank_hint_request"
+    BLANK_HINT_REVEAL = "blank_hint_reveal"
+    PUZZLE_SUBMIT = "puzzle_submit"
+    PUZZLE_HINT_REQUEST = "puzzle_hint_request"
+    GUIDED_MESSAGE = "guided_message"
+    GUIDED_STEP_COMPLETE = "guided_step_complete"
+    GIVE_UP = "give_up"
+
+
+class RecordAttemptDetailRequest(BaseModel):
+    """attempt_details 기록 요청 (내부용)"""
+    attempt_id: str
+    action_type: str
+    step_number: Optional[int] = None
+
+    # Blank specific
+    blank_index: Optional[int] = None
+    blank_user_answer: Optional[str] = None
+    blank_correct_answer: Optional[str] = None
+    blank_is_correct: Optional[bool] = None
+    blank_hint_level: Optional[int] = None
+    blank_hint_content: Optional[str] = None
+
+    # Puzzle specific
+    puzzle_user_order: Optional[List[int]] = None
+    puzzle_correct_order: Optional[List[int]] = None
+    puzzle_wrong_positions: Optional[List[Dict]] = None
+    puzzle_hint_content: Optional[str] = None
+
+    # Guided specific
+    guided_step: Optional[int] = None
+    guided_user_message: Optional[str] = None
+    guided_tutor_response: Optional[str] = None
+    guided_understanding_score: Optional[float] = None
+
+    # Hint tracking
+    hint_was_requested: bool = False

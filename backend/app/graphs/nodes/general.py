@@ -8,8 +8,14 @@ from ..state import ChatState
 
 
 async def handle_greeting(state: ChatState) -> Dict[str, Any]:
-    """인사 처리"""
+    """
+    인사 처리 - 개인화된 추천 포함
+
+    user_context["personalization"]에서 사용자 히스토리 기반 추천 생성
+    """
     message = state.get("message", "").lower()
+    user_context = state.get("user_context", {})
+    personalization = user_context.get("personalization", {})
 
     # 시간대별 인사
     if any(word in message for word in ["아침", "morning"]):
@@ -19,16 +25,95 @@ async def handle_greeting(state: ChatState) -> Dict[str, Any]:
     else:
         greeting = "안녕하세요! "
 
-    response = f"{greeting}오늘은 어떤 코딩 연습을 해볼까요? 문제를 추천해드릴까요?"
+    # ============================================================
+    # 개인화된 추천 메시지 생성
+    # ============================================================
+    suggested_actions = []
+    recommendation_msg = ""
+
+    if personalization.get("has_history"):
+        recommendations = personalization.get("recommendations", [])
+        recent_problems = personalization.get("recent_problems", [])
+        skill_summary = personalization.get("skill_summary", {})
+
+        # 최근 풀이 기반 추천
+        if recommendations:
+            rec = recommendations[0]  # 첫 번째 추천 사용
+            rec_type = rec.get("type")
+            rec_topics = rec.get("topics", [])
+            rec_difficulty = rec.get("difficulty")
+            rec_reason = rec.get("reason", "")
+
+            if rec_type == "level_up" and rec_topics:
+                topic = rec_topics[0]
+                diff_display = {
+                    "easy": "쉬움", "medium": "보통",
+                    "medium_hard": "중상", "hard": "어려움", "very_hard": "매우 어려움"
+                }.get(rec_difficulty, rec_difficulty)
+
+                recommendation_msg = f"\n\n💡 **추천**: {rec_reason}, **{diff_display}** 난이도로 도전해볼까요?"
+                suggested_actions.append({
+                    "label": f"{topic} {diff_display}",
+                    "value": f"{topic}_{rec_difficulty}",
+                    "recommended": True
+                })
+
+            elif rec_type == "retry" and rec_topics:
+                topic = rec_topics[0]
+                recommendation_msg = f"\n\n💪 **추천**: {topic} 문제를 좀 더 연습해볼까요?"
+                suggested_actions.append({
+                    "label": f"{topic} 연습",
+                    "value": f"{topic}_{rec_difficulty or 'medium'}",
+                    "recommended": True
+                })
+
+            elif rec_type == "weak_topic" and rec_topics:
+                topic = rec_topics[0]
+                recommendation_msg = f"\n\n📚 **추천**: {topic}은(는) 연습이 더 필요해 보여요!"
+                suggested_actions.append({
+                    "label": f"{topic} 연습",
+                    "value": f"{topic}_easy",
+                    "recommended": True
+                })
+
+        # 최근 풀이 정보 추가
+        if recent_problems and not recommendation_msg:
+            last = recent_problems[0]
+            last_name = last.get("name", "문제")
+            last_topics = last.get("topics", [])
+            was_solved = last.get("solved", False)
+
+            if was_solved:
+                recommendation_msg = f"\n\n지난번에 '{last_name}'을(를) 잘 풀었네요! 오늘도 화이팅! 🔥"
+            else:
+                recommendation_msg = f"\n\n지난번 '{last_name}'에서 고생하셨죠? 다시 도전해볼까요?"
+                if last_topics:
+                    suggested_actions.append({
+                        "label": f"{last_topics[0]} 다시 도전",
+                        "value": f"{last_topics[0]}_retry"
+                    })
+
+    # 기본 액션 추가
+    if not suggested_actions:
+        suggested_actions = [
+            {"label": "쉬운 문제", "value": "easy"},
+            {"label": "중간 문제", "value": "medium"},
+            {"label": "어려운 문제", "value": "hard"},
+        ]
+    else:
+        # 추천 외에 기본 옵션도 추가
+        suggested_actions.extend([
+            {"label": "다른 주제", "value": "other_topic"},
+            {"label": "랜덤 문제", "value": "random"},
+        ])
+
+    response = f"{greeting}오늘은 어떤 코딩 연습을 해볼까요?{recommendation_msg}"
 
     return {
         "response_message": response,
         "action_data": {
-            "suggested_actions": [
-                {"label": "쉬운 문제", "value": "easy"},
-                {"label": "중간 문제", "value": "medium"},
-                {"label": "어려운 문제", "value": "hard"},
-            ]
+            "suggested_actions": suggested_actions,
+            "personalization": personalization if personalization.get("has_history") else None,
         },
         "next_node": "respond",
     }

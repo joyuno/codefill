@@ -94,7 +94,8 @@ export interface BlankProblemResponse {
 export interface PuzzleBlock {
   id: number;   // 정답 순서 (1, 2, 3, ...)
   code: string;
-  indent?: number;  // 들여쓰기 레벨 (0: 루트, 1: 함수내부, 2: 중첩블록)
+  indent?: number;  // 들여쓰기 레벨 (레거시)
+  indentation?: number;  // 들여쓰기 레벨 (새 형식, 0: 루트, 1: 함수내부, 2: 중첩블록)
 }
 
 export interface PuzzleProblemResponse {
@@ -352,6 +353,8 @@ export interface ChatV2Request {
     suggested_value?: string | null;
     [key: string]: unknown;  // Allow additional properties
   };
+  // 세션 ID (DB 기반 히스토리 관리용)
+  session_id?: string;
 }
 
 // 문제 유형별 생성 결과
@@ -377,7 +380,7 @@ export interface GeneratedPuzzleData {
   language: string;
   fixed_start?: string;
   fixed_end?: string;
-  blocks: Array<{ id: number; code: string; indent?: number }>;
+  blocks: Array<{ id: number; code: string; indent?: number; indentation?: number }>;
   title: string;
   description: string;
   difficulty: string;
@@ -427,6 +430,8 @@ export interface ChatV2Response {
   // 정보 수집 단계: 네/아니오 확인 상태
   awaiting_confirmation?: boolean;
   suggested_value?: string;
+  // 세션 ID (DB 기반 히스토리 관리용)
+  session_id?: string;
 }
 
 // ============================================================

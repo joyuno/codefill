@@ -225,6 +225,28 @@ class IntentClassifier:
                 next_action="start_info_collection"
             )
 
+        # === 질문/설명 요청 패턴 우선 체크 (주제 키워드보다 먼저!) ===
+        # "X가 뭐야?", "X이 뭔지", "X 설명해줘" 등 → EXPLANATION_REQUEST
+        question_patterns = [
+            "뭐야", "뭐임", "뭔지", "뭘까", "뭔가", "뭐지",
+            "무엇", "무슨", "무엇인가",
+            "설명", "알려줘", "가르쳐",
+            "모르겠", "이해가 안", "이해 안", "잘 몰라", "잘몰라",
+            "어떤 건", "어떤건", "원리",
+        ]
+        # 주제 키워드 + 질문 패턴 조합이면 → 설명 요청
+        has_topic_keyword = any(kw in message for kw in self.TOPIC_KEYWORDS)
+        has_question_pattern = any(qp in message_lower for qp in question_patterns)
+
+        if has_topic_keyword and has_question_pattern and len(message) > 8:
+            # "정렬이 뭐야?", "DP가 뭔지 모르겠어" 등
+            return IntentResult(
+                intent=IntentType.EXPLANATION_REQUEST,
+                confidence=0.92,
+                method="rule",
+                next_action="explain_concept"
+            )
+
         # === 정보 수집 키워드 매칭 (단답 입력 지원) ===
         # 주제/난이도/언어 키워드는 모두 TOPIC_SPECIFIC으로 분류 → InfoCollectionGraph에서 처리
         if len(message) <= 15:

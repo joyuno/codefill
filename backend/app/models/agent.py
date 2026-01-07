@@ -157,20 +157,22 @@ class BlankProblemResponse(BaseModel):
 
 class PuzzleBlock(BaseModel):
     """Code block for puzzle problem."""
-    id: int  # 정답 순서 (1, 2, 3, ...)
+    id: Union[int, str]  # 정답 순서 (1, 2, 3, ...) or string ID
     code: str
+    indentation: int = 0  # 들여쓰기 레벨 (상대적)
 
 
 class PuzzleProblemResponse(BaseModel):
     """
     Generated puzzle (Parsons) problem.
-    형식: {original_id, language, fixed_start?, fixed_end?, blocks[]}
+    형식: {original_id, language, fixed_start?, fixed_end?, blocks[], solution_code?}
     """
     original_id: str
     language: str
     fixed_start: Optional[str] = None  # 고정된 시작 코드
     fixed_end: Optional[str] = None    # 고정된 끝 코드
     blocks: List[PuzzleBlock]          # id 순서가 정답
+    solution_code: Optional[str] = None  # 조합된 정답 코드 (indentation 적용)
 
 
 # --- Guided Problem (data/examples/problems_guided.json 형식) ---

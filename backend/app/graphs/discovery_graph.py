@@ -8,6 +8,7 @@ LangGraph Discovery Graph Definition (Stage 2)
 - 검색 결과 필터링 / CodeGen fallback
 - 임베딩 기반 사용자 의도 인식 (액션, 문제 선택)
 - 문제 확정 및 유형 선택
+- Human-in-the-Loop: 문제 생성 전 확인 (interrupt_before)
 
 플로우:
     START → route_discovery_intent (임베딩 기반 액션 인식)
@@ -15,7 +16,7 @@ LangGraph Discovery Graph Definition (Stage 2)
     search_problems (RAG 검색)
               ↓ (조건부 분기)
     ├─ 유사도 높음 → filter_results (임베딩 재순위)
-    └─ fallback → generate_problem
+    └─ fallback → [interrupt] confirm_generation → generate_problem
               ↓ (합류)
     handle_selection (임베딩 기반 문제 선택)
               ↓ (조건부)
@@ -26,7 +27,7 @@ LangGraph Discovery Graph Definition (Stage 2)
 """
 import re
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from langgraph.graph import StateGraph, END
 
 from .discovery_state import (
@@ -37,6 +38,7 @@ from .discovery_state import (
     SELECTION_INTENTS,
     GENERATE_INTENTS,
 )
+from .nodes.confirm import confirm_generation_node, should_confirm_generation
 
 
 # ============================================================
@@ -355,7 +357,7 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
             "is_fallback": True,
             "fallback_message": fallback_message,
         }
-        action_trigger = "generated"
+        action_trigger = "problem_generated"
 
     except Exception as e:
         print(f"[DiscoveryGraph:CodeGen] Error: {e}")
@@ -563,13 +565,23 @@ def _has_selection_info(message: str, collected_info: dict) -> bool:
 def route_after_discovery_intent(state: DiscoveryState) -> str:
     """진입점 후 라우팅"""
     next_node = state.get("next_node", "search_problems")
-    valid_nodes = {"search_problems", "handle_selection", "filter_results", "generate_problem"}
+
+    # 강제 생성 요청이면 확인 노드로
+    if state.get("force_generate") and next_node == "generate_problem":
+        return "confirm_generation"
+
+    valid_nodes = {"search_problems", "handle_selection", "filter_results", "generate_problem", "confirm_generation"}
     return next_node if next_node in valid_nodes else "search_problems"
 
 
 def route_after_search(state: DiscoveryState) -> str:
     """검색 후 라우팅"""
     next_node = state.get("next_node", "filter_results")
+
+    # fallback 생성이면 확인 노드로
+    if next_node == "generate_problem" and state.get("should_generate"):
+        return "confirm_generation"
+
     if next_node == "generate_problem":
         return "generate_problem"
     return "filter_results"
@@ -587,9 +599,12 @@ def route_after_selection(state: DiscoveryState) -> str:
 # Graph Builder
 # ============================================================
 
-def create_discovery_graph() -> StateGraph:
+def create_discovery_graph(checkpointer=None) -> StateGraph:
     """
     Discovery 그래프를 생성합니다.
+
+    Args:
+        checkpointer: LangGraph Checkpointer (상태 영속화용)
     """
     workflow = StateGraph(DiscoveryState)
 
@@ -597,6 +612,8 @@ def create_discovery_graph() -> StateGraph:
     workflow.add_node("route_discovery_intent", route_discovery_intent_node)
     workflow.add_node("search_problems", search_problems_node)
     workflow.add_node("filter_results", filter_results_node)
+    # Human-in-the-Loop: 문제 생성 전 확인 노드
+    workflow.add_node("confirm_generation", confirm_generation_node)
     workflow.add_node("generate_problem", generate_problem_node)
     workflow.add_node("handle_selection", handle_selection_node)
     workflow.add_node("confirm_problem", confirm_problem_node)
@@ -613,7 +630,8 @@ def create_discovery_graph() -> StateGraph:
             "search_problems": "search_problems",
             "handle_selection": "handle_selection",
             "filter_results": "filter_results",
-            "generate_problem": "generate_problem",
+            "confirm_generation": "confirm_generation",  # 확인 노드로 먼저 이동
+            "generate_problem": "generate_problem",  # 확인 없이 직접 생성 (fallback)
         }
     )
 
@@ -623,7 +641,18 @@ def create_discovery_graph() -> StateGraph:
         route_after_search,
         {
             "filter_results": "filter_results",
+            "confirm_generation": "confirm_generation",  # 생성 전 확인
             "generate_problem": "generate_problem",
+        }
+    )
+
+    # confirm_generation 후 라우팅
+    workflow.add_conditional_edges(
+        "confirm_generation",
+        lambda s: s.get("next_node", "generate_problem"),
+        {
+            "generate_problem": "generate_problem",
+            "respond": "respond",
         }
     )
 

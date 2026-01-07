@@ -57,27 +57,44 @@ async def get_current_user_id_optional(
 ) -> Optional[UUID]:
     """
     JWT 토큰에서 사용자 ID를 추출합니다 (선택적).
-    토큰이 없어도 에러를 발생시키지 않습니다.
+
+    동작:
+    - 토큰이 없으면: None 반환 (비로그인 사용자, 정상)
+    - 토큰이 있지만 만료/무효: 401 반환 (프론트엔드가 토큰 갱신 시도)
+    - 토큰이 유효하면: UUID 반환
 
     Args:
         authorization: Authorization 헤더 (Bearer token, optional)
 
     Returns:
-        Optional[UUID]: 사용자 ID 또는 None
+        Optional[UUID]: 사용자 ID 또는 None (토큰 없는 경우)
+
+    Raises:
+        HTTPException 401: 토큰이 있지만 만료되거나 유효하지 않은 경우
     """
+    # 토큰이 없으면 None (비로그인 사용자)
     if not authorization:
         return None
 
     token = authorization.replace("Bearer ", "")
     payload = verify_token(token)
 
+    # 토큰이 있지만 유효하지 않으면 401 (세션 만료 → 프론트에서 갱신 시도)
     if not payload or "sub" not in payload:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired or invalid",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     try:
         return UUID(payload["sub"])
     except ValueError:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user ID in token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def get_current_user(

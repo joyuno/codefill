@@ -1,0 +1,623 @@
+프론트엔드 변경
+
+// 빈칸별 힌트 상태 관리 interface BlankHintState { blankIndex: number; hintLevel: number; // 0: 미요청, 1: 마스킹 힌트, 2: 해제된 힌트 hintContent: string; isMasked: boolean; }
+
+// 물음표 클릭 → API 호출 const handleBlankHintClick = async (blankIndex: number) => { const currentState = blankHints[blankIndex];
+
+if (currentState.hintLevel === 0) {
+  // 첫 클릭: 힌트 요청 → 마스킹 상태로 표시
+  const hint = await agentApi.getBlankHint({ blankIndex, problemId });
+  setBlankHints(prev => ({
+    ...prev,
+    [blankIndex]: { hintContent: hint, isMasked: true, hintLevel: 1 }
+  }));
+} else if (currentState.isMasked) {
+  // 두 번째 클릭: 마스킹 해제
+  setBlankHints(prev => ({
+    ...prev,
+    [blankIndex]: { ...prev[blankIndex], isMasked: false, hintLevel: 2 }
+  }));
+}
+
+};
+
+백엔드: 빈칸별 힌트 생성
+
+backend/app/graphs/nodes/blank_hint.py
+
+async def generate_blank_hint_node(state: BlankSolvingState) -> dict: """빈칸별 컨텍스트 인식 힌트 생성 (2줄 이내)""" blank_index = state["target_blank_index"] code_template = state["code_template"] answers = state["answers"]
+
+  # 빈칸 주변 코드 추출
+  surrounding_code = extract_surrounding_context(code_template, blank_index)
+  expected_answer = answers[blank_index]
+
+  prompt = f"""
+
+빈칸 #{blank_index}에 대한 힌트를 2줄 이내로 작성하세요.
+
+주변 코드: {surrounding_code}
+
+정답의 역할: {analyze_answer_role(expected_answer, surrounding_code)}
+
+규칙:
+
+정답을 직접 알려주지 마세요
+
+2줄 이내로 핵심만
+
+"이 부분은 ~하는 역할입니다. ~를 생각해보세요." 형식 """
+
+hint = await llm.generate(prompt, max_tokens=100)
+
+attempt_details에 힌트 기록
+
+await save_hint_to_details(state["attempt_id"], blank_index, hint)
+
+return {"hint_content": hint, "hint_level": 1}
+
+📝 개선안 2: 퍼즐 힌트 시스템
+
+틀린 순서 감지 + 2줄 힌트
+
+backend/app/graphs/nodes/puzzle_hint.py
+
+async def provide_puzzle_hint_node(state: PuzzleSolvingState) -> dict: """퍼즐 힌트: 첫 번째 틀린 위치 + 이유 (2줄)""" user_order = state["user_block_order"] # [3, 1, 2, 4] correct_order = state["correct_order"] # [1, 2, 3, 4] blocks = state["blocks"]
+
+  # 첫 번째 틀린 위치 찾기
+  first_wrong_idx = None
+  for i, (user_id, correct_id) in enumerate(zip(user_order, correct_order)):
+      if user_id != correct_id:
+          first_wrong_idx = i
+          break
+
+  if first_wrong_idx is None:
+      return {"hint_content": "모든 블록이 올바른 위치에 있어요! 🎉"}
+
+  # 해당 위치에 와야 할 블록
+  expected_block_id = correct_order[first_wrong_idx]
+  expected_block = next(b for b in blocks if b["id"] == expected_block_id)
+
+  # 2줄 힌트 생성
+  prompt = f"""
+
+퍼즐 힌트를 정확히 2줄로 작성하세요.
+
+현재 {first_wrong_idx + 1}번 위치가 틀렸습니다. 올바른 코드: {expected_block['code']}
+
+형식: 1줄: "{first_wrong_idx + 1}번 위치에는 {expected_block['code'][:30]}...가 와야 해요." 2줄: 왜 그런지 이유 (코드 흐름/로직 기반) """
+
+  hint = await llm.generate(prompt, max_tokens=80)
+
+  return {
+      "hint_content": hint,
+      "wrong_position": first_wrong_idx,
+      "expected_block_id": expected_block_id,
+  }
+
+📝 개선안 3: 1대1 대화형 재설계 (Agentic Guided Tutor)
+
+backend/app/graphs/guided_tutor_graph.py
+
+class GuidedTutorState(TypedDict): """1대1 대화형 튜터 상태 (PostgresSaver로 영구화)"""
+
+문제 정보 (완전히 이해한 상태)
+
+problem_context: dict solution_code: str key_concepts: List[str] solution_steps: List[str]
+
+  # 대화 상태
+  conversation_history: List[dict]
+  current_teaching_step: int
+  user_understanding_level: float  # 0.0 ~ 1.0
+
+  # 학생 상태 추적
+  concepts_understood: List[str]
+  concepts_struggling: List[str]
+  hints_given: List[str]
+
+  # 다음 액션
+  next_action: str  # "ask_question", "explain", "guide_code", "celebrate"
+
+async def analyze_student_response_node(state: GuidedTutorState) -> dict: """학생 응답 분석 (Agentic)""" student_message = state["message"] current_step = state["solution_steps"][state["current_teaching_step"]]
+
+  # 학생이 현재 단계를 이해했는지 분석
+  analysis_prompt = f"""
+
+학생 응답을 분석하세요.
+
+현재 가르치는 내용: {current_step} 학생 응답: "{student_message}"
+
+JSON으로 응답: {{ "understanding_level": 0.0-1.0, "understood_parts": ["이해한 부분들"], "confused_parts": ["혼란스러운 부분들"], "should_move_on": true/false, "suggested_action": "explain_more" | "ask_question" | "next_step" | "give_example" }} """
+
+  analysis = await llm.generate_json(analysis_prompt)
+
+  return {
+      "user_understanding_level": analysis["understanding_level"],
+      "concepts_understood": state["concepts_understood"] + analysis["understood_parts"],
+      "next_action": analysis["suggested_action"],
+  }
+
+async def generate_tutor_response_node(state: GuidedTutorState) -> dict: """정답을 유도하는 튜터 응답 생성""" action = state["next_action"] current_step = state["solution_steps"][state["current_teaching_step"]] understanding = state["user_understanding_level"]
+
+  if action == "explain_more":
+      prompt = f"""
+
+학생이 아직 이해하지 못했습니다. 다른 방식으로 설명하세요.
+
+현재 단계: {current_step} 학생 이해도: {understanding:.0%}
+
+규칙:
+
+비유나 예시 사용
+2-3문장으로 간결하게
+마지막에 확인 질문 """ elif action == "ask_question": prompt = f""" 학생의 이해를 확인하는 질문을 하세요.
+현재 단계: {current_step}
+
+규칙:
+
+예/아니오가 아닌 생각하게 하는 질문
+정답으로 유도하는 힌트 포함 """ elif action == "next_step": next_step_idx = state["current_teaching_step"] + 1 if next_step_idx < len(state["solution_steps"]): next_step = state["solution_steps"][next_step_idx] prompt = f""" 다음 단계로 넘어갑니다.
+다음 단계: {next_step}
+
+규칙:
+
+이전 단계와 연결
+
+새로운 개념 소개
+
+학생 참여 유도 """ return { "current_teaching_step": next_step_idx, "response_message": await llm.generate(prompt), }
+
+response = await llm.generate(prompt, max_tokens=150)
+
+return {"response_message": response}
+
+def create_guided_tutor_graph(): """1대1 대화형 튜터 그래프""" workflow = StateGraph(GuidedTutorState)
+
+  workflow.add_node("analyze_student", analyze_student_response_node)
+  workflow.add_node("generate_response", generate_tutor_response_node)
+  workflow.add_node("save_progress", save_guided_progress_node)
+
+  workflow.set_entry_point("analyze_student")
+  workflow.add_edge("analyze_student", "generate_response")
+  workflow.add_edge("generate_response", "save_progress")
+  workflow.add_edge("save_progress", END)
+
+  # PostgresSaver로 대화 전체 영구화
+  return workflow.compile(checkpointer=postgres_saver)
+
+📝 개선안 4: 퍼즐 정답 검증 개선
+
+옵션 A: Judge0 실행 검증
+
+backend/app/services/code_executor.py
+
+class CodeExecutor: """Judge0 기반 코드 실행 검증"""
+
+  JUDGE0_URL = "<https://judge0-ce.p.rapidapi.com>"
+
+  async def verify_puzzle_solution(
+      self,
+      assembled_code: str,
+      language: str,
+      test_cases: List[dict],
+  ) -> dict:
+      """퍼즐 조립 결과를 실제 실행하여 검증"""
+
+      language_id = {"python": 71, "java": 62, "cpp": 54}[language]
+
+      results = []
+      for tc in test_cases:
+          submission = await self._submit_code(
+              code=assembled_code,
+              language_id=language_id,
+              stdin=tc["input"],
+              expected_output=tc["output"],
+          )
+
+          results.append({
+              "input": tc["input"],
+              "expected": tc["output"],
+              "actual": submission.get("stdout", ""),
+              "passed": submission.get("status", {}).get("id") == 3,  # Accepted
+              "error": submission.get("stderr"),
+          })
+
+      all_passed = all(r["passed"] for r in results)
+
+      return {
+          "is_correct": all_passed,
+          "test_results": results,
+          "execution_time": sum(r.get("time", 0) for r in results),
+      }
+
+옵션 B: 복수 정답 + 정규화 비교 (Judge0 없이)
+
+backend/app/services/puzzle_validator.py
+
+class PuzzleValidator: """복수 정답을 허용하는 퍼즐 검증기"""
+
+  def validate_puzzle_order(
+      self,
+      user_order: List[int],
+      correct_orders: List[List[int]],  # 복수 정답
+      blocks: List[dict],
+  ) -> dict:
+      """
+      검증 로직:
+      1. 정확한 순서 일치 체크
+      2. 함수 단위 교환 허용 체크
+      3. 독립 블록 순서 교환 허용 체크
+      """
+
+      # 1. 정확한 일치
+      for correct in correct_orders:
+          if user_order == correct:
+              return {"is_correct": True, "match_type": "exact"}
+
+      # 2. 함수 단위 교환 체크
+      user_code = self._assemble_code(user_order, blocks)
+      for correct in correct_orders:
+          correct_code = self._assemble_code(correct, blocks)
+          if self._are_functionally_equivalent(user_code, correct_code):
+              return {"is_correct": True, "match_type": "functional"}
+
+      # 3. 독립 블록 체크 (같은 들여쓰기 레벨의 연속 블록)
+      if self._check_independent_block_swap(user_order, correct_orders[0], blocks):
+          return {"is_correct": True, "match_type": "independent_swap"}
+
+      return {"is_correct": False, "expected": correct_orders[0]}
+
+  def _are_functionally_equivalent(self, code1: str, code2: str) -> bool:
+      """
+      두 코드가 기능적으로 동일한지 체크
+      - 함수 정의 순서만 다른 경우
+      - import 순서만 다른 경우
+      """
+      # AST 비교 또는 정규화 후 비교
+      normalized1 = self._normalize_code(code1)
+      normalized2 = self._normalize_code(code2)
+      return normalized1 == normalized2
+
+  def _normalize_code(self, code: str) -> str:
+      """코드 정규화 (함수 순서 정렬, 공백 제거)"""
+      import ast
+      try:
+          tree = ast.parse(code)
+          # 함수 정의를 이름순으로 정렬
+          functions = sorted(
+              [n for n in tree.body if isinstance(n, ast.FunctionDef)],
+              key=lambda f: f.name
+          )
+          # ... 정규화 로직
+          return ast.dump(tree)
+      except:
+          return code.strip()
+
+추천: 하이브리드 접근
+
+async def validate_puzzle(state: PuzzleSolvingState) -> dict: """하이브리드 퍼즐 검증"""
+
+  # 1단계: 빠른 로컬 검증 (복수정답 + 정규화)
+  local_result = puzzle_validator.validate_puzzle_order(
+      user_order=state["user_order"],
+      correct_orders=state["correct_orders"],
+      blocks=state["blocks"],
+  )
+
+  if local_result["is_correct"]:
+      return local_result
+
+  # 2단계: 로컬 실패 시 Judge0 실행 검증 (실제 동작 확인)
+  if state.get("test_cases"):
+      assembled_code = assemble_puzzle_code(state["user_order"], state["blocks"])
+      execution_result = await code_executor.verify_puzzle_solution(
+          assembled_code=assembled_code,
+          language=state["language"],
+          test_cases=state["test_cases"],
+      )
+
+      if execution_result["is_correct"]:
+          # 새로운 정답 패턴 발견 → DB에 추가
+          await save_new_correct_order(state["problem_id"], state["user_order"])
+          return {"is_correct": True, "match_type": "execution_verified"}
+
+  return local_result
+
+📝 개선안 5: Feedback Agent + DB 저장
+
+backend/app/graphs/feedback_graph.py
+
+class FeedbackState(TypedDict): """피드백 생성 및 저장 상태"""
+
+입력
+
+user_id: str problem_id: str problem_type: str
+
+  # 풀이 결과
+  is_correct: bool
+  solve_time_seconds: int
+  hints_used: int
+  attempt_count: int
+
+  # 유형별 상세 정보
+  blank_details: Optional[List[dict]]  # [{"index": 0, "correct": True}, ...]
+  puzzle_details: Optional[dict]  # {"wrong_positions": [...]}
+  guided_details: Optional[dict]  # {"steps_completed": 5, "understanding_scores": [...]}
+
+  # 출력
+  feedback_message: str
+  xp_earned: int
+  skill_updates: dict
+
+async def save_attempt_node(state: FeedbackState) -> dict: """attempts 테이블에 저장""" attempt_id = await db.table("attempts").insert({ "user_id": state["user_id"], "problem_id": state["problem_id"], "problem_type": state["problem_type"], "is_correct": state["is_correct"], "time_spent": state["solve_time_seconds"], "hints_used": state["hints_used"], "xp_earned": state["xp_earned"], }).execute()
+
+  return {"attempt_id": attempt_id}
+
+async def save_attempt_details_node(state: FeedbackState) -> dict: """attempt_details 테이블에 상세 저장""" attempt_id = state["attempt_id"]
+
+  if state["problem_type"] == "blank" and state["blank_details"]:
+      for detail in state["blank_details"]:
+          await db.table("attempt_details").insert({
+              "attempt_id": attempt_id,
+              "action_type": "blank_submit",
+              "blank_index": detail["index"],
+              "blank_answer": detail["answer"],
+              "blank_is_correct": detail["correct"],
+          }).execute()
+
+  elif state["problem_type"] == "puzzle" and state["puzzle_details"]:
+      await db.table("attempt_details").insert({
+          "attempt_id": attempt_id,
+          "action_type": "puzzle_submit",
+          "block_order": state["puzzle_details"]["user_order"],
+          "wrong_positions": state["puzzle_details"].get("wrong_positions"),
+      }).execute()
+
+  elif state["problem_type"] == "guided" and state["guided_details"]:
+      # 대화 기록 전체 저장
+      for step in state["guided_details"]["conversation"]:
+          await db.table("attempt_details").insert({
+              "attempt_id": attempt_id,
+              "action_type": "guided_conversation",
+              "guided_step": step["step"],
+              "user_message": step["user_message"],
+              "tutor_response": step["tutor_response"],
+              "understanding_score": step["understanding_score"],
+          }).execute()
+
+  return {}
+
+async def update_skill_profile_node(state: FeedbackState) -> dict: """user_skill_profiles 업데이트""" user_id = state["user_id"] problem_topics = state.get("problem_topics", []) difficulty = state.get("difficulty", "medium") is_correct = state["is_correct"]
+
+  # 현재 프로파일 조회
+  profile = await db.table("user_skill_profiles")\\\\
+      .select("*")\\\\
+      .eq("user_id", user_id)\\\\
+      .single()\\\\
+      .execute()
+
+  skill_by_topic = profile.data.get("skill_by_topic", {})
+  success_rate = profile.data.get("success_rate_by_difficulty", {})
+
+  # 주제별 실력 업데이트 (ELO-like)
+  for topic in problem_topics:
+      current_skill = skill_by_topic.get(topic, 0.5)
+      if is_correct:
+          new_skill = current_skill + 0.05 * (1 - current_skill)  # 정답: 상승
+      else:
+          new_skill = current_skill - 0.03 * current_skill  # 오답: 하락
+      skill_by_topic[topic] = round(new_skill, 3)
+
+  # 난이도별 성공률 업데이트
+  current_rate = success_rate.get(difficulty, {"success": 0, "total": 0})
+  current_rate["total"] += 1
+  if is_correct:
+      current_rate["success"] += 1
+  success_rate[difficulty] = current_rate
+
+  # 약점 분석
+  weak_topics = [t for t, s in skill_by_topic.items() if s < 0.4]
+
+  await db.table("user_skill_profiles")\\\\
+      .upsert({
+          "user_id": user_id,
+          "skill_by_topic": skill_by_topic,
+          "success_rate_by_difficulty": success_rate,
+          "weak_topics": weak_topics,
+          "updated_at": "now()",
+      })\\\\
+      .execute()
+
+  return {"skill_updates": skill_by_topic}
+
+📝 개선안 6: Personalized Agentic RAG
+
+backend/app/graphs/personalized_rag_graph.py
+
+class PersonalizedRAGState(TypedDict): """개인화된 Agentic RAG 상태"""
+
+검색 입력
+
+query: str topics: List[str] difficulty: str
+
+  # 사용자 프로파일 (DB에서 로드)
+  user_profile: dict  # user_skill_profiles
+  solved_problem_ids: List[str]  # attempts에서 조회
+  recent_topics: List[str]
+  weak_topics: List[str]
+
+  # 검색 결과
+  search_results: List[dict]
+
+  # Agentic 평가
+  search_quality: str
+  refinement_reason: str
+  refinement_count: int
+
+async def load_user_profile_node(state: PersonalizedRAGState) -> dict: """사용자 프로파일 로드""" user_id = state["user_id"]
+
+  # 1. skill_profile 로드
+  profile = await db.table("user_skill_profiles")\\\\
+      .select("*")\\\\
+      .eq("user_id", user_id)\\\\
+      .single()\\\\
+      .execute()
+
+  # 2. 풀었던 문제 ID 로드 (최근 100개)
+  solved = await db.table("attempts")\\\\
+      .select("base_problem_id")\\\\
+      .eq("user_id", user_id)\\\\
+      .eq("is_correct", True)\\\\
+      .order("created_at", desc=True)\\\\
+      .limit(100)\\\\
+      .execute()
+
+  solved_ids = [a["base_problem_id"] for a in solved.data if a["base_problem_id"]]
+
+  return {
+      "user_profile": profile.data or {},
+      "solved_problem_ids": solved_ids,
+      "weak_topics": profile.data.get("weak_topics", []),
+  }
+
+async def personalized_search_node(state: PersonalizedRAGState) -> dict: """개인화된 검색"""
+
+  # 검색 쿼리 개인화
+  query = state["query"]
+  weak_topics = state["weak_topics"]
+
+  # 약점 주제가 있으면 쿼리에 반영
+  if weak_topics and not any(t in query for t in weak_topics):
+      # 사용자가 명시적으로 주제를 지정하지 않았으면 약점 주제 추가
+      query = f"{query} {' '.join(weak_topics[:2])}"
+
+  # RAG 검색 (풀었던 문제 제외)
+  results = await rag_service.search_problems_hybrid(
+      query=query,
+      topics=state["topics"],
+      difficulty=state["difficulty"],
+      exclude_ids=state["solved_problem_ids"],  # 🔥 핵심: 풀었던 문제 제외
+      limit=10,
+  )
+
+  return {"search_results": results}
+
+async def evaluate_personalization_node(state: PersonalizedRAGState) -> dict: """검색 결과 개인화 품질 평가 (Agentic)""" results = state["search_results"] user_profile = state["user_profile"] skill_by_topic = user_profile.get("skill_by_topic", {})
+
+  issues = []
+
+  # 1. 난이도 적합성 체크
+  requested_diff = state["difficulty"]
+  if requested_diff:
+      # 사용자 실력 대비 난이도 체크
+      topic_skills = [skill_by_topic.get(t, 0.5) for t in state["topics"]]
+      avg_skill = sum(topic_skills) / len(topic_skills) if topic_skills else 0.5
+
+      diff_map = {"easy": 0.3, "medium": 0.5, "hard": 0.7, "very_hard": 0.9}
+      requested_level = diff_map.get(requested_diff, 0.5)
+
+      if avg_skill < 0.3 and requested_level > 0.5:
+          issues.append("too_hard_for_skill_level")
+      elif avg_skill > 0.8 and requested_level < 0.3:
+          issues.append("too_easy_for_skill_level")
+
+  # 2. 약점 주제 커버리지 체크
+  weak_topics = state["weak_topics"]
+  if weak_topics:
+      result_topics = set()
+      for r in results:
+          result_topics.update(r.get("tags", []))
+
+      weak_coverage = len(set(weak_topics) & result_topics) / len(weak_topics)
+      if weak_coverage < 0.3:
+          issues.append("weak_topics_not_covered")
+
+  if issues and state.get("refinement_count", 0) < 2:
+      return {
+          "search_quality": "refine_needed",
+          "refinement_reason": issues[0],
+      }
+
+  return {"search_quality": "good"}
+
+async def refine_search_node(state: PersonalizedRAGState) -> dict: """검색 조건 개선""" reason = state["refinement_reason"]
+
+  if reason == "too_hard_for_skill_level":
+      # 난이도 낮춤
+      new_difficulty = {"hard": "medium", "very_hard": "hard", "medium": "easy"}
+      return {
+          "difficulty": new_difficulty.get(state["difficulty"], state["difficulty"]),
+          "refinement_count": state.get("refinement_count", 0) + 1,
+      }
+
+  elif reason == "weak_topics_not_covered":
+      # 약점 주제 명시적 추가
+      return {
+          "topics": state["topics"] + state["weak_topics"][:1],
+          "refinement_count": state.get("refinement_count", 0) + 1,
+      }
+
+  return {"refinement_count": state.get("refinement_count", 0) + 1}
+
+def create_personalized_rag_graph(): """개인화된 Agentic RAG 그래프""" workflow = StateGraph(PersonalizedRAGState)
+
+  workflow.add_node("load_profile", load_user_profile_node)
+  workflow.add_node("search", personalized_search_node)
+  workflow.add_node("evaluate", evaluate_personalization_node)
+  workflow.add_node("refine", refine_search_node)
+  workflow.add_node("respond", respond_node)
+
+  workflow.set_entry_point("load_profile")
+  workflow.add_edge("load_profile", "search")
+  workflow.add_edge("search", "evaluate")
+
+  # Agentic 루프
+  workflow.add_conditional_edges(
+      "evaluate",
+      lambda s: "refine" if s["search_quality"] == "refine_needed" else "respond",
+      {"refine": "refine", "respond": "respond"}
+  )
+  workflow.add_edge("refine", "search")  # 재검색
+  workflow.add_edge("respond", END)
+
+  return workflow.compile()
+
+📝 채팅 개인화 적용
+
+backend/app/graphs/orchestrator_v3.py
+
+class ChatOrchestratorV3: def init(self): self.checkpointer = PostgresSaver.from_conn_string(DATABASE_URL) self.personalized_rag = create_personalized_rag_graph() self.guided_tutor = create_guided_tutor_graph()
+
+...
+
+  async def process(self, message: str, user_id: str, session_id: str):
+      thread_id = f"user_{user_id}_session_{session_id}"
+
+      # 1. 사용자 프로파일 로드 (캐시 또는 DB)
+      user_profile = await self._get_user_profile(user_id)
+
+      # 2. 인텐트 분류 (프로파일 컨텍스트 포함)
+      intent_result = await intent_tool.classify(
+          message=message,
+          user_context={
+              "skill_levels": user_profile.get("skill_by_topic", {}),
+              "weak_topics": user_profile.get("weak_topics", []),
+              "recent_topics": user_profile.get("recent_topics", []),
+          }
+      )
+
+      # 3. 개인화된 응답 생성
+      if intent_result.category == "discovery":
+          # 개인화된 RAG 사용
+          return await self.personalized_rag.ainvoke(
+              {"user_id": user_id, "query": message, ...},
+              config={"configurable": {"thread_id": thread_id}}
+          )
+
+      elif intent_result.action == "guided_learning":
+          # 1대1 대화형 튜터
+          return await self.guided_tutor.ainvoke(
+              {"message": message, "user_id": user_id, ...},
+              config={"configurable": {"thread_id": thread_id}}
+          )
+
+      # ... 기타 처리

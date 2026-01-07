@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     supabase_anon_key: str
     supabase_service_role_key: str
 
+    # Supabase PostgreSQL Direct Connection (for LangGraph Checkpointer)
+    # Format: postgresql://user:password@host:port/database
+    supabase_db_url: str = ""
+
+    # Environment
+    environment: str = "development"  # development, staging, production
+
     # JWT
     jwt_secret: str
     jwt_algorithm: str = "HS256"
@@ -36,11 +43,12 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
 
     # LLM Models per Agent
+    # Available aliases: gpt-4o, gpt-4o-mini, claude-sonnet, gemini-flash, gemini-3-pro, deepseek-v3
     llm_model_chat: str = "gpt-4o-mini"           # Chat agent, intent handler
     llm_model_intent: str = "gpt-4o-mini"         # Intent classifier
-    llm_model_blank_gen: str = "deepseek-v3"      # Blank problem generation
-    llm_model_puzzle_gen: str = "deepseek-v3"     # Puzzle problem generation
-    llm_model_guided_gen: str = "deepseek-v3"     # Guided problem generation
+    llm_model_blank_gen: str = "gemini-flash"     # Blank problem generation
+    llm_model_puzzle_gen: str = "gemini-flash"    # Puzzle problem generation
+    llm_model_guided_gen: str = "gemini-flash"    # Guided problem generation
     llm_model_code_gen: str = "gemini-3-pro"      # Code generation (RAG fallback)
     llm_model_hint: str = "gemini-flash"          # Hint generation
 

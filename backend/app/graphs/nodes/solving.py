@@ -236,7 +236,7 @@ async def check_answer(state: SolvingState) -> Dict[str, Any]:
             user_answer, problem_context, openrouter_service
         )
     elif problem_type == "puzzle" and isinstance(user_answer, list):
-        is_correct, feedback = _check_puzzle_answer(
+        is_correct, feedback = await _check_puzzle_answer(
             user_answer, problem_context
         )
     elif problem_type == "guided":
@@ -583,21 +583,49 @@ async def _check_blank_answer(user_answer: dict, problem_context: dict, openrout
     return is_correct, feedback
 
 
-def _check_puzzle_answer(user_answer: list, problem_context: dict) -> tuple:
-    """퍼즐 정답 체크"""
+async def _check_puzzle_answer(user_answer: list, problem_context: dict) -> tuple:
+    """
+    퍼즐 정답 체크 (스마트 검증)
+
+    - 정확히 일치하면 정답
+    - 함수/클래스 순서가 유연한 경우도 정답으로 처리
+    - 의존성 순서만 검증
+    """
+    from ...services.puzzle_validator import validate_puzzle
+
     expected_order = problem_context.get("correct_order", [])
+    blocks = problem_context.get("blocks", [])
+    language = problem_context.get("language", "python")
 
     if not expected_order:
         return False, "문제 데이터를 불러올 수 없어요."
 
-    is_correct = user_answer == expected_order
-
-    if is_correct:
-        feedback = "블록 순서가 정확해요!"
+    # 블록 내용 추출 (blocks가 dict list인 경우)
+    if blocks and isinstance(blocks[0], dict):
+        block_contents = [b.get("content", "") for b in blocks]
     else:
-        feedback = "블록 순서가 맞지 않아요. 다시 배치해보세요!"
+        block_contents = blocks if blocks else []
 
-    return is_correct, feedback
+    # 스마트 검증 수행
+    try:
+        result = await validate_puzzle(
+            blocks=block_contents,
+            user_order=user_answer,
+            correct_order=expected_order,
+            language=language,
+            strict_mode=False,  # 복수 정답 허용
+        )
+
+        return result.is_correct, result.feedback
+
+    except Exception as e:
+        print(f"[PuzzleCheck] Smart validation error: {e}")
+        # 폴백: 단순 비교
+        is_correct = user_answer == expected_order
+        if is_correct:
+            return True, "블록 순서가 정확해요!"
+        else:
+            return False, "블록 순서가 맞지 않아요. 다시 배치해보세요!"
 
 
 async def _check_guided_answer(user_answer: str, problem_context: dict, openrouter) -> tuple:

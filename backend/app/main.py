@@ -8,6 +8,8 @@ from .routers import auth, users, problems, practice, chat, execute, translate, 
 from .intents import intent_classifier
 from .services.collection_embeddings import initialize_collection_embeddings
 from .services.discovery_embeddings import initialize_discovery_embeddings
+from .graphs.orchestrator_v2 import initialize_orchestrator
+from .graphs.checkpointer import close_checkpointer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,9 +28,17 @@ async def lifespan(app: FastAPI):
     # Discovery Embeddings 초기화 (문제 탐색 단계용)
     asyncio.create_task(initialize_discovery_embeddings_startup())
 
+    # LangGraph Orchestrator 초기화 (Checkpointer 포함)
+    asyncio.create_task(initialize_orchestrator_startup())
+
     yield
+
     # Shutdown
     print("Shutting down...")
+
+    # Checkpointer 연결 정리
+    await close_checkpointer()
+    print("Checkpointer closed")
 
 
 async def initialize_intent_classifier():
@@ -65,6 +75,16 @@ async def initialize_discovery_embeddings_startup():
     except Exception as e:
         print(f"Discovery embeddings initialization failed: {e}")
         print("Will use keyword fallback instead")
+
+
+async def initialize_orchestrator_startup():
+    """LangGraph Orchestrator 초기화 (Checkpointer 포함)"""
+    try:
+        await initialize_orchestrator()
+        print("LangGraph Orchestrator initialized successfully (with Checkpointer)")
+    except Exception as e:
+        print(f"Orchestrator initialization failed: {e}")
+        print("Will initialize on first request instead")
 
 
 settings = get_settings()

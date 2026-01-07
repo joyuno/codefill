@@ -9,6 +9,7 @@ import { Resizer } from '@/components/ui/resizer';
 import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { usePracticeSession } from '@/hooks/usePracticeSession';
 import Link from 'next/link';
 
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
@@ -31,6 +32,28 @@ export default function ChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // ============================================================
+  // Practice Session Hook - localStorage 기반 상태 영속화
+  // ============================================================
+  const {
+    problem,
+    blankAnswers,
+    previousHints,
+    solveStartTime,
+    attemptCount,
+    attemptId,
+    chatSessionId,
+    isRestored,
+    setProblem,
+    setBlankAnswers,
+    setPreviousHints,
+    setSolveStartTime,
+    setAttemptCount,
+    setAttemptId,
+    setChatSessionId,
+    resetSession,
+  } = usePracticeSession();
+
   // Auth state
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -48,8 +71,19 @@ export default function ChatPage() {
   // URL에서 problem_id 파라미터 확인
   const urlProblemId = searchParams.get('problem_id');
 
-  // Current problem state
-  const [problem, setProblem] = useState<ConvertedProblem | null>(null);
+  // 세션 복원 후 문제가 있으면 로그 출력
+  useEffect(() => {
+    if (isRestored && problem) {
+      console.log('[ChatPage] Session restored:', {
+        problemId: problem.id,
+        blankAnswersCount: Object.keys(blankAnswers).length,
+        hintsCount: previousHints.length,
+        attemptId,
+      });
+    }
+  }, [isRestored, problem, blankAnswers, previousHints, attemptId]);
+
+  // Submission state (not persisted - reset on page load)
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [xpEarned, setXpEarned] = useState(0);
 
@@ -57,20 +91,16 @@ export default function ChatPage() {
   const [initialBaseProblem, setInitialBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [isLoadingInitialProblem, setIsLoadingInitialProblem] = useState(false);
 
-  // Practice results
+  // Practice results (reset on new problem)
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
   const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
   const [hints, setHints] = useState<string[]>([]);
-  const [previousHints, setPreviousHints] = useState<string[]>([]);
   const [currentHintResponse, setCurrentHintResponse] = useState<HintAgentResponse | null>(null);
-  const [blankAnswers, setBlankAnswers] = useState<Record<string, string>>({});
 
   // Feedback popup state
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [feedbackData, setFeedbackData] = useState<FeedbackResponse | null>(null);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
-  const [solveStartTime, setSolveStartTime] = useState<Date | null>(null);
-  const [attemptCount, setAttemptCount] = useState(0);
 
   // Layout state
   const [showChat, setShowChat] = useState(true);
@@ -140,41 +170,56 @@ export default function ChatPage() {
   }, []);
 
   // Handle problem selection from chat
-  const handleProblemSelect = useCallback((selectedProblem: ConvertedProblem) => {
+  const handleProblemSelect = useCallback(async (selectedProblem: ConvertedProblem) => {
+    // usePracticeSession 훅을 통해 상태 설정 (localStorage 자동 저장)
     setProblem(selectedProblem);
+    setBlankAnswers({});
+    setPreviousHints([]);
+    setSolveStartTime(new Date());
+    setAttemptCount(0);
+
+    // 로컬 상태 초기화
     setIsSubmitted(false);
     setXpEarned(0);
     setBlankResults({});
     setPuzzleResults({});
-    // keyConcepts를 힌트로 사용
     setHints(selectedProblem.keyConcepts || []);
-    // 힌트 상태 초기화
-    setPreviousHints([]);
     setCurrentHintResponse(null);
-    setBlankAnswers({});
-    // 피드백 상태 초기화
     setShowFeedbackPopup(false);
     setFeedbackData(null);
-    setSolveStartTime(new Date());
-    setAttemptCount(0);
-  }, []);
+
+    // Start practice session - create pending attempt for tracking
+    try {
+      const startResult = await practiceApi.startPractice({
+        problemId: selectedProblem.id,
+        problemType: (selectedProblem.problemType || 'blank') as 'blank' | 'puzzle' | 'guided',
+        difficulty: selectedProblem.difficulty,
+        problemName: selectedProblem.title,
+        topics: selectedProblem.topics || selectedProblem.keyConcepts,
+      });
+      setAttemptId(startResult.attemptId);
+      console.log('[ChatPage] Started practice session:', startResult.attemptId);
+    } catch (error) {
+      console.error('[ChatPage] Failed to start practice session:', error);
+      setAttemptId(null);
+    }
+  }, [setProblem, setBlankAnswers, setPreviousHints, setSolveStartTime, setAttemptCount, setAttemptId]);
 
   // Reset session (다음문제 풀기)
   const handleResetSession = useCallback(() => {
-    setProblem(null);
+    // usePracticeSession 훅의 resetSession 사용 (localStorage도 초기화)
+    resetSession();
+
+    // 로컬 상태 초기화
     setIsSubmitted(false);
     setXpEarned(0);
     setBlankResults({});
     setPuzzleResults({});
     setHints([]);
-    setPreviousHints([]);
     setCurrentHintResponse(null);
-    setBlankAnswers({});
     setShowFeedbackPopup(false);
     setFeedbackData(null);
-    setSolveStartTime(null);
-    setAttemptCount(0);
-  }, []);
+  }, [resetSession]);
 
   // Fetch feedback from API
   const fetchFeedback = useCallback(async (isCorrect: boolean, earnedXp: number) => {
@@ -330,9 +375,12 @@ export default function ChatPage() {
           try {
             const recordResult = await practiceApi.recordSolve({
               problemId: problem.id,
+              baseProblemId: problem.baseProblemId || problem.originalId,
               problemType: 'blank',
               difficulty: problem.difficulty,
               isCorrect: true,
+              problemName: problem.title,
+              attemptId: attemptId || undefined,  // attempt tracking
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
@@ -360,9 +408,12 @@ export default function ChatPage() {
         try {
           const recordResult = await practiceApi.recordSolve({
             problemId: problem.id,
+            baseProblemId: problem.baseProblemId || problem.originalId,
             problemType: 'blank',
             difficulty: problem.difficulty,
             isCorrect: true,
+            problemName: problem.title,
+            attemptId: attemptId || undefined,  // attempt tracking
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
@@ -374,7 +425,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback]
+    [problem, toast, fetchFeedback, attemptId]
   );
 
   // Puzzle submit handler
@@ -397,9 +448,12 @@ export default function ChatPage() {
           try {
             const recordResult = await practiceApi.recordSolve({
               problemId: problem.id,
+              baseProblemId: problem.baseProblemId || problem.originalId,
               problemType: 'puzzle',
               difficulty: problem.difficulty,
               isCorrect: true,
+              problemName: problem.title,
+              attemptId: attemptId || undefined,  // attempt tracking
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
@@ -423,9 +477,12 @@ export default function ChatPage() {
         try {
           const recordResult = await practiceApi.recordSolve({
             problemId: problem.id,
+            baseProblemId: problem.baseProblemId || problem.originalId,
             problemType: 'puzzle',
             difficulty: problem.difficulty,
             isCorrect: true,
+            problemName: problem.title,
+            attemptId: attemptId || undefined,  // attempt tracking
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
@@ -437,12 +494,12 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback]
+    [problem, toast, fetchFeedback, attemptId]
   );
 
-  // Implementation submit handler
+  // Implementation submit handler (blank, puzzle, implementation 공통)
   const handleImplementationSubmit = useCallback(
-    async (code: string, results: any[]) => {
+    async (code: string, results: any[], hintsUsed?: number) => {
       setAttemptCount(prev => prev + 1);
 
       const passedCount = results.filter((r) => r.passed).length;
@@ -457,8 +514,12 @@ export default function ChatPage() {
             problemType: (problem.problemType || 'guided') as 'blank' | 'puzzle' | 'guided',
             difficulty: problem.difficulty,
             isCorrect: true,
+            hintsUsed: hintsUsed,  // 힌트 사용 횟수 전달
+            problemName: problem.title,  // 문제 이름
+            topics: problem.topics,  // 문제 주제/태그
+            attemptId: attemptId || undefined,  // attempt tracking
           });
-          console.log('[RecordSolve] Result:', recordResult);
+          console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
             fetchFeedback(true, recordResult.xpEarned);
@@ -485,7 +546,7 @@ export default function ChatPage() {
         });
       }
     },
-    [problem, toast, fetchFeedback]
+    [problem, toast, fetchFeedback, attemptId]
   );
 
   // Render practice component based on problem type
@@ -514,15 +575,21 @@ export default function ChatPage() {
           });
         }}
         onHintRequest={(level) => handleHintRequest(level)}
+        attemptId={attemptId || undefined}  // attempt tracking
       />
     );
   };
 
-  // Show loading while checking auth
-  if (isAuthChecking) {
+  // Show loading while checking auth or restoring session
+  if (isAuthChecking || !isRestored) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          {!isRestored && (
+            <p className="text-sm text-muted-foreground">세션 복원 중...</p>
+          )}
+        </div>
       </div>
     );
   }
@@ -656,6 +723,8 @@ export default function ChatPage() {
                       onProblemSelect={handleProblemSelect}
                       hints={hints}
                       initialBaseProblem={initialBaseProblem}
+                      sessionId={chatSessionId}
+                      onSessionIdChange={setChatSessionId}
                     />
                   )}
                 </div>

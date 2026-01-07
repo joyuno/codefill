@@ -33,9 +33,14 @@ export interface RunCodeResult {
 
 export interface RecordSubmission {
   problemId: string;
+  baseProblemId?: string;  // base_problems 테이블 UUID (잔디 클릭 시 문제 정보 표시용)
   problemType: 'blank' | 'puzzle' | 'guided';
   isCorrect: boolean;
   xpEarned?: number;
+  problemName?: string;  // 문제 이름 (잔디 클릭 시 표시용)
+  hintsUsed?: number;    // 힌트 사용 횟수 (기록용)
+  topics?: string[];     // 문제 주제/태그 (예: ["DP", "그래프"])
+  attemptId?: string;    // 기존 pending attempt ID (attempt_details 기록용)
 }
 
 export interface RecordResult {
@@ -58,7 +63,91 @@ export interface HintUseResult {
   message: string;
 }
 
+// ============================================================
+// 힌트 요청/응답 타입 (Blank, Puzzle, Guided 공통 구조)
+// ============================================================
+
+export interface BlankHintRequest {
+  problemId: string;
+  blankIndex: number;
+  codeTemplate?: string;
+  attemptId?: string;  // attempt 추적용
+}
+
+export interface BlankHintResult {
+  blankIndex: number;
+  hintContent: string;
+  fromCache: boolean;
+}
+
+export interface PuzzleHintRequest {
+  problemId: string;
+  blockIndex: number;
+  blocks?: Array<{ id: string; code: string }>;
+  attemptId?: string;  // attempt 추적용
+}
+
+export interface PuzzleHintResult {
+  blockIndex: number;
+  hintContent: string;
+  fromCache: boolean;
+}
+
+export interface GuidedHintRequest {
+  problemId: string;
+  stepIndex: number;
+  steps?: Array<unknown>;
+  attemptId?: string;  // attempt 추적용
+}
+
+export interface GuidedHintResult {
+  stepIndex: number;
+  hintContent: string;
+  fromCache: boolean;
+}
+
+// ============================================================
+// Start Practice (Attempt Tracking)
+// ============================================================
+
+export interface StartPracticeRequest {
+  problemId: string;
+  problemType: 'blank' | 'puzzle' | 'guided';
+  difficulty?: string;
+  problemName?: string;
+  topics?: string[];
+}
+
+export interface StartPracticeResult {
+  attemptId: string;
+  startedAt: string;
+  message: string;
+}
+
 export const practiceApi = {
+  /**
+   * Start practice session - creates pending attempt
+   */
+  async startPractice(request: StartPracticeRequest): Promise<StartPracticeResult> {
+    const response = await api.post<{
+      attempt_id: string;
+      started_at: string;
+      message: string;
+    }>('/practice/start', {
+      problem_id: request.problemId,
+      problem_type: request.problemType,
+      difficulty: request.difficulty,
+      problem_name: request.problemName,
+      topics: request.topics,
+    });
+    if (response.error) throw new Error(response.error.message);
+    return {
+      attemptId: response.data!.attempt_id,
+      startedAt: response.data!.started_at,
+      message: response.data!.message,
+    };
+  },
+
   /**
    * Run code without submitting
    */
@@ -101,10 +190,15 @@ export const practiceApi = {
   async recordSolve(submission: RecordSubmission & { difficulty?: string }): Promise<RecordResult> {
     const response = await api.post<RecordResult>('/practice/submit/record', {
       problem_id: submission.problemId,
+      base_problem_id: submission.baseProblemId,
       problem_type: submission.problemType,
       difficulty: submission.difficulty,
       is_correct: submission.isCorrect,
       xp_earned: submission.xpEarned,
+      problem_name: submission.problemName,
+      hints_used: submission.hintsUsed,  // 힌트 사용 횟수
+      topics: submission.topics,  // 문제 주제/태그
+      attempt_id: submission.attemptId,  // 기존 pending attempt ID
     });
     if (response.error) throw new Error(response.error.message);
     return response.data!;
@@ -145,6 +239,72 @@ export const practiceApi = {
       xpDeducted: response.data!.xp_deducted,
       remainingXp: response.data!.remaining_xp,
       message: response.data!.message,
+    };
+  },
+
+  /**
+   * Get blank hint (역할/이유 설명만, 정답 없음)
+   */
+  async getBlankHint(request: BlankHintRequest): Promise<BlankHintResult> {
+    const response = await api.post<{
+      blank_index: number;
+      hint_content: string;
+      from_cache: boolean;
+    }>('/practice/hint/blank', {
+      problem_id: request.problemId,
+      blank_index: request.blankIndex,
+      code_template: request.codeTemplate,
+      attempt_id: request.attemptId,  // attempt 추적용
+    });
+    if (response.error) throw new Error(response.error.message);
+    return {
+      blankIndex: response.data!.blank_index,
+      hintContent: response.data!.hint_content,
+      fromCache: response.data!.from_cache,
+    };
+  },
+
+  /**
+   * Get puzzle hint (블록 역할 설명, 순서 알려주지 않음)
+   */
+  async getPuzzleHint(request: PuzzleHintRequest): Promise<PuzzleHintResult> {
+    const response = await api.post<{
+      block_index: number;
+      hint_content: string;
+      from_cache: boolean;
+    }>('/practice/hint/puzzle', {
+      problem_id: request.problemId,
+      block_index: request.blockIndex,
+      blocks: request.blocks,
+      attempt_id: request.attemptId,  // attempt 추적용
+    });
+    if (response.error) throw new Error(response.error.message);
+    return {
+      blockIndex: response.data!.block_index,
+      hintContent: response.data!.hint_content,
+      fromCache: response.data!.from_cache,
+    };
+  },
+
+  /**
+   * Get guided hint (단계별 도움, 소크라테스식)
+   */
+  async getGuidedHint(request: GuidedHintRequest): Promise<GuidedHintResult> {
+    const response = await api.post<{
+      step_index: number;
+      hint_content: string;
+      from_cache: boolean;
+    }>('/practice/hint/guided', {
+      problem_id: request.problemId,
+      step_index: request.stepIndex,
+      steps: request.steps,
+      attempt_id: request.attemptId,  // attempt 추적용
+    });
+    if (response.error) throw new Error(response.error.message);
+    return {
+      stepIndex: response.data!.step_index,
+      hintContent: response.data!.hint_content,
+      fromCache: response.data!.from_cache,
     };
   },
 };

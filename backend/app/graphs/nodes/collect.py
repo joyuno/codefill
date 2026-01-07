@@ -14,6 +14,11 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
     사용자 메시지에서 정보를 추출하고,
     필요한 정보가 부족하면 추가 질문을 생성합니다.
 
+    히스토리 기반 추천:
+    - new_problem intent일 때 user_context["personalization"]에서 추천 정보 확인
+    - 추천이 있으면 자동으로 topic/difficulty 설정하고 확인 질문
+    - 추천이 없으면 기존 로직 (LLM 기반 정보 수집)
+
     Returns:
         업데이트된 상태:
         - collected_info: 수집된 정보
@@ -28,6 +33,53 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
     conversation_history = state.get("conversation_history", [])
     intent_result = state.get("intent_result", {})
     existing_info = state.get("collected_info", {})
+    user_context = state.get("user_context", {})
+    intent = intent_result.get("intent", "")
+
+    # ============================================================
+    # 히스토리 기반 개인화 추천 (new_problem intent)
+    # ============================================================
+    if intent in ["new_problem", "random_recommend"] and not existing_info.get("topics"):
+        personalized = _generate_personalized_recommendation(user_context)
+
+        if personalized.get("has_recommendation"):
+            # 개인화 추천이 있으면 자동으로 정보 설정
+            rec_topics = personalized.get("topics", [])
+            rec_difficulty = personalized.get("difficulty")
+            rec_message = personalized.get("message", "")
+            rec_type = personalized.get("recommendation_type", "")
+
+            # 언어가 있으면 바로 검색, 없으면 언어만 물어보기
+            language = existing_info.get("language")
+
+            merged_info = {
+                "topics": rec_topics,
+                "difficulty": rec_difficulty,
+                "language": language,
+                "specific_needs": None,
+                "time_available": None,
+                "selected_problem": None,
+                "selected_problem_index": None,
+            }
+
+            if language:
+                # 언어까지 있으면 추천 메시지 + 바로 검색
+                return {
+                    "collected_info": merged_info,
+                    "is_info_complete": True,
+                    "response_message": rec_message,
+                    "action_trigger": "search_problems",
+                    "next_node": "search_problems",
+                }
+            else:
+                # 언어 선택 필요
+                return {
+                    "collected_info": merged_info,
+                    "is_info_complete": False,
+                    "response_message": f"{rec_message}\n\n어떤 언어로 풀어볼까요? (Python, Java, C++)",
+                    "action_trigger": None,
+                    "next_node": "respond",
+                }
 
     # 현재 상태 정보 구성
     context_info = _build_context_info(state)
@@ -235,6 +287,7 @@ def _build_context_info(state: ChatState) -> str:
     user_context = state.get("user_context", {})
     collected_info = state.get("collected_info", {})
     search_results = state.get("search_results", [])
+    personalization = user_context.get("personalization", {})
 
     parts = []
 
@@ -254,4 +307,92 @@ def _build_context_info(state: ChatState) -> str:
         problem_names = [p.get("name") or p.get("title", "Unknown") for p in search_results[:5]]
         parts.append(f"검색된 문제: {', '.join(problem_names)}")
 
+    # 개인화 정보 추가 (히스토리 기반 추천에 활용)
+    if personalization.get("has_history"):
+        recent = personalization.get("recent_problems", [])
+        if recent:
+            recent_names = [p.get("name", "") for p in recent[:3]]
+            parts.append(f"최근 풀이: {', '.join(recent_names)}")
+
+        recommendations = personalization.get("recommendations", [])
+        if recommendations:
+            rec = recommendations[0]
+            rec_type = rec.get("type", "")
+            rec_topics = rec.get("topics", [])
+            rec_reason = rec.get("reason", "")
+            if rec_topics:
+                parts.append(f"추천 주제: {rec_topics[0]} ({rec_type}: {rec_reason})")
+
     return "\n".join(parts) if parts else "없음"
+
+
+def _generate_personalized_recommendation(user_context: dict) -> dict:
+    """
+    사용자 히스토리 기반 개인화 추천 생성
+
+    Returns:
+        {
+            "has_recommendation": bool,
+            "topics": list[str],
+            "difficulty": str,
+            "message": str,
+            "recommendation_type": str,  # level_up, retry, weak_topic
+        }
+    """
+    personalization = user_context.get("personalization", {})
+
+    if not personalization.get("has_history"):
+        return {"has_recommendation": False}
+
+    recommendations = personalization.get("recommendations", [])
+    recent_problems = personalization.get("recent_problems", [])
+    skill_summary = personalization.get("skill_summary", {})
+
+    if not recommendations:
+        return {"has_recommendation": False}
+
+    # 첫 번째 추천 사용
+    rec = recommendations[0]
+    rec_type = rec.get("type")
+    rec_topics = rec.get("topics", [])
+    rec_difficulty = rec.get("difficulty")
+    rec_reason = rec.get("reason", "")
+
+    # 난이도 한글 변환
+    diff_display = {
+        "easy": "쉬움", "medium": "보통",
+        "medium_hard": "중상", "hard": "어려움", "very_hard": "매우 어려움"
+    }.get(rec_difficulty, rec_difficulty)
+
+    # 추천 타입별 동적 메시지 생성
+    if rec_type == "level_up" and rec_topics:
+        topic = rec_topics[0]
+        message = (
+            f"💡 지난번에 **{topic}** 문제를 잘 푸셨네요!\n"
+            f"이번엔 **{diff_display}** 난이도로 도전해볼까요?\n\n"
+            f"바로 검색할까요, 아니면 다른 주제를 원하시나요?"
+        )
+    elif rec_type == "retry" and rec_topics:
+        topic = rec_topics[0]
+        message = (
+            f"💪 **{topic}** 연습이 더 필요해 보여요!\n"
+            f"같은 난이도로 비슷한 문제 찾아볼까요?"
+        )
+    elif rec_type == "weak_topic" and rec_topics:
+        topic = rec_topics[0]
+        weak_topics = skill_summary.get("weak_topics", [])
+        message = (
+            f"📚 **{topic}**은(는) 아직 연습이 더 필요해요!\n"
+            f"쉬운 문제부터 차근차근 풀어볼까요?"
+        )
+        rec_difficulty = "easy"
+    else:
+        return {"has_recommendation": False}
+
+    return {
+        "has_recommendation": True,
+        "topics": rec_topics[:1],  # 첫 번째 주제만
+        "difficulty": rec_difficulty,
+        "message": message,
+        "recommendation_type": rec_type,
+    }

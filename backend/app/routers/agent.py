@@ -20,6 +20,8 @@ from ..services.embedding import embedding_service
 from ..services.problem_save import get_problem_save_service
 from ..services.hint_service import get_hint_service
 from ..services.feedback_service import get_feedback_service
+from ..services.chat_session import get_chat_session_service
+from ..services.user_history import get_user_history_service
 from ..intents import intent_classifier, IntentType, INTENT_DEFINITIONS
 
 # LLM 모델 설정
@@ -126,78 +128,152 @@ def _analyze_block_indent(code: str, base_indent: int, prev_code: str = "") -> i
     return base_indent
 
 
-def _extract_indent_from_code(code: str) -> int:
-    """코드의 실제 들여쓰기 레벨을 추출 (4칸 = 1레벨)"""
+def _dedent_code(code: str) -> tuple[str, int]:
+    """
+    코드의 공통 들여쓰기를 제거하고 (dedent), 제거된 들여쓰기 레벨을 반환
+
+    Returns:
+        (dedented_code, indent_level): 들여쓰기가 제거된 코드와 레벨 (4칸 = 1레벨)
+    """
     if not code:
-        return 0
-    # 첫 번째 줄의 들여쓰기 확인
-    first_line = code.split('\n')[0]
-    leading_spaces = len(first_line) - len(first_line.lstrip())
-    return leading_spaces // 4
+        return code, 0
+
+    lines = code.split('\n')
+
+    # 비어있지 않은 줄들의 들여쓰기 수집
+    indents = []
+    for line in lines:
+        if line.strip():  # 빈 줄 제외
+            leading_spaces = len(line) - len(line.lstrip(' '))
+            indents.append(leading_spaces)
+
+    if not indents:
+        return code, 0
+
+    # 최소 공통 들여쓰기
+    min_indent = min(indents)
+
+    if min_indent == 0:
+        return code, 0
+
+    # 모든 줄에서 최소 들여쓰기 제거
+    dedented_lines = []
+    for line in lines:
+        if line.strip():  # 비어있지 않은 줄
+            dedented_lines.append(line[min_indent:])
+        else:  # 빈 줄은 그대로
+            dedented_lines.append(line)
+
+    return '\n'.join(dedented_lines), min_indent // 4
 
 
 def _process_block_indents(blocks: list, base_indent: int) -> list:
     """
-    모든 블록의 indent를 분석하여 적절한 값으로 설정
+    모든 블록의 코드를 정규화하고 indentation을 설정
 
     전략:
-    1. 코드에 실제 들여쓰기가 있으면 그 값 사용
-    2. LLM이 설정한 indent 값이 있으면 사용
-    3. 없으면 코드 패턴 기반으로 계산
+    1. 각 블록의 코드에서 공통 들여쓰기 제거 (dedent)
+    2. LLM이 설정한 indent 값 또는 추출된 레벨 사용
+    3. 코드 패턴 기반으로 indent 보정
+
+    Note: 프론트엔드에서 indentation 값에 따라 들여쓰기를 다시 적용함
     """
     if not blocks:
         return blocks
 
     result = []
     prev_code = ""
-    indent_stack = [base_indent]  # 들여쓰기 스택 (중첩 추적)
+    indent_stack = [base_indent]  # 들여쓰기 스택
 
     for i, block in enumerate(blocks):
         new_block = dict(block)
         code = block.get("code", "")
-        current_indent = block.get("indent")
 
-        # 1. 코드 자체에 들여쓰기가 있으면 그 값 사용
-        code_indent = _extract_indent_from_code(code)
-        if code_indent > 0:
-            new_block["indent"] = code_indent
-            # 코드에서 들여쓰기 제거 (나중에 프론트엔드에서 추가)
-            lines = code.split('\n')
-            stripped_lines = [line[code_indent * 4:] if len(line) > code_indent * 4 else line.lstrip() for line in lines]
-            new_block["code"] = '\n'.join(stripped_lines)
-            result.append(new_block)
-            prev_code = code
-            continue
+        # LLM이 설정한 값 (indent 또는 indentation 둘 다 체크)
+        llm_indent = block.get("indentation") or block.get("indent")
 
-        # 2. LLM이 설정한 indent가 있고 0보다 크면 사용
-        if current_indent is not None and current_indent > 0:
-            new_block["indent"] = current_indent
-            result.append(new_block)
-            prev_code = code
-            continue
+        # 1. 코드 dedent (공통 들여쓰기 제거)
+        dedented_code, extracted_indent = _dedent_code(code)
+        new_block["code"] = dedented_code
 
-        # 3. 코드 패턴 기반으로 계산
-        code_stripped = code.strip()
-
-        # 이전 블록이 ':'로 끝나면 들여쓰기 레벨 증가
-        if prev_code.strip().endswith(':'):
-            new_indent = indent_stack[-1] + 1
-            indent_stack.append(new_indent)
+        # 2. indent 값 결정
+        if llm_indent is not None and llm_indent >= 0:
+            # LLM이 설정한 값 사용
+            new_block["indentation"] = llm_indent
+            indent_stack = [llm_indent]
+        elif extracted_indent > 0:
+            # 코드에서 추출된 값 사용 (base_indent 고려)
+            relative_indent = max(0, extracted_indent)
+            new_block["indentation"] = relative_indent
+            indent_stack = [relative_indent]
         else:
-            new_indent = indent_stack[-1]
+            # 코드 패턴 기반으로 계산
+            code_stripped = dedented_code.strip()
 
-        # return, break, continue 등은 현재 레벨 유지하고, 다음 블록은 레벨 감소 가능
-        if code_stripped.startswith(('return ', 'return\n', 'return', 'break', 'continue', 'pass')):
-            new_indent = indent_stack[-1]
-            # 스택에서 pop (다음 블록은 한 레벨 아래)
-            if len(indent_stack) > 1:
-                indent_stack.pop()
+            # 이전 블록이 ':'로 끝나면 들여쓰기 레벨 증가
+            if prev_code.strip().endswith(':'):
+                new_indent = indent_stack[-1] + 1
+                indent_stack.append(new_indent)
+            else:
+                new_indent = indent_stack[-1]
 
-        new_block["indent"] = new_indent
+            # return, break, continue 등 후 레벨 감소
+            if code_stripped.startswith(('return ', 'return\n', 'return', 'break', 'continue', 'pass')):
+                new_indent = indent_stack[-1]
+                if len(indent_stack) > 1:
+                    indent_stack.pop()
+
+            new_block["indentation"] = new_indent
+
         result.append(new_block)
-        prev_code = code
+        prev_code = dedented_code
 
     return result
+
+
+def assemble_puzzle_solution(
+    fixed_start: str,
+    blocks: list,
+    fixed_end: str,
+    indent_size: int = 4
+) -> str:
+    """
+    퍼즐 문제의 블록들을 조합하여 완전한 정답 코드를 생성
+
+    Args:
+        fixed_start: 고정된 시작 코드
+        blocks: 블록 목록 (id 순서가 정답 순서)
+        fixed_end: 고정된 끝 코드
+        indent_size: 들여쓰기 단위 (기본 4칸)
+
+    Returns:
+        완전한 정답 코드 문자열
+    """
+    # 블록을 ID 순서로 정렬 (ID가 정답 순서)
+    sorted_blocks = sorted(blocks, key=lambda b: int(b.get("id", 0)))
+
+    code_parts = []
+
+    # 1. fixed_start 추가
+    if fixed_start:
+        code_parts.append(fixed_start.rstrip())
+
+    # 2. 블록들 추가 (indentation 적용)
+    for block in sorted_blocks:
+        code = block.get("code", "")
+        indentation = block.get("indentation") or block.get("indent", 0)
+
+        # 각 줄에 들여쓰기 적용
+        indent_str = " " * (indentation * indent_size)
+        lines = code.split('\n')
+        indented_lines = [indent_str + line if line.strip() else line for line in lines]
+        code_parts.append('\n'.join(indented_lines))
+
+    # 3. fixed_end 추가
+    if fixed_end:
+        code_parts.append(fixed_end.rstrip())
+
+    return '\n'.join(code_parts)
 
 
 def _merge_puzzle_blocks(blocks: list, max_blocks: int) -> list:
@@ -205,7 +281,7 @@ def _merge_puzzle_blocks(blocks: list, max_blocks: int) -> list:
     블록 수가 max_blocks를 초과할 경우 연속된 블록을 병합
 
     병합 전략:
-    1. 같은 indent를 가진 연속된 블록을 병합
+    1. 같은 indentation을 가진 연속된 블록을 병합
     2. 짧은 블록들 (1줄)을 우선 병합
     """
     if len(blocks) <= max_blocks:
@@ -221,7 +297,7 @@ def _merge_puzzle_blocks(blocks: list, max_blocks: int) -> list:
         if len(result) <= max_blocks:
             break
 
-        # 병합할 최적의 위치 찾기: 같은 indent를 가진 연속 블록
+        # 병합할 최적의 위치 찾기: 같은 indentation을 가진 연속 블록
         best_merge_idx = -1
         best_score = -1
 
@@ -229,9 +305,9 @@ def _merge_puzzle_blocks(blocks: list, max_blocks: int) -> list:
             curr = result[i]
             next_block = result[i + 1]
 
-            # 같은 indent면 병합 가능
-            curr_indent = curr.get("indent", 0)
-            next_indent = next_block.get("indent", 0)
+            # 같은 indentation이면 병합 가능
+            curr_indent = curr.get("indentation") or curr.get("indent", 0)
+            next_indent = next_block.get("indentation") or next_block.get("indent", 0)
 
             if curr_indent == next_indent:
                 # 짧은 블록일수록 병합 우선순위 높음
@@ -243,15 +319,15 @@ def _merge_puzzle_blocks(blocks: list, max_blocks: int) -> list:
                     best_score = score
                     best_merge_idx = i
 
-        # 같은 indent가 없으면 그냥 첫 번째 연속 블록 병합
+        # 같은 indentation이 없으면 그냥 첫 번째 연속 블록 병합
         if best_merge_idx == -1:
             best_merge_idx = 0
 
-        # 병합 실행
+        # 병합 실행 (indentation 키 사용)
         merged_block = {
             "id": result[best_merge_idx]["id"],
             "code": result[best_merge_idx].get("code", "") + "\n" + result[best_merge_idx + 1].get("code", ""),
-            "indent": result[best_merge_idx].get("indent", 0),
+            "indentation": result[best_merge_idx].get("indentation") or result[best_merge_idx].get("indent", 0),
         }
 
         # 병합된 블록으로 교체
@@ -416,11 +492,14 @@ def _remove_fixed_end_duplicates(blocks: list, fixed_end: str) -> tuple:
     # 블록이 너무 적으면 (1-2개) fixed_end도 블록으로 전환
     if len(cleaned_blocks) <= 2 and fixed_end:
         print(f"[Puzzle Fix] Only {len(cleaned_blocks)} blocks, converting fixed_end to block")
-        # fixed_end를 블록으로 추가
+        # fixed_end를 블록으로 추가 (indentation 키 사용)
+        existing_indent = 0
+        if cleaned_blocks:
+            existing_indent = cleaned_blocks[0].get("indentation") or cleaned_blocks[0].get("indent", 0)
         new_block = {
             "id": len(cleaned_blocks) + 1,
             "code": fixed_end.strip(),
-            "indent": cleaned_blocks[0].get("indent", 0) if cleaned_blocks else 0,
+            "indentation": existing_indent,
         }
         cleaned_blocks.append(new_block)
         return cleaned_blocks, None
@@ -488,9 +567,10 @@ def get_chat_orchestrator_main():
 class ChatRequest(BaseModel):
     """LangGraph Chat 요청"""
     message: str
-    conversation_history: List[ChatAgentMessage] = []
+    conversation_history: List[ChatAgentMessage] = []  # 프론트엔드 fallback용 (DB 없을 때)
     user_context: Optional[Dict[str, Any]] = None
     session_state: Optional[Dict[str, Any]] = None  # 세션 상태
+    session_id: Optional[str] = None  # 세션 ID (DB 세션용)
 
 
 class ChatResponse(BaseModel):
@@ -514,6 +594,8 @@ class ChatResponse(BaseModel):
     # Solving 결과
     hint_level: Optional[int] = None
     is_correct: Optional[bool] = None
+    # 세션 추적
+    session_id: Optional[str] = None  # 상태 영속화용 세션 ID
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -545,27 +627,111 @@ async def chat_agent(
         route_discovery_intent → search_problems
             ├─ [유사도↑] filter_results ─┐
             └─ [fallback] generate_problem─┴→ handle_selection → confirm_problem → respond
+
+    세션 관리:
+        - DB에 대화 히스토리 저장 (chat_sessions, chat_messages 테이블)
+        - 세션 상태 (stage, collected_info 등) DB 저장
+        - 프론트엔드에서 session_id 전달하면 해당 세션 재사용
     """
     try:
         orchestrator = get_chat_orchestrator_main()
-
-        # 대화 히스토리를 딕셔너리 형태로 변환
-        conversation_history = [
-            {"role": msg.role, "content": msg.content}
-            for msg in request.conversation_history
-        ]
+        chat_session_service = get_chat_session_service(db)
 
         # user_context에 user_id 추가 (DB 저장에 필요)
         user_context = request.user_context or {}
-        if current_user_id:
-            user_context["user_id"] = str(current_user_id)
+        user_id = str(current_user_id) if current_user_id else None
+        if user_id:
+            user_context["user_id"] = user_id
 
+        # ============================================================
+        # 사용자 히스토리 조회 (개인화 추천용)
+        # ============================================================
+        if user_id:
+            try:
+                user_history_service = get_user_history_service(db)
+                personalization = await user_history_service.get_personalization_context(user_id)
+
+                if personalization.get('has_history'):
+                    user_context["personalization"] = personalization
+                    print(f"[Chat] Loaded personalization: {len(personalization.get('recent_problems', []))} recent problems")
+
+                    # 스킬 요약이 있으면 추가
+                    if personalization.get('skill_summary'):
+                        skill = personalization['skill_summary']
+                        print(f"[Chat] User skill: weak={skill.get('weak_topics')}, strong={skill.get('strong_topics')}")
+
+            except Exception as history_err:
+                print(f"[Chat] Failed to load user history (non-blocking): {history_err}")
+
+        # ============================================================
+        # 세션 관리: DB에서 세션 가져오기 또는 생성
+        # ============================================================
+        session_id = None
+        conversation_history = []
+        session_state = request.session_state
+
+        if user_id:
+            try:
+                # 세션 가져오기 또는 생성
+                session_id = await chat_session_service.get_or_create_session(
+                    user_id=user_id,
+                    session_id=request.session_id
+                )
+                print(f"[Chat] Using session: {session_id[:8]}... for user: {user_id[:8]}...")
+
+                # DB에서 대화 히스토리 로드
+                conversation_history = await chat_session_service.convert_to_langchain_messages(
+                    session_id=session_id,
+                    limit=20  # 최근 20개 메시지만
+                )
+                print(f"[Chat] Loaded {len(conversation_history)} messages from DB")
+
+                # DB에서 세션 상태 로드 (프론트엔드에서 전달한 것보다 DB 우선)
+                if not session_state:
+                    db_session_state = await chat_session_service.get_session_state(session_id)
+                    if db_session_state:
+                        session_state = {
+                            "stage": db_session_state.get("current_stage", "intent"),
+                            "collected_info": db_session_state.get("collected_info", {}),
+                            "session_state": db_session_state.get("session_state", {}),
+                        }
+                        print(f"[Chat] Loaded session state from DB: stage={session_state.get('stage')}")
+
+                # 사용자 메시지 DB에 저장
+                await chat_session_service.add_message(
+                    session_id=session_id,
+                    role="user",
+                    content=request.message,
+                    message_type="text"
+                )
+
+            except Exception as session_err:
+                print(f"[Chat] Session error (using fallback): {session_err}")
+                # 세션 에러 시 프론트엔드에서 보낸 히스토리 사용
+                conversation_history = [
+                    {"role": msg.role, "content": msg.content}
+                    for msg in request.conversation_history
+                ]
+                import uuid as uuid_module
+                session_id = request.session_id or str(uuid_module.uuid4())
+        else:
+            # 비로그인 사용자: 프론트엔드에서 보낸 히스토리 사용
+            conversation_history = [
+                {"role": msg.role, "content": msg.content}
+                for msg in request.conversation_history
+            ]
+            import uuid as uuid_module
+            session_id = request.session_id or str(uuid_module.uuid4())
+
+        # ============================================================
         # 오케스트레이터 실행
+        # ============================================================
         result = await orchestrator.process(
             message=request.message,
             conversation_history=conversation_history,
             user_context=user_context,
-            session_state=request.session_state,
+            session_state=session_state,
+            session_id=session_id,
         )
 
         # 결과 추출
@@ -585,6 +751,44 @@ async def chat_agent(
                 selected_problem_index=collected_info_data.get("selected_problem_index"),
             )
 
+        # ============================================================
+        # 응답을 DB에 저장
+        # ============================================================
+        if user_id and session_id:
+            try:
+                # 어시스턴트 메시지 저장
+                message_metadata = {}
+                if result.get("action_trigger"):
+                    message_metadata["action_trigger"] = result.get("action_trigger")
+                if result.get("search_results"):
+                    message_metadata["has_search_results"] = True
+                if result.get("generated_problem"):
+                    message_metadata["has_generated_problem"] = True
+
+                await chat_session_service.add_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=response_message,
+                    message_type=result.get("action_trigger") or "text",
+                    metadata=message_metadata if message_metadata else None
+                )
+
+                # 세션 상태 업데이트
+                await chat_session_service.update_session_state(
+                    session_id=session_id,
+                    stage=result.get("stage"),
+                    collected_info=collected_info_data,
+                    session_state={
+                        "awaiting_confirmation": result.get("awaiting_confirmation", False),
+                        "suggested_value": result.get("suggested_value"),
+                    },
+                    current_problem_data=result.get("generated_problem") or result.get("selected_problem"),
+                )
+                print(f"[Chat] Saved response and state to DB")
+
+            except Exception as save_err:
+                print(f"[Chat] Failed to save to DB (non-blocking): {save_err}")
+
         return ChatResponse(
             stage=result.get("stage", "intent"),
             message=response_message,
@@ -603,6 +807,8 @@ async def chat_agent(
             suggested_value=result.get("suggested_value"),
             hint_level=result.get("hint_level"),
             is_correct=result.get("is_correct"),
+            # 세션 추적 (클라이언트가 다음 요청에 사용)
+            session_id=session_id,
         )
 
     except Exception as e:
@@ -611,6 +817,100 @@ async def chat_agent(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chat agent error: {str(e)}"
+        )
+
+
+# ============================================================
+# Resume Endpoint - Human-in-the-Loop 재개
+# ============================================================
+
+class ResumeRequest(BaseModel):
+    """그래프 재개 요청 (interrupt 후)"""
+    session_id: str  # 세션 ID (필수)
+    user_response: Dict[str, Any]  # 사용자 응답 (action, data 등)
+
+
+class ResumeResponse(BaseModel):
+    """그래프 재개 응답"""
+    stage: str
+    message: str
+    action_trigger: Optional[str] = None
+    action_data: Optional[Dict[str, Any]] = None
+    is_complete: bool = False
+    session_id: str
+
+
+@router.post("/resume", response_model=ResumeResponse)
+async def resume_graph(
+    request: ResumeRequest,
+    db=Depends(get_db),
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
+    """
+    Interrupt된 그래프 재개 (Human-in-the-Loop)
+
+    문제 생성 확인, 힌트 공개 확인 등 사용자 확인이 필요한 상황에서
+    사용자 응답을 받아 그래프를 재개합니다.
+
+    Usage:
+        1. /chat에서 interrupt 발생 시 프론트엔드가 확인 UI 표시
+        2. 사용자가 선택 후 이 엔드포인트로 응답 전송
+        3. 그래프가 재개되어 결과 반환
+
+    Request:
+        - session_id: /chat 응답에서 받은 session_id
+        - user_response: 사용자 선택 ({"action": "confirm|modify|cancel", ...})
+    """
+    try:
+        from ..graphs.orchestrator_v2 import get_orchestrator_v2
+        from ..graphs.checkpointer import create_thread_config
+
+        orchestrator = get_orchestrator_v2()
+
+        # Checkpointer가 초기화되어 있는지 확인
+        if not orchestrator._initialized:
+            await orchestrator.initialize()
+
+        if not orchestrator.checkpointer:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Checkpointer not available. Cannot resume interrupted graph."
+            )
+
+        # 그래프 config 생성
+        config = create_thread_config(
+            session_id=request.session_id,
+            user_id=str(current_user_id) if current_user_id else None,
+        )
+
+        # 현재 그래프 상태 확인 및 재개
+        # Note: LangGraph의 resume 패턴 - 사용자 응답을 Command로 전달
+        from langgraph.types import Command
+
+        # 사용자 응답으로 그래프 재개
+        # discovery_graph가 interrupt 상태라면 user_response를 resume 값으로 전달
+        result = await orchestrator.discovery_graph.graph.ainvoke(
+            Command(resume=request.user_response),
+            config=config,
+        )
+
+        response_message = result.get("response_message", "")
+
+        return ResumeResponse(
+            stage=result.get("stage", "discovery"),
+            message=response_message,
+            action_trigger=result.get("action_trigger"),
+            action_data=result.get("action_data"),
+            is_complete=result.get("is_complete", False),
+            session_id=request.session_id,
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Resume error: {str(e)}"
         )
 
 
@@ -1096,9 +1396,9 @@ async def generate_puzzle_problem(
         blocks = _process_block_indents(blocks, base_indent)
         result["blocks"] = blocks
 
-        # 디버그: indent 값 출력
-        indent_info = [(b.get("id"), b.get("indent"), b.get("code", "")[:30]) for b in blocks[:5]]
-        print(f"[Puzzle Gen] Block indents (first 5): {indent_info}")
+        # 디버그: indentation 값 출력
+        indent_info = [(b.get("id"), b.get("indentation", 0), b.get("code", "")[:30]) for b in blocks[:5]]
+        print(f"[Puzzle Gen] Block indentations (first 5): {indent_info}")
 
         # 4. 블록 수가 15개 초과시 자동 병합
         MAX_BLOCKS = 15
@@ -1130,6 +1430,15 @@ async def generate_puzzle_problem(
                     print(f"[Puzzle Gen] DB save failed: {save_result.get('error')}")
             except Exception as save_err:
                 print(f"[Puzzle Gen] DB save error (non-blocking): {save_err}")
+
+        # 5. 정답 코드 조합 (indentation 적용)
+        solution_code = assemble_puzzle_solution(
+            fixed_start=result.get("fixed_start", ""),
+            blocks=result.get("blocks", []),
+            fixed_end=result.get("fixed_end", ""),
+        )
+        result["solution_code"] = solution_code
+        print(f"[Puzzle Gen] Generated solution_code ({len(solution_code)} chars)")
 
         return PuzzleProblemResponse(**result)
 
@@ -1697,6 +2006,223 @@ async def recommend_problems(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Recommendation error: {str(e)}"
+        )
+
+
+# ============================================================
+# Personalization Endpoints
+# ============================================================
+
+class UserProfileResponse(BaseModel):
+    """사용자 학습 프로필 응답"""
+    user_id: str
+    total_attempts: int = 0
+    correct_rate: float = 0.0
+    strong_topics: List[str] = []
+    weak_topics: List[str] = []
+    preferred_difficulty: str = "easy"
+    recent_topics: List[str] = []
+    avg_hints_used: float = 0.0
+    streak_days: int = 0
+    last_active: Optional[str] = None
+
+
+class RecommendationItem(BaseModel):
+    """추천 문제 항목"""
+    problem_id: str
+    base_problem_id: Optional[str] = None
+    problem_type: str = "blank"
+    difficulty: str = "medium"
+    topics: List[str] = []
+    reason: str = ""
+    confidence: float = 0.5
+
+
+class PersonalizedRecommendationsResponse(BaseModel):
+    """개인화된 문제 추천 응답"""
+    recommendations: List[RecommendationItem]
+    profile_summary: Optional[Dict[str, Any]] = None
+
+
+@router.get("/user/profile", response_model=UserProfileResponse)
+async def get_user_learning_profile(
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
+    """
+    사용자 학습 프로필 조회
+
+    학습 히스토리를 분석하여 다음 정보를 제공:
+    - 총 시도 횟수, 정답률
+    - 강점/약점 토픽
+    - 선호 난이도
+    - 최근 학습 토픽
+    - 연속 학습일
+
+    Returns:
+        UserProfileResponse
+    """
+    if not current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="로그인이 필요합니다."
+        )
+
+    try:
+        from ..services.personalization import get_personalization_service
+
+        ps = get_personalization_service()
+        profile = await ps.get_user_profile(str(current_user_id))
+
+        if not profile:
+            return UserProfileResponse(user_id=str(current_user_id))
+
+        return UserProfileResponse(
+            user_id=profile.user_id,
+            total_attempts=profile.total_attempts,
+            correct_rate=profile.correct_rate,
+            strong_topics=profile.strong_topics,
+            weak_topics=profile.weak_topics,
+            preferred_difficulty=profile.preferred_difficulty,
+            recent_topics=profile.recent_topics,
+            avg_hints_used=profile.avg_hints_used,
+            streak_days=profile.streak_days,
+            last_active=profile.last_active.isoformat() if profile.last_active else None,
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"프로필 조회 오류: {str(e)}"
+        )
+
+
+@router.get("/user/recommendations", response_model=PersonalizedRecommendationsResponse)
+async def get_personalized_recommendations(
+    limit: int = 5,
+    problem_type: Optional[str] = None,
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
+    """
+    개인화된 문제 추천
+
+    사용자의 학습 프로필을 기반으로 맞춤 문제를 추천합니다.
+
+    추천 전략:
+    - 40%: 약점 보완 문제
+    - 30%: 다음 난이도 도전 문제
+    - 30%: 복습 문제 (틀렸던 문제)
+
+    Args:
+        limit: 추천 개수 (기본 5)
+        problem_type: 문제 유형 필터 (blank, puzzle, guided)
+
+    Returns:
+        PersonalizedRecommendationsResponse
+    """
+    if not current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="로그인이 필요합니다."
+        )
+
+    try:
+        from ..services.personalization import get_personalization_service
+
+        ps = get_personalization_service()
+        recommendations = await ps.get_recommendations(
+            user_id=str(current_user_id),
+            limit=limit,
+            problem_type=problem_type,
+        )
+
+        # 프로필 요약도 함께 반환
+        rag_context = await ps.get_rag_context(str(current_user_id))
+
+        return PersonalizedRecommendationsResponse(
+            recommendations=[
+                RecommendationItem(
+                    problem_id=r.problem_id,
+                    base_problem_id=r.base_problem_id,
+                    problem_type=r.problem_type,
+                    difficulty=r.difficulty,
+                    topics=r.topics,
+                    reason=r.reason,
+                    confidence=r.confidence,
+                )
+                for r in recommendations
+            ],
+            profile_summary={
+                "user_level": rag_context.get("user_level", "beginner"),
+                "preferred_difficulty": rag_context.get("preferred_difficulty", "easy"),
+                "weak_topics": rag_context.get("weak_topics", [])[:3],
+                "streak_days": rag_context.get("streak_days", 0),
+            }
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"추천 조회 오류: {str(e)}"
+        )
+
+
+@router.post("/search/personalized")
+async def search_problems_personalized(
+    request: RAGSearchRequest,
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+    db=Depends(get_db),
+):
+    """
+    개인화된 문제 검색
+
+    사용자의 학습 프로필을 고려하여 검색 결과를 개인화합니다.
+
+    개인화 요소:
+    - 약점 토픽 관련 결과 부스트
+    - 선호 난이도 결과 우선
+    - 이미 푼 문제 중복 방지 (옵션)
+    """
+    try:
+        search_query = request.query
+        if request.topics:
+            search_query += " " + " ".join(request.topics)
+
+        user_id = str(current_user_id) if current_user_id else None
+
+        if user_id:
+            # 개인화된 검색
+            results, should_fallback = await rag_service.search_problems_personalized(
+                query=search_query,
+                user_id=user_id,
+                topics=request.topics,
+                difficulty=request.difficulty.value if request.difficulty else None,
+                language=request.language.value if request.language else None,
+                limit=request.limit,
+            )
+        else:
+            # 일반 검색
+            results, should_fallback = await rag_service.search_problems_hybrid(
+                query=search_query,
+                topics=request.topics,
+                difficulty=request.difficulty.value if request.difficulty else None,
+                language=request.language.value if request.language else None,
+                limit=request.limit,
+            )
+
+        return {
+            "results": results,
+            "personalized": user_id is not None,
+            "fallback_to_code_gen": should_fallback,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"검색 오류: {str(e)}"
         )
 
 
