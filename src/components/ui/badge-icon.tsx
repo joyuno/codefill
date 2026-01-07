@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// 뱃지 이름 → Lucide 아이콘 매핑
+// 뱃지 이름 → Lucide 아이콘 매핑 (폴백용)
 const BADGE_ICON_MAP: Record<string, LucideIcon> = {
   // DB 뱃지 (영어 이름)
   'first step': Footprints,
@@ -43,15 +43,16 @@ const BADGE_ICON_MAP: Record<string, LucideIcon> = {
   'perfectionist': Crown,
 };
 
-// 뱃지 색상 (희귀도별)
+// 뱃지 색상 (희귀도별) - 5단계
 const RARITY_COLORS: Record<string, string> = {
   common: 'text-gray-500 bg-gray-500/20',
+  uncommon: 'text-green-500 bg-green-500/20',
   rare: 'text-blue-500 bg-blue-500/20',
   epic: 'text-purple-500 bg-purple-500/20',
   legendary: 'text-yellow-500 bg-yellow-500/20',
 };
 
-// 뱃지 이름별 기본 색상
+// 뱃지 이름별 기본 색상 (폴백용)
 const BADGE_COLORS: Record<string, string> = {
   'first step': 'text-cyan-500 bg-cyan-500/20',
   'first steps': 'text-cyan-500 bg-cyan-500/20',
@@ -69,7 +70,8 @@ const BADGE_COLORS: Record<string, string> = {
 
 interface BadgeIconProps {
   name: string;
-  rarity?: 'common' | 'rare' | 'epic' | 'legendary';
+  iconUrl?: string | null;
+  rarity?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
   size?: 'sm' | 'md' | 'lg';
   showBackground?: boolean;
   className?: string;
@@ -77,6 +79,7 @@ interface BadgeIconProps {
 
 export function BadgeIcon({
   name,
+  iconUrl,
   rarity,
   size = 'md',
   showBackground = true,
@@ -102,6 +105,41 @@ export function BadgeIcon({
     lg: 'h-12 w-12',
   };
 
+  const imgSizes = {
+    sm: 'h-6 w-6',
+    md: 'h-8 w-8',
+    lg: 'h-10 w-10',
+  };
+
+  // icon_url이 있으면 이미지 사용
+  if (iconUrl) {
+    if (showBackground) {
+      return (
+        <div className={cn(
+          'flex items-center justify-center rounded-lg',
+          containerSizes[size],
+          colorClass,
+          className
+        )}>
+          <img
+            src={iconUrl}
+            alt={name}
+            className={cn(imgSizes[size], 'object-contain')}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <img
+        src={iconUrl}
+        alt={name}
+        className={cn(imgSizes[size], 'object-contain', className)}
+      />
+    );
+  }
+
+  // 없으면 기존 Lucide 아이콘 폴백
   if (showBackground) {
     return (
       <div className={cn(
