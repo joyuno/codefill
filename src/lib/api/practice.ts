@@ -14,16 +14,25 @@ export interface PuzzleSubmission {
   blockOrder: Array<{ id: string; indentation: number }>;
 }
 
+export interface NewBadge {
+  code: string;
+  name: string;
+  iconUrl?: string | null;
+  rarity: string;
+}
+
 export interface BlankResult {
   results: Record<string, boolean>;
   allCorrect: boolean;
   xpEarned: number;
+  newBadges?: NewBadge[];
 }
 
 export interface PuzzleResult {
   isCorrect: boolean;
   results: Record<string, boolean>;
   xpEarned: number;
+  newBadges?: NewBadge[];
 }
 
 export interface RunCodeResult {
@@ -47,6 +56,7 @@ export interface RecordResult {
   success: boolean;
   xpEarned: number;
   message: string;
+  newBadges?: NewBadge[];
 }
 
 export interface HintCheckResult {
@@ -188,7 +198,12 @@ export const practiceApi = {
    * Record problem solve for XP and grass (simple record without validation)
    */
   async recordSolve(submission: RecordSubmission & { difficulty?: string }): Promise<RecordResult> {
-    const response = await api.post<RecordResult>('/practice/submit/record', {
+    const response = await api.post<{
+      success: boolean;
+      xp_earned: number;
+      message: string;
+      new_badges?: Array<{ code: string; name: string; icon_url?: string; rarity: string }>;
+    }>('/practice/submit/record', {
       problem_id: submission.problemId,
       base_problem_id: submission.baseProblemId,
       problem_type: submission.problemType,
@@ -201,7 +216,18 @@ export const practiceApi = {
       attempt_id: submission.attemptId,  // 기존 pending attempt ID
     });
     if (response.error) throw new Error(response.error.message);
-    return response.data!;
+    const data = response.data!;
+    return {
+      success: data.success,
+      xpEarned: data.xp_earned,
+      message: data.message,
+      newBadges: data.new_badges?.map(b => ({
+        code: b.code,
+        name: b.name,
+        iconUrl: b.icon_url,
+        rarity: b.rarity,
+      })),
+    };
   },
 
   /**

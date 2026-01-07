@@ -17,6 +17,7 @@ import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 import { CorrectAnswerPopup } from '@/components/practice/CorrectAnswerPopup';
 
 import { practiceApi, agentApi, problemsApi } from '@/lib/api';
+import type { NewBadge } from '@/lib/api/practice';
 import { apiClient } from '@/lib/api/client';
 import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 import type { HintAgentResponse, FeedbackResponse, BaseProblemInfo } from '@/lib/api/agent';
@@ -30,6 +31,19 @@ const difficultyColors = {
 export default function ChatPage() {
   const { toast } = useToast();
   const router = useRouter();
+
+  // 뱃지 획득 토스트 표시
+  const showBadgeToasts = useCallback((badges: NewBadge[] | undefined) => {
+    if (!badges || badges.length === 0) return;
+    badges.forEach((badge, index) => {
+      setTimeout(() => {
+        toast({
+          title: '🏆 새 뱃지 획득!',
+          description: `${badge.name} - ${badge.rarity}`,
+        });
+      }, index * 1000); // 여러 뱃지면 1초 간격으로 표시
+    });
+  }, [toast]);
   const searchParams = useSearchParams();
 
   // ============================================================
@@ -384,6 +398,7 @@ export default function ChatPage() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              showBadgeToasts(recordResult.newBadges);
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -417,6 +432,7 @@ export default function ChatPage() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            showBadgeToasts(recordResult.newBadges);
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -425,7 +441,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId]
+    [problem, toast, fetchFeedback, attemptId, showBadgeToasts]
   );
 
   // Puzzle submit handler
@@ -457,6 +473,7 @@ export default function ChatPage() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              showBadgeToasts(recordResult.newBadges);
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -486,6 +503,7 @@ export default function ChatPage() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            showBadgeToasts(recordResult.newBadges);
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -494,7 +512,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId]
+    [problem, toast, fetchFeedback, attemptId, showBadgeToasts]
   );
 
   // Implementation submit handler (blank, puzzle, implementation 공통)
@@ -522,6 +540,7 @@ export default function ChatPage() {
           console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            showBadgeToasts(recordResult.newBadges);
             fetchFeedback(true, recordResult.xpEarned);
             return;
           } else if (recordResult.message.includes('로그인')) {
@@ -546,7 +565,7 @@ export default function ChatPage() {
         });
       }
     },
-    [problem, toast, fetchFeedback, attemptId]
+    [problem, toast, fetchFeedback, attemptId, showBadgeToasts]
   );
 
   // Render practice component based on problem type
