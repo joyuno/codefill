@@ -361,6 +361,7 @@ export interface PublicBadge {
   id: string;
   name: string;
   icon: string;
+  iconUrl?: string;
   description: string;
   rarity: string;
 }
@@ -410,9 +411,23 @@ export const publicProfileApi = {
    * Get public badges by username (인증 불필요)
    */
   async getBadges(username: string): Promise<PublicBadge[]> {
-    const response = await api.get<PublicBadge[]>(`/users/${encodeURIComponent(username)}/public-badges`, false);
+    const response = await api.get<Array<{
+      id: string;
+      name: string;
+      icon: string;
+      icon_url?: string;
+      description: string;
+      rarity: string;
+    }>>(`/users/${encodeURIComponent(username)}/public-badges`, false);
     if (response.error) throw new Error(response.error.message);
-    return response.data || [];
+    return (response.data || []).map(b => ({
+      id: b.id,
+      name: b.name,
+      icon: b.icon,
+      iconUrl: b.icon_url,
+      description: b.description,
+      rarity: b.rarity,
+    }));
   },
 
   /**

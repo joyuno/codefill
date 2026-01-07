@@ -1,36 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
-import { TopNav } from '@/components/layout/TopNav';
-import { SidebarProfile } from '@/components/dashboard/SidebarProfile';
-import { StatCards } from '@/components/dashboard/StatCards';
-import { GrassHeatmap } from '@/components/dashboard/GrassHeatmap';
 import { Button } from '@/components/ui/button';
-import { usersApi } from '@/lib/api/users';
 import {
-  Play,
   Sparkles,
   Code2,
   BookOpen,
   Trophy,
-  Users,
   Zap,
-  CheckCircle,
   ArrowRight,
   Leaf,
 } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
-import type { Badge } from '@/lib/types';
 
-// ============================================
-// 랜딩 페이지 (비로그인 상태)
-// ============================================
-
-function LandingPage() {
+export function LandingPage() {
   const features = [
     {
       icon: BookOpen,
@@ -64,12 +49,12 @@ function LandingPage() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       {/* 히어로 섹션 */}
       <section className="relative overflow-hidden">
         {/* 배경 그라데이션 */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/10" />
-        
+
         <div className="container mx-auto max-w-6xl px-6 py-20 relative">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -81,12 +66,12 @@ function LandingPage() {
               <br />
               시작합니다
             </h1>
-            
+
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              빈칸 채우기로 시작해서, 퍼즐 맞추기, 대화형 학습, 
+              빈칸 채우기로 시작해서, 퍼즐 맞추기, 대화형 학습,
               직접 구현까지. 단계별로 코딩 실력을 키워보세요.
             </p>
-            
+
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <Link href="/onboarding">
                 <Button size="lg" className="gap-2 px-8">
@@ -101,7 +86,7 @@ function LandingPage() {
               </Link>
             </div>
           </motion.div>
-          
+
           {/* 통계 */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -118,7 +103,7 @@ function LandingPage() {
           </motion.div>
         </div>
       </section>
-      
+
       {/* 기능 섹션 */}
       <section className="py-20 bg-secondary/30">
         <div className="container mx-auto max-w-6xl px-6">
@@ -130,11 +115,11 @@ function LandingPage() {
           >
             <h2 className="text-3xl font-bold mb-4">왜 CodeFill인가요?</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              처음부터 코드를 작성하는 건 어려워요. 
+              처음부터 코드를 작성하는 건 어려워요.
               빈칸을 채우면서 자연스럽게 문법과 로직을 익히세요.
             </p>
           </motion.div>
-          
+
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature, i) => (
               <motion.div
@@ -155,7 +140,7 @@ function LandingPage() {
           </div>
         </div>
       </section>
-      
+
       {/* 학습 단계 섹션 */}
       <section className="py-20">
         <div className="container mx-auto max-w-6xl px-6">
@@ -170,7 +155,7 @@ function LandingPage() {
               쉬운 것부터 시작해서 점점 난이도를 높여가요
             </p>
           </motion.div>
-          
+
           <div className="grid md:grid-cols-4 gap-4">
             {[
               { step: 1, name: '빈칸 채우기', desc: '핵심 문법만 채워요', color: 'bg-green-500' },
@@ -209,7 +194,7 @@ function LandingPage() {
           </div>
         </div>
       </section>
-      
+
       {/* CTA 섹션 */}
       <section className="py-20 bg-primary text-primary-foreground">
         <div className="container mx-auto max-w-4xl px-6 text-center">
@@ -237,7 +222,7 @@ function LandingPage() {
           </motion.div>
         </div>
       </section>
-      
+
       {/* 푸터 */}
       <footer className="py-8 border-t border-border">
         <div className="container mx-auto max-w-6xl px-6">
@@ -254,95 +239,4 @@ function LandingPage() {
       </footer>
     </div>
   );
-}
-
-// ============================================
-// 대시보드 (로그인 상태)
-// ============================================
-
-function Dashboard() {
-  const [badges, setBadges] = useState<Badge[]>([]);
-  const { isAuthenticated } = useAuth();
-
-  // 뱃지를 한 번만 가져와서 StatCards와 SidebarProfile에 전달 (중복 API 호출 방지)
-  useEffect(() => {
-    if (isAuthenticated) {
-      usersApi.getBadges()
-        .then(setBadges)
-        .catch(() => setBadges([]));
-    }
-  }, [isAuthenticated]);
-
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <TopNav />
-      <div className="flex">
-        <aside className="hidden w-72 shrink-0 border-r border-border lg:block">
-          <SidebarProfile badges={badges} />
-        </aside>
-        <main className="flex-1 p-6">
-          <div className="mx-auto max-w-4xl space-y-6">
-            <StatCards badgeCount={badges.length} />
-
-            {/* CTA Section */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/10 to-transparent p-6"
-            >
-              <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold">오늘의 학습을 시작해보세요!</h3>
-                  <p className="text-muted-foreground">문제를 풀고 XP를 얻어 레벨업하세요</p>
-                </div>
-                <Link href="/problems">
-                  <Button size="lg" className="gap-2">
-                    <Play className="h-4 w-4" />
-                    문제 풀기
-                    <Sparkles className="h-4 w-4" />
-                  </Button>
-                </Link>
-              </div>
-            </motion.div>
-
-            {/* Grass Heatmap */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <GrassHeatmap />
-            </motion.div>
-          </div>
-        </main>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// 메인 페이지 컴포넌트
-// ============================================
-
-export default function HomePage() {
-  const { isLoading, isAuthenticated } = useAuth();
-  
-  // 로딩 중
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-        >
-          <Code2 className="h-8 w-8 text-primary" />
-        </motion.div>
-      </div>
-    );
-  }
-  
-  // 로그인 상태에 따라 다른 페이지 표시
-  return isAuthenticated ? <Dashboard /> : <LandingPage />;
 }

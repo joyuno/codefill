@@ -1,0 +1,558 @@
+# CodeFill Badge Icons - Recraft Prompts
+#
+# Recraft는 한번에 1개씩만 생성 가능!
+# 하지만 같은 스타일/팔레트 설정을 유지하면서 여러 개 생성 가능
+#
+================================================================================
+
+## Recraft 사용법
+
+### 1단계: 프로젝트 설정
+1. recraft.ai 접속 및 로그인
+2. 새 프로젝트 생성 (프로젝트 단위로 스타일 유지됨)
+3. 프로젝트 이름: "CodeFill Badges" 등
+
+### 2단계: 스타일 설정 (중요!)
+1. 좌측 Style 메뉴 클릭
+2. "Icon" 또는 "Flat Icon" 선택
+3. 또는 "Digital Art" > 심플한 스타일 선택
+
+### 3단계: 컬러 팔레트 설정 (핵심!)
+1. 좌측 "Color" 또는 "Palette" 메뉴
+2. 카테고리별로 2색 팔레트 설정:
+   - 메인색 (희귀도) + 포인트색 (아이콘 특성)
+3. 같은 카테고리는 팔레트 유지하며 생성
+
+### 4단계: 프롬프트 입력 & 생성
+1. 아래 프롬프트 복사해서 입력
+2. Generate 클릭
+3. 4개 결과 중 마음에 드는 것 선택
+4. SVG로 다운로드
+
+### 5단계: 반복
+- 같은 팔레트로 다음 아이콘 생성
+- 카테고리 바뀌면 팔레트 변경
+
+================================================================================
+
+## 색상 시스템
+
+### 희귀도 메인색 (5가지)
+| 희귀도 | 색상 | HEX |
+|--------|------|-----|
+| common | bronze | #CD7F32 |
+| uncommon | green | #22C55E |
+| rare | blue | #3B82F6 |
+| epic | purple | #A855F7 |
+| legendary | gold | #EAB308 |
+
+### 포인트색 (9가지)
+| 용도 | 색상 | HEX |
+|------|------|-----|
+| 불꽃/열정 | orange | #F97316 |
+| 밤/어둠 | navy | #1E3A5A |
+| 아침/일출 | sunrise | #FB923C |
+| 자연/성장 | leaf green | #16A34A |
+| 코드/기술 | cyan | #06B6D4 |
+| 위험/어려움 | crimson | #DC2626 |
+| 아이디어/빛 | yellow | #FBBF24 |
+| 과녁/정확 | red | #EF4444 |
+| 번개 | electric blue | #60A5FA |
+
+================================================================================
+
+## 프롬프트 목록 (총 60개)
+
+### 팁: 효율적인 작업 순서
+1. 같은 메인색끼리 묶어서 작업
+2. 팔레트 한번 설정하면 여러 개 연속 생성
+3. 예: common(bronze) 14개 → uncommon(green) 11개 → ...
+
+================================================================================
+
+## 카테고리 1: 문제 해결 (6개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| first_solve | #CD7F32 bronze | - |
+| solve_10 | #CD7F32 bronze | #16A34A leaf green |
+| solve_50 | #22C55E green | #FBBF24 yellow |
+| solve_100 | #3B82F6 blue | - |
+| solve_250 | #A855F7 purple | #FBBF24 yellow |
+| solve_500 | #EAB308 gold | #06B6D4 cyan |
+
+### 프롬프트
+```
+[first_solve] 팔레트: bronze
+single footstep icon, first step, flat minimal style
+
+[solve_10] 팔레트: bronze + leaf green
+sprouting seedling with number 10, bronze base, green sprout, flat minimal style
+
+[solve_50] 팔레트: green + yellow
+half circle progress bar with star, green base, yellow star, flat minimal style
+
+[solve_100] 팔레트: blue
+roman centurion helmet silhouette, flat minimal style
+
+[solve_250] 팔레트: purple + yellow
+lightbulb with puzzle piece inside, purple base, glowing yellow bulb, flat minimal style
+
+[solve_500] 팔레트: gold + cyan
+crown above code brackets, gold crown, cyan code brackets, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 2: 스트릭 (5개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| streak_7 | #CD7F32 bronze | #F97316 orange |
+| streak_14 | #22C55E green | #F97316 orange |
+| streak_30 | #3B82F6 blue | #F97316 orange |
+| streak_90 | #A855F7 purple | #F97316 orange |
+| streak_365 | #EAB308 gold | #F97316 orange + #DC2626 crimson |
+
+### 프롬프트
+```
+[streak_7] 팔레트: bronze + orange
+calendar week with flame icon, bronze calendar, orange flame, flat minimal style
+
+[streak_14] 팔레트: green + orange
+two calendar pages with flame, green calendars, orange flame, flat minimal style
+
+[streak_30] 팔레트: blue + orange
+monthly calendar with blazing flame, blue calendar, orange flame, flat minimal style
+
+[streak_90] 팔레트: purple + orange
+three month cycle with flame, purple cycle, orange eternal flame, flat minimal style
+
+[streak_365] 팔레트: gold + orange + crimson
+annual ring with phoenix rising, gold ring, orange and red phoenix, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 3: 레벨 (5개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| level_5 | #CD7F32 bronze | #FBBF24 yellow |
+| level_10 | #22C55E green | - |
+| level_25 | #3B82F6 blue | - |
+| level_50 | #A855F7 purple | #FBBF24 yellow |
+| level_100 | #EAB308 gold | - |
+
+### 프롬프트
+```
+[level_5] 팔레트: bronze + yellow
+small star rising with motion lines, bronze base, yellow star, flat minimal style
+
+[level_10] 팔레트: green
+two-tier badge with upward arrow, flat minimal style
+
+[level_25] 팔레트: blue
+three-tier chevron military badge, flat minimal style
+
+[level_50] 팔레트: purple + yellow
+diamond badge with star center, purple diamond, yellow star, flat minimal style
+
+[level_100] 팔레트: gold
+chess king piece with crown, grandmaster style, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 4: 빈칸 채우기 (4개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| blank_10 | #CD7F32 bronze | #06B6D4 cyan |
+| blank_30 | #22C55E green | #06B6D4 cyan |
+| blank_50 | #3B82F6 blue | #06B6D4 cyan |
+| blank_100 | #A855F7 purple | #16A34A leaf green |
+
+### 프롬프트
+```
+[blank_10] 팔레트: bronze + cyan
+text line with blank underscore gap, bronze text, cyan cursor, flat minimal style
+
+[blank_30] 팔레트: green + cyan
+multiple text lines with blank gaps, green text, cyan cursor, flat minimal style
+
+[blank_50] 팔레트: blue + cyan
+code block with blinking cursor, blue code, cyan cursor, flat minimal style
+
+[blank_100] 팔레트: purple + leaf green
+document with checkmark completed, purple doc, green checkmark, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 5: 퍼즐 (4개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| puzzle_10 | #CD7F32 bronze | - |
+| puzzle_30 | 멀티컬러 | green/blue/orange/purple |
+| puzzle_50 | #3B82F6 blue | 멀티컬러 |
+| puzzle_100 | #A855F7 purple | #FBBF24 yellow |
+
+### 프롬프트
+```
+[puzzle_10] 팔레트: bronze
+single jigsaw puzzle piece, flat minimal style
+
+[puzzle_30] 팔레트: green + blue + orange + purple
+four connected puzzle pieces, each piece different color, flat minimal style
+
+[puzzle_50] 팔레트: blue + 멀티컬러
+complex interlocking puzzle pattern, blue base with colorful pieces, flat minimal style
+
+[puzzle_100] 팔레트: purple + yellow
+completed puzzle with glowing center, purple base, yellow glow center, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 6: 대화형 (4개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| guided_10 | #CD7F32 bronze | #06B6D4 cyan |
+| guided_30 | #22C55E green | #06B6D4 cyan |
+| guided_50 | #3B82F6 blue | #FBBF24 yellow |
+| guided_100 | #A855F7 purple | #1E3A5A navy |
+
+### 프롬프트
+```
+[guided_10] 팔레트: bronze + cyan
+two chat bubbles question and answer, bronze base, cyan bubbles, flat minimal style
+
+[guided_30] 팔레트: green + cyan
+multiple connected chat bubbles conversation, green base, cyan bubbles, flat minimal style
+
+[guided_50] 팔레트: blue + yellow
+chat bubble with lightbulb insight, blue bubble, yellow lightbulb, flat minimal style
+
+[guided_100] 팔레트: purple + navy
+chat bubble with graduation cap, purple bubble, navy graduation cap, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 7: 구현 (4개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| impl_10 | #CD7F32 bronze | #06B6D4 cyan |
+| impl_30 | #22C55E green | #06B6D4 cyan |
+| impl_50 | #3B82F6 blue | #1E3A5A navy |
+| impl_100 | #A855F7 purple | #DC2626 crimson |
+
+### 프롬프트
+```
+[impl_10] 팔레트: bronze + cyan
+code bracket with hammer tool, bronze hammer, cyan code brackets, flat minimal style
+
+[impl_30] 팔레트: green + cyan
+building blocks with code symbols, green blocks, cyan code, flat minimal style
+
+[impl_50] 팔레트: blue + navy
+blueprint with gear icon, blue gear, navy blueprint lines, flat minimal style
+
+[impl_100] 팔레트: purple + crimson
+tower structure with flag on top, purple tower, crimson flag, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 8: Easy 난이도 (3개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| easy_10 | #CD7F32 bronze | #16A34A leaf green |
+| easy_30 | #22C55E green | - |
+| easy_50 | #3B82F6 blue | #FBBF24 yellow |
+
+### 프롬프트
+```
+[easy_10] 팔레트: bronze + leaf green
+circle with checkmark, bronze circle, green checkmark, flat minimal style
+
+[easy_30] 팔레트: green
+three stacked circles with arrow, flat minimal style
+
+[easy_50] 팔레트: blue + yellow
+circle badge with star, blue circle, yellow star, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 9: Medium 난이도 (3개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| medium_10 | #22C55E green | #F97316 orange |
+| medium_30 | #3B82F6 blue | #F97316 orange |
+| medium_50 | #A855F7 purple | #EAB308 gold |
+
+### 프롬프트
+```
+[medium_10] 팔레트: green + orange
+diamond shape with accent border, green diamond, orange border, flat minimal style
+
+[medium_30] 팔레트: blue + orange
+three connected diamonds with flame, blue diamonds, orange flame, flat minimal style
+
+[medium_50] 팔레트: purple + gold
+diamond badge with crown, purple diamond, gold crown, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 10: Hard 난이도 (4개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| hard_5 | #22C55E green | #DC2626 crimson |
+| hard_10 | #3B82F6 blue | #DC2626 crimson |
+| hard_30 | #A855F7 purple | #DC2626 crimson |
+| hard_50 | #EAB308 gold | #DC2626 crimson + #F97316 orange |
+
+### 프롬프트
+```
+[hard_5] 팔레트: green + crimson
+warning triangle with heart, green triangle, crimson heart, flat minimal style
+
+[hard_10] 팔레트: blue + crimson
+cracked rock with fist breaking through, blue rock, crimson cracks, flat minimal style
+
+[hard_30] 팔레트: purple + crimson
+skull conquered with trophy, purple trophy, crimson skull, flat minimal style
+
+[hard_50] 팔레트: gold + crimson + orange
+flaming skull with crown, gold crown, crimson skull with orange flames, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 11: 복합 난이도 (2개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| all_difficulty | #3B82F6 blue | #22C55E/#F97316/#DC2626 |
+| all_difficulty_master | #EAB308 gold | #22C55E/#F97316/#DC2626 |
+
+### 프롬프트
+```
+[all_difficulty] 팔레트: blue + green + orange + crimson
+circle diamond triangle connected by path, green circle, orange diamond, crimson triangle, blue path, flat minimal style
+
+[all_difficulty_master] 팔레트: gold + green + orange + crimson
+three shapes united under crown, gold crown, green circle, orange diamond, crimson triangle, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 12: 시간대별 (3개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| night_owl | #CD7F32 bronze | #1E3A5A navy + #FBBF24 yellow |
+| early_bird | #CD7F32 bronze | #FB923C sunrise |
+| weekend_coder | #CD7F32 bronze | #06B6D4 cyan |
+
+### 프롬프트
+```
+[night_owl] 팔레트: bronze + navy + yellow
+owl face with moon and stars, bronze owl, navy background, yellow moon, flat minimal style
+
+[early_bird] 팔레트: bronze + sunrise orange
+bird silhouette with rising sun, bronze bird, orange sunrise rays, flat minimal style
+
+[weekend_coder] 팔레트: bronze + cyan
+calendar SAT-SUN with code brackets, bronze calendar, cyan code, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 13: 하루 집중 (4개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| daily_3 | #CD7F32 bronze | #FBBF24 yellow |
+| daily_5 | #22C55E green | #FBBF24 yellow |
+| daily_10 | #3B82F6 blue | #FBBF24 yellow + #EAB308 gold |
+| daily_20 | #A855F7 purple | #FBBF24 yellow + #F97316 orange |
+
+### 프롬프트
+```
+[daily_3] 팔레트: bronze + yellow
+sun icon with number 3, bronze base, yellow sun, flat minimal style
+
+[daily_5] 팔레트: green + yellow
+sun with checkmark and number 5, green base, yellow sun, flat minimal style
+
+[daily_10] 팔레트: blue + yellow + gold
+blazing sun with trophy and number 10, blue base, yellow sun, gold trophy, flat minimal style
+
+[daily_20] 팔레트: purple + yellow + orange
+supernova explosion with number 20, purple base, yellow orange explosion, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 14: 정확도 (5개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| first_try_10 | #CD7F32 bronze | #EF4444 red |
+| first_try_50 | #3B82F6 blue | #EF4444 red |
+| first_try_100 | #A855F7 purple | #EF4444 red + #EAB308 gold |
+| no_hint_50 | #3B82F6 blue | #DC2626 crimson |
+| no_hint_100 | #A855F7 purple | - |
+
+### 프롬프트
+```
+[first_try_10] 팔레트: bronze + red
+target bullseye with arrow center hit, bronze target, red center, flat minimal style
+
+[first_try_50] 팔레트: blue + red
+crosshair scope with hit mark, blue crosshair, red hit mark, flat minimal style
+
+[first_try_100] 팔레트: purple + red + gold
+diamond target with crown, purple diamond, red target center, gold crown, flat minimal style
+
+[no_hint_50] 팔레트: blue + crimson
+brain icon with crossed out help bubble, blue brain, crimson X mark, flat minimal style
+
+[no_hint_100] 팔레트: purple
+strong fist with badge, self-reliant symbol, flat minimal style
+```
+
+================================================================================
+
+## 카테고리 15: 도전 + 최고 달성 (4개)
+
+### 팔레트 설정
+| 아이콘 | 메인색 | 포인트색 |
+|--------|--------|----------|
+| perfect_week | #3B82F6 blue | #16A34A leaf green + #FBBF24 yellow |
+| perfect_month | #A855F7 purple | #16A34A leaf green + #EAB308 gold |
+| thousand | #EAB308 gold | #16A34A leaf green |
+| all_rounder | #EAB308 gold | 멀티컬러 |
+
+### 프롬프트
+```
+[perfect_week] 팔레트: blue + leaf green + yellow
+seven day calendar fully checked with star, blue calendar, green checkmarks, yellow star, flat minimal style
+
+[perfect_month] 팔레트: purple + leaf green + gold
+full month calendar with crown, purple calendar, green checkmarks, gold crown, flat minimal style
+
+[thousand] 팔레트: gold + leaf green
+number 1000 with laurel wreath badge, gold 1000, green laurel wreath, flat minimal style
+
+[all_rounder] 팔레트: gold + blue + green + purple + orange + cyan
+pentagon with five skill points maxed, gold base, each point different color, flat minimal style
+```
+
+================================================================================
+
+## 작업 체크리스트
+
+### common (bronze) - 14개
+- [ ] first_solve
+- [ ] solve_10
+- [ ] streak_7
+- [ ] level_5
+- [ ] blank_10
+- [ ] puzzle_10
+- [ ] guided_10
+- [ ] impl_10
+- [ ] easy_10
+- [ ] night_owl
+- [ ] early_bird
+- [ ] weekend_coder
+- [ ] daily_3
+- [ ] first_try_10
+
+### uncommon (green) - 11개
+- [ ] solve_50
+- [ ] streak_14
+- [ ] level_10
+- [ ] blank_30
+- [ ] puzzle_30
+- [ ] guided_30
+- [ ] impl_30
+- [ ] easy_30
+- [ ] medium_10
+- [ ] hard_5
+- [ ] daily_5
+
+### rare (blue) - 15개
+- [ ] solve_100
+- [ ] streak_30
+- [ ] level_25
+- [ ] blank_50
+- [ ] puzzle_50
+- [ ] guided_50
+- [ ] impl_50
+- [ ] easy_50
+- [ ] medium_30
+- [ ] hard_10
+- [ ] all_difficulty
+- [ ] daily_10
+- [ ] first_try_50
+- [ ] no_hint_50
+- [ ] perfect_week
+
+### epic (purple) - 13개
+- [ ] solve_250
+- [ ] streak_90
+- [ ] level_50
+- [ ] blank_100
+- [ ] puzzle_100
+- [ ] guided_100
+- [ ] impl_100
+- [ ] medium_50
+- [ ] hard_30
+- [ ] daily_20
+- [ ] first_try_100
+- [ ] no_hint_100
+- [ ] perfect_month
+
+### legendary (gold) - 7개
+- [ ] solve_500
+- [ ] streak_365
+- [ ] level_100
+- [ ] hard_50
+- [ ] all_difficulty_master
+- [ ] thousand
+- [ ] all_rounder
+
+================================================================================
+
+## 무료 플랜 팁
+
+- 하루 50크레딧 (약 12~15개 생성 가능)
+- 4~5일이면 60개 완성
+- 같은 팔레트로 연속 작업하면 일관성 유지 쉬움
+
+================================================================================

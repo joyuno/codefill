@@ -43,6 +43,14 @@ class PuzzleSubmission(BaseModel):
     block_order: List[PuzzleBlockSubmission]  # Blocks in user's arranged order with indentation
 
 
+class NewBadge(BaseModel):
+    """Newly earned badge info."""
+    code: str
+    name: str
+    icon_url: Optional[str] = None
+    rarity: str = "common"
+
+
 class SubmissionResponse(BaseModel):
     """Response for problem submission."""
     result: SubmissionResult
@@ -54,6 +62,9 @@ class SubmissionResponse(BaseModel):
     # Type-specific results
     blank_results: Optional[Dict[str, bool]] = None  # blank_id -> correct
     puzzle_results: Optional[Dict[str, bool]] = None  # block_id -> correct position/indentation
+
+    # Newly earned badges
+    new_badges: Optional[List[NewBadge]] = None
 
 
 class CodeExecutionRequest(BaseModel):
@@ -167,6 +178,7 @@ class RecordResponse(BaseModel):
     success: bool
     xp_earned: int
     message: str
+    new_badges: Optional[List[NewBadge]] = None
 
 
 class HintCheckResponse(BaseModel):

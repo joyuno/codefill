@@ -30,6 +30,7 @@ from ..models.practice import (
     SessionEndResponse,
 )
 from ..models.problem import ProblemType
+from ..services.badge_service import get_badge_service
 
 router = APIRouter()
 
@@ -390,6 +391,7 @@ async def submit_blank(
 
         answer_data = result.data.get("answer_data", {})
         correct_blanks = answer_data.get("blanks", [])
+        difficulty = result.data.get("difficulty")
 
         # Check answers
         is_correct, blank_results = check_blank_answers(submission.answers, correct_blanks)
@@ -397,22 +399,37 @@ async def submit_blank(
         # Calculate XP
         xp_earned = XPConfig.BLANK_CORRECT if is_correct else 0
 
-        # Save attempt
+        # Save attempt with attempt_number
+        attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
         db.table("attempts").insert({
             "user_id": str(user_id),
             "problem_id": str(submission.problem_id),
             "is_correct": is_correct,
             "submitted_answer": str(submission.answers),
             "xp_earned": xp_earned,
+            "attempt_number": attempt_number,
         }).execute()
 
-        # Update user stats if correct
+        # Update user stats and check badges if correct
+        new_badges = None
         if is_correct:
             db.rpc("increment_user_stats", {
                 "p_user_id": str(user_id),
                 "p_xp": xp_earned,
-                "p_problem_type": "blank"
+                "p_problem_type": "blank",
+                "p_difficulty": difficulty,
             }).execute()
+
+            # Check and award badges
+            badge_service = get_badge_service()
+            awarded = await badge_service.check_and_award_badges(
+                user_id=str(user_id),
+                trigger_type='solve',
+                problem_type='blank',
+                difficulty=difficulty,
+            )
+            if awarded:
+                new_badges = [NewBadge(**b) for b in awarded]
 
         return SubmissionResponse(
             result=SubmissionResult.CORRECT if is_correct else SubmissionResult.INCORRECT,
@@ -420,6 +437,7 @@ async def submit_blank(
             xp_earned=xp_earned,
             blank_results=blank_results,
             feedback="정답입니다!" if is_correct else "틀린 빈칸이 있습니다. 다시 확인해보세요.",
+            new_badges=new_badges,
         )
 
     except HTTPException:
@@ -455,6 +473,7 @@ async def submit_puzzle(
         answer_data = result.data.get("answer_data", {})
         correct_order = answer_data.get("correct_order", [])
         correct_blocks = {b["id"]: b for b in answer_data.get("blocks", [])}
+        difficulty = result.data.get("difficulty")
 
         # Check block order and indentation
         puzzle_results = {}
@@ -487,22 +506,37 @@ async def submit_puzzle(
         # Calculate XP
         xp_earned = XPConfig.PUZZLE_CORRECT if all_correct else 0
 
-        # Save attempt
+        # Save attempt with attempt_number
+        attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
         db.table("attempts").insert({
             "user_id": str(user_id),
             "problem_id": str(submission.problem_id),
             "is_correct": all_correct,
             "submitted_answer": str([{"id": b.id, "indent": b.indentation} for b in submission.block_order]),
             "xp_earned": xp_earned,
+            "attempt_number": attempt_number,
         }).execute()
 
-        # Update user stats if correct
+        # Update user stats and check badges if correct
+        new_badges = None
         if all_correct:
             db.rpc("increment_user_stats", {
                 "p_user_id": str(user_id),
                 "p_xp": xp_earned,
-                "p_problem_type": "puzzle"
+                "p_problem_type": "puzzle",
+                "p_difficulty": difficulty,
             }).execute()
+
+            # Check and award badges
+            badge_service = get_badge_service()
+            awarded = await badge_service.check_and_award_badges(
+                user_id=str(user_id),
+                trigger_type='solve',
+                problem_type='puzzle',
+                difficulty=difficulty,
+            )
+            if awarded:
+                new_badges = [NewBadge(**b) for b in awarded]
 
         if all_correct:
             feedback = "정답입니다! 코드 블록을 올바른 순서와 들여쓰기로 배열했습니다."
@@ -516,6 +550,7 @@ async def submit_puzzle(
             xp_earned=xp_earned,
             feedback=feedback,
             puzzle_results=puzzle_results,
+            new_badges=new_badges,
         )
 
     except HTTPException:
@@ -708,12 +743,16 @@ async def record_solve(
                     "topics": submission.topics,
                 }
 
-                # problem_id가 UUID 형식이면 추가
+                # problem_id가 UUID 형식이면 추가 + attempt_number 계산
                 try:
                     problem_uuid = UUIDType(submission.problem_id)
                     attempt_data["problem_id"] = str(problem_uuid)
+                    # 동일 문제 시도 번호 계산
+                    attempt_data["attempt_number"] = get_next_attempt_number(
+                        db, str(user_id), str(problem_uuid)
+                    )
                 except ValueError:
-                    pass
+                    attempt_data["attempt_number"] = 1  # UUID 아니면 첫 시도로 간주
 
                 if base_problem_id:
                     attempt_data["base_problem_id"] = base_problem_id
@@ -756,14 +795,29 @@ async def record_solve(
             print(f"[RecordSolve] Attempts insert failed (non-blocking): {insert_err}")
 
         # 정답인 경우 user stats 업데이트 (XP, 잔디) - 이건 항상 시도
+        new_badges = None
         if submission.is_correct and xp_earned > 0:
             try:
                 db.rpc("increment_user_stats", {
                     "p_user_id": str(user_id),
                     "p_xp": xp_earned,
-                    "p_problem_type": submission.problem_type
+                    "p_problem_type": submission.problem_type,
+                    "p_difficulty": submission.difficulty,
                 }).execute()
                 print(f"[RecordSolve] Updated user stats: +{xp_earned} XP, type={submission.problem_type}")
+
+                # Check and award badges
+                badge_service = get_badge_service()
+                awarded = await badge_service.check_and_award_badges(
+                    user_id=str(user_id),
+                    trigger_type='solve',
+                    problem_type=submission.problem_type,
+                    difficulty=submission.difficulty,
+                )
+                if awarded:
+                    new_badges = [NewBadge(**b) for b in awarded]
+                    print(f"[RecordSolve] Awarded {len(awarded)} badges")
+
             except Exception as rpc_err:
                 print(f"[RecordSolve] RPC error: {rpc_err}")
                 return RecordResponse(
@@ -819,7 +873,8 @@ async def record_solve(
         return RecordResponse(
             success=True,
             xp_earned=xp_earned,
-            message=message
+            message=message,
+            new_badges=new_badges,
         )
 
     except Exception as e:

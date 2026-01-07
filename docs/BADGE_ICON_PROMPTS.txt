@@ -1,0 +1,382 @@
+# CodeFill Badge Icon Design Prompts
+# 각 뱃지별 아이콘 생성용 프롬프트
+# 공통 스타일: flat design, minimal, 64x64px, transparent background, single color icon
+
+================================================================================
+## 마일스톤 - 문제 해결 (6개)
+================================================================================
+
+[first_solve]
+name: First Step (첫 발걸음)
+rarity: common (bronze)
+prompt: A single footstep icon, first step forward, minimal flat design, achievement badge style, bronze monochrome, 64x64, transparent background
+
+[solve_10]
+name: Getting Started (시작이 반)
+rarity: common (bronze)
+prompt: Sprouting seedling icon with number 10, growth beginning symbol, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[solve_50]
+name: Half Century (하프 센츄리)
+rarity: uncommon (green)
+prompt: Half-filled progress circle with star, 50% milestone achievement, minimal flat design, green monochrome, 64x64, transparent background
+
+[solve_100]
+name: Centurion (센츄리온)
+rarity: rare (blue)
+prompt: Roman centurion helmet silhouette, warrior achievement symbol, minimal flat design, blue monochrome, 64x64, transparent background
+
+[solve_250]
+name: Problem Solver (문제 해결사)
+rarity: epic (purple)
+prompt: Lightbulb with puzzle piece inside, problem solving genius symbol, minimal flat design, purple monochrome, 64x64, transparent background
+
+[solve_500]
+name: Code Master (코드 마스터)
+rarity: legendary (gold)
+prompt: Crown above code brackets symbol, master coder achievement, minimal flat design, gold/yellow monochrome, 64x64, transparent background
+
+================================================================================
+## 마일스톤 - 스트릭 (5개)
+================================================================================
+
+[streak_7]
+name: Week Warrior (일주일 전사)
+rarity: common (bronze)
+prompt: Calendar week icon with flame, 7-day streak fire symbol, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[streak_14]
+name: Two Weeks (2주 연속)
+rarity: uncommon (green)
+prompt: Two calendar pages with continuous flame, 14-day dedication symbol, minimal flat design, green monochrome, 64x64, transparent background
+
+[streak_30]
+name: Monthly Master (월간 마스터)
+rarity: rare (blue)
+prompt: Full calendar month with blazing flame crown, 30-day consistency achievement, minimal flat design, blue monochrome, 64x64, transparent background
+
+[streak_90]
+name: Quarterly Champion (분기 챔피언)
+rarity: epic (purple)
+prompt: Three-month cycle icon with eternal flame, 90-day dedication trophy, minimal flat design, purple monochrome, 64x64, transparent background
+
+[streak_365]
+name: Year Legend (1년의 전설)
+rarity: legendary (gold)
+prompt: Annual ring cycle with phoenix flame rising, 365-day legendary achievement, minimal flat design, gold/yellow monochrome, 64x64, transparent background
+
+================================================================================
+## 마일스톤 - 레벨 (5개)
+================================================================================
+
+[level_5]
+name: Rising Star (떠오르는 별)
+rarity: common (bronze)
+prompt: Small star rising upward with motion lines, beginner achievement symbol, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[level_10]
+name: Intermediate (중급자)
+rarity: uncommon (green)
+prompt: Two-tier badge with upward arrow, intermediate level symbol, minimal flat design, green monochrome, 64x64, transparent background
+
+[level_25]
+name: Advanced (고급자)
+rarity: rare (blue)
+prompt: Three-tier chevron badge, advanced rank military style, minimal flat design, blue monochrome, 64x64, transparent background
+
+[level_50]
+name: Expert (전문가)
+rarity: epic (purple)
+prompt: Diamond shaped expert badge with star center, professional achievement, minimal flat design, purple monochrome, 64x64, transparent background
+
+[level_100]
+name: Grandmaster (그랜드마스터)
+rarity: legendary (gold)
+prompt: Ornate grandmaster chess piece king crown, ultimate mastery symbol, minimal flat design, gold/yellow monochrome, 64x64, transparent background
+
+================================================================================
+## 문제 유형별 - 빈칸 채우기 (4개)
+================================================================================
+
+[blank_10]
+name: Blank Beginner (빈칸 입문자)
+rarity: common (bronze)
+prompt: Text line with single blank underscore gap, fill-in-the-blank beginner, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[blank_30]
+name: Blank Intermediate (빈칸 중급자)
+rarity: uncommon (green)
+prompt: Multiple text lines with blank gaps being filled, intermediate progress, minimal flat design, green monochrome, 64x64, transparent background
+
+[blank_50]
+name: Blank Expert (빈칸 전문가)
+rarity: rare (blue)
+prompt: Code block with cursor filling blank, expert coder symbol, minimal flat design, blue monochrome, 64x64, transparent background
+
+[blank_100]
+name: Blank Master (빈칸 마스터)
+rarity: epic (purple)
+prompt: Complete code document with all blanks filled checkmark, mastery achievement, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 문제 유형별 - 퍼즐 (4개)
+================================================================================
+
+[puzzle_10]
+name: Puzzle Beginner (퍼즐 입문자)
+rarity: common (bronze)
+prompt: Single jigsaw puzzle piece, beginner puzzler symbol, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[puzzle_30]
+name: Puzzle Intermediate (퍼즐 중급자)
+rarity: uncommon (green)
+prompt: Four connected puzzle pieces forming square, intermediate solver, minimal flat design, green monochrome, 64x64, transparent background
+
+[puzzle_50]
+name: Puzzle Expert (퍼즐 전문가)
+rarity: rare (blue)
+prompt: Complex interlocking puzzle pattern, expert problem solver, minimal flat design, blue monochrome, 64x64, transparent background
+
+[puzzle_100]
+name: Puzzle Master (퍼즐 마스터)
+rarity: epic (purple)
+prompt: Completed puzzle with glowing center piece, puzzle mastery crown, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 문제 유형별 - 1대1 대화형 (4개)
+================================================================================
+
+[guided_10]
+name: Guided Beginner (대화형 입문자)
+rarity: common (bronze)
+prompt: Two chat bubbles with question and answer, dialogue learning beginner, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[guided_30]
+name: Guided Intermediate (대화형 중급자)
+rarity: uncommon (green)
+prompt: Multiple connected chat bubbles forming conversation flow, intermediate learner, minimal flat design, green monochrome, 64x64, transparent background
+
+[guided_50]
+name: Guided Expert (대화형 전문가)
+rarity: rare (blue)
+prompt: Chat bubble with lightbulb insight symbol, guided learning expert, minimal flat design, blue monochrome, 64x64, transparent background
+
+[guided_100]
+name: Guided Master (대화형 마스터)
+rarity: epic (purple)
+prompt: Chat bubble with graduation cap, mastery through dialogue symbol, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 문제 유형별 - 구현 (4개)
+================================================================================
+
+[impl_10]
+name: Builder Beginner (구현 입문자)
+rarity: common (bronze)
+prompt: Simple code bracket with hammer tool, beginner builder symbol, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[impl_30]
+name: Builder Intermediate (구현 중급자)
+rarity: uncommon (green)
+prompt: Building blocks stacking with code symbols, intermediate constructor, minimal flat design, green monochrome, 64x64, transparent background
+
+[impl_50]
+name: Builder Expert (구현 전문가)
+rarity: rare (blue)
+prompt: Complex structure blueprint with gear, expert architect symbol, minimal flat design, blue monochrome, 64x64, transparent background
+
+[impl_100]
+name: Builder Master (구현 마스터)
+rarity: epic (purple)
+prompt: Completed tower structure with flag on top, master builder achievement, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 난이도별 - Easy (3개)
+================================================================================
+
+[easy_10]
+name: Easy Start (쉬운 시작)
+rarity: common (bronze)
+prompt: Single circle checkmark, easy level completion, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[easy_30]
+name: Easy Going (순조로운 진행)
+rarity: uncommon (green)
+prompt: Three stacked green circles with flow arrow, smooth progress symbol, minimal flat design, green monochrome, 64x64, transparent background
+
+[easy_50]
+name: Easy Expert (Easy 전문가)
+rarity: rare (blue)
+prompt: Green circle badge with star, easy level mastery, minimal flat design, blue monochrome, 64x64, transparent background
+
+================================================================================
+## 난이도별 - Medium (3개)
+================================================================================
+
+[medium_10]
+name: Medium Start (중급 시작)
+rarity: uncommon (green)
+prompt: Orange/yellow diamond shape, medium difficulty start symbol, minimal flat design, green monochrome, 64x64, transparent background
+
+[medium_30]
+name: Medium Grinder (중급 도전자)
+rarity: rare (blue)
+prompt: Three connected diamonds with determination flame, medium challenger, minimal flat design, blue monochrome, 64x64, transparent background
+
+[medium_50]
+name: Medium Expert (Medium 전문가)
+rarity: epic (purple)
+prompt: Diamond badge with crown, medium difficulty mastery, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 난이도별 - Hard (4개)
+================================================================================
+
+[hard_5]
+name: Hard Start (어려운 시작)
+rarity: uncommon (green)
+prompt: Red warning triangle with brave heart, hard difficulty entry, minimal flat design, green monochrome, 64x64, transparent background
+
+[hard_10]
+name: Hard Crusher (고난도 분쇄기)
+rarity: rare (blue)
+prompt: Cracked hard rock with fist breaking through, difficulty crusher, minimal flat design, blue monochrome, 64x64, transparent background
+
+[hard_30]
+name: Hard Expert (Hard 전문가)
+rarity: epic (purple)
+prompt: Skull and crossbones conquered with trophy, hard level expert, minimal flat design, purple monochrome, 64x64, transparent background
+
+[hard_50]
+name: Hard Master (Hard 마스터)
+rarity: legendary (gold)
+prompt: Flaming skull crown, ultimate hard difficulty conqueror, minimal flat design, gold/yellow monochrome, 64x64, transparent background
+
+================================================================================
+## 난이도별 - 복합 (2개)
+================================================================================
+
+[all_difficulty]
+name: Difficulty Explorer (난이도 탐험가)
+rarity: rare (blue)
+prompt: Three shapes (circle, diamond, triangle) connected by path, difficulty explorer compass, minimal flat design, blue monochrome, 64x64, transparent background
+
+[all_difficulty_master]
+name: Difficulty Conqueror (난이도 정복자)
+rarity: legendary (gold)
+prompt: Three difficulty symbols united under crown, ultimate difficulty conqueror throne, minimal flat design, gold/yellow monochrome, 64x64, transparent background
+
+================================================================================
+## 특별 활동 - 시간대별 (3개)
+================================================================================
+
+[night_owl]
+name: Night Owl (올빼미)
+rarity: common (bronze)
+prompt: Owl face with moon and stars, night coder symbol, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[early_bird]
+name: Early Bird (얼리버드)
+rarity: common (bronze)
+prompt: Bird silhouette with rising sun rays, early morning coder, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[weekend_coder]
+name: Weekend Coder (주말 코더)
+rarity: common (bronze)
+prompt: Calendar showing SAT-SUN with code brackets, weekend dedication symbol, minimal flat design, bronze monochrome, 64x64, transparent background
+
+================================================================================
+## 특별 활동 - 하루 집중 (4개)
+================================================================================
+
+[daily_3]
+name: Daily Learner (일일 학습자)
+rarity: common (bronze)
+prompt: Sun icon with number 3, daily learning beginner, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[daily_5]
+name: Daily Achiever (일일 성취자)
+rarity: uncommon (green)
+prompt: Sun with checkmark and number 5, daily achievement symbol, minimal flat design, green monochrome, 64x64, transparent background
+
+[daily_10]
+name: Daily Champion (일일 챔피언)
+rarity: rare (blue)
+prompt: Blazing sun with trophy and number 10, daily champion badge, minimal flat design, blue monochrome, 64x64, transparent background
+
+[daily_20]
+name: Daily Legend (일일 전설)
+rarity: epic (purple)
+prompt: Supernova sun explosion with number 20, legendary daily achievement, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 특별 활동 - 정확도 (5개)
+================================================================================
+
+[first_try_10]
+name: Accurate (정확한 사람)
+rarity: common (bronze)
+prompt: Target bullseye with single arrow center hit, accuracy beginner, minimal flat design, bronze monochrome, 64x64, transparent background
+
+[first_try_50]
+name: Sharpshooter (명사수)
+rarity: rare (blue)
+prompt: Crosshair scope with perfect hit mark, sharpshooter precision, minimal flat design, blue monochrome, 64x64, transparent background
+
+[first_try_100]
+name: Perfectionist (완벽주의자)
+rarity: epic (purple)
+prompt: Diamond target with crown, perfectionist ultimate accuracy, minimal flat design, purple monochrome, 64x64, transparent background
+
+[no_hint_50]
+name: Independent (독립적인)
+rarity: rare (blue)
+prompt: Brain icon with no help bubble crossed out, independent solver, minimal flat design, blue monochrome, 64x64, transparent background
+
+[no_hint_100]
+name: Self-Reliant (자립형)
+rarity: epic (purple)
+prompt: Strong fist with self-sufficient badge, complete independence mastery, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 특별 활동 - 도전 (2개)
+================================================================================
+
+[perfect_week]
+name: Perfect Week (완벽한 한 주)
+rarity: rare (blue)
+prompt: Seven-day calendar fully checked with star crown, perfect week achievement, minimal flat design, blue monochrome, 64x64, transparent background
+
+[perfect_month]
+name: Perfect Month (완벽한 한 달)
+rarity: epic (purple)
+prompt: Full month calendar glowing with golden crown, perfect month legendary achievement, minimal flat design, purple monochrome, 64x64, transparent background
+
+================================================================================
+## 특별 활동 - 최고 달성 (2개)
+================================================================================
+
+[thousand]
+name: Thousand Club (천 문제 클럽)
+rarity: legendary (gold)
+prompt: Number 1000 with exclusive club badge and laurel wreath, thousand problems elite achievement, minimal flat design, gold/yellow monochrome, 64x64, transparent background
+
+[all_rounder]
+name: All Rounder (올라운더)
+rarity: legendary (gold)
+prompt: Pentagon shape with five skill points maxed, ultimate all-rounder master badge, minimal flat design, gold/yellow monochrome, 64x64, transparent background
+
+================================================================================
+# 총 60개 뱃지
+#
+# 희귀도별 색상 가이드:
+# - common: #CD7F32 (bronze)
+# - uncommon: #22C55E (green-500)
+# - rare: #3B82F6 (blue-500)
+# - epic: #A855F7 (purple-500)
+# - legendary: #EAB308 (gold/yellow-500)
+#
+# 권장 이미지 생성 도구:
+# - Midjourney, DALL-E 3, Stable Diffusion
+# - 또는 Figma/Illustrator로 직접 디자인
+================================================================================

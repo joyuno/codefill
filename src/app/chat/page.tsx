@@ -17,8 +17,10 @@ import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 import { CorrectAnswerPopup } from '@/components/practice/CorrectAnswerPopup';
 import { OnboardingWizard, useOnboardingCheck, type OnboardingData } from '@/components/onboarding/OnboardingWizard';
+import { BadgePopup } from '@/components/ui/badge-popup';
 
 import { practiceApi, agentApi, problemsApi } from '@/lib/api';
+import type { NewBadge } from '@/lib/api/practice';
 import { apiClient } from '@/lib/api/client';
 import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 import type { HintAgentResponse, FeedbackResponse, BaseProblemInfo } from '@/lib/api/agent';
@@ -32,6 +34,17 @@ const difficultyColors = {
 export default function ChatPage() {
   const { toast } = useToast();
   const router = useRouter();
+  const { refreshProfile } = useAuth();
+
+  // 뱃지 획득 팝업 상태
+  const [earnedBadges, setEarnedBadges] = useState<NewBadge[]>([]);
+
+  // 뱃지 획득 시 팝업 표시
+  const showBadgePopup = useCallback((badges: NewBadge[] | undefined) => {
+    if (!badges || badges.length === 0) return;
+    setEarnedBadges(badges);
+  }, []);
+
   const searchParams = useSearchParams();
 
   // ============================================================
@@ -560,6 +573,8 @@ export default function ChatPage() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              showBadgePopup(recordResult.newBadges);
+              refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -593,6 +608,8 @@ export default function ChatPage() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            showBadgePopup(recordResult.newBadges);
+            refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -601,7 +618,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
   );
 
   // Puzzle submit handler
@@ -633,6 +650,8 @@ export default function ChatPage() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              showBadgePopup(recordResult.newBadges);
+              refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -662,6 +681,8 @@ export default function ChatPage() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            showBadgePopup(recordResult.newBadges);
+            refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -670,7 +691,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
   );
 
   // Implementation submit handler (blank, puzzle, implementation 공통)
@@ -698,6 +719,8 @@ export default function ChatPage() {
           console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            showBadgePopup(recordResult.newBadges);
+            refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
           } else if (recordResult.message.includes('로그인')) {
@@ -722,7 +745,7 @@ export default function ChatPage() {
         });
       }
     },
-    [problem, toast, fetchFeedback, attemptId]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
   );
 
   // Handle onboarding completion
@@ -946,6 +969,14 @@ export default function ChatPage() {
         xpEarned={xpEarned}
         isLoading={isFeedbackLoading}
       />
+
+      {/* Badge Popup */}
+      {earnedBadges.length > 0 && (
+        <BadgePopup
+          badges={earnedBadges}
+          onClose={() => setEarnedBadges([])}
+        />
+      )}
     </div>
   );
 }
