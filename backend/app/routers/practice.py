@@ -234,6 +234,7 @@ async def start_practice(
                         "attempt_id": str(attempt_id),
                         "difficulty": request.difficulty,
                         "problem_name": request.problem_name,
+                        "topics": request.topics or [],
                     }
                 )
                 print(f"[StartPractice] Session started: {session_id}")
@@ -1310,14 +1311,15 @@ async def session_end(
     세션 종료 - 완료/스킵/포기
 
     문제 풀이 종료 시 호출합니다.
-    - complete: 정답 제출 완료
-    - skip: 사용자가 문제 건너뛰기
-    - abandon: 페이지 이탈/세션 종료
+    - complete: 정답 제출 완료 (user_memories는 record_solve에서 저장)
+    - skip: 사용자가 문제 건너뛰기 → user_memories 저장
+    - abandon: 페이지 이탈/세션 종료 → user_memories 저장
 
     Returns:
         세션 종료 결과 (풀이 시간, 힌트 사용량 등)
     """
     from ..services.session_tracker import get_session_tracker
+    from ..services.memory_service import get_memory_service
 
     if not user_id:
         return SessionEndResponse(
@@ -1330,8 +1332,14 @@ async def session_end(
 
     try:
         tracker = get_session_tracker()
+        memory_service = get_memory_service()
+
+        # 🔑 세션 정보 미리 가져오기 (skip/abandon 시 메모리 저장용)
+        session = tracker.get_session(request.session_id)
+        session_metadata = session.metadata if session else {}
 
         if request.end_type == "complete":
+            # complete는 record_solve에서 user_memories를 저장하므로 여기서는 tracker만 처리
             result = await tracker.complete_session(
                 session_id=request.session_id,
                 is_correct=request.is_correct or True,
@@ -1342,11 +1350,50 @@ async def session_end(
                 session_id=request.session_id,
                 reason=request.reason,
             )
+            # 🧠 skip 시에도 user_memories 저장 (어려워하는 주제 추적)
+            if session:
+                try:
+                    await memory_service.create_problem_session_memory(
+                        user_id=str(user_id),
+                        session_id=request.session_id,
+                        problem_id=session.problem_id,
+                        problem_name=session_metadata.get("problem_name", "Unknown"),
+                        problem_type=session.problem_type,
+                        difficulty=session_metadata.get("difficulty", "medium"),
+                        topics=session_metadata.get("topics", []),
+                        was_successful=False,  # skip = 미완료
+                        hints_used=session.hints_used,
+                        time_spent=result.get("time_spent", 0),
+                        attempt_count=session.attempt_count,
+                    )
+                    print(f"[SessionEnd] Created memory for skipped session: {request.session_id}")
+                except Exception as mem_err:
+                    print(f"[SessionEnd] Memory creation error (non-blocking): {mem_err}")
+
         elif request.end_type == "abandon":
             result = await tracker.abandon_session(
                 session_id=request.session_id,
                 reason=request.reason or "user_left",
             )
+            # 🧠 abandon 시에도 user_memories 저장 (어려워하는 주제 추적)
+            if session:
+                try:
+                    await memory_service.create_problem_session_memory(
+                        user_id=str(user_id),
+                        session_id=request.session_id,
+                        problem_id=session.problem_id,
+                        problem_name=session_metadata.get("problem_name", "Unknown"),
+                        problem_type=session.problem_type,
+                        difficulty=session_metadata.get("difficulty", "medium"),
+                        topics=session_metadata.get("topics", []),
+                        was_successful=False,  # abandon = 미완료
+                        hints_used=session.hints_used,
+                        time_spent=result.get("time_spent", 0),
+                        attempt_count=session.attempt_count,
+                    )
+                    print(f"[SessionEnd] Created memory for abandoned session: {request.session_id}")
+                except Exception as mem_err:
+                    print(f"[SessionEnd] Memory creation error (non-blocking): {mem_err}")
         else:
             return SessionEndResponse(
                 success=False,

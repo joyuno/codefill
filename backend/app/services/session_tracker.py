@@ -447,6 +447,10 @@ class SessionTracker:
                 return session
         return None
 
+    def get_session(self, session_id: str) -> Optional[PracticeSession]:
+        """세션 ID로 세션 조회 (metadata 포함)"""
+        return self._active_sessions.get(session_id)
+
     async def get_abandonment_stats(
         self,
         user_id: Optional[str] = None,
