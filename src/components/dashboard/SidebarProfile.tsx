@@ -4,12 +4,12 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Progress } from '@/components/ui/progress';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usersApi, publicProfileApi, type PublicFarm, type PublicBadge } from '@/lib/api/users';
 import { farmApi } from '@/lib/api/farm';
 import type { Badge as BadgeType } from '@/lib/types';
 import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck } from 'lucide-react';
 import { BadgeIcon } from '@/components/ui/badge-icon';
+import { BadgeDetailModal, type BadgeRarity } from '@/components/ui/badge-detail-modal';
 import { Button } from '@/components/ui/button';
 import {
   CharacterCreationModal,
@@ -69,6 +69,15 @@ interface SidebarProfileProps {
   badges?: BadgeType[];
 }
 
+// 뱃지 희귀도 순서 (내림차순 정렬용)
+const RARITY_ORDER: Record<string, number> = {
+  legendary: 5,
+  epic: 4,
+  rare: 3,
+  uncommon: 2,
+  common: 1,
+};
+
 export function SidebarProfile({ username, publicData, badges: propBadges }: SidebarProfileProps) {
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
@@ -78,6 +87,15 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const [farmError, setFarmError] = useState<string | null>(null);
   const [badges, setBadges] = useState<BadgeType[]>([]);
   const [publicBadges, setPublicBadges] = useState<PublicBadge[]>([]);
+  const [showAllBadges, setShowAllBadges] = useState(false);
+  const [selectedBadge, setSelectedBadge] = useState<{
+    id: string;
+    name: string;
+    description: string;
+    rarity: BadgeRarity;
+    iconUrl?: string;
+    earnedAt?: string;
+  } | null>(null);
 
   // 공개 프로필 데이터
   const [publicProfile, setPublicProfile] = useState<{
@@ -273,15 +291,20 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const displayRequiredXP = isOwnProfile ? requiredXP : (publicProfile?.requiredXP || 100);
   const displayXpProgress = (displayCurrentXP / displayRequiredXP) * 100;
 
-  // 표시할 뱃지 (본인 또는 타인)
-  const displayBadges = isOwnProfile ? badges : publicBadges.map(b => ({
+  // 표시할 뱃지 (본인 또는 타인) - 희귀도 내림차순 정렬
+  const displayBadges = (isOwnProfile ? badges : publicBadges.map(b => ({
     id: b.id,
     name: b.name,
     icon: b.icon,
     iconUrl: b.iconUrl,
     description: b.description,
-    rarity: b.rarity as 'common' | 'rare' | 'epic' | 'legendary',
-  }));
+    rarity: b.rarity as 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary',
+  }))).sort((a, b) => (RARITY_ORDER[b.rarity] || 0) - (RARITY_ORDER[a.rarity] || 0));
+
+  // 사이드바에 표시할 뱃지 (12개 제한 또는 전체)
+  const BADGE_DISPLAY_LIMIT = 12;
+  const visibleBadges = showAllBadges ? displayBadges : displayBadges.slice(0, BADGE_DISPLAY_LIMIT);
+  const hasMoreBadges = displayBadges.length > BADGE_DISPLAY_LIMIT;
 
   // 로딩 중
   if (isLoading || publicLoading) {
@@ -651,38 +674,72 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
 
       {/* Badges */}
       <div className="rounded-xl border border-border bg-card p-4">
-        <h4 className="mb-3 text-sm font-medium text-muted-foreground">획득한 뱃지</h4>
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-sm font-medium text-muted-foreground">획득한 뱃지</h4>
+          {displayBadges.length > 0 && (
+            <span className="text-xs text-muted-foreground">{displayBadges.length}개</span>
+          )}
+        </div>
         {displayBadges.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {displayBadges.map((badge) => (
-              <Tooltip key={badge.id}>
-                <TooltipTrigger asChild>
-                  <motion.div
-                    whileHover={{ scale: 1.1 }}
-                    className="cursor-pointer"
-                  >
-                    {'iconUrl' in badge && (badge as { iconUrl?: string }).iconUrl ? (
-                      <img
-                        src={(badge as { iconUrl?: string }).iconUrl}
-                        alt={badge.name}
-                        className="h-10 w-10 object-contain"
-                      />
-                    ) : (
-                      <BadgeIcon name={badge.name} rarity={badge.rarity} size="md" />
-                    )}
-                  </motion.div>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-[200px]">
-                  <p className="font-medium">{badge.name}</p>
-                  <p className="text-xs text-muted-foreground">{badge.description}</p>
-                </TooltipContent>
-              </Tooltip>
-            ))}
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {visibleBadges.map((badge) => (
+                <motion.button
+                  key={badge.id}
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setSelectedBadge({
+                    id: badge.id,
+                    name: badge.name,
+                    description: badge.description,
+                    rarity: badge.rarity as BadgeRarity,
+                    iconUrl: 'iconUrl' in badge ? (badge as { iconUrl?: string }).iconUrl : undefined,
+                    earnedAt: 'earnedAt' in badge ? (badge as { earnedAt?: string }).earnedAt : undefined,
+                  })}
+                  className={cn(
+                    'rounded-lg p-1 transition-all',
+                    'hover:bg-muted/50',
+                    badge.rarity === 'legendary' && 'hover:shadow-[0_0_12px_rgba(251,191,36,0.5)]',
+                    badge.rarity === 'epic' && 'hover:shadow-[0_0_10px_rgba(168,85,247,0.4)]',
+                    badge.rarity === 'rare' && 'hover:shadow-[0_0_8px_rgba(59,130,246,0.3)]'
+                  )}
+                >
+                  {'iconUrl' in badge && (badge as { iconUrl?: string }).iconUrl ? (
+                    <img
+                      src={(badge as { iconUrl?: string }).iconUrl}
+                      alt={badge.name}
+                      className="h-10 w-10 object-contain"
+                    />
+                  ) : (
+                    <BadgeIcon name={badge.name} rarity={badge.rarity} size="md" />
+                  )}
+                </motion.button>
+              ))}
+            </div>
+            {hasMoreBadges && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAllBadges(!showAllBadges)}
+                className="w-full text-xs text-muted-foreground hover:text-foreground"
+              >
+                {showAllBadges
+                  ? '접기'
+                  : `더보기 (+${displayBadges.length - BADGE_DISPLAY_LIMIT}개)`}
+              </Button>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">아직 획득한 뱃지가 없습니다</p>
         )}
       </div>
+
+      {/* Badge Detail Modal */}
+      <BadgeDetailModal
+        open={!!selectedBadge}
+        onClose={() => setSelectedBadge(null)}
+        badge={selectedBadge}
+      />
     </div>
   );
 }

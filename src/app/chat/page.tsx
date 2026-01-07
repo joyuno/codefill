@@ -10,6 +10,7 @@ import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn } from 'lucide-r
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { usePracticeSession } from '@/hooks/usePracticeSession';
+import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
 
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
@@ -32,6 +33,7 @@ const difficultyColors = {
 export default function ChatPage() {
   const { toast } = useToast();
   const router = useRouter();
+  const { refreshProfile } = useAuth();
 
   // 뱃지 획득 팝업 상태
   const [earnedBadges, setEarnedBadges] = useState<NewBadge[]>([]);
@@ -397,6 +399,7 @@ export default function ChatPage() {
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
               showBadgePopup(recordResult.newBadges);
+              refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -431,6 +434,7 @@ export default function ChatPage() {
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
             showBadgePopup(recordResult.newBadges);
+            refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -439,7 +443,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
   );
 
   // Puzzle submit handler
@@ -472,6 +476,7 @@ export default function ChatPage() {
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
               showBadgePopup(recordResult.newBadges);
+              refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
             }
@@ -502,6 +507,7 @@ export default function ChatPage() {
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
             showBadgePopup(recordResult.newBadges);
+            refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
           }
@@ -510,7 +516,7 @@ export default function ChatPage() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
   );
 
   // Implementation submit handler (blank, puzzle, implementation 공통)
@@ -539,6 +545,7 @@ export default function ChatPage() {
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
             showBadgePopup(recordResult.newBadges);
+            refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
           } else if (recordResult.message.includes('로그인')) {
@@ -563,7 +570,7 @@ export default function ChatPage() {
         });
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
   );
 
   // Render practice component based on problem type

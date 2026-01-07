@@ -1,0 +1,458 @@
+# CodeFill Badge Icons - Claude Desktop Prompts
+#
+# Claude Desktop은 Artifacts 기능으로 SVG를 직접 생성할 수 있음
+# 아래 프롬프트를 Claude Desktop에 붙여넣기
+#
+# 팁:
+# - 전체 요청이 너무 길면 카테고리별로 나눠서 요청
+# - 생성된 SVG는 Artifact에서 직접 다운로드 가능
+# - "이전 스타일 유지해서" 라고 하면 일관성 유지됨
+#
+================================================================================
+
+## 전체 요청 프롬프트
+
+```
+60개의 배지 아이콘을 SVG로 만들어줘. 각각 Artifact로 출력해줘.
+
+## 디자인 스타일
+- Flat design, minimal, 깔끔한 라인
+- viewBox="0 0 64 64"
+- 2색 조합 (희귀도 메인색 + 아이콘 특성 포인트색)
+- 둥근 모서리, 단순한 형태
+- 배경 투명
+
+## 색상 시스템
+
+희귀도 메인색:
+- common: #CD7F32 (bronze)
+- uncommon: #22C55E (green)
+- rare: #3B82F6 (blue)
+- epic: #A855F7 (purple)
+- legendary: #EAB308 (gold)
+
+포인트색:
+- flame: #F97316 (orange) - 불꽃, 열정
+- night: #1E3A5A (navy) - 밤, 어두움
+- morning: #FB923C (sunrise) - 아침, 일출
+- nature: #16A34A (leaf green) - 자연, 성장, 체크마크
+- code: #06B6D4 (cyan) - 코드, 기술
+- danger: #DC2626 (crimson) - 위험, 어려움
+- idea: #FBBF24 (yellow) - 아이디어, 빛, 별
+- target: #EF4444 (red) - 과녁, 정확도
+
+## 아이콘 목록 (60개)
+
+### 마일스톤 - 문제 해결 (6개)
+1. first_solve | 발자국 하나 | common bronze
+2. solve_10 | 새싹 + 숫자 10 | common bronze + leaf green 새싹
+3. solve_50 | 반원 진행바 + 별 | uncommon green + yellow 별
+4. solve_100 | 로마 투구 실루엣 | rare blue
+5. solve_250 | 전구 안에 퍼즐 | epic purple + yellow 전구
+6. solve_500 | 코드 브라켓 위 왕관 | legendary gold + cyan 코드
+
+### 마일스톤 - 스트릭 (5개)
+7. streak_7 | 캘린더 + 불꽃 | common bronze + orange 불꽃
+8. streak_14 | 캘린더 2장 + 불꽃 | uncommon green + orange 불꽃
+9. streak_30 | 월간 캘린더 + 불꽃 | rare blue + orange 불꽃
+10. streak_90 | 분기 사이클 + 불꽃 | epic purple + orange 불꽃
+11. streak_365 | 연간 링 + 피닉스 | legendary gold + orange/crimson 피닉스
+
+### 마일스톤 - 레벨 (5개)
+12. level_5 | 떠오르는 별 | common bronze + yellow 별
+13. level_10 | 2단 배지 + 화살표 | uncommon green
+14. level_25 | 3단 쉐브론 | rare blue
+15. level_50 | 다이아몬드 + 별 | epic purple + yellow 별
+16. level_100 | 체스 킹 | legendary gold
+
+### 빈칸 채우기 (4개)
+17. blank_10 | 텍스트 라인 + 빈칸 | common bronze + cyan 커서
+18. blank_30 | 여러 줄 + 빈칸들 | uncommon green + cyan 커서
+19. blank_50 | 코드 블록 + 커서 | rare blue + cyan 커서
+20. blank_100 | 문서 + 체크마크 | epic purple + leaf green 체크
+
+### 퍼즐 (4개)
+21. puzzle_10 | 퍼즐 조각 1개 | common bronze
+22. puzzle_30 | 퍼즐 4조각 연결 | uncommon green + 각 조각 다른색
+23. puzzle_50 | 복잡한 퍼즐 패턴 | rare blue + 멀티컬러
+24. puzzle_100 | 완성된 퍼즐 | epic purple + yellow 빛나는 중앙
+
+### 대화형 (4개)
+25. guided_10 | 채팅 버블 2개 | common bronze + cyan 말풍선
+26. guided_30 | 연결된 채팅 버블들 | uncommon green + cyan 말풍선
+27. guided_50 | 채팅 + 전구 | rare blue + yellow 전구
+28. guided_100 | 채팅 + 졸업모자 | epic purple + navy 졸업모자
+
+### 구현 (4개)
+29. impl_10 | 코드 브라켓 + 망치 | common bronze + cyan 코드
+30. impl_30 | 블록 쌓기 + 코드 | uncommon green + cyan 코드
+31. impl_50 | 청사진 + 톱니바퀴 | rare blue + navy 청사진
+32. impl_100 | 탑 + 깃발 | epic purple + crimson 깃발
+
+### Easy 난이도 (3개)
+33. easy_10 | 원 + 체크마크 | common bronze + leaf green 체크
+34. easy_30 | 원 3개 + 화살표 | uncommon green
+35. easy_50 | 원 배지 + 별 | rare blue + yellow 별
+
+### Medium 난이도 (3개)
+36. medium_10 | 다이아몬드 모양 | uncommon green + orange 테두리
+37. medium_30 | 다이아몬드 3개 + 불꽃 | rare blue + orange 불꽃
+38. medium_50 | 다이아몬드 + 왕관 | epic purple + gold 왕관
+
+### Hard 난이도 (4개)
+39. hard_5 | 삼각형 + 하트 | uncommon green + crimson 하트
+40. hard_10 | 깨진 바위 + 주먹 | rare blue + crimson 균열
+41. hard_30 | 해골 + 트로피 | epic purple + crimson 해골
+42. hard_50 | 불타는 해골 + 왕관 | legendary gold + crimson/orange 불꽃해골
+
+### 복합 난이도 (2개)
+43. all_difficulty | 원+다이아+삼각형 연결 | rare blue + green/orange/crimson 각 도형
+44. all_difficulty_master | 3도형 + 왕관 | legendary gold + green/orange/crimson 각 도형
+
+### 시간대별 (3개)
+45. night_owl | 올빼미 + 달 | common bronze + navy 배경 + yellow 달
+46. early_bird | 새 + 태양 | common bronze + sunrise orange 태양
+47. weekend_coder | SAT-SUN 캘린더 | common bronze + cyan 코드
+
+### 하루 집중 (4개)
+48. daily_3 | 태양 + 숫자 3 | common bronze + yellow 태양
+49. daily_5 | 태양 + 체크 + 5 | uncommon green + yellow 태양
+50. daily_10 | 태양 + 트로피 + 10 | rare blue + yellow 태양 + gold 트로피
+51. daily_20 | 폭발하는 태양 + 20 | epic purple + yellow/orange 폭발
+
+### 정확도 (5개)
+52. first_try_10 | 과녁 + 화살 | common bronze + red 과녁중심
+53. first_try_50 | 조준경 + 적중 | rare blue + red 적중마크
+54. first_try_100 | 다이아몬드 과녁 + 왕관 | epic purple + red 과녁 + gold 왕관
+55. no_hint_50 | 뇌 + X표시 도움말 | rare blue + crimson X표시
+56. no_hint_100 | 주먹 + 배지 | epic purple
+
+### 도전 (2개)
+57. perfect_week | 7일 캘린더 체크 + 별 | rare blue + leaf green 체크들 + yellow 별
+58. perfect_month | 월간 캘린더 + 왕관 | epic purple + leaf green 체크들 + gold 왕관
+
+### 최고 달성 (2개)
+59. thousand | 1000 + 월계관 | legendary gold + leaf green 월계관
+60. all_rounder | 오각형 + 5포인트 | legendary gold + 각 포인트 blue/green/purple/orange/cyan
+
+---
+
+한번에 다 못 만들면 카테고리별로 나눠서 만들어줘.
+각 SVG는 별도 Artifact로 출력하고, 파일명은 아이콘 코드명으로 해줘 (예: first_solve.svg)
+```
+
+================================================================================
+
+## 카테고리별 분할 요청 (한번에 안될 경우)
+
+### 요청 1: 문제 해결 뱃지 (6개)
+```
+아래 6개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+
+스타일: flat design, minimal, viewBox 64x64, 2색 조합, 배경 투명
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- leaf green: #16A34A
+- yellow: #FBBF24
+- cyan: #06B6D4
+
+1. first_solve.svg | 발자국 하나 | bronze
+2. solve_10.svg | 새싹 + 숫자 10 | bronze + leaf green 새싹
+3. solve_50.svg | 반원 진행바 + 별 | green + yellow 별
+4. solve_100.svg | 로마 투구 실루엣 | blue
+5. solve_250.svg | 전구 안에 퍼즐 | purple + yellow 전구
+6. solve_500.svg | 코드 브라켓 위 왕관 | gold + cyan 코드
+```
+
+### 요청 2: 스트릭 뱃지 (5개)
+```
+아래 5개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- orange: #F97316
+- crimson: #DC2626
+
+1. streak_7.svg | 캘린더 + 불꽃 | bronze 캘린더 + orange 불꽃
+2. streak_14.svg | 캘린더 2장 + 불꽃 | green 캘린더 + orange 불꽃
+3. streak_30.svg | 월간 캘린더 + 불꽃 | blue 캘린더 + orange 불꽃
+4. streak_90.svg | 분기 사이클 + 불꽃 | purple + orange 불꽃
+5. streak_365.svg | 연간 링 + 피닉스 | gold 링 + orange/crimson 피닉스
+```
+
+### 요청 3: 레벨 뱃지 (5개)
+```
+아래 5개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- yellow: #FBBF24
+
+1. level_5.svg | 떠오르는 별 + 모션라인 | bronze + yellow 별
+2. level_10.svg | 2단 배지 + 화살표 | green
+3. level_25.svg | 3단 쉐브론 군대 배지 | blue
+4. level_50.svg | 다이아몬드 + 별 | purple 다이아 + yellow 별
+5. level_100.svg | 체스 킹 왕관 | gold
+```
+
+### 요청 4: 빈칸채우기 뱃지 (4개)
+```
+아래 4개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- cyan: #06B6D4
+- leaf green: #16A34A
+
+1. blank_10.svg | 텍스트 라인 + 빈칸 밑줄 | bronze + cyan 커서
+2. blank_30.svg | 여러 줄 텍스트 + 빈칸들 | green + cyan 커서
+3. blank_50.svg | 코드 블록 + 깜빡이는 커서 | blue + cyan 커서
+4. blank_100.svg | 문서 + 완료 체크마크 | purple + leaf green 체크
+```
+
+### 요청 5: 퍼즐 뱃지 (4개)
+```
+아래 4개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- yellow: #FBBF24
+- orange: #F97316
+- cyan: #06B6D4
+
+1. puzzle_10.svg | 퍼즐 조각 1개 | bronze
+2. puzzle_30.svg | 퍼즐 4조각 맞물림 | 각 조각 green/blue/orange/purple
+3. puzzle_50.svg | 복잡한 퍼즐 패턴 | blue 베이스 + 멀티컬러
+4. puzzle_100.svg | 완성된 퍼즐 | purple + yellow 빛나는 중앙
+```
+
+### 요청 6: 대화형 뱃지 (4개)
+```
+아래 4개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- cyan: #06B6D4
+- yellow: #FBBF24
+- navy: #1E3A5A
+
+1. guided_10.svg | 채팅 버블 2개 (질문/답변) | bronze + cyan 말풍선
+2. guided_30.svg | 연결된 채팅 버블들 | green + cyan 말풍선
+3. guided_50.svg | 채팅 버블 + 전구 | blue 버블 + yellow 전구
+4. guided_100.svg | 채팅 버블 + 졸업모자 | purple 버블 + navy 졸업모자
+```
+
+### 요청 7: 구현 뱃지 (4개)
+```
+아래 4개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- cyan: #06B6D4
+- navy: #1E3A5A
+- crimson: #DC2626
+
+1. impl_10.svg | 코드 브라켓 { } + 망치 | bronze + cyan 코드
+2. impl_30.svg | 블록 쌓기 + 코드 심볼 | green + cyan 코드
+3. impl_50.svg | 청사진 + 톱니바퀴 | blue 톱니 + navy 청사진
+4. impl_100.svg | 탑 구조물 + 깃발 | purple 탑 + crimson 깃발
+```
+
+### 요청 8: Easy 난이도 뱃지 (3개)
+```
+아래 3개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- leaf green: #16A34A
+- yellow: #FBBF24
+
+1. easy_10.svg | 원 + 체크마크 | bronze 원 + leaf green 체크
+2. easy_30.svg | 원 3개 + 위쪽 화살표 | green
+3. easy_50.svg | 원 배지 + 별 | blue 원 + yellow 별
+```
+
+### 요청 9: Medium 난이도 뱃지 (3개)
+```
+아래 3개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- orange: #F97316
+
+1. medium_10.svg | 다이아몬드 ◇ 모양 | green + orange 테두리
+2. medium_30.svg | 다이아몬드 3개 + 불꽃 | blue 다이아 + orange 불꽃
+3. medium_50.svg | 다이아몬드 + 왕관 | purple 다이아 + gold 왕관
+```
+
+### 요청 10: Hard 난이도 뱃지 (4개)
+```
+아래 4개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- crimson: #DC2626
+- orange: #F97316
+
+1. hard_5.svg | 경고 삼각형 + 하트 | green 삼각형 + crimson 하트
+2. hard_10.svg | 깨진 바위 + 주먹 | blue 바위 + crimson 균열
+3. hard_30.svg | 해골 + 트로피 | purple 트로피 + crimson 해골
+4. hard_50.svg | 불타는 해골 + 왕관 | gold 왕관 + crimson 해골 + orange 불꽃
+```
+
+### 요청 11: 복합 난이도 뱃지 (2개)
+```
+아래 2개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- blue: #3B82F6
+- gold: #EAB308
+- green: #22C55E
+- orange: #F97316
+- crimson: #DC2626
+
+1. all_difficulty.svg | 원+다이아+삼각형 연결된 경로 | blue 경로, green 원, orange 다이아, crimson 삼각형
+2. all_difficulty_master.svg | 3도형 + 위에 왕관 | gold 왕관, green 원, orange 다이아, crimson 삼각형
+```
+
+### 요청 12: 시간대별 뱃지 (3개)
+```
+아래 3개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- navy: #1E3A5A
+- yellow: #FBBF24
+- sunrise orange: #FB923C
+- cyan: #06B6D4
+
+1. night_owl.svg | 올빼미 얼굴 + 달 + 별 | bronze 올빼미, navy 배경, yellow 달
+2. early_bird.svg | 새 실루엣 + 떠오르는 태양 | bronze 새, sunrise orange 태양
+3. weekend_coder.svg | SAT-SUN 캘린더 + 코드 | bronze 캘린더, cyan 코드 심볼
+```
+
+### 요청 13: 하루 집중 뱃지 (4개)
+```
+아래 4개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- green: #22C55E
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- yellow: #FBBF24
+- orange: #F97316
+
+1. daily_3.svg | 태양 + 숫자 3 | bronze 베이스 + yellow 태양
+2. daily_5.svg | 태양 + 체크마크 + 숫자 5 | green 베이스 + yellow 태양
+3. daily_10.svg | 빛나는 태양 + 트로피 + 숫자 10 | blue 베이스 + yellow 태양 + gold 트로피
+4. daily_20.svg | 폭발하는 슈퍼노바 + 숫자 20 | purple 베이스 + yellow/orange 폭발
+```
+
+### 요청 14: 정확도 뱃지 (5개)
+```
+아래 5개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- bronze: #CD7F32
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- red: #EF4444
+- crimson: #DC2626
+
+1. first_try_10.svg | 과녁 + 화살 중앙 적중 | bronze 과녁 + red 중심
+2. first_try_50.svg | 조준경 + 적중 마크 | blue 조준경 + red 적중
+3. first_try_100.svg | 다이아몬드 과녁 + 왕관 | purple 다이아 + red 과녁 + gold 왕관
+4. no_hint_50.svg | 뇌 아이콘 + X 표시된 도움말 | blue 뇌 + crimson X
+5. no_hint_100.svg | 강한 주먹 + 배지 | purple
+```
+
+### 요청 15: 도전 + 최고 달성 뱃지 (4개)
+```
+아래 4개의 배지 아이콘을 SVG로 만들어서 각각 Artifact로 출력해줘.
+이전에 만든 스타일과 동일하게 유지해줘.
+
+색상:
+- blue: #3B82F6
+- purple: #A855F7
+- gold: #EAB308
+- leaf green: #16A34A
+- yellow: #FBBF24
+- green: #22C55E
+- orange: #F97316
+- cyan: #06B6D4
+
+1. perfect_week.svg | 7일 캘린더 전부 체크 + 별 | blue 캘린더 + leaf green 체크 + yellow 별
+2. perfect_month.svg | 월간 캘린더 전부 체크 + 왕관 | purple 캘린더 + leaf green 체크 + gold 왕관
+3. thousand.svg | 숫자 1000 + 월계관 | gold 1000 + leaf green 월계관
+4. all_rounder.svg | 오각형 + 5개 꼭지점 | gold 베이스 + 각 포인트 blue/green/purple/orange/cyan
+```
+
+================================================================================
+#
+# 사용 팁:
+#
+# 1. 전체 요청이 너무 길면 카테고리별로 나눠서 요청
+#
+# 2. 스타일 일관성 유지하려면:
+#    "이전에 만든 first_solve.svg 스타일 그대로 유지해서 만들어줘"
+#
+# 3. 수정 요청:
+#    "solve_10.svg에서 새싹을 더 크게 해줘"
+#    "streak_7.svg 불꽃을 더 역동적으로"
+#
+# 4. 다운로드:
+#    각 Artifact 우측 상단 다운로드 버튼 클릭
+#
+# 5. 한번에 여러 개 요청 시:
+#    "1~6번까지 한번에 만들어서 각각 Artifact로 출력해줘"
+#
+================================================================================

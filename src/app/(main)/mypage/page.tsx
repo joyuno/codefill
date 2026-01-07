@@ -1,8 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Header } from '@/components/layout/Header';
-import { TopNav } from '@/components/layout/TopNav';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -261,32 +259,24 @@ export default function MyPagePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <TopNav />
-        <div className="flex min-h-[60vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   if (error || !profile) {
     return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <TopNav />
-        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-          <AlertCircle className="h-12 w-12 text-destructive" />
-          <h2 className="text-xl font-semibold">정보를 불러올 수 없습니다</h2>
-          <p className="text-muted-foreground">{error || '로그인이 필요합니다.'}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            다시 시도
-          </button>
-        </div>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <h2 className="text-xl font-semibold">정보를 불러올 수 없습니다</h2>
+        <p className="text-muted-foreground">{error || '로그인이 필요합니다.'}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          다시 시도
+        </button>
       </div>
     );
   }
@@ -298,10 +288,7 @@ export default function MyPagePage() {
   const xpProgress = ((displayUser.currentXP || 0) / (displayUser.requiredXP || 3000)) * 100;
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <TopNav />
-      <main className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-6">
         {/* Tab Navigation */}
         <div className="flex gap-2 border-b border-border pb-2">
           <button
@@ -949,7 +936,6 @@ export default function MyPagePage() {
           onSave={handleAvatarSave}
           onDelete={handleAvatarDelete}
         />
-      </main>
     </div>
   );
 }

@@ -1,0 +1,280 @@
+# CodeFill Badge Icons - Lovable Prompts (Simple Ver.)
+#
+# Lovable에게 형식 지정 없이 자유롭게 시키는 버전
+# 아이콘 라이브러리(Lucide 등) 사용하든, 이미지 생성하든 알아서 하게
+#
+================================================================================
+
+## 전체 요청 프롬프트 (한번에 시도)
+
+```
+60개의 게이미피케이션 배지 시스템을 만들어줘.
+
+배지는 사용자가 특정 목표를 달성하면 획득하는 보상이야.
+각 배지마다 아이콘이 필요해. 아이콘은 네가 적절하다고 생각하는 방식으로 만들어줘.
+(아이콘 라이브러리 사용해도 되고, 직접 만들어도 되고, 이미지여도 됨)
+
+색상 시스템 (2색 조합: 희귀도 메인색 + 아이콘 특성 포인트색):
+
+희귀도 메인색:
+- common: #CD7F32 (bronze)
+- uncommon: #22C55E (green)
+- rare: #3B82F6 (blue)
+- epic: #A855F7 (purple)
+- legendary: #EAB308 (gold)
+
+포인트색 (아이콘 특성별):
+- 불꽃/열정: #F97316 (orange)
+- 밤/어둠: #1E3A5A (navy)
+- 아침/일출: #FB923C (sunrise orange)
+- 자연/성장/체크: #16A34A (leaf green)
+- 코드/기술: #06B6D4 (cyan)
+- 위험/어려움: #DC2626 (crimson)
+- 아이디어/빛/별: #FBBF24 (yellow)
+- 과녁/정확: #EF4444 (red)
+
+배지 목록 (희귀도 | 포인트색):
+
+## 마일스톤 - 문제 해결 (6개)
+1. first_solve | "First Step" | 첫 문제 해결 | 발자국 | common bronze
+2. solve_10 | "Getting Started" | 10문제 해결 | 새싹 | common bronze + leaf green 새싹
+3. solve_50 | "Half Century" | 50문제 해결 | 반원+별 | uncommon green + yellow 별
+4. solve_100 | "Centurion" | 100문제 해결 | 로마 투구 | rare blue
+5. solve_250 | "Problem Solver" | 250문제 해결 | 전구+퍼즐 | epic purple + yellow 전구
+6. solve_500 | "Code Master" | 500문제 해결 | 왕관+코드 | legendary gold + cyan 코드
+
+## 마일스톤 - 스트릭 (5개)
+7. streak_7 | "Week Warrior" | 7일 연속 학습 | 캘린더+불꽃 | common bronze + orange 불꽃
+8. streak_14 | "Two Weeks" | 14일 연속 학습 | 캘린더+불꽃 | uncommon green + orange 불꽃
+9. streak_30 | "Monthly Master" | 30일 연속 학습 | 캘린더+불꽃 | rare blue + orange 불꽃
+10. streak_90 | "Quarterly Champion" | 90일 연속 학습 | 불꽃 | epic purple + orange 불꽃
+11. streak_365 | "Year Legend" | 365일 연속 학습 | 피닉스 | legendary gold + orange/crimson 피닉스
+
+## 마일스톤 - 레벨 (5개)
+12. level_5 | "Rising Star" | 레벨 5 달성 | 별 | common bronze + yellow 별
+13. level_10 | "Intermediate" | 레벨 10 달성 | 배지+화살표 | uncommon green
+14. level_25 | "Advanced" | 레벨 25 달성 | 쉐브론 | rare blue
+15. level_50 | "Expert" | 레벨 50 달성 | 다이아+별 | epic purple + yellow 별
+16. level_100 | "Grandmaster" | 레벨 100 달성 | 체스 킹 | legendary gold
+
+## 빈칸 채우기 (4개)
+17. blank_10 | "Blank Beginner" | 빈칸 10문제 | 텍스트+커서 | common bronze + cyan 커서
+18. blank_30 | "Blank Intermediate" | 빈칸 30문제 | 텍스트+커서 | uncommon green + cyan 커서
+19. blank_50 | "Blank Expert" | 빈칸 50문제 | 코드+커서 | rare blue + cyan 커서
+20. blank_100 | "Blank Master" | 빈칸 100문제 | 문서+체크 | epic purple + leaf green 체크
+
+## 퍼즐 (4개)
+21. puzzle_10 | "Puzzle Beginner" | 퍼즐 10문제 | 퍼즐 조각 | common bronze
+22. puzzle_30 | "Puzzle Intermediate" | 퍼즐 30문제 | 퍼즐 4조각 | uncommon + 각 조각 다른색
+23. puzzle_50 | "Puzzle Expert" | 퍼즐 50문제 | 복잡한 퍼즐 | rare blue + 멀티컬러
+24. puzzle_100 | "Puzzle Master" | 퍼즐 100문제 | 완성된 퍼즐 | epic purple + yellow 빛남
+
+## 대화형 (4개)
+25. guided_10 | "Guided Beginner" | 대화형 10문제 | 채팅 버블 | common bronze + cyan 말풍선
+26. guided_30 | "Guided Intermediate" | 대화형 30문제 | 채팅 버블들 | uncommon green + cyan 말풍선
+27. guided_50 | "Guided Expert" | 대화형 50문제 | 채팅+전구 | rare blue + yellow 전구
+28. guided_100 | "Guided Master" | 대화형 100문제 | 채팅+졸업모자 | epic purple + navy 졸업모자
+
+## 구현 (4개)
+29. impl_10 | "Builder Beginner" | 구현 10문제 | 코드+망치 | common bronze + cyan 코드
+30. impl_30 | "Builder Intermediate" | 구현 30문제 | 블록+코드 | uncommon green + cyan 코드
+31. impl_50 | "Builder Expert" | 구현 50문제 | 청사진+톱니 | rare blue + navy 청사진
+32. impl_100 | "Builder Master" | 구현 100문제 | 탑+깃발 | epic purple + crimson 깃발
+
+## Easy 난이도 (3개)
+33. easy_10 | "Easy Start" | Easy 10문제 | 원+체크 | common bronze + leaf green 체크
+34. easy_30 | "Easy Going" | Easy 30문제 | 원들+화살표 | uncommon green
+35. easy_50 | "Easy Expert" | Easy 50문제 | 원+별 | rare blue + yellow 별
+
+## Medium 난이도 (3개)
+36. medium_10 | "Medium Start" | Medium 10문제 | 다이아몬드 | uncommon green + orange 테두리
+37. medium_30 | "Medium Grinder" | Medium 30문제 | 다이아+불꽃 | rare blue + orange 불꽃
+38. medium_50 | "Medium Expert" | Medium 50문제 | 다이아+왕관 | epic purple + gold 왕관
+
+## Hard 난이도 (4개)
+39. hard_5 | "Hard Start" | Hard 5문제 | 삼각형+하트 | uncommon green + crimson 하트
+40. hard_10 | "Hard Crusher" | Hard 10문제 | 바위+주먹 | rare blue + crimson 균열
+41. hard_30 | "Hard Expert" | Hard 30문제 | 해골+트로피 | epic purple + crimson 해골
+42. hard_50 | "Hard Master" | Hard 50문제 | 불꽃해골+왕관 | legendary gold + crimson/orange 불꽃해골
+
+## 복합 난이도 (2개)
+43. all_difficulty | "Difficulty Explorer" | 각 난이도 10문제씩 | 원+다이아+삼각형 | rare blue + green원/orange다이아/crimson삼각형
+44. all_difficulty_master | "Difficulty Conqueror" | 각 난이도 50문제씩 | 3도형+왕관 | legendary gold + green/orange/crimson 도형들
+
+## 시간대별 (3개)
+45. night_owl | "Night Owl" | 자정~6시 풀이 | 올빼미+달 | common bronze + navy 배경 + yellow 달
+46. early_bird | "Early Bird" | 6시~9시 풀이 | 새+태양 | common bronze + sunrise orange 태양
+47. weekend_coder | "Weekend Coder" | 주말 풀이 | SAT-SUN 캘린더 | common bronze + cyan 코드
+
+## 하루 집중 (4개)
+48. daily_3 | "Daily Learner" | 하루 3문제 | 태양+3 | common bronze + yellow 태양
+49. daily_5 | "Daily Achiever" | 하루 5문제 | 태양+체크+5 | uncommon green + yellow 태양
+50. daily_10 | "Daily Champion" | 하루 10문제 | 태양+트로피+10 | rare blue + yellow 태양 + gold 트로피
+51. daily_20 | "Daily Legend" | 하루 20문제 | 폭발태양+20 | epic purple + yellow/orange 폭발
+
+## 정확도 (5개)
+52. first_try_10 | "Accurate" | 첫 시도 정답 10회 | 과녁+화살 | common bronze + red 과녁중심
+53. first_try_50 | "Sharpshooter" | 첫 시도 정답 50회 | 조준경 | rare blue + red 적중
+54. first_try_100 | "Perfectionist" | 첫 시도 정답 100회 | 다이아과녁+왕관 | epic purple + red 과녁 + gold 왕관
+55. no_hint_50 | "Independent" | 힌트 없이 50문제 | 뇌+X | rare blue + crimson X
+56. no_hint_100 | "Self-Reliant" | 힌트 없이 100문제 | 주먹+배지 | epic purple
+
+## 도전 (2개)
+57. perfect_week | "Perfect Week" | 일주일 매일 5문제 | 7일 캘린더+별 | rare blue + leaf green 체크 + yellow 별
+58. perfect_month | "Perfect Month" | 한 달 매일 3문제 | 월 캘린더+왕관 | epic purple + leaf green 체크 + gold 왕관
+
+## 최고 달성 (2개)
+59. thousand | "Thousand Club" | 1000문제 해결 | 1000+월계관 | legendary gold + leaf green 월계관
+60. all_rounder | "All Rounder" | 모든 카테고리 뱃지 | 오각형 5포인트 | legendary gold + 각 포인트 blue/green/purple/orange/cyan
+
+---
+
+배지 컴포넌트 구조:
+- 배지 카드: 아이콘 + 이름 + 설명 + 희귀도 색상
+- 잠긴 배지는 회색 처리
+- 획득한 배지는 획득 날짜 표시
+- 희귀도별로 테두리나 배경 색상 다르게
+
+/components/badges/ 폴더에 만들어줘.
+```
+
+================================================================================
+
+## 카테고리별 분할 요청 (한번에 안될 경우)
+
+### 요청 1: 배지 시스템 기본 구조
+```
+게이미피케이션 배지 시스템의 기본 구조를 만들어줘.
+
+1. Badge 타입 정의
+   - code, name, description, iconName, rarity, condition
+
+2. 희귀도 색상 시스템
+   - common: #CD7F32 (bronze)
+   - uncommon: #22C55E (green)
+   - rare: #3B82F6 (blue)
+   - epic: #A855F7 (purple)
+   - legendary: #EAB308 (gold)
+
+3. BadgeCard 컴포넌트
+   - 아이콘, 이름, 설명 표시
+   - 희귀도별 색상 적용
+   - 잠긴 상태 / 획득 상태 구분
+
+4. BadgeGrid 컴포넌트
+   - 배지 목록 그리드 표시
+```
+
+### 요청 2: 마일스톤 배지 (16개)
+```
+마일스톤 배지 16개를 추가해줘. 아이콘은 적절한 것으로 선택해줘.
+
+문제 해결 (6개):
+- first_solve: 첫 문제 해결, common
+- solve_10: 10문제 해결, common
+- solve_50: 50문제 해결, uncommon
+- solve_100: 100문제 해결, rare
+- solve_250: 250문제 해결, epic
+- solve_500: 500문제 해결, legendary
+
+스트릭 (5개):
+- streak_7: 7일 연속, common
+- streak_14: 14일 연속, uncommon
+- streak_30: 30일 연속, rare
+- streak_90: 90일 연속, epic
+- streak_365: 365일 연속, legendary
+
+레벨 (5개):
+- level_5: 레벨 5, common
+- level_10: 레벨 10, uncommon
+- level_25: 레벨 25, rare
+- level_50: 레벨 50, epic
+- level_100: 레벨 100, legendary
+```
+
+### 요청 3: 문제 유형별 배지 (16개)
+```
+문제 유형별 배지 16개를 추가해줘.
+
+빈칸 채우기 (4개):
+- blank_10, blank_30, blank_50, blank_100
+- common → uncommon → rare → epic
+
+퍼즐 (4개):
+- puzzle_10, puzzle_30, puzzle_50, puzzle_100
+- common → uncommon → rare → epic
+
+대화형 (4개):
+- guided_10, guided_30, guided_50, guided_100
+- common → uncommon → rare → epic
+
+구현 (4개):
+- impl_10, impl_30, impl_50, impl_100
+- common → uncommon → rare → epic
+```
+
+### 요청 4: 난이도별 배지 (12개)
+```
+난이도별 배지 12개를 추가해줘.
+
+Easy (3개):
+- easy_10: Easy 10문제, common
+- easy_30: Easy 30문제, uncommon
+- easy_50: Easy 50문제, rare
+
+Medium (3개):
+- medium_10: Medium 10문제, uncommon
+- medium_30: Medium 30문제, rare
+- medium_50: Medium 50문제, epic
+
+Hard (4개):
+- hard_5: Hard 5문제, uncommon
+- hard_10: Hard 10문제, rare
+- hard_30: Hard 30문제, epic
+- hard_50: Hard 50문제, legendary
+
+복합 (2개):
+- all_difficulty: 각 난이도 10문제씩, rare
+- all_difficulty_master: 각 난이도 50문제씩, legendary
+```
+
+### 요청 5: 특별 활동 배지 (16개)
+```
+특별 활동 배지 16개를 추가해줘.
+
+시간대별 (3개):
+- night_owl: 자정~6시 풀이, common
+- early_bird: 6시~9시 풀이, common
+- weekend_coder: 주말 풀이, common
+
+하루 집중 (4개):
+- daily_3: 하루 3문제, common
+- daily_5: 하루 5문제, uncommon
+- daily_10: 하루 10문제, rare
+- daily_20: 하루 20문제, epic
+
+정확도 (5개):
+- first_try_10: 첫 시도 정답 10회, common
+- first_try_50: 첫 시도 정답 50회, rare
+- first_try_100: 첫 시도 정답 100회, epic
+- no_hint_50: 힌트 없이 50문제, rare
+- no_hint_100: 힌트 없이 100문제, epic
+
+도전 (2개):
+- perfect_week: 일주일 매일 5문제, rare
+- perfect_month: 한 달 매일 3문제, epic
+
+최고 달성 (2개):
+- thousand: 1000문제 해결, legendary
+- all_rounder: 모든 카테고리 뱃지 보유, legendary
+```
+
+================================================================================
+#
+# 팁:
+# - 형식 지정 안 했으니 Lovable이 알아서 적절한 방식 선택함
+# - Lucide 같은 아이콘 라이브러리 쓸 수도 있고, 직접 만들 수도 있음
+# - 결과가 마음에 안 들면 "아이콘 스타일 바꿔줘" 등 추가 요청
+# - "더 화려하게" / "더 심플하게" 등 피드백 가능
+#
+================================================================================
