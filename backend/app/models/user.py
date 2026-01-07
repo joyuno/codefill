@@ -13,8 +13,9 @@ class SubscriptionPlan(str, Enum):
 
 
 class BadgeRarity(str, Enum):
-    """Badge rarity levels."""
+    """Badge rarity levels (5 tiers)."""
     COMMON = "common"
+    UNCOMMON = "uncommon"
     RARE = "rare"
     EPIC = "epic"
     LEGENDARY = "legendary"
