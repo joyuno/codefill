@@ -117,24 +117,27 @@ async def signup(request: SignupRequest, db=Depends(get_db)):
                     )
                     if response.status_code == 200:
                         profile = response.json()
-                        from datetime import datetime
-                        now = datetime.utcnow().isoformat()
-                        db.table("solved_ac_profiles").insert({
-                            "user_id": user_id,
-                            "handle": profile.get("handle", request.onboarding_data.solved_ac_id),
-                            "bio": profile.get("bio"),
-                            "profile_image_url": profile.get("profileImageUrl"),
-                            "tier": profile.get("tier", 0),
-                            "rating": profile.get("rating", 0),
-                            "class": profile.get("class", 0),
-                            "class_decoration": profile.get("classDecoration"),
-                            "solved_count": profile.get("solvedCount", 0),
-                            "exp": profile.get("exp", 0),
-                            "rank": profile.get("rank"),
-                            "max_streak": profile.get("maxStreak", 0),
-                            "organizations": profile.get("organizations"),
-                            "last_synced_at": now,
-                        }).execute()
+                        actual_handle = profile.get("handle", request.onboarding_data.solved_ac_id)
+
+                        # 다른 유저가 이미 이 handle을 사용 중인지 확인
+                        duplicate_check = db.table("solved_ac_profiles")\
+                            .select("user_id")\
+                            .eq("handle", actual_handle)\
+                            .execute()
+
+                        if not (duplicate_check.data and len(duplicate_check.data) > 0):
+                            # 중복이 없을 때만 INSERT
+                            from datetime import datetime
+                            now = datetime.utcnow().isoformat()
+                            db.table("solved_ac_profiles").insert({
+                                "user_id": user_id,
+                                "handle": actual_handle,
+                                "tier": profile.get("tier", 0),
+                                "rating": profile.get("rating", 0),
+                                "solved_count": profile.get("solvedCount", 0),
+                                "max_streak": profile.get("maxStreak", 0),
+                                "last_synced_at": now,
+                            }).execute()
             except Exception as e:
                 # Don't fail signup if solved.ac integration fails
                 print(f"Failed to create solved_ac_profile: {e}")

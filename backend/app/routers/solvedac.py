@@ -50,6 +50,7 @@ class SolvedAcProfile(BaseModel):
     rank: Optional[int] = None
     maxStreak: int = 0
     organizations: List[SolvedAcOrganization] = []
+    isLinked: bool = False  # 이미 다른 사용자가 연동했는지 여부
 
     class Config:
         populate_by_name = True
@@ -60,17 +61,10 @@ class SolvedAcProfileDB(BaseModel):
     id: str
     user_id: str
     handle: str
-    bio: Optional[str] = None
-    profile_image_url: Optional[str] = None
     tier: int = 0
     rating: int = 0
-    class_level: int = 0
-    class_decoration: Optional[str] = None
     solved_count: int = 0
-    exp: int = 0
-    rank: Optional[int] = None
     max_streak: int = 0
-    organizations: Optional[dict] = None
     last_synced_at: str
     created_at: str
 
@@ -147,11 +141,12 @@ async def fetch_solved_ac_profile(handle: str) -> Optional[dict]:
 # =====================================================
 
 @router.get("/lookup/{handle}", response_model=SolvedAcProfile)
-async def lookup_solved_ac_profile(handle: str):
+async def lookup_solved_ac_profile(handle: str, db=Depends(get_db)):
     """
     solved.ac 프로필 조회 (CORS 프록시)
 
     인증 없이 누구나 조회 가능 (연동 전 확인용)
+    isLinked: 이미 다른 사용자가 연동한 경우 True
     """
     profile = await fetch_solved_ac_profile(handle)
 
@@ -161,8 +156,17 @@ async def lookup_solved_ac_profile(handle: str):
             detail=f"'{handle}' 사용자를 찾을 수 없습니다. 백준 아이디를 확인해주세요."
         )
 
+    # 이미 다른 사용자가 이 handle을 연동했는지 확인
+    actual_handle = profile.get("handle", handle)
+    existing_link = db.table("solved_ac_profiles")\
+        .select("user_id")\
+        .eq("handle", actual_handle)\
+        .execute()
+
+    is_linked = existing_link.data and len(existing_link.data) > 0
+
     return SolvedAcProfile(
-        handle=profile.get("handle", handle),
+        handle=actual_handle,
         bio=profile.get("bio"),
         profileImageUrl=profile.get("profileImageUrl"),
         tier=profile.get("tier", 0),
@@ -174,6 +178,7 @@ async def lookup_solved_ac_profile(handle: str):
         rank=profile.get("rank"),
         maxStreak=profile.get("maxStreak", 0),
         organizations=profile.get("organizations", []),
+        isLinked=is_linked,
     )
 
 
@@ -206,6 +211,20 @@ async def link_solved_ac(
             detail=f"'{handle}' 사용자를 찾을 수 없습니다. 백준 아이디를 확인해주세요."
         )
 
+    # 다른 유저가 이미 이 handle을 사용 중인지 확인
+    actual_handle = profile.get("handle", handle)
+    duplicate_check = db.table("solved_ac_profiles")\
+        .select("user_id")\
+        .eq("handle", actual_handle)\
+        .neq("user_id", str(user_id))\
+        .execute()
+
+    if duplicate_check.data and len(duplicate_check.data) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"'{actual_handle}' 아이디는 이미 다른 사용자가 연동 중입니다."
+        )
+
     # 이미 연동된 프로필이 있는지 확인
     existing = db.table("solved_ac_profiles")\
         .select("*")\
@@ -217,17 +236,10 @@ async def link_solved_ac(
     profile_data = {
         "user_id": str(user_id),
         "handle": profile.get("handle", handle),
-        "bio": profile.get("bio"),
-        "profile_image_url": profile.get("profileImageUrl"),
         "tier": profile.get("tier", 0),
         "rating": profile.get("rating", 0),
-        "class": profile.get("class", 0),
-        "class_decoration": profile.get("classDecoration"),
         "solved_count": profile.get("solvedCount", 0),
-        "exp": profile.get("exp", 0),
-        "rank": profile.get("rank"),
         "max_streak": profile.get("maxStreak", 0),
-        "organizations": profile.get("organizations"),
         "last_synced_at": now,
     }
 
@@ -254,17 +266,10 @@ async def link_solved_ac(
                 id=saved["id"],
                 user_id=saved["user_id"],
                 handle=saved["handle"],
-                bio=saved.get("bio"),
-                profile_image_url=saved.get("profile_image_url"),
                 tier=saved.get("tier", 0),
                 rating=saved.get("rating", 0),
-                class_level=saved.get("class", 0),
-                class_decoration=saved.get("class_decoration"),
                 solved_count=saved.get("solved_count", 0),
-                exp=saved.get("exp", 0),
-                rank=saved.get("rank"),
                 max_streak=saved.get("max_streak", 0),
-                organizations=saved.get("organizations"),
                 last_synced_at=saved.get("last_synced_at", now),
                 created_at=saved.get("created_at", now),
             )
@@ -295,17 +300,10 @@ async def get_my_solved_ac_profile(
         id=saved["id"],
         user_id=saved["user_id"],
         handle=saved["handle"],
-        bio=saved.get("bio"),
-        profile_image_url=saved.get("profile_image_url"),
         tier=saved.get("tier", 0),
         rating=saved.get("rating", 0),
-        class_level=saved.get("class", 0),
-        class_decoration=saved.get("class_decoration"),
         solved_count=saved.get("solved_count", 0),
-        exp=saved.get("exp", 0),
-        rank=saved.get("rank"),
         max_streak=saved.get("max_streak", 0),
-        organizations=saved.get("organizations"),
         last_synced_at=saved.get("last_synced_at", ""),
         created_at=saved.get("created_at", ""),
     )
@@ -347,17 +345,10 @@ async def sync_solved_ac_profile(
 
     # 프로필 업데이트
     profile_data = {
-        "bio": profile.get("bio"),
-        "profile_image_url": profile.get("profileImageUrl"),
         "tier": profile.get("tier", 0),
         "rating": profile.get("rating", 0),
-        "class": profile.get("class", 0),
-        "class_decoration": profile.get("classDecoration"),
         "solved_count": profile.get("solvedCount", 0),
-        "exp": profile.get("exp", 0),
-        "rank": profile.get("rank"),
         "max_streak": profile.get("maxStreak", 0),
-        "organizations": profile.get("organizations"),
         "last_synced_at": now,
     }
 
@@ -375,17 +366,10 @@ async def sync_solved_ac_profile(
                 id=saved["id"],
                 user_id=saved["user_id"],
                 handle=saved["handle"],
-                bio=saved.get("bio"),
-                profile_image_url=saved.get("profile_image_url"),
                 tier=saved.get("tier", 0),
                 rating=saved.get("rating", 0),
-                class_level=saved.get("class", 0),
-                class_decoration=saved.get("class_decoration"),
                 solved_count=saved.get("solved_count", 0),
-                exp=saved.get("exp", 0),
-                rank=saved.get("rank"),
                 max_streak=saved.get("max_streak", 0),
-                organizations=saved.get("organizations"),
                 last_synced_at=saved.get("last_synced_at", now),
                 created_at=saved.get("created_at", ""),
             )

@@ -188,6 +188,7 @@ class SolvedAcProfileSimple(BaseModel):
     tier: int = 0
     rating: int = 0
     solved_count: int = 0
+    max_streak: int = 0
     last_synced_at: str
 
 

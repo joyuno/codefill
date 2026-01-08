@@ -573,6 +573,11 @@ function ChatPageContent() {
         setXpEarned(result.xpEarned);
 
         if (result.allCorrect) {
+          // submitBlank에서 얻은 뱃지가 있으면 표시
+          if (result.newBadges && result.newBadges.length > 0) {
+            showBadgePopup(result.newBadges);
+          }
+
           // Record solve to DB
           try {
             const recordResult = await practiceApi.recordSolve({
@@ -586,7 +591,10 @@ function ChatPageContent() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
-              showBadgePopup(recordResult.newBadges);
+              // recordSolve에서 추가로 얻은 뱃지가 있으면 표시
+              if (recordResult.newBadges && recordResult.newBadges.length > 0) {
+                showBadgePopup(recordResult.newBadges);
+              }
               refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
@@ -621,7 +629,9 @@ function ChatPageContent() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
-            showBadgePopup(recordResult.newBadges);
+            if (recordResult.newBadges && recordResult.newBadges.length > 0) {
+              showBadgePopup(recordResult.newBadges);
+            }
             refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
@@ -650,6 +660,11 @@ function ChatPageContent() {
         setXpEarned(result.xpEarned);
 
         if (result.isCorrect) {
+          // submitPuzzle에서 얻은 뱃지가 있으면 표시
+          if (result.newBadges && result.newBadges.length > 0) {
+            showBadgePopup(result.newBadges);
+          }
+
           // Record solve to DB
           try {
             const recordResult = await practiceApi.recordSolve({
@@ -663,7 +678,10 @@ function ChatPageContent() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
-              showBadgePopup(recordResult.newBadges);
+              // recordSolve에서 추가로 얻은 뱃지가 있으면 표시
+              if (recordResult.newBadges && recordResult.newBadges.length > 0) {
+                showBadgePopup(recordResult.newBadges);
+              }
               refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
@@ -694,7 +712,9 @@ function ChatPageContent() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
-            showBadgePopup(recordResult.newBadges);
+            if (recordResult.newBadges && recordResult.newBadges.length > 0) {
+              showBadgePopup(recordResult.newBadges);
+            }
             refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
@@ -732,7 +752,9 @@ function ChatPageContent() {
           console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
-            showBadgePopup(recordResult.newBadges);
+            if (recordResult.newBadges && recordResult.newBadges.length > 0) {
+              showBadgePopup(recordResult.newBadges);
+            }
             refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
