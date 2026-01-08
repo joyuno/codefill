@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     llm_model_guided_gen: str = "gemini-flash"    # Guided problem generation
     llm_model_code_gen: str = "gemini-3-pro"      # Code generation (RAG fallback)
     llm_model_hint: str = "gemini-flash"          # Hint generation
+    llm_model_analysis: str = "gemini-flash"      # Learning analysis report
 
     # Judge0 (Code Execution)
     judge0_url: str = "https://judge0-ce.p.rapidapi.com"

@@ -57,6 +57,7 @@ const PROBLEM_TYPE_LABELS: Record<string, string> = {
   blank: '빈칸 채우기',
   puzzle: '퍼즐 (코드 정렬)',
   guided: '1대1 대화형',
+  implementation: '구현',
 };
 
 // Helper function to convert input_output to testCases
@@ -216,6 +217,7 @@ export function PracticeChatPanel({
           { label: '빈칸 채우기', value: 'type-blank', category: 'action' as const },
           { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' as const },
           { label: '1대1 대화형', value: 'type-guided', category: 'action' as const },
+          { label: '구현', value: 'type-implementation', category: 'action' as const },
         ],
       }];
     }
@@ -341,6 +343,7 @@ export function PracticeChatPanel({
         { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
         { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
         { label: '1대1 대화형', value: 'type-guided', category: 'action' },
+        { label: '구현', value: 'type-implementation', category: 'action' },
       ],
     }]);
   }, [initialBaseProblem]);
@@ -567,6 +570,7 @@ export function PracticeChatPanel({
         { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
         { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
         { label: '1대1 대화형', value: 'type-guided', category: 'action' },
+        { label: '구현', value: 'type-implementation', category: 'action' },
       ],
     };
 
@@ -663,7 +667,7 @@ export function PracticeChatPanel({
       }
     } else if (chip.value.startsWith('type-')) {
       // Problem type selection
-      const type = chip.value.replace('type-', '') as 'blank' | 'puzzle' | 'guided';
+      const type = chip.value.replace('type-', '') as 'blank' | 'puzzle' | 'guided' | 'implementation';
       if (selectedBaseProblem) {
         handleProblemTypeSelect(type);
       }
@@ -674,7 +678,7 @@ export function PracticeChatPanel({
   }, [recommendedProblems, selectedBaseProblem, handleGuidedProgress, showGuidedFinalCode, resetToNewProblem, showProblemTypeSelection]);
 
   // Handle problem type selection and generate problem
-  const handleProblemTypeSelect = useCallback(async (type: 'blank' | 'puzzle' | 'guided') => {
+  const handleProblemTypeSelect = useCallback(async (type: 'blank' | 'puzzle' | 'guided' | 'implementation') => {
     if (!selectedBaseProblem) return;
 
     setFlowState('generating');
@@ -797,6 +801,22 @@ export function PracticeChatPanel({
           fixedEnd: result.fixed_end,
           testCases: testCases || [],  // undefined 대신 빈 배열
         };
+      } else if (type === 'implementation') {
+        // Implementation: LLM 호출 없이 base_problem을 그대로 사용
+        generatedProblem = {
+          id: selectedBaseProblem.id || `impl-${Date.now()}`,
+          originalId: selectedBaseProblem.original_id || selectedBaseProblem.id,
+          baseProblemId: selectedBaseProblem.id,
+          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
+          problemType: 'implementation',
+          difficulty: selectedBaseProblem.difficulty,
+          topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+          keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],
+          framework: targetLanguage,
+          solutionCode: extractedCode,  // 정답 코드 (채점용)
+          testCases: testCases || [],
+        };
       } else {
         const result = await agentApi.generateGuided(request);
         // 새 형식: original_id, language, concepts[], flow[], checkpoints[]
@@ -876,12 +896,17 @@ export function PracticeChatPanel({
         return;
       }
 
-      // Blank/Puzzle 문제: 기존 로직 (연습 화면으로 이동)
+      // Blank/Puzzle/Implementation 문제: 연습 화면으로 이동
       // 빈칸 유형에서는 힌트 보기 칩 제거 (각 빈칸 옆 힌트로 대체)
       const successChips = type === 'blank'
         ? [
             { label: '핵심 개념', value: 'concepts', category: 'action' as const },
             { label: '문제 요약', value: 'summarize', category: 'action' as const },
+          ]
+        : type === 'implementation'
+        ? [
+            { label: '힌트 보기', value: 'hint', category: 'action' as const },
+            { label: '핵심 개념', value: 'concepts', category: 'action' as const },
           ]
         : [
             { label: '힌트 보기', value: 'hint', category: 'action' as const },
@@ -889,14 +914,18 @@ export function PracticeChatPanel({
             { label: '문제 요약', value: 'summarize', category: 'action' as const },
           ];
 
+      const successMessage = type === 'blank'
+        ? `문제가 준비되었어요! 왼쪽 화면에서 문제를 풀어보세요.\n\n빈칸 옆 ? 버튼을 눌러 힌트를 볼 수 있어요!`
+        : type === 'implementation'
+        ? `문제가 준비되었어요! 왼쪽 화면에서 코드를 직접 작성해보세요.\n\n막히면 언제든 힌트를 요청해주세요!`
+        : `문제가 준비되었어요! 왼쪽 화면에서 문제를 풀어보세요.\n\n막히면 언제든 힌트를 요청해주세요!`;
+
       setMessages(prev => {
         const filtered = prev.filter(m => !m.id.startsWith('loading-'));
         return [...filtered, {
           id: `success-${Date.now()}`,
           role: 'assistant' as const,
-          content: type === 'blank'
-            ? `문제가 준비되었어요! 왼쪽 화면에서 문제를 풀어보세요.\n\n빈칸 옆 ? 버튼을 눌러 힌트를 볼 수 있어요!`
-            : `문제가 준비되었어요! 왼쪽 화면에서 문제를 풀어보세요.\n\n막히면 언제든 힌트를 요청해주세요!`,
+          content: successMessage,
           timestamp: new Date().toISOString(),
           chips: successChips,
         }];
@@ -1466,6 +1495,7 @@ export function PracticeChatPanel({
               { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
               { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
               { label: '1대1 대화형', value: 'type-guided', category: 'action' },
+              { label: '구현', value: 'type-implementation', category: 'action' },
             ],
           };
           setMessages(prev => [...prev, assistantMessage]);

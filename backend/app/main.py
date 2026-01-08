@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from .config import get_settings, setup_logging, get_logger
-from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement, solvedac
+from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement, solvedac, analysis, ranking
 from .intents import intent_classifier
 from .services.collection_embeddings import initialize_collection_embeddings
 from .services.discovery_embeddings import initialize_discovery_embeddings
@@ -134,6 +134,8 @@ AI 기반 능동적 코딩 학습 플랫폼 API입니다.
         {"name": "Solutions", "description": "문제 풀이 솔루션"},
         {"name": "solved.ac", "description": "solved.ac 연동"},
         {"name": "WebSocket", "description": "실시간 통신"},
+        {"name": "Analysis", "description": "약점 분석 및 추천"},
+        {"name": "Ranking", "description": "랭킹 시스템"},
     ],
 )
 
@@ -166,6 +168,8 @@ app.include_router(solutions.router, prefix="/solutions", tags=["Solutions"])
 app.include_router(friends.router, prefix="/friends", tags=["Friends"])
 app.include_router(ws.router, prefix="/ws", tags=["WebSocket"])
 app.include_router(solvedac.router, prefix="/solvedac", tags=["solved.ac"])
+app.include_router(analysis.router, prefix="/analysis", tags=["Analysis"])
+app.include_router(ranking.router, prefix="/ranking", tags=["Ranking"])
 
 
 @app.get("/")
