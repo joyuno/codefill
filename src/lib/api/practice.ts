@@ -50,6 +50,10 @@ export interface RecordSubmission {
   hintsUsed?: number;    // 힌트 사용 횟수 (기록용)
   topics?: string[];     // 문제 주제/태그 (예: ["DP", "그래프"])
   attemptId?: string;    // 기존 pending attempt ID (attempt_details 기록용)
+  // ✅ attempts 테이블 완전 저장용 추가 필드
+  timeSpent?: number;    // 풀이 소요 시간 (초)
+  submittedCode?: string; // 제출한 코드 (guided/코드 제출용)
+  sessionId?: string;    // 세션 ID (세션 추적용)
 }
 
 export interface RecordResult {
@@ -338,6 +342,10 @@ export const practiceApi = {
       hints_used: submission.hintsUsed,  // 힌트 사용 횟수
       topics: submission.topics,  // 문제 주제/태그
       attempt_id: submission.attemptId,  // 기존 pending attempt ID
+      // ✅ attempts 테이블 완전 저장용 추가 필드
+      time_spent: submission.timeSpent,  // 풀이 소요 시간 (초)
+      submitted_code: submission.submittedCode,  // 제출한 코드
+      session_id: submission.sessionId,  // 세션 ID
     });
     if (response.error) throw new Error(response.error.message);
     const data = response.data!;

@@ -579,6 +579,10 @@ function ChatPageContent() {
 
           // Record solve to DB
           try {
+            // 풀이 시간 계산
+            const timeSpentSeconds = solveStartTime
+              ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
+              : 0;
             const recordResult = await practiceApi.recordSolve({
               problemId: problem.id,
               baseProblemId: problem.baseProblemId || problem.originalId,
@@ -587,6 +591,12 @@ function ChatPageContent() {
               isCorrect: true,
               problemName: problem.title,
               attemptId: attemptId || undefined,  // attempt tracking
+              // ✅ attempts 테이블 완전 저장용 추가 필드
+              timeSpent: timeSpentSeconds,
+              submittedCode: JSON.stringify(answers),  // blank의 경우 정답 객체
+              sessionId: sessionId || undefined,
+              hintsUsed: previousHints.length,
+              topics: problem.topics,
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
@@ -617,6 +627,10 @@ function ChatPageContent() {
         setIsSubmitted(true);
         // Record solve to DB
         try {
+          // 풀이 시간 계산
+          const timeSpentSeconds = solveStartTime
+            ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
+            : 0;
           const recordResult = await practiceApi.recordSolve({
             problemId: problem.id,
             baseProblemId: problem.baseProblemId || problem.originalId,
@@ -625,6 +639,12 @@ function ChatPageContent() {
             isCorrect: true,
             problemName: problem.title,
             attemptId: attemptId || undefined,  // attempt tracking
+            // ✅ attempts 테이블 완전 저장용 추가 필드
+            timeSpent: timeSpentSeconds,
+            submittedCode: JSON.stringify(answers),
+            sessionId: sessionId || undefined,
+            hintsUsed: previousHints.length,
+            topics: problem.topics,
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
@@ -640,7 +660,7 @@ function ChatPageContent() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints]
   );
 
   // Puzzle submit handler
@@ -666,6 +686,10 @@ function ChatPageContent() {
 
           // Record solve to DB
           try {
+            // 풀이 시간 계산
+            const timeSpentSeconds = solveStartTime
+              ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
+              : 0;
             const recordResult = await practiceApi.recordSolve({
               problemId: problem.id,
               baseProblemId: problem.baseProblemId || problem.originalId,
@@ -674,6 +698,12 @@ function ChatPageContent() {
               isCorrect: true,
               problemName: problem.title,
               attemptId: attemptId || undefined,  // attempt tracking
+              // ✅ attempts 테이블 완전 저장용 추가 필드
+              timeSpent: timeSpentSeconds,
+              submittedCode: JSON.stringify(blockOrder),  // puzzle의 경우 블록 순서
+              sessionId: sessionId || undefined,
+              hintsUsed: previousHints.length,
+              topics: problem.topics,
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
@@ -700,6 +730,10 @@ function ChatPageContent() {
         setIsSubmitted(true);
         // Record solve to DB
         try {
+          // 풀이 시간 계산
+          const timeSpentSeconds = solveStartTime
+            ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
+            : 0;
           const recordResult = await practiceApi.recordSolve({
             problemId: problem.id,
             baseProblemId: problem.baseProblemId || problem.originalId,
@@ -708,6 +742,12 @@ function ChatPageContent() {
             isCorrect: true,
             problemName: problem.title,
             attemptId: attemptId || undefined,  // attempt tracking
+            // ✅ attempts 테이블 완전 저장용 추가 필드
+            timeSpent: timeSpentSeconds,
+            submittedCode: JSON.stringify(blockOrder),
+            sessionId: sessionId || undefined,
+            hintsUsed: previousHints.length,
+            topics: problem.topics,
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
@@ -723,7 +763,7 @@ function ChatPageContent() {
         fetchFeedback(true, 40);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints]
   );
 
   // Implementation submit handler (blank, puzzle, implementation 공통)
@@ -738,15 +778,23 @@ function ChatPageContent() {
       // Record solve to DB for XP and grass (잔디)
       if (problem && allPassed) {
         try {
+          // 풀이 시간 계산
+          const timeSpentSeconds = solveStartTime
+            ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
+            : 0;
           const recordResult = await practiceApi.recordSolve({
             problemId: problem.id,
             problemType: (problem.problemType || 'guided') as 'blank' | 'puzzle' | 'guided',
             difficulty: problem.difficulty,
             isCorrect: true,
-            hintsUsed: hintsUsed,  // 힌트 사용 횟수 전달
+            hintsUsed: hintsUsed ?? previousHints.length,  // 힌트 사용 횟수 전달
             problemName: problem.title,  // 문제 이름
             topics: problem.topics,  // 문제 주제/태그
             attemptId: attemptId || undefined,  // attempt tracking
+            // ✅ attempts 테이블 완전 저장용 추가 필드
+            timeSpent: timeSpentSeconds,
+            submittedCode: code,  // guided의 경우 실제 코드
+            sessionId: sessionId || undefined,
           });
           console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
@@ -779,7 +827,7 @@ function ChatPageContent() {
         });
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints]
   );
 
   // 온보딩 핸들러 제거됨 (소셜 회원가입에서 처리)

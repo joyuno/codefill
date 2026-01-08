@@ -119,6 +119,12 @@ class ChatOrchestratorV2:
         selected_problem = session_state.get("selected_problem")
         current_stage = session_state.get("current_stage", "intent")
 
+        # session_state 내부에서 추가 상태 복원 (agent.py에서 저장된 것)
+        inner_state = session_state.get("session_state", {}) or {}
+        if not search_results and inner_state:
+            search_results = inner_state.get("search_results", [])
+        pending_action = inner_state.get("action_trigger")  # 이전 응답의 action_trigger (문제 유형 선택 대기 등)
+
         # ============================================================
         # 🚀 히스토리 정제 (의도 분류 전)
         # - 긴 히스토리를 의도에 맞게 필터링
@@ -178,7 +184,22 @@ class ChatOrchestratorV2:
         logger.debug(f"IntentTool: category={intent_result.category}, action={intent_result.action}, route={intent_result.suggested_route}")
 
         # ============================================================
-        # 1. 문제 유형 선택 처리 (빈칸/퍼즐/대화형)
+        # 0. 이전 action_trigger 기반 라우팅 (세션 컨텍스트 우선)
+        # - select_problem_type: 문제 유형 선택 대기 중
+        # ============================================================
+        if pending_action == "select_problem_type" and selected_problem:
+            # 이전 응답에서 문제 유형 선택을 요청했으므로, 현재 메시지는 유형 선택
+            problem_type = await intent_tool.detect_problem_type(message)
+            if problem_type:
+                logger.info(f"[Orchestrator] Processing problem type selection (from pending_action): {problem_type}")
+                return await self._process_problem_type_selection(
+                    problem_type=problem_type,
+                    selected_problem=selected_problem,
+                    user_context=user_context,
+                )
+
+        # ============================================================
+        # 1. 문제 유형 선택 처리 (빈칸/퍼즐/대화형) - Intent 기반
         # ============================================================
         if intent_result.action == ActionType.SELECT_PROBLEM_TYPE and selected_problem:
             problem_type = await intent_tool.detect_problem_type(message)

@@ -706,12 +706,21 @@ async def chat_agent(
                 if not session_state:
                     db_session_state = await chat_session_service.get_session_state(session_id)
                     if db_session_state:
+                        # session_state JSONB에서 추가 상태 추출
+                        inner_state = db_session_state.get("session_state", {}) or {}
                         session_state = {
                             "stage": db_session_state.get("current_stage", "intent"),
+                            "current_stage": db_session_state.get("current_stage", "intent"),
                             "collected_info": db_session_state.get("collected_info", {}),
-                            "session_state": db_session_state.get("session_state", {}),
+                            "session_state": inner_state,
+                            # 문제 선택/검색 상태 복원 (그래프 간 전환에 필수)
+                            "selected_problem": db_session_state.get("current_problem_data"),
+                            "search_results": inner_state.get("search_results", []),
+                            # 확인 대기 상태
+                            "awaiting_confirmation": inner_state.get("awaiting_confirmation", False),
+                            "suggested_value": inner_state.get("suggested_value"),
                         }
-                        print(f"[Chat] Loaded session state from DB: stage={session_state.get('stage')}")
+                        print(f"[Chat] Loaded session state from DB: stage={session_state.get('stage')}, has_problem={bool(session_state.get('selected_problem'))}")
 
                 # 사용자 메시지 DB에 저장
                 await chat_session_service.add_message(
@@ -789,18 +798,30 @@ async def chat_agent(
                     metadata=message_metadata if message_metadata else None
                 )
 
-                # 세션 상태 업데이트
+                # 세션 상태 업데이트 (그래프 간 전환에 필요한 모든 상태 저장)
+                session_state_to_save = {
+                    "awaiting_confirmation": result.get("awaiting_confirmation", False),
+                    "suggested_value": result.get("suggested_value"),
+                    # 검색 결과 저장 (문제 선택에 필요)
+                    "search_results": result.get("search_results", []),
+                    # 다음 단계 정보
+                    "next_stage": result.get("next_stage"),
+                    "route_to": result.get("route_to"),
+                    # 문제 유형 선택 상태
+                    "action_trigger": result.get("action_trigger"),
+                }
+
+                # selected_problem 또는 generated_problem 저장
+                problem_data = result.get("selected_problem") or result.get("generated_problem")
+
                 await chat_session_service.update_session_state(
                     session_id=session_id,
                     stage=result.get("stage"),
                     collected_info=collected_info_data,
-                    session_state={
-                        "awaiting_confirmation": result.get("awaiting_confirmation", False),
-                        "suggested_value": result.get("suggested_value"),
-                    },
-                    current_problem_data=result.get("generated_problem") or result.get("selected_problem"),
+                    session_state=session_state_to_save,
+                    current_problem_data=problem_data,
                 )
-                print(f"[Chat] Saved response and state to DB")
+                print(f"[Chat] Saved state: stage={result.get('stage')}, has_problem={bool(problem_data)}, has_results={len(result.get('search_results', []))}")
 
             except Exception as save_err:
                 print(f"[Chat] Failed to save to DB (non-blocking): {save_err}")

@@ -171,6 +171,10 @@ class RecordSubmission(BaseModel):
     hints_used: Optional[int] = None  # 힌트 사용 횟수 (기록용)
     topics: Optional[List[str]] = None  # 문제 주제/태그 (예: ["DP", "그래프"])
     attempt_id: Optional[str] = None  # 기존 pending attempt ID (attempt_details 기록용)
+    # 추가 필드: attempts 테이블 완전 저장용
+    time_spent: Optional[int] = None  # 풀이 시간 (초)
+    submitted_code: Optional[str] = None  # 제출한 코드 (guided/코드 제출용)
+    session_id: Optional[str] = None  # 세션 ID (세션 추적용)
 
 
 class FeedbackData(BaseModel):

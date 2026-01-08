@@ -37,6 +37,28 @@ from ..services.badge_service import get_badge_service
 router = APIRouter()
 
 
+# ============================================================
+# Helper Functions
+# ============================================================
+
+def get_next_attempt_number(db, user_id: str, problem_id: str) -> int:
+    """동일 문제에 대한 다음 시도 번호 계산"""
+    try:
+        result = db.table("attempts")\
+            .select("attempt_number")\
+            .eq("user_id", user_id)\
+            .eq("problem_id", problem_id)\
+            .order("attempt_number", desc=True)\
+            .limit(1)\
+            .execute()
+
+        if result.data and len(result.data) > 0:
+            return (result.data[0].get("attempt_number") or 0) + 1
+        return 1
+    except Exception:
+        return 1
+
+
 def check_blank_answers(submitted: dict, correct: list) -> tuple[bool, dict]:
     """Check blank fill answers."""
     results = {}
@@ -198,6 +220,9 @@ async def start_practice(
     try:
         from uuid import UUID as UUIDType
 
+        # 시작 시간 기록
+        started_at_dt = datetime.utcnow()
+
         # 기본 attempt 데이터 (pending 상태 - is_correct=False로 시작)
         attempt_data = {
             "user_id": str(user_id),
@@ -209,6 +234,7 @@ async def start_practice(
             "topics": request.topics,
             "hints_used": 0,
             "total_hints_requested": 0,
+            "started_at": started_at_dt.isoformat(),  # 시작 시간 명시적 저장
         }
 
         # problem_id 추가 (UUID 형식인 경우만 - DB 컬럼이 UUID 타입)
@@ -228,7 +254,7 @@ async def start_practice(
 
         if result.data and len(result.data) > 0:
             attempt_id = result.data[0]["id"]
-            started_at = result.data[0].get("created_at", datetime.utcnow().isoformat())
+            started_at = started_at_dt.isoformat()
             print(f"[StartPractice] Created pending attempt: {attempt_id}")
 
             # 🚀 SessionTracker 세션 시작
@@ -247,6 +273,14 @@ async def start_practice(
                     }
                 )
                 print(f"[StartPractice] Session started: {session_id}")
+
+                # ✅ session_id를 attempts 테이블에 저장
+                if session_id:
+                    db.table("attempts").update({
+                        "session_id": session_id
+                    }).eq("id", attempt_id).execute()
+                    print(f"[StartPractice] Linked session_id to attempt")
+
             except Exception as e:
                 print(f"[StartPractice] Session tracking error (non-blocking): {e}")
 
@@ -367,6 +401,9 @@ async def submit_blank(
             "submitted_answer": str(submission.answers),
             "xp_earned": xp_earned,
             "attempt_number": attempt_number,
+            "problem_type": "blank",
+            "difficulty": difficulty,
+            "started_at": datetime.utcnow().isoformat(),  # ✅ 시작 시간 추가
         }).execute()
 
         # Update user stats and check badges if correct
@@ -474,6 +511,9 @@ async def submit_puzzle(
             "submitted_answer": str([{"id": b.id, "indent": b.indentation} for b in submission.block_order]),
             "xp_earned": xp_earned,
             "attempt_number": attempt_number,
+            "problem_type": "puzzle",
+            "difficulty": difficulty,
+            "started_at": datetime.utcnow().isoformat(),  # ✅ 시작 시간 추가
         }).execute()
 
         # Update user stats and check badges if correct
@@ -673,14 +713,21 @@ async def record_solve(
 
             # attempt_id가 있으면 기존 attempt 업데이트, 없으면 새로 생성
             if submission.attempt_id and not submission.attempt_id.startswith("temp_"):
-                # 기존 pending attempt 업데이트 (complete_attempt RPC 사용)
+                # 기존 pending attempt 업데이트 (직접 UPDATE 사용 - 더 많은 필드 업데이트)
                 try:
-                    db.rpc("complete_attempt", {
-                        "p_attempt_id": submission.attempt_id,
-                        "p_is_correct": submission.is_correct,
-                        "p_xp_earned": xp_earned,
-                        "p_submitted_answer": f"type:{submission.problem_type}",
-                    }).execute()
+                    update_data = {
+                        "is_correct": submission.is_correct,
+                        "xp_earned": xp_earned,
+                        "submitted_answer": f"type:{submission.problem_type}",
+                        # ✅ 추가 필드
+                        "submitted_code": submission.submitted_code,
+                        "time_spent": submission.time_spent,
+                    }
+                    # session_id가 있으면 업데이트 (없으면 기존 유지)
+                    if submission.session_id:
+                        update_data["session_id"] = submission.session_id
+
+                    db.table("attempts").update(update_data).eq("id", submission.attempt_id).execute()
                     attempt_id_used = submission.attempt_id
                     print(f"[RecordSolve] Updated existing attempt: {attempt_id_used}")
                 except Exception as e:
@@ -701,6 +748,10 @@ async def record_solve(
                     "problem_name": submission.problem_name,
                     "total_hints_requested": submission.hints_used or 0,
                     "topics": submission.topics,
+                    # ✅ 추가 필드: submitted_code, time_spent, session_id
+                    "submitted_code": submission.submitted_code,
+                    "time_spent": submission.time_spent,
+                    "session_id": submission.session_id,
                 }
 
                 # problem_id 추가 + attempt_number 계산
@@ -871,6 +922,37 @@ async def record_solve(
                     encouragement=feedback_result.get("encouragement", ""),
                 )
                 print(f"[RecordSolve] Generated feedback: grade={feedback_data.grade}")
+
+                # ✅ attempts 테이블에 feedback_grade, feedback_data, score 업데이트
+                if attempt_id_used:
+                    try:
+                        import json
+                        # score 계산: 효율성/속도/이해도 평균
+                        avg_score = (
+                            feedback_data.efficiency_score +
+                            feedback_data.speed_score +
+                            feedback_data.understanding_score
+                        ) // 3
+
+                        feedback_data_json = {
+                            "grade": feedback_data.grade,
+                            "grade_emoji": feedback_data.grade_emoji,
+                            "grade_message": feedback_data.grade_message,
+                            "efficiency_score": feedback_data.efficiency_score,
+                            "speed_score": feedback_data.speed_score,
+                            "understanding_score": feedback_data.understanding_score,
+                            "learning_points": feedback_data.learning_points,
+                            "improvements": feedback_data.improvements,
+                        }
+
+                        db.table("attempts").update({
+                            "feedback_grade": feedback_data.grade,
+                            "feedback_data": feedback_data_json,
+                            "score": avg_score,
+                        }).eq("id", attempt_id_used).execute()
+                        print(f"[RecordSolve] Updated attempt with feedback: grade={feedback_data.grade}, score={avg_score}")
+                    except Exception as fb_update_err:
+                        print(f"[RecordSolve] Failed to update attempt with feedback (non-blocking): {fb_update_err}")
             except Exception as fb_err:
                 print(f"[RecordSolve] Feedback generation error (non-blocking): {fb_err}")
 
