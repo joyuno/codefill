@@ -5,8 +5,11 @@ LLM API calls via OpenRouter
 
 import httpx
 import json
+import logging
 from typing import Optional, Dict, Any, AsyncGenerator
 from ..config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class OpenRouterService:
@@ -76,15 +79,15 @@ class OpenRouterService:
             payload["response_format"] = response_format
 
         async with httpx.AsyncClient(timeout=120.0) as client:
-            print(f"[OpenRouter] Calling model: {model_id}")
+            logger.debug(f"Calling model: {model_id}")
             response = await client.post(
                 f"{self.BASE_URL}/chat/completions",
                 headers=self._get_headers(),
                 json=payload,
             )
-            print(f"[OpenRouter] Response status: {response.status_code}")
+            logger.debug(f"Response status: {response.status_code}")
             if response.status_code != 200:
-                print(f"[OpenRouter] Error response: {response.text[:500]}")
+                logger.error(f"Error response: {response.text[:500]}")
             response.raise_for_status()
 
             result = response.json()
@@ -92,7 +95,7 @@ class OpenRouterService:
             # 응답 내용 미리보기 (디버깅용)
             content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
             if content:
-                print(f"[OpenRouter] Content preview: {content[:200]}...")
+                logger.debug(f"Content preview: {content[:200]}...")
 
             return result
 
@@ -240,7 +243,7 @@ class OpenRouterService:
             fixed = fix_truncated_json(extracted)
             result = try_parse(fixed)
             if result:
-                print(f"[JSON Parse] Fixed truncated JSON successfully")
+                logger.debug("Fixed truncated JSON successfully")
                 return result
 
         # 5. Manual cleanup and retry
@@ -257,12 +260,11 @@ class OpenRouterService:
         fixed = fix_truncated_json(content)
         result = try_parse(fixed)
         if result:
-            print(f"[JSON Parse] Fixed truncated JSON on final attempt")
+            logger.debug("Fixed truncated JSON on final attempt")
             return result
 
         # Log the problematic content for debugging
-        print(f"[JSON Parse] ❌ All parse attempts failed")
-        print(f"[JSON Parse] Original content preview: {original_content[:300]}...")
+        logger.error(f"All JSON parse attempts failed. Content preview: {original_content[:300]}...")
         raise ValueError(f"Failed to parse JSON from LLM response")
 
 

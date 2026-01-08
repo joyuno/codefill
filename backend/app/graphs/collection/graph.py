@@ -225,12 +225,21 @@ class InfoCollectionGraph:
                 "chips": result_chips,
             }
 
+        # 수집된 정보 - 그래프 결과 우선, 기존 값 fallback (상태 유실 방지)
+        final_topic = result.get("topic") or existing_topic
+        final_difficulty = result.get("difficulty") or existing_difficulty
+        final_language = result.get("language") or existing_language
+
+        # 디버깅 로그
+        print(f"[InfoCollectionGraph] Result: topic={result.get('topic')}, difficulty={result.get('difficulty')}, language={result.get('language')}")
+        print(f"[InfoCollectionGraph] Final: topic={final_topic}, difficulty={final_difficulty}, language={final_language}")
+
         return {
             "message": result.get("response_message", ""),
             "collected_info": {
-                "topic": result.get("topic"),
-                "difficulty": result.get("difficulty"),
-                "language": result.get("language"),
+                "topic": final_topic,
+                "difficulty": final_difficulty,
+                "language": final_language,
             },
             "is_complete": result.get("is_complete", False),
             "action_trigger": "search_problems" if result.get("is_complete") else None,

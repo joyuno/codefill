@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 
-from .config import get_settings
+from .config import get_settings, setup_logging, get_logger
 from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement, solvedac
 from .intents import intent_classifier
 from .services.collection_embeddings import initialize_collection_embeddings
@@ -11,12 +11,17 @@ from .services.discovery_embeddings import initialize_discovery_embeddings
 from .graphs.orchestrator_v2 import initialize_orchestrator
 from .graphs.checkpointer import close_checkpointer
 
+# Initialize logging at module load
+setup_logging()
+logger = get_logger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     settings = get_settings()
-    print(f"Starting {settings.app_name} v{settings.app_version}")
+    logger.info(f"Starting {settings.app_name} v{settings.app_version}")
 
     # Intent Classifier 초기화 (백그라운드에서)
     # 서버 시작 시 임베딩 생성 (시간 소요될 수 있음)
@@ -34,21 +39,21 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    print("Shutting down...")
+    logger.info("Shutting down...")
 
     # Checkpointer 연결 정리
     await close_checkpointer()
-    print("Checkpointer closed")
+    logger.info("Checkpointer closed")
 
 
 async def initialize_intent_classifier():
     """Intent Classifier 임베딩 초기화"""
     try:
         await intent_classifier.initialize()
-        print("Intent classifier initialized successfully")
+        logger.info("Intent classifier initialized successfully")
     except Exception as e:
-        print(f"Intent classifier initialization failed: {e}")
-        print("Will initialize on first request instead")
+        logger.warning(f"Intent classifier initialization failed: {e}")
+        logger.info("Will initialize on first request instead")
 
 
 async def initialize_collection_embeddings_startup():
@@ -56,12 +61,12 @@ async def initialize_collection_embeddings_startup():
     try:
         success = await initialize_collection_embeddings()
         if success:
-            print("Collection embeddings initialized successfully")
+            logger.info("Collection embeddings initialized successfully")
         else:
-            print("Collection embeddings initialization returned false")
+            logger.warning("Collection embeddings initialization returned false")
     except Exception as e:
-        print(f"Collection embeddings initialization failed: {e}")
-        print("Will use keyword fallback instead")
+        logger.warning(f"Collection embeddings initialization failed: {e}")
+        logger.info("Will use keyword fallback instead")
 
 
 async def initialize_discovery_embeddings_startup():
@@ -69,22 +74,22 @@ async def initialize_discovery_embeddings_startup():
     try:
         success = await initialize_discovery_embeddings()
         if success:
-            print("Discovery embeddings initialized successfully")
+            logger.info("Discovery embeddings initialized successfully")
         else:
-            print("Discovery embeddings initialization returned false")
+            logger.warning("Discovery embeddings initialization returned false")
     except Exception as e:
-        print(f"Discovery embeddings initialization failed: {e}")
-        print("Will use keyword fallback instead")
+        logger.warning(f"Discovery embeddings initialization failed: {e}")
+        logger.info("Will use keyword fallback instead")
 
 
 async def initialize_orchestrator_startup():
     """LangGraph Orchestrator 초기화 (Checkpointer 포함)"""
     try:
         await initialize_orchestrator()
-        print("LangGraph Orchestrator initialized successfully (with Checkpointer)")
+        logger.info("LangGraph Orchestrator initialized successfully (with Checkpointer)")
     except Exception as e:
-        print(f"Orchestrator initialization failed: {e}")
-        print("Will initialize on first request instead")
+        logger.warning(f"Orchestrator initialization failed: {e}")
+        logger.info("Will initialize on first request instead")
 
 
 settings = get_settings()
@@ -92,8 +97,44 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="AI-powered active coding learning platform API",
+    description="""
+## CodeFill API
+
+AI 기반 능동적 코딩 학습 플랫폼 API입니다.
+
+### 주요 기능
+
+- **Authentication**: 소셜 로그인 (카카오, 구글, 깃허브)
+- **AI Agents**: LangGraph 기반 대화형 AI 튜터
+- **Practice**: 빈칸 채우기, 퍼즐, 대화형 문제 풀이
+- **Code Execution**: Judge0 기반 코드 실행 및 채점
+- **Farm**: 게이미피케이션 (농장 시스템)
+
+### 인증
+
+대부분의 API는 JWT 토큰 인증이 필요합니다.
+`Authorization: Bearer <token>` 헤더를 포함해주세요.
+    """,
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_tags=[
+        {"name": "Authentication", "description": "사용자 인증 및 OAuth"},
+        {"name": "Users", "description": "사용자 프로필 및 설정"},
+        {"name": "Problems", "description": "문제 조회 및 관리"},
+        {"name": "Practice", "description": "문제 풀이 및 제출"},
+        {"name": "AI Agents", "description": "LangGraph 기반 AI 튜터"},
+        {"name": "Chat", "description": "대화 히스토리 관리"},
+        {"name": "Code Execution", "description": "코드 실행 및 채점"},
+        {"name": "Farm", "description": "게이미피케이션 시스템"},
+        {"name": "Shop", "description": "상점 아이템"},
+        {"name": "Placement", "description": "농장 아이템 배치"},
+        {"name": "Friends", "description": "친구 시스템"},
+        {"name": "Translation", "description": "문제 번역"},
+        {"name": "Solutions", "description": "문제 풀이 솔루션"},
+        {"name": "solved.ac", "description": "solved.ac 연동"},
+        {"name": "WebSocket", "description": "실시간 통신"},
+    ],
 )
 
 # CORS middleware

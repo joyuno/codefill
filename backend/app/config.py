@@ -91,8 +91,61 @@ class Settings(BaseSettings):
     cache_ttl_recommendations: int = 300  # 5 minutes
     cache_ttl_user_preferences: int = 600  # 10 minutes
 
+    # Logging
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    log_format: str = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+
 
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+# ============================================================
+# Centralized Logging Configuration
+# ============================================================
+
+import logging
+import sys
+
+def setup_logging() -> None:
+    """
+    Configure application-wide logging.
+    Call this once at application startup.
+    """
+    settings = get_settings()
+
+    # Determine log level from settings/environment
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    if settings.debug:
+        log_level = logging.DEBUG
+
+    # Configure root logger
+    logging.basicConfig(
+        level=log_level,
+        format=settings.log_format,
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+    # Reduce noise from third-party libraries
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+
+
+def get_logger(name: str) -> logging.Logger:
+    """
+    Get a logger for the given module name.
+
+    Usage:
+        from app.config import get_logger
+        logger = get_logger(__name__)
+        logger.info("Message")
+        logger.error("Error", exc_info=True)  # Include stack trace
+    """
+    return logging.getLogger(name)

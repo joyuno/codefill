@@ -53,6 +53,7 @@ class IntentType(str, Enum):
 
     # ===== 시스템 =====
     OUT_OF_SCOPE = "out_of_scope"                  # 범위 밖 요청
+    INAPPROPRIATE_MESSAGE = "inappropriate_message"  # 부적절한 메시지 (욕설, 비하 등)
     CLARIFICATION_NEEDED = "clarification_needed"  # 명확화 필요
 
 
@@ -735,6 +736,13 @@ INTENT_DEFINITIONS: Dict[str, Dict] = {
         ],
         "required_context": None,
         "next_action": "redirect_to_coding",
+    },
+
+    IntentType.INAPPROPRIATE_MESSAGE: {
+        "description": "부적절한 메시지 (OpenAI Moderation API로 감지)",
+        "examples": [],  # Moderation API가 처리 - 예시 불필요
+        "required_context": None,
+        "next_action": "redirect_politely",
     },
 
     IntentType.CLARIFICATION_NEEDED: {

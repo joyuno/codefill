@@ -61,16 +61,18 @@ async def search_problems(state: ChatState) -> Dict[str, Any]:
     # 결과를 ProblemInfo 형식으로 변환
     search_results: List[ProblemInfo] = []
     for r in results:
+        # DB 필드: question, 프론트엔드 필드: description
+        question_text = r.get("question") or r.get("description") or ""
         search_results.append({
             "id": r.get("id"),
             "original_id": r.get("original_id"),  # 문제 유형 생성 시 필요!
             "name": r.get("name") or r.get("original_id"),
-            "title": r.get("title") or r.get("name"),
-            "question": r.get("question"),
-            "description": r.get("description"),
+            "title": r.get("title") or r.get("name") or r.get("original_id"),
+            "question": question_text,
+            "description": question_text,  # 프론트엔드 호환용
             "difficulty": r.get("difficulty", "medium"),
             "tags": r.get("tags", []),
-            "topics": r.get("topics", []),
+            "topics": r.get("topics") or r.get("tags", []),  # topics가 없으면 tags 사용
             "solutions": r.get("solutions", []),
             "input_output": r.get("input_output"),  # 테스트 케이스용
             "similarity": r.get("similarity"),

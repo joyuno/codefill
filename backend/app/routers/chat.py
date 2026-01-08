@@ -70,21 +70,31 @@ class PracticeChatResponse(BaseModel):
 # Intent별 응답 생성
 # ============================================================
 
-def generate_intent_response(intent: IntentType, confidence: float) -> dict:
+async def generate_intent_response(
+    intent: IntentType,
+    confidence: float,
+    message: str = "",
+    conversation_history: list = None,
+    user_context: dict = None,
+) -> dict:
     """
-    의도별 맞춤 응답 생성
+    의도별 맞춤 응답 생성 - LLM 기반 동적 메시지 + 정적 chips
 
     Args:
         intent: 분류된 의도
         confidence: 분류 신뢰도
+        message: 원본 사용자 메시지
+        conversation_history: 대화 히스토리
+        user_context: 사용자 컨텍스트
 
     Returns:
         dict with message, action, and chips
     """
-    responses = {
-        # ===== 문제 검색/추천 =====
+    from ..services.dynamic_response import dynamic_response_generator
+
+    # chips와 action은 정적으로 유지 (UI 요소)
+    intent_configs = {
         IntentType.NEW_PROBLEM: {
-            "message": "새로운 문제를 추천해드릴게요! 어떤 알고리즘을 연습하고 싶으신가요?",
             "action": {"type": "collect_info", "next": "topic"},
             "chips": [
                 {"label": "DP", "value": "dp", "category": "topic"},
@@ -93,12 +103,10 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.SIMILAR_CODE_PROBLEM: {
-            "message": "비슷한 유형의 문제를 찾아드릴게요! 코드를 붙여넣어 주시면 유사한 문제를 검색할게요.",
             "action": {"type": "collect_info", "next": "code", "requires_context": "code"},
             "chips": None
         },
         IntentType.TOPIC_SPECIFIC: {
-            "message": "특정 주제의 문제를 찾고 계시군요! 난이도는 어느 정도로 할까요?",
             "action": {"type": "collect_info", "next": "difficulty"},
             "chips": [
                 {"label": "Easy", "value": "easy", "category": "difficulty"},
@@ -107,7 +115,6 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.DIFFICULTY_CHANGE: {
-            "message": "난이도를 변경할게요. 어떤 난이도로 할까요?",
             "action": {"type": "update_setting", "setting": "difficulty"},
             "chips": [
                 {"label": "Easy", "value": "easy", "category": "difficulty"},
@@ -116,7 +123,6 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.LANGUAGE_CHANGE: {
-            "message": "프로그래밍 언어를 변경할게요. 어떤 언어로 할까요?",
             "action": {"type": "update_setting", "setting": "language"},
             "chips": [
                 {"label": "Python", "value": "python", "category": "language"},
@@ -125,14 +131,10 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.RANDOM_RECOMMEND: {
-            "message": "좋아요! 실력에 맞는 문제를 추천해드릴게요. 잠시만요...",
             "action": {"type": "recommend", "mode": "random"},
             "chips": None
         },
-
-        # ===== 문제 풀이 중 =====
         IntentType.HINT_REQUEST: {
-            "message": "힌트를 드릴게요! 어떤 레벨의 힌트를 원하시나요?",
             "action": {"type": "hint", "requires_context": "problem"},
             "chips": [
                 {"label": "살짝만", "value": "hint_1", "category": "hint"},
@@ -141,7 +143,6 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.SOLUTION_REQUEST: {
-            "message": "정답을 보시면 경험치가 차감됩니다. 정말 정답을 볼까요?",
             "action": {"type": "confirm", "next": "solution"},
             "chips": [
                 {"label": "힌트 먼저", "value": "hint", "category": "action"},
@@ -149,7 +150,6 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.EXPLANATION_REQUEST: {
-            "message": "어떤 부분을 설명해드릴까요?",
             "action": {"type": "explain"},
             "chips": [
                 {"label": "알고리즘", "value": "algorithm", "category": "explain"},
@@ -158,19 +158,14 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.CODE_REVIEW: {
-            "message": "코드 리뷰를 해드릴게요! 코드를 붙여넣어 주세요.",
             "action": {"type": "review", "requires_context": "code"},
             "chips": None
         },
         IntentType.ERROR_HELP: {
-            "message": "에러를 도와드릴게요! 에러 메시지나 코드를 보여주시면 원인을 찾아드릴게요.",
             "action": {"type": "debug", "requires_context": "code"},
             "chips": None
         },
-
-        # ===== 진행 관련 =====
         IntentType.SKIP_PROBLEM: {
-            "message": "문제를 건너뛸게요. 다른 문제를 추천해드릴까요?",
             "action": {"type": "skip", "suggest_new": True},
             "chips": [
                 {"label": "다른 문제", "value": "new_problem", "category": "action"},
@@ -178,29 +173,22 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.RETRY_PROBLEM: {
-            "message": "처음부터 다시 시작할게요. 화이팅!",
             "action": {"type": "reset"},
             "chips": None
         },
         IntentType.SUBMIT_CODE: {
-            "message": "코드를 제출합니다. 잠시만 기다려주세요...",
             "action": {"type": "submit"},
             "chips": None
         },
-
-        # ===== 학습/통계 =====
         IntentType.PROGRESS_CHECK: {
-            "message": "진행 상황을 확인해드릴게요!",
             "action": {"type": "show_progress"},
             "chips": None
         },
         IntentType.WEAK_POINT: {
-            "message": "약점 분석을 해드릴게요. 잠시만요...",
             "action": {"type": "analyze_weakness"},
             "chips": None
         },
         IntentType.STUDY_PLAN: {
-            "message": "맞춤 학습 계획을 세워드릴게요! 현재 목표가 무엇인가요?",
             "action": {"type": "create_plan", "next": "goal"},
             "chips": [
                 {"label": "코딩 테스트", "value": "coding_test", "category": "goal"},
@@ -208,10 +196,7 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
                 {"label": "특정 주제", "value": "specific", "category": "goal"},
             ]
         },
-
-        # ===== 일반 대화 =====
         IntentType.GREETING: {
-            "message": "안녕하세요! CodeFill 코딩 튜터예요. 무엇을 도와드릴까요?",
             "action": None,
             "chips": [
                 {"label": "문제 풀기", "value": "practice", "category": "action"},
@@ -220,7 +205,6 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.THANKS: {
-            "message": "도움이 됐다니 기뻐요! 더 필요한 게 있으면 말씀해주세요.",
             "action": None,
             "chips": [
                 {"label": "다른 문제", "value": "new_problem", "category": "action"},
@@ -228,12 +212,10 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.GOODBYE: {
-            "message": "수고하셨어요! 다음에 또 만나요. 화이팅!",
             "action": None,
             "chips": None
         },
         IntentType.CONFUSION: {
-            "message": "헷갈리시는군요! 제가 도와드릴게요.",
             "action": {"type": "clarify"},
             "chips": [
                 {"label": "설명해줘", "value": "explain", "category": "action"},
@@ -242,30 +224,32 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
             ]
         },
         IntentType.AFFIRMATION: {
-            "message": "좋아요! 진행할게요.",
             "action": {"type": "confirm_previous"},
             "chips": None
         },
         IntentType.NEGATION: {
-            "message": "알겠어요! 다른 걸로 해볼까요?",
             "action": {"type": "offer_alternatives"},
             "chips": [
                 {"label": "다른 문제", "value": "new_problem", "category": "action"},
                 {"label": "다른 난이도", "value": "difficulty", "category": "action"},
             ]
         },
-
-        # ===== 시스템 =====
         IntentType.OUT_OF_SCOPE: {
-            "message": "저는 코딩 학습을 도와드리는 AI예요. 문제 풀기, 코드 리뷰, 알고리즘 설명을 도와드릴 수 있어요!",
             "action": None,
             "chips": [
                 {"label": "문제 풀기", "value": "practice", "category": "action"},
                 {"label": "코드 리뷰", "value": "review", "category": "action"},
             ]
         },
+        IntentType.INAPPROPRIATE_MESSAGE: {
+            "action": None,
+            "chips": [
+                {"label": "문제 풀기", "value": "practice", "category": "action"},
+                {"label": "쉬운 문제부터", "value": "easy", "category": "difficulty"},
+                {"label": "추천받기", "value": "recommend", "category": "action"},
+            ]
+        },
         IntentType.CLARIFICATION_NEEDED: {
-            "message": "조금 더 자세히 말씀해주시겠어요? 어떤 도움이 필요하신가요?",
             "action": {"type": "clarify"},
             "chips": [
                 {"label": "문제 풀기", "value": "practice", "category": "action"},
@@ -275,14 +259,28 @@ def generate_intent_response(intent: IntentType, confidence: float) -> dict:
         },
     }
 
-    return responses.get(intent, {
-        "message": "무엇을 도와드릴까요?",
+    # 설정 가져오기 (chips, action)
+    config = intent_configs.get(intent, {
         "action": None,
         "chips": [
             {"label": "문제 풀기", "value": "practice", "category": "action"},
             {"label": "힌트 요청", "value": "hint", "category": "action"},
         ]
     })
+
+    # LLM 기반 동적 메시지 생성 (하드코딩된 메시지 제거)
+    dynamic_response = await dynamic_response_generator.generate(
+        message=message,
+        intent=intent.value if hasattr(intent, 'value') else str(intent),
+        conversation_history=conversation_history,
+        user_context=user_context,
+    )
+
+    return {
+        "message": dynamic_response.message,
+        "action": config.get("action"),
+        "chips": config.get("chips"),
+    }
 
 
 @router.post("", response_model=ChatResponse)
@@ -308,10 +306,13 @@ async def chat(request: ChatRequest, db=Depends(get_db)):
             session_context=session_ctx
         )
 
-        # 의도별 응답 생성
-        response_data = generate_intent_response(
-            intent_result.intent,
-            intent_result.confidence
+        # 의도별 응답 생성 (LLM 기반 동적 응답)
+        response_data = await generate_intent_response(
+            intent=intent_result.intent,
+            confidence=intent_result.confidence,
+            message=request.message,
+            conversation_history=request.session_context.get("conversation_history") if request.session_context else None,
+            user_context=request.session_context,
         )
 
         # chips 변환 (dict -> QuickChip)
@@ -337,10 +338,22 @@ async def chat(request: ChatRequest, db=Depends(get_db)):
         )
 
     except Exception as e:
-        # Fallback 응답
+        # Fallback 응답 - LLM 기반 동적 응답 시도
         print(f"Chat intent classification error: {e}")
+        try:
+            from ..services.dynamic_response import dynamic_response_generator
+            fallback_response = await dynamic_response_generator.generate(
+                message=request.message,
+                intent="error_fallback",
+                conversation_history=None,
+                user_context=None,
+            )
+            fallback_message = fallback_response.message
+        except Exception:
+            fallback_message = "잠깐 문제가 있었어. 다시 말해줄래?"
+
         return ChatResponse(
-            message="안녕하세요! CodeFill 코딩 튜터예요. 무엇을 도와드릴까요?",
+            message=fallback_message,
             intent="greeting",
             confidence=0.5,
             method="fallback",
@@ -488,10 +501,13 @@ async def chat_stream(request: ChatRequest, db=Depends(get_db)):
                 session_context=session_ctx
             )
 
-            # 의도별 응답 생성
-            response_data = generate_intent_response(
-                intent_result.intent,
-                intent_result.confidence
+            # 의도별 응답 생성 (LLM 기반 동적 응답)
+            response_data = await generate_intent_response(
+                intent=intent_result.intent,
+                confidence=intent_result.confidence,
+                message=request.message,
+                conversation_history=request.session_context.get("conversation_history") if request.session_context else None,
+                user_context=request.session_context,
             )
 
             # 스트리밍 방식으로 응답 전송
@@ -503,7 +519,17 @@ async def chat_stream(request: ChatRequest, db=Depends(get_db)):
 
         except Exception as e:
             print(f"Stream error: {e}")
-            fallback_message = "안녕하세요! 무엇을 도와드릴까요?"
+            # LLM 기반 동적 폴백
+            try:
+                from ..services.dynamic_response import dynamic_response_generator
+                fallback_response = await dynamic_response_generator.generate(
+                    message=request.message,
+                    intent="error_fallback",
+                )
+                fallback_message = fallback_response.message
+            except Exception:
+                fallback_message = "잠깐 문제가 있었어. 다시 말해줄래?"
+
             for char in fallback_message:
                 yield f"data: {json.dumps({'content': char})}\n\n"
             yield f"data: {json.dumps({'done': True, 'intent': 'greeting', 'error': str(e)})}\n\n"

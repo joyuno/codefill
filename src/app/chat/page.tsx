@@ -16,7 +16,7 @@ import Link from 'next/link';
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 import { CorrectAnswerPopup } from '@/components/practice/CorrectAnswerPopup';
-import { OnboardingWizard, useOnboardingCheck, type OnboardingData } from '@/components/onboarding/OnboardingWizard';
+// 온보딩은 소셜 회원가입 시 이미 완료됨 - 중복 제거
 import { BadgePopup } from '@/components/ui/badge-popup';
 
 import { practiceApi, agentApi, problemsApi } from '@/lib/api';
@@ -89,8 +89,7 @@ function ChatPageContent() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Onboarding state
-  const { needsOnboarding, isLoading: isOnboardingLoading, setNeedsOnboarding } = useOnboardingCheck();
+  // 온보딩은 소셜 회원가입 시 완료됨 (중복 제거됨)
 
   // Check authentication on mount
   useEffect(() => {
@@ -761,21 +760,7 @@ function ChatPageContent() {
     [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile]
   );
 
-  // Handle onboarding completion
-  const handleOnboardingComplete = useCallback((data: OnboardingData) => {
-    console.log('[ChatPage] Onboarding completed:', data);
-    setNeedsOnboarding(false);
-    toast({
-      title: '설정 완료!',
-      description: '맞춤 추천을 시작합니다.',
-    });
-  }, [setNeedsOnboarding, toast]);
-
-  // Handle onboarding skip
-  const handleOnboardingSkip = useCallback(() => {
-    localStorage.setItem('onboarding_completed', 'true');
-    setNeedsOnboarding(false);
-  }, [setNeedsOnboarding]);
+  // 온보딩 핸들러 제거됨 (소셜 회원가입에서 처리)
 
   // Render practice component based on problem type
   const renderPracticeComponent = () => {
@@ -810,7 +795,7 @@ function ChatPageContent() {
   };
 
   // Show loading while checking auth or restoring session
-  if (isAuthChecking || !isRestored || isOnboardingLoading) {
+  if (isAuthChecking || !isRestored) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2">
@@ -823,15 +808,7 @@ function ChatPageContent() {
     );
   }
 
-  // Show onboarding wizard for new users
-  if (isAuthenticated && needsOnboarding) {
-    return (
-      <OnboardingWizard
-        onComplete={handleOnboardingComplete}
-        onSkip={handleOnboardingSkip}
-      />
-    );
-  }
+  // 온보딩은 소셜 회원가입 시 완료되므로 여기서는 체크하지 않음
 
   // Show login required screen if not authenticated
   if (!isAuthenticated) {

@@ -77,7 +77,18 @@ function convertInputOutputToTestCases(inputOutput?: { inputs: string[]; outputs
 }
 
 // Helper function to convert generated problem data to ConvertedProblem
-function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedProblem {
+// baseProblem을 두 번째 인자로 받아서 difficulty, topics, title, description을 baseProblem에서 가져옴
+function convertGeneratedDataToProblem(
+  data: GeneratedProblemData,
+  baseProblem?: BaseProblemInfo | null
+): ConvertedProblem {
+  // baseProblem에서 가져올 값들 (fallback으로 사용)
+  const difficulty = (baseProblem?.difficulty || 'medium') as 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
+  const topics = baseProblem?.topics || baseProblem?.tags || [];
+  const title = baseProblem?.title || baseProblem?.name || 'Problem';
+  const description = baseProblem?.description || baseProblem?.question || '';
+  const baseProblemId = baseProblem?.id;
+
   if (data.problem_type === 'blank') {
     const blankData = data as GeneratedBlankData;
     // _0_, _1_, _2_ 형식을 그대로 유지 (UnifiedPractice에서 _N_ 패턴 매칭)
@@ -85,12 +96,13 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
     return {
       id: blankData.original_id || `generated-${Date.now()}`,
       originalId: blankData.original_id,  // 잔디 클릭 시 문제 정보 표시용
-      title: blankData.title,
-      description: blankData.description,
+      baseProblemId,  // base_problems UUID (recordSolve에서 사용)
+      title,
+      description,
       problemType: 'blank',
-      difficulty: blankData.difficulty as 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard',
-      topics: blankData.topics,
-      keyConcepts: blankData.topics,
+      difficulty,
+      topics,
+      keyConcepts: topics,
       framework: blankData.language as 'python' | 'java' | 'cpp' | 'javascript',
       codeTemplate: blankData.code_template,
       codeSnippet: codeSnippet,
@@ -116,12 +128,13 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
     return {
       id: puzzleData.original_id || `generated-${Date.now()}`,
       originalId: puzzleData.original_id,  // 잔디 클릭 시 문제 정보 표시용
-      title: puzzleData.title,
-      description: puzzleData.description,
+      baseProblemId,  // base_problems UUID (recordSolve에서 사용)
+      title,
+      description,
       problemType: 'puzzle',
-      difficulty: puzzleData.difficulty as 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard',
-      topics: puzzleData.topics,
-      keyConcepts: puzzleData.topics,
+      difficulty,
+      topics,
+      keyConcepts: topics,
       framework: puzzleData.language as 'python' | 'java' | 'cpp' | 'javascript',
       // puzzleBlocks와 blocks 둘 다 설정 (UnifiedPractice에서 puzzleBlocks 사용)
       puzzleBlocks: convertedBlocks,
@@ -137,12 +150,13 @@ function convertGeneratedDataToProblem(data: GeneratedProblemData): ConvertedPro
     return {
       id: guidedData.original_id || `generated-${Date.now()}`,
       originalId: guidedData.original_id,  // 잔디 클릭 시 문제 정보 표시용
-      title: guidedData.title,
-      description: guidedData.description,
+      baseProblemId,  // base_problems UUID (recordSolve에서 사용)
+      title,
+      description,
       problemType: 'guided',
-      difficulty: guidedData.difficulty as 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard',
-      topics: guidedData.topics,
-      keyConcepts: guidedData.topics,
+      difficulty,
+      topics,
+      keyConcepts: topics,
       framework: guidedData.language as 'python' | 'java' | 'cpp' | 'javascript',
       concepts: guidedData.concepts,
       flow: guidedData.flow,
@@ -1370,7 +1384,7 @@ export function PracticeChatPanel({
         // 문제 유형 선택 후 문제가 생성됨 - 프론트엔드에 표시
         const generatedData = chatResponse.generated_problem_data;
         console.log('[PracticeChatPanel] Generated problem data:', generatedData);
-        const convertedProblem = convertGeneratedDataToProblem(generatedData);
+        const convertedProblem = convertGeneratedDataToProblem(generatedData, selectedBaseProblemRef.current);
         console.log('[PracticeChatPanel] Converted problem:', convertedProblem);
 
         if (convertedProblem.problemType === 'guided') {

@@ -46,18 +46,20 @@ async def provide_hint(state: SolvingState) -> Dict[str, Any]:
 힌트 타입: {sub_intent}
 """
 
+    description = problem_context.get('description') or ''
     problem_info = f"""
 문제: {problem_context.get('title', 'Unknown')}
-설명: {problem_context.get('description', '')[:500]}
+설명: {description[:500]}
 난이도: {problem_context.get('difficulty', 'medium')}
-주제: {', '.join(problem_context.get('topics', []))}
+주제: {', '.join(problem_context.get('topics') or [])}
 문제 유형: {problem_context.get('problem_type', 'unknown')}
 """
 
+    current_code = user_progress.get('current_code') or '아직 작성 안 함'
     user_info = f"""
 현재 코드:
 ```
-{user_progress.get('current_code', '아직 작성 안 함')[:500]}
+{current_code[:500]}
 ```
 시도 횟수: {user_progress.get('attempt_count', 0)}
 이전 힌트들: {previous_hints[-2:] if previous_hints else '없음'}
@@ -142,9 +144,10 @@ JSON으로 응답:
 }
 """
 
+    review_description = problem_context.get('description') or ''
     problem_info = f"""
 문제: {problem_context.get('title', 'Unknown')}
-설명: {problem_context.get('description', '')[:300]}
+설명: {review_description[:300]}
 """
 
     messages = [
@@ -303,14 +306,16 @@ JSON으로 응답:
 }
 """
 
+    feedback_code = user_progress.get('current_code') or '없음'
+    feedback_topics = problem_context.get('topics') or []
     context = f"""
 문제: {problem_context.get('title', 'Unknown')}
 난이도: {problem_context.get('difficulty', 'medium')}
-주제: {', '.join(problem_context.get('topics', []))}
+주제: {', '.join(feedback_topics)}
 
 학생 코드:
 ```
-{user_progress.get('current_code', '없음')[:800]}
+{feedback_code[:800]}
 ```
 
 시도 횟수: {user_progress.get('attempt_count', 0)}
@@ -645,13 +650,16 @@ JSON으로 응답:
 }
 """
 
+    check_description = problem_context.get('description') or ''
+    check_solution = problem_context.get('solution_code') or ''
+    check_user_code = user_code or ''
     problem_info = f"""
 문제: {problem_context.get('title', '')}
-설명: {problem_context.get('description', '')[:500]}
-예상 정답: {problem_context.get('solution_code', '')[:300]}
+설명: {check_description[:500]}
+예상 정답: {check_solution[:300]}
 
 학생 코드:
-{user_code[:500]}
+{check_user_code[:500]}
 """
 
     messages = [

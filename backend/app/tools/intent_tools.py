@@ -92,48 +92,57 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 ## 분류 기준
 
 ### 1. 카테고리 (category)
-- info_collection: 문제 조건 설정 중 (주제/난이도/언어 선택)
+- info_collection: 문제 조건 설정 중 (주제/난이도/언어/목표/레벨 선택)
 - discovery: 문제 탐색 중 (검색 결과에서 선택, 더 보기, 새로 생성)
-- solving: 문제 풀이 중 (힌트 요청, 코드 제출, 질문)
+- solving: 문제 풀이 중 (힌트 요청, 코드 제출, 질문, 요약)
 - confirmation: 네/아니오 응답
 - general: 인사, 감사, 일반 대화
 
 ### 2. 액션 (action)
 **info_collection:**
 - set_topic: 주제 선택 (DP, 그래프, 정렬 등)
-- set_difficulty: 난이도 선택 (실버~마스터)
+- set_difficulty: 난이도 선택 (실버~마스터, 쉬움~어려움)
 - set_language: 언어 선택 (python, java, cpp)
-- ask_recommendation: 추천 요청 ("추천해줘", "뭐가 좋아?")
+- ask_recommendation: 추천 요청, 학습 목표/레벨 언급 ("추천해줘", "대기업 코테", "초보인데")
 
 **discovery:**
 - select_problem: 문제 선택 ("첫 번째", "1번", "맨 위 거")
-- show_more: 더 보기 ("다른 거", "더 보여줘")
+- show_more: 더 보기 ("다른 거", "더 보여줘", "더 찾아")
+- generate_new: 새 문제 생성 ("새로운 문제", "비슷한 문제 생성")
 - select_problem_type: 문제 유형 선택 ("빈칸", "퍼즐", "대화형")
 
 **solving:**
-- request_hint: 힌트 요청 ("힌트", "모르겠어")
-- ask_question: 질문 ("이게 뭐야?", "왜 틀렸어?")
+- request_hint: 힌트 요청 ("힌트", "모르겠어", "어려워", "도와줘")
+- ask_question: 질문, 요약 요청 ("이게 뭐야?", "왜 틀렸어?", "요약해줘", "문제 설명")
 
 **confirmation:**
-- affirm: 긍정 ("네", "응", "좋아", "그걸로")
-- negate: 부정 ("아니", "다른 거", "말고")
+- affirm: 긍정 ("네", "응", "좋아", "그걸로", "ㅇㅇ", "굳")
+- negate: 부정, 거절 ("아니", "다른 거", "말고", "싫어", "짜증나", "지겨워")
 
 **general:**
-- greeting: 인사
-- thanks: 감사
-- free_chat: 일반 대화
+- greeting: 인사 ("안녕", "하이")
+- thanks: 감사 ("고마워", "감사")
+- free_chat: 일반 대화, 잡담
 
-### 3. 값 추출 (extracted_values)
-- topic: DP, 그래프, 정렬, 구현, 기초, 문자열 등
+### 3. 값 추출 (extracted_values) - 언급된 것만 추출
+- topic: DP, 그래프, 정렬, 구현, 기초, 문자열, BFS/DFS, 이분탐색, 그리디, 백트래킹 등
 - difficulty: easy, medium, medium_hard, hard, very_hard
 - language: python, java, cpp
+- learning_goal: big_tech (대기업/코테), mid_startup (스타트업), skill_up (실력향상)
+- experience_level: beginner (입문), elementary (초급), intermediate (중급), advanced (고급)
+- problem_type: blank (빈칸), puzzle (퍼즐/파슨스), guided (대화형/1대1)
+
+### 4. 거부 표현 주의!
+- "X 싫다", "X 지겨워", "X 짜증나" → X를 거부하는 것! negate 액션
+- "기초는 싫다" → topic=null (기초 거부), action=negate
+- 거부하는 값은 extracted_values에 넣지 말 것
 
 ## 응답 형식 (JSON)
 {{
   "category": "info_collection|discovery|solving|confirmation|general",
   "action": "액션값",
   "confidence": 0.0-1.0,
-  "extracted_values": {{"topic": null, "difficulty": null, "language": null}},
+  "extracted_values": {{"topic": null, "difficulty": null, "language": null, "learning_goal": null, "experience_level": null, "problem_type": null}},
   "selection_index": null,
   "suggested_route": "collection|discovery|solving|respond"
 }}
@@ -159,7 +168,7 @@ class IntentTool:
         session_state: Optional[Dict[str, Any]] = None,
     ) -> IntentResult:
         """
-        메시지의 의도와 액션을 임베딩 기반으로 분류
+        메시지의 의도와 액션을 분류 (LLM First)
 
         Args:
             message: 사용자 메시지
@@ -169,8 +178,6 @@ class IntentTool:
             IntentResult
         """
         session_state = session_state or {}
-        msg_lower = message.lower().strip()
-        msg_len = len(message)
 
         # ============================================================
         # 1. 확인 응답 처리 (awaiting_confirmation 상태에서 최우선)
@@ -181,7 +188,7 @@ class IntentTool:
                 return confirmation_result
 
         # ============================================================
-        # 2. 문제 선택 (search_results 있을 때)
+        # 2. 문제 선택 (search_results 있을 때) - 구조적 패턴
         # ============================================================
         if session_state.get("search_results"):
             selection_result = self._check_problem_selection(message, session_state)
@@ -189,81 +196,14 @@ class IntentTool:
                 return selection_result
 
         # ============================================================
-        # 2-1. 디스커버리 액션 감지 (새 문제 생성, 더 찾아보기)
-        # ============================================================
-        # 새 문제 생성 요청
-        if any(kw in msg_lower for kw in ["새로운 유사", "새 문제 생성", "비슷한 문제 생성", "유사한 문제 생성", "새로운 문제"]):
-            return IntentResult(
-                category=IntentCategory.DISCOVERY,
-                action=ActionType.GENERATE_NEW,
-                confidence=0.95,
-                suggested_route="discovery",
-            )
-        # 더 찾아보기 요청
-        if any(kw in msg_lower for kw in ["더 찾아", "더 보여", "다른 문제", "다음 문제", "비슷한 문제 더"]):
-            return IntentResult(
-                category=IntentCategory.DISCOVERY,
-                action=ActionType.SHOW_MORE,
-                confidence=0.95,
-                suggested_route="discovery",
-            )
-
-        # ============================================================
-        # 3. 풀이 중 요청 (힌트, 요약, 질문 등)
-        # ============================================================
-        if session_state.get("current_problem"):
-            # 문제 요약 요청
-            if any(kw in msg_lower for kw in ["요약", "summary", "간단히", "정리", "문제 설명"]):
-                return IntentResult(
-                    category=IntentCategory.SOLVING,
-                    action=ActionType.ASK_QUESTION,  # solving graph에서 summarize_problem으로 라우팅됨
-                    confidence=0.95,
-                    suggested_route="solving",
-                )
-            # 힌트 요청
-            if any(h in msg_lower for h in ["힌트", "모르겠", "어려워", "도와줘"]):
-                return IntentResult(
-                    category=IntentCategory.SOLVING,
-                    action=ActionType.REQUEST_HINT,
-                    confidence=0.95,
-                    suggested_route="solving",
-                )
-
-        # ============================================================
-        # 4. 인사/감사 (짧은 메시지)
-        # ============================================================
-        if msg_len <= 15:
-            if any(g in msg_lower for g in ["안녕", "하이", "hello", "hi"]):
-                return IntentResult(
-                    category=IntentCategory.GENERAL,
-                    action=ActionType.GREETING,
-                    confidence=0.95,
-                    suggested_route="respond",
-                )
-            if any(t in msg_lower for t in ["고마워", "감사", "땡큐", "thanks"]):
-                return IntentResult(
-                    category=IntentCategory.GENERAL,
-                    action=ActionType.THANKS,
-                    confidence=0.95,
-                    suggested_route="respond",
-                )
-
-        # ============================================================
-        # 5. 학습 목표/레벨 언급 감지 (대기업, 코테, 취업 등)
-        # ============================================================
-        goal_result = self._check_goal_or_level_mention(message, session_state)
-        if goal_result:
-            return goal_result
-
-        # ============================================================
-        # 6. 임베딩 기반 주제/난이도/언어 감지
+        # 3. 임베딩 기반 분류 (LLM First - 임베딩도 ML 기반)
         # ============================================================
         embedding_result = await self._classify_with_embeddings(message, session_state)
         if embedding_result and embedding_result.confidence >= 0.70:
             return embedding_result
 
         # ============================================================
-        # 6. LLM Fallback (복잡한 경우)
+        # 4. LLM 분류 (임베딩 신뢰도 낮을 때)
         # ============================================================
         return await self._classify_with_llm(message, session_state)
 
@@ -273,15 +213,16 @@ class IntentTool:
         session_state: Dict[str, Any],
     ) -> Optional[IntentResult]:
         """
-        확인 응답 감지 (임베딩 기반)
+        확인 응답 감지 (LLM First - 임베딩 기반)
 
-        awaiting_confirmation=True 상태에서 "응", "네", "좋아" 등 감지
+        awaiting_confirmation=True 상태에서 긍정/부정 응답 감지
         """
         embeddings = self._get_embeddings_service()
 
+        # 임베딩 서비스 미초기화 시 LLM으로 직접 처리 (키워드 fallback 제거)
         if not embeddings.is_initialized():
-            # 임베딩 서비스 미초기화 시 간단한 키워드 체크
-            return self._simple_confirmation_check(message, session_state)
+            print("[IntentTool] Embeddings not initialized, using LLM for confirmation")
+            return None  # LLM 분류로 넘김
 
         # 임베딩 기반 긍정/부정 감지
         is_positive, is_negative, confidence = await embeddings.match_confirmation(message)
@@ -295,7 +236,6 @@ class IntentTool:
 
             extracted = {}
             if suggested_value:
-                # suggested_value를 현재 단계에 적용
                 if current_step == "topic":
                     extracted["topic"] = suggested_value
                 elif current_step == "difficulty":
@@ -322,129 +262,8 @@ class IntentTool:
         # 확인 응답이 아님 → 다른 의도일 수 있음
         return None
 
-    def _simple_confirmation_check(
-        self,
-        message: str,
-        session_state: Dict[str, Any],
-    ) -> Optional[IntentResult]:
-        """임베딩 서비스 미초기화 시 간단한 키워드 체크"""
-        msg_lower = message.lower().strip()
-
-        # 긍정 키워드
-        positive_keywords = [
-            "응", "어", "네", "예", "넵", "넹", "ㅇㅇ", "ㅇㅋ", "ok", "yes",
-            "좋아", "좋아요", "그래", "그렇게", "할게", "할래", "해줘",
-            "맞아", "동의", "확인", "오케이", "굳", "굿", "ㄱㄱ",
-        ]
-
-        # 부정 키워드
-        negative_keywords = [
-            "아니", "아뇨", "ㄴㄴ", "no", "싫어", "별로", "다른",
-            "말고", "바꿔", "다시", "패스", "스킵",
-        ]
-
-        for kw in positive_keywords:
-            if kw in msg_lower or msg_lower == kw:
-                suggested_value = session_state.get("suggested_value")
-                current_step = session_state.get("current_step", "topic")
-
-                extracted = {}
-                if suggested_value:
-                    if current_step == "topic":
-                        extracted["topic"] = suggested_value
-                    elif current_step == "difficulty":
-                        extracted["difficulty"] = suggested_value
-                    elif current_step == "language":
-                        extracted["language"] = suggested_value
-
-                return IntentResult(
-                    category=IntentCategory.CONFIRMATION,
-                    action=ActionType.AFFIRM,
-                    confidence=0.95,
-                    extracted_values=extracted,
-                    suggested_route="collection",
-                )
-
-        for kw in negative_keywords:
-            if kw in msg_lower or msg_lower == kw:
-                return IntentResult(
-                    category=IntentCategory.CONFIRMATION,
-                    action=ActionType.NEGATE,
-                    confidence=0.95,
-                    suggested_route="collection",
-                )
-
-        return None
-
-    def _check_goal_or_level_mention(
-        self,
-        message: str,
-        session_state: Dict[str, Any],
-    ) -> Optional[IntentResult]:
-        """
-        학습 목표나 레벨 언급 감지
-
-        "대기업 코테", "취업 준비", "입문자", "초보" 등
-        → 이 정보를 컨텍스트에 반영하고 개인화 추천으로 연결
-        """
-        msg_lower = message.lower().strip()
-
-        extracted = {}
-
-        # ============================================================
-        # 학습 목표 (learning_goal) 감지
-        # ============================================================
-        # 대기업 목표
-        if any(kw in msg_lower for kw in ["대기업", "빅테크", "네카라쿠배", "삼성", "카카오", "네이버", "라인"]):
-            extracted["learning_goal"] = "big_tech"
-
-        # 스타트업/중소기업 목표
-        elif any(kw in msg_lower for kw in ["스타트업", "중소기업", "중견기업", "실무"]):
-            extracted["learning_goal"] = "mid_startup"
-
-        # 실력 향상 목표
-        elif any(kw in msg_lower for kw in ["실력 향상", "공부", "학습", "배우", "연습"]):
-            extracted["learning_goal"] = "skill_up"
-
-        # ============================================================
-        # 경험 레벨 (experience_level) 감지
-        # ============================================================
-        # 입문자/초보
-        if any(kw in msg_lower for kw in ["입문", "초보", "초심자", "처음", "시작", "기초부터"]):
-            extracted["experience_level"] = "beginner"
-
-        # 초급
-        elif any(kw in msg_lower for kw in ["초급", "기본", "쉬운 것부터"]):
-            extracted["experience_level"] = "elementary"
-
-        # 중급
-        elif any(kw in msg_lower for kw in ["중급", "어느정도", "좀 해봤", "경험 있"]):
-            extracted["experience_level"] = "intermediate"
-
-        # 고급
-        elif any(kw in msg_lower for kw in ["고급", "어려운", "상급", "챌린지", "전문"]):
-            extracted["experience_level"] = "advanced"
-
-        # ============================================================
-        # 코딩 테스트 관련 키워드
-        # ============================================================
-        if any(kw in msg_lower for kw in ["코테", "코딩테스트", "코딩 테스트", "알고리즘 테스트"]):
-            # 코테 언급 시 기본적으로 big_tech 목표로 설정 (없으면)
-            if "learning_goal" not in extracted:
-                extracted["learning_goal"] = "big_tech"
-
-        # 추출된 값이 있으면 INFO_COLLECTION으로 분류
-        if extracted:
-            print(f"[IntentTool] Goal/Level detected: {extracted}")
-            return IntentResult(
-                category=IntentCategory.INFO_COLLECTION,
-                action=ActionType.ASK_RECOMMENDATION,
-                confidence=0.85,
-                extracted_values=extracted,
-                suggested_route="collection",
-            )
-
-        return None
+    # _simple_confirmation_check 제거됨 - LLM이 처리
+    # _check_goal_or_level_mention 제거됨 - LLM이 처리
 
     def _check_problem_selection(
         self,
@@ -653,15 +472,17 @@ class IntentTool:
             )
 
     async def detect_problem_type(self, message: str) -> Optional[str]:
-        """문제 유형 선택 감지"""
-        msg_lower = message.lower()
+        """
+        문제 유형 선택 감지 (LLM First)
 
-        if any(k in msg_lower for k in ["빈칸", "빈 칸", "blank", "채우기"]):
-            return "blank"
-        if any(k in msg_lower for k in ["퍼즐", "puzzle", "파슨스", "parsons", "블록"]):
-            return "puzzle"
-        if any(k in msg_lower for k in ["대화", "guided", "가이드", "1대1", "튜터"]):
-            return "guided"
+        LLM classify 결과에서 problem_type 추출
+        """
+        # classify를 호출하여 extracted_values에서 problem_type 추출
+        result = await self.classify(message)
+        problem_type = result.extracted_values.get("problem_type")
+
+        if problem_type in ["blank", "puzzle", "guided"]:
+            return problem_type
 
         return None
 

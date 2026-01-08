@@ -5,7 +5,7 @@ API endpoints for AI agents
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Union, List, Dict, Any
 from uuid import UUID
 import json
@@ -63,6 +63,7 @@ from ..models.agent import (
     # RAG
     RAGSearchRequest,
     RAGSearchResponse,
+    RAGSearchResult,
     # Problem Solving
     SolvingRequest,
     SolvingResponse,
@@ -565,39 +566,52 @@ def get_chat_orchestrator_main():
 
 
 class ChatRequest(BaseModel):
-    """LangGraph Chat 요청"""
-    message: str
-    conversation_history: List[ChatAgentMessage] = []  # 프론트엔드 fallback용 (DB 없을 때)
-    user_context: Optional[Dict[str, Any]] = None
-    session_state: Optional[Dict[str, Any]] = None  # 세션 상태
-    session_id: Optional[str] = None  # 세션 ID (DB 세션용)
+    """LangGraph Chat 요청
+
+    AI 튜터와의 대화를 위한 요청 모델입니다.
+    """
+    message: str = Field(..., description="사용자 메시지", example="DP 문제 풀고 싶어")
+    conversation_history: List[ChatAgentMessage] = Field(
+        default=[],
+        description="대화 히스토리 (DB 세션이 없을 때 fallback용)"
+    )
+    user_context: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="사용자 컨텍스트 (레벨, 선호도 등)"
+    )
+    session_state: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="세션 상태 (collected_info 포함)"
+    )
+    session_id: Optional[str] = Field(
+        default=None,
+        description="세션 ID (DB 세션 재사용시)"
+    )
 
 
 class ChatResponse(BaseModel):
-    """LangGraph Chat 응답"""
-    stage: str  # intent, collection, discovery, solving, problem_generation
-    message: str
-    intent: Optional[str] = None
-    collected_info: Optional[CollectedInfo] = None
-    search_results: Optional[List[Dict[str, Any]]] = None
-    selected_problem: Optional[Dict[str, Any]] = None
-    generated_problem: Optional[Dict[str, Any]] = None
-    # 문제 유형별 생성 결과 (blank/puzzle/guided)
-    generated_problem_data: Optional[Dict[str, Any]] = None
-    action_trigger: Optional[str] = None
-    action_data: Optional[Dict[str, Any]] = None
-    next_stage: Optional[str] = None
-    is_complete: bool = False
-    # 정보 수집 단계: 네/아니오 응답 대기
-    awaiting_confirmation: bool = False
-    suggested_value: Optional[str] = None
-    # 🚀 동적 선택지 [{label, value, description}]
-    suggested_actions: Optional[List[Dict[str, str]]] = None
-    # Solving 결과
-    hint_level: Optional[int] = None
-    is_correct: Optional[bool] = None
-    # 세션 추적
-    session_id: Optional[str] = None  # 상태 영속화용 세션 ID
+    """LangGraph Chat 응답
+
+    AI 튜터의 응답 모델입니다. 현재 대화 상태와 다음 액션 정보를 포함합니다.
+    """
+    stage: str = Field(..., description="현재 단계 (intent/collection/discovery/solving/problem_generation)")
+    message: str = Field(..., description="AI 튜터 응답 메시지")
+    intent: Optional[str] = Field(default=None, description="분류된 사용자 의도")
+    collected_info: Optional[CollectedInfo] = Field(default=None, description="수집된 정보 (주제, 난이도, 언어)")
+    search_results: Optional[List[Dict[str, Any]]] = Field(default=None, description="RAG 검색 결과 목록")
+    selected_problem: Optional[Dict[str, Any]] = Field(default=None, description="선택된 문제 정보")
+    generated_problem: Optional[Dict[str, Any]] = Field(default=None, description="생성된 문제 (CodeGen)")
+    generated_problem_data: Optional[Dict[str, Any]] = Field(default=None, description="문제 유형별 데이터 (blank/puzzle/guided)")
+    action_trigger: Optional[str] = Field(default=None, description="프론트엔드 액션 트리거")
+    action_data: Optional[Dict[str, Any]] = Field(default=None, description="액션에 필요한 추가 데이터")
+    next_stage: Optional[str] = Field(default=None, description="다음 단계")
+    is_complete: bool = Field(default=False, description="대화 완료 여부")
+    awaiting_confirmation: bool = Field(default=False, description="네/아니오 응답 대기 중")
+    suggested_value: Optional[str] = Field(default=None, description="AI가 추천한 값")
+    suggested_actions: Optional[List[Dict[str, str]]] = Field(default=None, description="선택 가능한 액션 목록")
+    hint_level: Optional[int] = Field(default=None, description="현재 힌트 레벨 (1-4)")
+    is_correct: Optional[bool] = Field(default=None, description="정답 여부")
+    session_id: Optional[str] = Field(default=None, description="세션 ID (다음 요청에 재사용)")
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -736,8 +750,8 @@ async def chat_agent(
             session_id=session_id,
         )
 
-        # 결과 추출
-        response_message = result.get("response_message", "") or result.get("message", "무엇을 도와드릴까요?")
+        # 결과 추출 - 하드코딩된 폴백 제거, orchestrator가 항상 유효한 응답 반환
+        response_message = result.get("response_message", "") or result.get("message", "")
 
         # collected_info 구성
         collected_info_data = result.get("collected_info", {})
@@ -963,8 +977,8 @@ async def solving_agent(request: SolvingRequest, db=Depends(get_db)):
             previous_hints=request.previous_hints,
         )
 
-        # 결과 추출
-        response_message = result.get("response_message", "무엇을 도와드릴까요?")
+        # 결과 추출 - 하드코딩된 폴백 제거
+        response_message = result.get("response_message", "")
         intent_result = result.get("intent_result", {})
 
         # SolvingIntentInfo 구성
@@ -1712,7 +1726,7 @@ async def generate_hint(request: HintAgentRequest, db=Depends(get_db)):
 
         # Blank 문제 힌트 생성
         if problem_type == "blank":
-            result = await hint_service.generate_blank_hint(
+            result = await hint_service.generate_blank_hint_legacy(
                 problem_id=request.problem_id,
                 base_problem_id=request.base_problem_id,
                 hint_level=request.hint_level,

@@ -23,6 +23,7 @@ from ..models.practice import (
     StartPracticeRequest,
     StartPracticeResponse,
     AttemptDetailAction,
+    NewBadge,  # 뱃지 응답용 모델
     # Session tracking models
     SessionHeartbeatRequest,
     SessionHeartbeatResponse,

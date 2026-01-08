@@ -115,7 +115,7 @@ FREE_CHAT_SYSTEM_PROMPT = """
   "message": "사용자에게 보낼 자연스러운 메시지",
   "collected_info": {{
     "topics": ["주제"] 또는 null,
-    "difficulty": "easy|medium|hard" 또는 null,
+    "difficulty": "easy|medium|medium_hard|hard|very_hard" 또는 null,
     "language": "python|java|cpp" 또는 null,
     "specific_needs": "요구사항" 또는 null,
     "time_available": 분 또는 null,
@@ -127,6 +127,12 @@ FREE_CHAT_SYSTEM_PROMPT = """
   "next_step": "설명"
 }}
 ```
+
+**중요: collected_info 업데이트 규칙**
+- **이번 턴에서 새로 수집된 정보만** 채우세요
+- 기존에 수집된 정보는 건드리지 마세요 (null 유지)
+- 예: 사용자가 난이도만 선택하면 → difficulty만 설정, topics/language는 null
+- 이미 "수집된 정보"에 있는 값은 시스템이 자동으로 유지합니다
 
 ### is_complete = true 조건
 - 문제 검색 의도: topics + difficulty + language 모두 수집됨

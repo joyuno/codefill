@@ -227,6 +227,27 @@ async def handle_out_of_scope(state: ChatState) -> Dict[str, Any]:
     }
 
 
+async def handle_inappropriate_message(state: ChatState) -> Dict[str, Any]:
+    """
+    부적절한 메시지 처리 (욕설, 비속어, 의미없는 입력)
+
+    공격적이지 않게 코딩 학습으로 자연스럽게 유도
+    """
+    response = "저는 코딩 학습을 도와드리는 AI예요. 함께 알고리즘 문제를 풀면서 실력을 키워볼까요? 💻"
+
+    return {
+        "response_message": response,
+        "action_data": {
+            "suggested_actions": [
+                {"label": "쉬운 문제부터", "value": "easy"},
+                {"label": "추천받기", "value": "recommend"},
+                {"label": "주제 선택", "value": "topic"},
+            ]
+        },
+        "next_node": "respond",
+    }
+
+
 async def handle_affirmation(state: ChatState) -> Dict[str, Any]:
     """긍정 응답 처리 (네, 좋아요 등)"""
     # 이전 제안이 있었는지 확인

@@ -172,16 +172,20 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
             except (json.JSONDecodeError, TypeError):
                 tags = []
 
+        # DB 필드: question, 프론트엔드 필드: description
+        question_text = r.get("question") or r.get("description") or ""
+        topics_list = r.get("topics") or tags if isinstance(tags, list) else []
+
         search_results.append({
             "id": r.get("id"),
             "original_id": r.get("original_id"),
             "name": r.get("name") or r.get("original_id"),
-            "title": r.get("title") or r.get("name"),
-            "question": r.get("question"),
-            "description": r.get("description"),
+            "title": r.get("title") or r.get("name") or r.get("original_id"),
+            "question": question_text,
+            "description": question_text,  # 프론트엔드 호환용
             "difficulty": r.get("difficulty", "medium"),
             "tags": tags if isinstance(tags, list) else [],
-            "topics": r.get("topics", []),
+            "topics": topics_list,  # topics가 없으면 tags 사용
             "solutions": r.get("solutions", []),
             "input_output": input_output,  # 파싱된 입출력 예제
             "similarity": r.get("similarity"),
@@ -537,10 +541,19 @@ async def confirm_problem_node(state: DiscoveryState) -> Dict[str, Any]:
 
 async def respond_node(state: DiscoveryState) -> Dict[str, Any]:
     """
-    최종 응답 노드
+    최종 응답 노드 - LLM 기반 동적 응답 사용
     """
     if not state.get("response_message"):
-        return {"response_message": "무엇을 도와드릴까요?"}
+        # 하드코딩된 폴백 대신 LLM 동적 응답
+        from ..services.dynamic_response import dynamic_response_generator
+        message = state.get("message", "")
+        dynamic_response = await dynamic_response_generator.generate(
+            message=message,
+            intent="discovery_fallback",
+            conversation_history=state.get("conversation_history"),
+            user_context=state.get("user_context"),
+        )
+        return {"response_message": dynamic_response.message}
     return {}
 
 

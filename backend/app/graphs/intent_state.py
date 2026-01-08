@@ -95,6 +95,7 @@ INTENT_TO_ROUTE = {
     "affirmation": "respond",
     "negation": "respond",
     "out_of_scope": "respond",
+    "inappropriate_message": "respond",  # 부적절한 메시지 (욕설, 비속어 등)
     "clarification_needed": "respond",
 
     # 통계/학습 (직접 응답)

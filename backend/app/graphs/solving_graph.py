@@ -53,12 +53,18 @@ def route_after_solving_intent(state: SolvingState) -> str:
 
 async def respond_node(state: SolvingState) -> Dict[str, Any]:
     """
-    최종 응답 노드
+    최종 응답 노드 - LLM 기반 동적 응답 사용
     """
     if not state.get("response_message"):
-        return {
-            "response_message": "무엇을 도와드릴까요?",
-        }
+        from ..services.dynamic_response import dynamic_response_generator
+        message = state.get("message", "")
+        dynamic_response = await dynamic_response_generator.generate(
+            message=message,
+            intent="solving_fallback",
+            conversation_history=state.get("conversation_history"),
+            user_context=state.get("user_context"),
+        )
+        return {"response_message": dynamic_response.message}
     return {}
 
 

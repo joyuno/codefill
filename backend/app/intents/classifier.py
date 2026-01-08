@@ -13,6 +13,7 @@ from .definitions import INTENT_DEFINITIONS, IntentType, CONTEXT_REQUIREMENTS
 from ..config import get_settings
 from ..services.embedding import embedding_service
 from ..services.openrouter import openrouter_service
+from ..services.moderation import moderation_service
 
 # LLM 모델 설정
 settings = get_settings()
@@ -31,12 +32,13 @@ class IntentResult:
 
 class IntentClassifier:
     """
-    하이브리드 의도 분류기
+    하이브리드 의도 분류기 (LLM First)
 
     분류 순서:
-    1. Rule-based (특수 패턴)
-    2. Embedding similarity (빠르고 저렴)
-    3. LLM verification (정확도 보완)
+    1. Moderation API (유해 콘텐츠 필터링)
+    2. Rule-based (코드 블록 등 구조적 패턴만)
+    3. Embedding similarity (빠르고 저렴)
+    4. LLM verification/classification (정확도 보완)
     """
 
     # 임계값 설정
@@ -96,6 +98,17 @@ class IntentClassifier:
         """
         session_context = session_context or {}
 
+        # Step 0: OpenAI Moderation API로 유해 콘텐츠 체크 (무료)
+        moderation_result = await moderation_service.check(message)
+        if moderation_result.is_flagged:
+            print(f"[IntentClassifier] Moderation flagged: {moderation_result.reason}")
+            return IntentResult(
+                intent=IntentType.INAPPROPRIATE_MESSAGE,
+                confidence=0.95,
+                method="moderation_api",
+                next_action="redirect_politely"
+            )
+
         # Step 1: Rule-based 빠른 체크 (특수 패턴)
         rule_result = self._check_rules(message)
         if rule_result:
@@ -124,195 +137,41 @@ class IntentClassifier:
             llm_result = await self._classify_with_llm(message, session_context)
             return self._enrich_result(llm_result, session_context)
 
-    # 주제 키워드 (rule-based 매칭용)
-    TOPIC_KEYWORDS = {
-        # 알고리즘
-        "dp", "DP", "다이나믹", "동적", "동적프로그래밍",
-        "그래프", "graph", "bfs", "BFS", "dfs", "DFS",
-        "정렬", "sort", "탐색", "search",
-        "그리디", "greedy", "탐욕",
-        "구현", "implementation", "브루트포스", "bruteforce",
-        "이분탐색", "binary", "이진탐색",
-        "백트래킹", "backtracking",
-        "분할정복",
-        # 자료구조
-        "스택", "stack", "큐", "queue",
-        "트리", "tree", "해시", "hash",
-        "문자열", "string",
-        # 기초
-        "기초", "기본", "입문",
-    }
-
-    # 난이도 키워드 (rule-based 매칭용)
-    DIFFICULTY_KEYWORDS = {
-        # 티어 시스템
-        "실버", "silver", "Silver",
-        "골드", "gold", "Gold",
-        "플래티넘", "플레티넘", "platinum", "Platinum",
-        "다이아", "다이아몬드", "diamond", "Diamond",
-        "마스터", "master", "Master",
-        # 일반 난이도
-        "쉬움", "쉬운", "쉽", "easy", "Easy",
-        "중간", "보통", "medium", "Medium",
-        "어려움", "어려운", "어렵", "hard", "Hard",
-    }
-
-    # 언어 키워드 (rule-based 매칭용)
-    LANGUAGE_KEYWORDS = {
-        "파이썬", "python", "Python", "py",
-        "자바", "java", "Java",
-        "씨플플", "cpp", "c++", "C++",
-    }
-
     def _check_rules(self, message: str) -> Optional[IntentResult]:
         """
-        규칙 기반 빠른 분류 (코드 블록, 특수 패턴 등)
-        """
-        message_lower = message.lower().strip()
+        규칙 기반 최소 분류 (구조적 패턴만)
 
-        # 코드 블록 포함 여부
+        LLM First 원칙:
+        - 의미 분석은 LLM/임베딩이 담당
+        - 여기서는 구조적 패턴(코드 블록)만 감지
+        - 나머지는 embedding → LLM 흐름으로 처리
+        """
+        # 코드 블록 포함 여부 (구조적 감지)
         has_code_block = bool(re.search(r'```[\w]*\n.*\n```', message, re.DOTALL))
 
-        # 매우 짧은 긍정/부정 응답
-        if message_lower in ["응", "어", "네", "예", "ㅇㅇ", "ㅇㅋ", "오키", "그래", "좋아"]:
-            return IntentResult(
-                intent=IntentType.AFFIRMATION,
-                confidence=0.95,
-                method="rule",
-                next_action="confirm_previous"
-            )
-
-        if message_lower in ["아니", "아니야", "노", "ㄴㄴ", "싫어", "패스"]:
-            return IntentResult(
-                intent=IntentType.NEGATION,
-                confidence=0.95,
-                method="rule",
-                next_action="offer_alternatives"
-            )
-
-        # 감사 표현 (rule-based)
-        thanks_patterns = ["고마워", "감사", "땡큐", "thanks", "thank you", "최고", "완벽"]
-        if any(pattern in message_lower for pattern in thanks_patterns) and len(message) < 30:
-            return IntentResult(
-                intent=IntentType.THANKS,
-                confidence=0.95,
-                method="rule",
-                next_action="acknowledge_thanks"
-            )
-
-        # 인사 표현 (rule-based)
-        greeting_patterns = ["안녕", "하이", "hello", "hi", "반가워"]
-        if any(pattern in message_lower for pattern in greeting_patterns) and len(message) < 20:
-            return IntentResult(
-                intent=IntentType.GREETING,
-                confidence=0.95,
-                method="rule",
-                next_action="greet_user"
-            )
-
-        # 목적/동기 표현 (rule-based) - 코테 준비, 면접 준비 등
-        purpose_patterns = [
-            "코테", "코딩테스트", "코딩 테스트",
-            "면접 준비", "면접준비", "취준", "취업 준비",
-            "알고리즘 공부", "알고리즘 연습", "실력 향상",
-            "뭐 풀", "문제 추천", "문제추천", "추천해",
-        ]
-        if any(pattern in message_lower for pattern in purpose_patterns):
-            return IntentResult(
-                intent=IntentType.NEW_PROBLEM,
-                confidence=0.90,
-                method="rule",
-                next_action="start_info_collection"
-            )
-
-        # === 질문/설명 요청 패턴 우선 체크 (주제 키워드보다 먼저!) ===
-        # "X가 뭐야?", "X이 뭔지", "X 설명해줘" 등 → EXPLANATION_REQUEST
-        question_patterns = [
-            "뭐야", "뭐임", "뭔지", "뭘까", "뭔가", "뭐지",
-            "무엇", "무슨", "무엇인가",
-            "설명", "알려줘", "가르쳐",
-            "모르겠", "이해가 안", "이해 안", "잘 몰라", "잘몰라",
-            "어떤 건", "어떤건", "원리",
-        ]
-        # 주제 키워드 + 질문 패턴 조합이면 → 설명 요청
-        has_topic_keyword = any(kw in message for kw in self.TOPIC_KEYWORDS)
-        has_question_pattern = any(qp in message_lower for qp in question_patterns)
-
-        if has_topic_keyword and has_question_pattern and len(message) > 8:
-            # "정렬이 뭐야?", "DP가 뭔지 모르겠어" 등
-            return IntentResult(
-                intent=IntentType.EXPLANATION_REQUEST,
-                confidence=0.92,
-                method="rule",
-                next_action="explain_concept"
-            )
-
-        # === 정보 수집 키워드 매칭 (단답 입력 지원) ===
-        # 주제/난이도/언어 키워드는 모두 TOPIC_SPECIFIC으로 분류 → InfoCollectionGraph에서 처리
-        if len(message) <= 15:
-            # 주제 키워드
-            if message in self.TOPIC_KEYWORDS or message_lower in self.TOPIC_KEYWORDS:
+        if has_code_block:
+            message_lower = message.lower()
+            # 코드 블록 + 유사 문제 요청
+            if any(kw in message_lower for kw in ["비슷한", "유사한", "이 코드"]):
                 return IntentResult(
-                    intent=IntentType.TOPIC_SPECIFIC,
+                    intent=IntentType.SIMILAR_CODE_PROBLEM,
                     confidence=0.95,
                     method="rule",
-                    next_action="set_topic_and_continue"
+                    requires_context="code",
+                    next_action="code_similarity_search"
                 )
-            # 난이도 키워드
-            if message in self.DIFFICULTY_KEYWORDS or message_lower in self.DIFFICULTY_KEYWORDS:
+
+            # 코드 블록 + 리뷰 요청
+            if any(kw in message_lower for kw in ["봐줘", "확인", "맞아?", "리뷰", "틀린"]):
                 return IntentResult(
-                    intent=IntentType.DIFFICULTY_CHANGE,
-                    confidence=0.95,
+                    intent=IntentType.CODE_REVIEW,
+                    confidence=0.90,
                     method="rule",
-                    next_action="set_difficulty_and_continue"
+                    requires_context="code",
+                    next_action="review_code"
                 )
-            # 언어 키워드
-            if message in self.LANGUAGE_KEYWORDS or message_lower in self.LANGUAGE_KEYWORDS:
-                return IntentResult(
-                    intent=IntentType.LANGUAGE_CHANGE,
-                    confidence=0.95,
-                    method="rule",
-                    next_action="set_language_and_continue"
-                )
-            # 주제 키워드 + "로", "으로", "할래", "할게" 등의 조합
-            for keyword in self.TOPIC_KEYWORDS:
-                if message_lower.startswith(keyword.lower()) and len(message_lower) - len(keyword) <= 5:
-                    return IntentResult(
-                        intent=IntentType.TOPIC_SPECIFIC,
-                        confidence=0.90,
-                        method="rule",
-                        next_action="set_topic_and_continue"
-                    )
-            # 난이도 키워드 + 조합
-            for keyword in self.DIFFICULTY_KEYWORDS:
-                if message_lower.startswith(keyword.lower()) and len(message_lower) - len(keyword) <= 5:
-                    return IntentResult(
-                        intent=IntentType.DIFFICULTY_CHANGE,
-                        confidence=0.90,
-                        method="rule",
-                        next_action="set_difficulty_and_continue"
-                    )
 
-        # 코드 블록 + "비슷한" 키워드
-        if has_code_block and any(kw in message_lower for kw in ["비슷한", "유사한", "이 코드"]):
-            return IntentResult(
-                intent=IntentType.SIMILAR_CODE_PROBLEM,
-                confidence=0.95,
-                method="rule",
-                requires_context="code",
-                next_action="code_similarity_search"
-            )
-
-        # 코드 블록 + 리뷰 관련
-        if has_code_block and any(kw in message_lower for kw in ["봐줘", "확인", "맞아?", "리뷰"]):
-            return IntentResult(
-                intent=IntentType.CODE_REVIEW,
-                confidence=0.90,
-                method="rule",
-                requires_context="code",
-                next_action="review_code"
-            )
-
+        # 나머지는 LLM/임베딩 흐름으로 (키워드 패턴 제거)
         return None
 
     async def _classify_by_embedding(self, message: str) -> IntentResult:
@@ -430,6 +289,11 @@ class IntentClassifier:
 
 가능한 의도들:
 {chr(10).join(all_intents[:15])}  # 상위 15개만
+
+분류 가이드:
+- "싫다", "싫다고", "짜증나", "지겨워" 등 부정적 감정 → negation (거절/대안 요청)
+- "기초 싫다", "쉬운거 말고" 등 특정 조건 거부 → negation
+- 주제/난이도 변경 원할 때도 → negation (다른 대안 제시 필요)
 
 가장 적절한 의도를 JSON으로 응답하세요:
 {{"intent": "의도값", "confidence": 0.0-1.0, "reason": "선택 이유"}}

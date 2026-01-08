@@ -175,7 +175,7 @@ class ChatOrchestratorV2:
             },
         )
 
-        print(f"[Orchestrator] IntentTool: category={intent_result.category}, action={intent_result.action}, route={intent_result.suggested_route}")
+        logger.debug(f"IntentTool: category={intent_result.category}, action={intent_result.action}, route={intent_result.suggested_route}")
 
         # ============================================================
         # 1. 문제 유형 선택 처리 (빈칸/퍼즐/대화형)
@@ -275,20 +275,24 @@ class ChatOrchestratorV2:
                 )
 
         # ============================================================
-        # 7. General (인사, 감사, 일반 대화)
+        # 7. General (인사, 감사, 일반 대화) - LLM 기반 동적 응답
         # ============================================================
         if intent_result.category == IntentCategory.GENERAL:
-            response_messages = {
-                ActionType.GREETING: "안녕하세요! 코딩 연습 도와드릴게요. 어떤 주제의 문제를 풀어볼까요?",
-                ActionType.THANKS: "도움이 됐다니 기뻐요! 더 필요한 거 있으면 말씀해주세요.",
-                ActionType.HELP: "저는 코딩 문제 추천과 풀이를 도와드려요.\n\n• 주제/난이도/언어 선택 → 문제 검색\n• 문제 선택 → 빈칸/퍼즐/대화형 중 선택\n• 힌트 요청, 질문하기\n\n어떤 주제로 시작해볼까요?",
-                ActionType.FREE_CHAT: "무엇을 도와드릴까요? 코딩 문제를 풀어보시겠어요?",
-            }
+            from ..services.dynamic_response import dynamic_response_generator
+
+            # LLM 기반 동적 응답 생성 (하드코딩 제거)
+            dynamic_response = await dynamic_response_generator.generate(
+                message=message,
+                intent=intent_result.action.value if intent_result.action else "general",
+                conversation_history=conversation_history,
+                user_context=user_context,
+            )
+
             return {
                 "stage": "intent",
                 "intent": intent_result.action.value,
                 "collected_info": collected_info,
-                "response_message": response_messages.get(intent_result.action, "무엇을 도와드릴까요?"),
+                "response_message": dynamic_response.message,
                 "next_stage": "respond",
                 "is_complete": True,
             }
@@ -353,22 +357,17 @@ class ChatOrchestratorV2:
         if extracted_values.get("learning_goal"):
             user_context = user_context.copy() if user_context else {}
             user_context["learning_goal"] = extracted_values["learning_goal"]
-            print(f"[Orchestrator] Updated user_context.learning_goal: {extracted_values['learning_goal']}")
+            logger.debug(f"Updated user_context.learning_goal: {extracted_values['learning_goal']}")
 
         if extracted_values.get("experience_level"):
             user_context = user_context.copy() if user_context else {}
             user_context["experience_level"] = extracted_values["experience_level"]
-            print(f"[Orchestrator] Updated user_context.experience_level: {extracted_values['experience_level']}")
+            logger.debug(f"Updated user_context.experience_level: {extracted_values['experience_level']}")
 
         # 디버깅 로그
-        print(f"[Orchestrator] _process_info_collection called")
-        print(f"[Orchestrator] - message: {message}")
-        print(f"[Orchestrator] - collected_info from session: {collected_info}")
-        print(f"[Orchestrator] - extracted_values from intent: {extracted_values}")
-        print(f"[Orchestrator] - existing_topic: {existing_topic}")
-        print(f"[Orchestrator] - existing_difficulty: {existing_difficulty}")
-        print(f"[Orchestrator] - existing_language: {existing_language}")
-        print(f"[Orchestrator] - user_context (after update): {user_context}")
+        logger.debug(f"_process_info_collection: message={message[:50]}...")
+        logger.debug(f"collected_info={collected_info}, extracted={extracted_values}")
+        logger.debug(f"existing: topic={existing_topic}, difficulty={existing_difficulty}, language={existing_language}")
 
         # 세션에서 awaiting_confirmation, suggested_value 가져오기
         existing_awaiting_confirmation = session_state.get("awaiting_confirmation", False)
@@ -393,6 +392,7 @@ class ChatOrchestratorV2:
             "difficulty": new_collected.get("difficulty") or collected_info.get("difficulty"),
             "language": new_collected.get("language") or collected_info.get("language"),
         }
+        logger.debug(f"Info merge: new={new_collected}, original={collected_info}, merged={merged_info}")
 
         # 정보 수집 완료 시 Discovery로
         if result.get("is_complete"):
@@ -627,7 +627,7 @@ class ChatOrchestratorV2:
             base_problem_id = problem_save_service.get_base_problem_id(original_id)
 
         if not base_problem_id:
-            print(f"[Orchestrator] Warning: No base_problem_id found for {original_id}")
+            logger.warning(f"No base_problem_id found for {original_id}")
             # 그래도 진행 (legacy 지원)
 
         # creator_id 추출
@@ -651,7 +651,7 @@ class ChatOrchestratorV2:
             )
 
             if user_existing:
-                print(f"[Orchestrator] User already has {problem_type}: {original_id} ({language})")
+                logger.debug(f"User already has {problem_type}: {original_id} ({language})")
 
                 generated_data = self._convert_cached_to_generated(
                     problem_type=problem_type,
@@ -692,7 +692,7 @@ class ChatOrchestratorV2:
             )
 
             if existing_problem:
-                print(f"[Orchestrator] Cache hit! Copying {problem_type} for user: {original_id} ({language})")
+                logger.debug(f"Cache hit! Copying {problem_type} for user: {original_id} ({language})")
 
                 # 현재 유저용으로 복사
                 if creator_id:
@@ -702,7 +702,7 @@ class ChatOrchestratorV2:
                         creator_id=creator_id,
                     )
                     if copy_result.get("success"):
-                        print(f"[Orchestrator] Problem copied for user {creator_id[:8]}...")
+                        logger.debug(f"Problem copied for user {creator_id[:8]}...")
 
                 generated_data = self._convert_cached_to_generated(
                     problem_type=problem_type,
@@ -735,7 +735,7 @@ class ChatOrchestratorV2:
         # ============================================================
         # 3. Cache Miss: LLM으로 문제 생성
         # ============================================================
-        print(f"[Orchestrator] Cache miss. Generating new {problem_type} problem: {original_id} ({language})")
+        logger.info(f"Cache miss. Generating new {problem_type}: {original_id} ({language})")
 
         # 사용자 레벨 추출
         user_level = user_context.get("level", "intermediate")
@@ -872,13 +872,13 @@ class ChatOrchestratorV2:
                         creator_id=creator_id,
                     )
                     if save_result.get("success"):
-                        print(f"[Orchestrator] Problem saved to DB: {problem_type} - {generated_data.get('original_id')} (user: {creator_id[:8]}...)")
+                        logger.debug(f"Problem saved: {problem_type} - {generated_data.get('original_id')}")
                     else:
-                        print(f"[Orchestrator] Failed to save problem: {save_result.get('error')}")
+                        logger.warning(f"Failed to save problem: {save_result.get('error')}")
                 else:
-                    print(f"[Orchestrator] Skipping DB save (no base_problem_id or creator_id)")
+                    logger.debug("Skipping DB save (no base_problem_id or creator_id)")
             except Exception as save_error:
-                print(f"[Orchestrator] DB save error (non-blocking): {save_error}")
+                logger.warning(f"DB save error (non-blocking): {save_error}")
 
             return {
                 "stage": "problem_generation",

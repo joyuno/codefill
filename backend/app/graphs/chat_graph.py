@@ -178,11 +178,17 @@ async def respond_node(state: ChatState) -> Dict[str, Any]:
     상태에서 response_message를 추출하여 반환합니다.
     이 노드는 실제로 아무것도 하지 않고 상태를 그대로 전달합니다.
     """
-    # 응답 메시지가 없으면 기본 메시지
+    # 응답 메시지가 없으면 LLM 동적 응답 생성
     if not state.get("response_message"):
-        return {
-            "response_message": "무엇을 도와드릴까요?",
-        }
+        from ..services.dynamic_response import dynamic_response_generator
+        message = state.get("message", "")
+        dynamic_response = await dynamic_response_generator.generate(
+            message=message,
+            intent="chat_fallback",
+            conversation_history=state.get("conversation_history"),
+            user_context=state.get("user_context"),
+        )
+        return {"response_message": dynamic_response.message}
     return {}
 
 

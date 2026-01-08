@@ -462,15 +462,24 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         }
 
     # collected_info 업데이트 (기존 정보와 병합)
+    # 핵심: LLM이 null/빈배열 반환 시 기존 값 유지
     new_info = result.get("collected_info") or {}  # None 방지
+
+    def _merge_field(new_val, existing_val, default=None):
+        """새 값이 유효하면 사용, 아니면 기존 값 유지"""
+        # 빈 배열 [], 빈 문자열 "", None 모두 기존 값으로 대체
+        if new_val is None or new_val == [] or new_val == "":
+            return existing_val if existing_val is not None else default
+        return new_val
+
     merged_info: CollectedInfo = {
-        "topics": new_info.get("topics") or existing_info.get("topics", []),
-        "difficulty": new_info.get("difficulty") or existing_info.get("difficulty"),
-        "language": new_info.get("language") or existing_info.get("language"),
-        "specific_needs": new_info.get("specific_needs") or existing_info.get("specific_needs"),
-        "time_available": new_info.get("time_available") or existing_info.get("time_available"),
-        "selected_problem": new_info.get("selected_problem") or existing_info.get("selected_problem"),
-        "selected_problem_index": new_info.get("selected_problem_index") or existing_info.get("selected_problem_index"),
+        "topics": _merge_field(new_info.get("topics"), existing_info.get("topics"), []),
+        "difficulty": _merge_field(new_info.get("difficulty"), existing_info.get("difficulty")),
+        "language": _merge_field(new_info.get("language"), existing_info.get("language")),
+        "specific_needs": _merge_field(new_info.get("specific_needs"), existing_info.get("specific_needs")),
+        "time_available": _merge_field(new_info.get("time_available"), existing_info.get("time_available")),
+        "selected_problem": _merge_field(new_info.get("selected_problem"), existing_info.get("selected_problem")),
+        "selected_problem_index": _merge_field(new_info.get("selected_problem_index"), existing_info.get("selected_problem_index")),
     }
 
     # 🚀 협업 필터링: 새로운 선택 로깅 (비차단)

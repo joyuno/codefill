@@ -91,9 +91,15 @@ async def classify_intent_node(state: IntentState) -> Dict[str, Any]:
 async def route_request_node(state: IntentState) -> Dict[str, Any]:
     """
     최종 라우팅을 결정합니다.
+    LLM 기반 동적 응답 생성으로 하드코딩된 응답 제거
     """
+    from ..services.dynamic_response import dynamic_response_generator
+
     intent_result = state.get("intent_result", {})
     intent = intent_result.get("intent", "unknown")
+    message = state.get("message", "")
+    conversation_history = state.get("conversation_history", [])
+    user_context = state.get("user_context", {})
 
     # 이미 route_to가 설정되어 있으면 그대로 사용
     existing_route = state.get("route_to")
@@ -106,7 +112,14 @@ async def route_request_node(state: IntentState) -> Dict[str, Any]:
     # 응답 메시지 생성 (route_to가 respond인 경우)
     response_message = state.get("response_message", "")
     if route_to == "respond" and not response_message:
-        response_message = _generate_simple_response(intent)
+        # LLM 기반 동적 응답 생성 (하드코딩 제거)
+        dynamic_response = await dynamic_response_generator.generate(
+            message=message,
+            intent=intent,
+            conversation_history=conversation_history,
+            user_context=user_context,
+        )
+        response_message = dynamic_response.message
 
     return {
         "route_to": route_to,
@@ -124,12 +137,13 @@ def _generate_simple_response(intent: str) -> str:
         "affirmation": "좋아요! 진행할게요.",
         "negation": "알겠어요! 다른 걸로 해볼까요?",
         "out_of_scope": "저는 코딩 학습 도우미예요! 알고리즘 문제 풀이, 코드 리뷰, 힌트 제공 등을 도와드릴 수 있어요.",
+        "inappropriate_message": "저는 코딩 학습을 도와드리는 AI예요. 함께 알고리즘 문제를 풀면서 실력을 키워볼까요?",
         "clarification_needed": "죄송해요, 요청을 이해하기 어려워요. 더 구체적으로 말씀해주실 수 있나요?",
         "progress_check": "진행 상황을 확인할게요!",
         "weak_point": "약점을 분석할게요. 잠시만요...",
         "study_plan": "맞춤 학습 계획을 세워드릴게요!",
     }
-    return responses.get(intent, "무엇을 도와드릴까요?")
+    return responses.get(intent, "어떤 코딩 문제를 풀어볼까요?")
 
 
 # ============================================================
