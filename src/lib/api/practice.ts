@@ -266,24 +266,56 @@ export const practiceApi = {
    * Submit blank fill answers
    */
   async submitBlank(submission: BlankSubmission): Promise<BlankResult> {
-    const response = await api.post<BlankResult>('/practice/submit/blank', {
+    const response = await api.post<{
+      results: Record<string, boolean>;
+      all_correct: boolean;
+      xp_earned: number;
+      new_badges?: Array<{ code: string; name: string; icon_url?: string; rarity: string }>;
+    }>('/practice/submit/blank', {
       problem_id: submission.problemId,
       answers: submission.answers,
     });
     if (response.error) throw new Error(response.error.message);
-    return response.data!;
+    const data = response.data!;
+    return {
+      results: data.results,
+      allCorrect: data.all_correct,
+      xpEarned: data.xp_earned,
+      newBadges: data.new_badges?.map(b => ({
+        code: b.code,
+        name: b.name,
+        iconUrl: b.icon_url,
+        rarity: b.rarity,
+      })),
+    };
   },
 
   /**
    * Submit puzzle (Parsons Problem) answer
    */
   async submitPuzzle(submission: PuzzleSubmission): Promise<PuzzleResult> {
-    const response = await api.post<PuzzleResult>('/practice/submit/puzzle', {
+    const response = await api.post<{
+      is_correct: boolean;
+      results: Record<string, boolean>;
+      xp_earned: number;
+      new_badges?: Array<{ code: string; name: string; icon_url?: string; rarity: string }>;
+    }>('/practice/submit/puzzle', {
       problem_id: submission.problemId,
       block_order: submission.blockOrder,
     });
     if (response.error) throw new Error(response.error.message);
-    return response.data!;
+    const data = response.data!;
+    return {
+      isCorrect: data.is_correct,
+      results: data.results,
+      xpEarned: data.xp_earned,
+      newBadges: data.new_badges?.map(b => ({
+        code: b.code,
+        name: b.name,
+        iconUrl: b.icon_url,
+        rarity: b.rarity,
+      })),
+    };
   },
 
   /**

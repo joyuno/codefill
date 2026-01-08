@@ -744,7 +744,7 @@ async def get_mypage_all(
 
         # ===== 5. Solved.ac 프로필 =====
         solvedac_result = db.table("solved_ac_profiles")\
-            .select("handle, tier, rating, solved_count, last_synced_at")\
+            .select("handle, tier, rating, solved_count, max_streak, last_synced_at")\
             .eq("user_id", str(user_id))\
             .limit(1)\
             .execute()
@@ -757,6 +757,7 @@ async def get_mypage_all(
                 tier=sa_data.get("tier", 0),
                 rating=sa_data.get("rating", 0),
                 solved_count=sa_data.get("solved_count", 0),
+                max_streak=sa_data.get("max_streak", 0),
                 last_synced_at=sa_data.get("last_synced_at", ""),
             )
 

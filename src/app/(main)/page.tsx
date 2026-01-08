@@ -1,13 +1,22 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { StatCards } from '@/components/dashboard/StatCards';
 import { GrassHeatmap } from '@/components/dashboard/GrassHeatmap';
 import { Button } from '@/components/ui/button';
 import { Play, Sparkles } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function HomePage() {
+  const { refreshProfile } = useAuth();
+
+  // 홈 페이지 진입 시 프로필 갱신 (최신 데이터 반영)
+  useEffect(() => {
+    refreshProfile();
+  }, [refreshProfile]);
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <StatCards />

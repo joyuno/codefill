@@ -100,6 +100,7 @@ export interface SolvedAcProfileSimple {
   tier: number;
   rating: number;
   solved_count: number;
+  max_streak: number;
   last_synced_at: string;
 }
 

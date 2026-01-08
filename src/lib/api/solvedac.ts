@@ -27,23 +27,17 @@ export interface SolvedAcProfile {
   rank?: number;
   maxStreak: number;
   organizations: SolvedAcOrganization[];
+  isLinked: boolean;  // 이미 다른 사용자가 연동했는지 여부
 }
 
 export interface SolvedAcProfileDB {
   id: string;
   user_id: string;
   handle: string;
-  bio?: string;
-  profile_image_url?: string;
   tier: number;
   rating: number;
-  class_level: number;
-  class_decoration?: string;
   solved_count: number;
-  exp: number;
-  rank?: number;
   max_streak: number;
-  organizations?: Record<string, unknown>;
   last_synced_at: string;
   created_at: string;
 }

@@ -260,6 +260,11 @@ export default function OnboardingPage() {
         return;
       }
       if (result.data) {
+        // 이미 다른 사용자가 연동한 경우 에러 표시
+        if (result.data.isLinked) {
+          setSolvedAcError(`'${result.data.handle}' 아이디는 이미 다른 사용자가 연동 중입니다.`);
+          return;
+        }
         setSolvedAcProfile(result.data);
         toast({
           title: '확인 완료',
