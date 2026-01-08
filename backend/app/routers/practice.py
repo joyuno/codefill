@@ -211,14 +211,14 @@ async def start_practice(
             "total_hints_requested": 0,
         }
 
-        # problem_id 추가 (UUID 형식인 경우만)
+        # problem_id 추가 (UUID 형식인 경우만 - DB 컬럼이 UUID 타입)
         if request.problem_id:
             try:
                 problem_uuid = UUIDType(request.problem_id)
                 attempt_data["problem_id"] = str(problem_uuid)
             except ValueError:
-                # UUID가 아닌 경우 그대로 저장 시도
-                attempt_data["problem_id"] = request.problem_id
+                # UUID가 아닌 경우 저장하지 않음 (DB 컬럼이 UUID 타입이라 TEXT 저장 불가)
+                print(f"[StartPractice] Invalid UUID format, skipping problem_id: {request.problem_id[:50]}")
 
         # Note: base_problem_id 컬럼이 DB에 없으므로 제외
         # 반복 풀이 체크는 problem_id로 수행됨
