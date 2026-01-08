@@ -173,12 +173,28 @@ class RecordSubmission(BaseModel):
     attempt_id: Optional[str] = None  # 기존 pending attempt ID (attempt_details 기록용)
 
 
+class FeedbackData(BaseModel):
+    """피드백 데이터 (record_solve 응답용)."""
+    grade: str = "learning"  # perfect, excellent, good, keep_going, learning
+    grade_emoji: str = "🌱"
+    grade_message: str = ""
+    summary_title: str = ""
+    summary_highlight: str = ""
+    efficiency_score: int = 0
+    speed_score: int = 0
+    understanding_score: int = 0
+    learning_points: List[str] = []
+    improvements: List[str] = []
+    encouragement: str = ""
+
+
 class RecordResponse(BaseModel):
     """Response for record submission."""
     success: bool
     xp_earned: int
     message: str
     new_badges: Optional[List[NewBadge]] = None
+    feedback: Optional[FeedbackData] = None  # 피드백 데이터 (정답 시)
 
 
 class HintCheckResponse(BaseModel):

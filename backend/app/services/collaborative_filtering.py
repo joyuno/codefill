@@ -248,8 +248,20 @@ class CollaborativeFilteringService:
                 interaction_id = result.data[0].get("id")
                 logger.debug(f"[Collaborative] Logged interaction: {interaction_type} for {user_id}")
 
-                # 비동기로 선호도 업데이트 (백그라운드)
-                # await self._update_preferences_async(user_id)
+                # 비동기로 선호도 업데이트 (10회 상호작용마다)
+                try:
+                    count_result = self.db.table("user_interactions") \
+                        .select("id", count="exact") \
+                        .eq("user_id", user_id) \
+                        .execute()
+                    interaction_count = count_result.count or 0
+
+                    # 10회마다 선호도 요약 업데이트 (성능 최적화)
+                    if interaction_count > 0 and interaction_count % 10 == 0:
+                        await self.update_user_preferences(user_id)
+                        logger.info(f"[Collaborative] Updated preferences for {user_id} (interaction #{interaction_count})")
+                except Exception as pref_err:
+                    logger.warning(f"[Collaborative] Preferences update skipped: {pref_err}")
 
                 return interaction_id
 

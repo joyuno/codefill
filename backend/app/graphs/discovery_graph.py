@@ -115,6 +115,9 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     difficulty = collected_info.get("difficulty")
     language = collected_info.get("language", "python")
 
+    # 디버그 로깅
+    print(f"[DiscoveryGraph:Search] Params: topics={topics}, difficulty={difficulty}, language={language}")
+
     # 검색 쿼리 생성 (시맨틱 검색 폴백용)
     query_parts = []
     if topics:

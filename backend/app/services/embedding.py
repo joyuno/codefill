@@ -40,7 +40,7 @@ class EmbeddingService:
         if not self.api_key:
             raise ValueError("OpenAI API key not configured")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:  # 30 → 15초로 단축
             response = await client.post(
                 self.OPENAI_EMBEDDING_URL,
                 headers=self._get_headers(),

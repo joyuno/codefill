@@ -51,7 +51,8 @@ class ChatSessionService:
         """직접 세션 생성 (fallback)"""
         try:
             result = self.db.table('chat_sessions').insert({
-                'user_id': user_id
+                'user_id': user_id,
+                'session_type': 'exploration'
             }).execute()
 
             if result.data and len(result.data) > 0:

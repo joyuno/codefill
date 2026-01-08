@@ -3,6 +3,7 @@ RAG Service
 Hybrid search (vector + keyword) and code generation fallback
 """
 
+import asyncio
 import json
 from typing import List, Dict, Any, Optional, Tuple
 from ..database import get_supabase_client
@@ -40,10 +41,76 @@ class RAGService:
         "해시": ["Data structures", "Hash"],
         "트리": ["Tree algorithms", "Data structures"],
         "재귀": ["Recursion", "Divide and conquer"],
+        # 추가 매핑
+        "미로 탐색": ["BFS", "DFS", "Graph algorithms", "Graph traversal", "Maze"],
+        "미로": ["BFS", "DFS", "Graph algorithms", "Graph traversal", "Maze"],
+        "bfs": ["BFS", "Graph algorithms", "Graph traversal", "Breadth-first search"],
+        "dfs": ["DFS", "Graph algorithms", "Graph traversal", "Depth-first search"],
+        "너비 우선 탐색": ["BFS", "Graph algorithms", "Graph traversal", "Breadth-first search"],
+        "깊이 우선 탐색": ["DFS", "Graph algorithms", "Graph traversal", "Depth-first search"],
+        "최단 경로": ["BFS", "Shortest path", "Graph algorithms", "Dijkstra"],
+        "다익스트라": ["Dijkstra", "Shortest path", "Graph algorithms"],
+        "플로이드": ["Floyd-Warshall", "Shortest path", "Graph algorithms"],
+        "백트래킹": ["Backtracking", "DFS", "Complete search", "Recursion"],
+        "분할 정복": ["Divide and conquer", "Recursion"],
+        "투 포인터": ["Two pointers", "Sliding window"],
+        "슬라이딩 윈도우": ["Sliding window", "Two pointers"],
+        "구현": ["Implementation", "Simulation"],
+        "시뮬레이션": ["Simulation", "Implementation"],
+        "브루트포스": ["Brute force", "Complete search", "Implementation"],
+        "이분 탐색": ["Binary search", "Divide and conquer"],
+        "힙": ["Heap", "Priority queue", "Data structures"],
+        "우선순위 큐": ["Priority queue", "Heap", "Data structures"],
+        "유니온 파인드": ["Union-Find", "Disjoint set", "Graph algorithms"],
+        "세그먼트 트리": ["Segment tree", "Data structures"],
+        "비트마스킹": ["Bitmask", "Bit manipulation"],
+    }
+
+    # Difficulty mapping (Korean -> English)
+    DIFFICULTY_MAPPING = {
+        # 백준 난이도
+        "브론즈": "easy",
+        "실버": "easy",
+        "골드": "medium",
+        "플래티넘": "hard",
+        "다이아": "hard",
+        "루비": "very_hard",
+        # 일반 표현
+        "쉬움": "easy",
+        "쉬운": "easy",
+        "보통": "medium",
+        "중간": "medium",
+        "어려움": "hard",
+        "어려운": "hard",
+        "초급": "easy",
+        "중급": "medium",
+        "고급": "hard",
     }
 
     def __init__(self):
         self.db = get_supabase_client()
+
+    def _normalize_difficulty(self, difficulty: str) -> str:
+        """
+        난이도를 DB 형식으로 정규화
+
+        Args:
+            difficulty: 입력 난이도 (한국어 또는 영어)
+
+        Returns:
+            정규화된 난이도 (easy/medium/hard/very_hard)
+        """
+        if not difficulty:
+            return None
+
+        difficulty_lower = difficulty.lower().strip()
+
+        # 이미 정규화된 값인 경우
+        if difficulty_lower in ["easy", "medium", "hard", "very_hard", "medium_hard"]:
+            return difficulty_lower
+
+        # 한국어 매핑 확인
+        return self.DIFFICULTY_MAPPING.get(difficulty, difficulty_lower)
 
     # ============================================================
     # Agentic RAG: 검색 필요성 판단 및 스마트 검색
@@ -180,6 +247,10 @@ class RAGService:
             - should_fallback: CodeGen 필요 여부
             - search_method: "metadata" | "semantic" | "hybrid"
         """
+        # 난이도 정규화 (한국어 → 영어)
+        normalized_difficulty = self._normalize_difficulty(difficulty)
+        print(f"[RAG:Smart] Normalized difficulty: {difficulty} → {normalized_difficulty}")
+
         # 개인화 컨텍스트에서 추가 정보 추출
         enhanced_topics = topics or []
         if user_context and not topics:
@@ -187,33 +258,46 @@ class RAGService:
             if weak_topics:
                 enhanced_topics = weak_topics[:2]
 
-        if user_context and not difficulty:
-            difficulty = user_context.get("preferred_difficulty")
+        if user_context and not normalized_difficulty:
+            normalized_difficulty = self._normalize_difficulty(user_context.get("preferred_difficulty"))
 
         # Agentic 판단: 메타데이터만으로 충분한가?
-        if self._has_sufficient_metadata(enhanced_topics or topics, difficulty, language):
+        if self._has_sufficient_metadata(enhanced_topics or topics, normalized_difficulty, language):
             print(f"[RAG:Smart] Using METADATA-ONLY search (cost: $0)")
 
             results = await self.search_problems_metadata_only(
                 topics=enhanced_topics or topics,
-                difficulty=difficulty,
+                difficulty=normalized_difficulty,
                 language=language,
                 limit=limit,
                 exclude_ids=exclude_ids,
             )
 
-            # 결과가 부족하면 시맨틱 검색으로 폴백
+            # 결과가 부족하면 시맨틱 검색으로 폴백 (타임아웃 5초)
             if len(results) < 2:
                 print(f"[RAG:Smart] Metadata search insufficient ({len(results)} results), falling back to semantic")
-                results, should_fallback = await self.search_problems_hybrid(
-                    query=query,
-                    topics=enhanced_topics or topics,
-                    difficulty=difficulty,
-                    language=language,
-                    limit=limit,
-                    exclude_ids=exclude_ids,
-                    user_context=user_context,
-                )
+                try:
+                    results, should_fallback = await asyncio.wait_for(
+                        self.search_problems_hybrid(
+                            query=query,
+                            topics=enhanced_topics or topics,
+                            difficulty=normalized_difficulty,
+                            language=language,
+                            limit=limit,
+                            exclude_ids=exclude_ids,
+                            user_context=user_context,
+                        ),
+                        timeout=10.0,  # 10초 타임아웃
+                    )
+                except asyncio.TimeoutError:
+                    print(f"[RAG:Smart] Semantic search timeout, using keyword fallback")
+                    results = await self._keyword_search(
+                        topics=enhanced_topics or topics,
+                        difficulty=normalized_difficulty,
+                        language=language,
+                        limit=limit,
+                    )
+                    return results, len(results) == 0, "keyword_fallback"
                 return results, should_fallback, "hybrid"
 
             should_fallback = len(results) == 0
@@ -222,15 +306,28 @@ class RAGService:
         else:
             print(f"[RAG:Smart] Using SEMANTIC search (insufficient metadata)")
 
-            results, should_fallback = await self.search_problems_hybrid(
-                query=query,
-                topics=enhanced_topics or topics,
-                difficulty=difficulty,
-                language=language,
-                limit=limit,
-                exclude_ids=exclude_ids,
-                user_context=user_context,
-            )
+            try:
+                results, should_fallback = await asyncio.wait_for(
+                    self.search_problems_hybrid(
+                        query=query,
+                        topics=enhanced_topics or topics,
+                        difficulty=normalized_difficulty,
+                        language=language,
+                        limit=limit,
+                        exclude_ids=exclude_ids,
+                        user_context=user_context,
+                    ),
+                    timeout=10.0,  # 10초 타임아웃
+                )
+            except asyncio.TimeoutError:
+                print(f"[RAG:Smart] Semantic search timeout, using keyword fallback")
+                results = await self._keyword_search(
+                    topics=enhanced_topics or topics,
+                    difficulty=normalized_difficulty,
+                    language=language,
+                    limit=limit,
+                )
+                return results, len(results) == 0, "keyword_fallback"
             return results, should_fallback, "semantic"
 
     # ============================================================

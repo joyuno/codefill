@@ -62,17 +62,52 @@ class FeedbackService:
             return None
 
     def get_hint_logs(self, user_id: str, problem_id: str) -> List[Dict[str, Any]]:
-        """hint_logs 테이블에서 힌트 사용 내역 조회"""
+        """attempt_details에서 힌트 사용 내역 조회 (hint_logs 대체)"""
         try:
-            result = self.supabase.table("hint_logs") \
-                .select("*") \
+            # 먼저 해당 문제의 attempt 조회
+            attempt_result = self.supabase.table("attempts") \
+                .select("id") \
                 .eq("user_id", user_id) \
                 .eq("problem_id", problem_id) \
+                .order("created_at", desc=True) \
+                .limit(1) \
+                .execute()
+
+            if not attempt_result.data:
+                return []
+
+            attempt_id = attempt_result.data[0]["id"]
+
+            # attempt_details에서 힌트 요청 기록 조회
+            result = self.supabase.table("attempt_details") \
+                .select("*") \
+                .eq("attempt_id", attempt_id) \
+                .eq("hint_was_requested", True) \
                 .order("created_at") \
                 .execute()
-            return result.data if result.data else []
+
+            if not result.data:
+                return []
+
+            # hint_logs 형식으로 변환
+            hint_logs = []
+            for i, detail in enumerate(result.data):
+                hint_content = (
+                    detail.get("blank_hint_content") or
+                    detail.get("puzzle_hint_content") or
+                    detail.get("guided_tutor_response") or ""
+                )
+                hint_logs.append({
+                    "hint_level": i + 1,
+                    "hint_content": hint_content,
+                    "xp_cost": detail.get("xp_cost", 5),
+                    "created_at": detail.get("created_at"),
+                })
+
+            return hint_logs
+
         except Exception as e:
-            logger.warning(f"[FeedbackService] No hint logs: {e}")
+            logger.warning(f"[FeedbackService] No hint logs from attempt_details: {e}")
             return []
 
     def get_user_stats(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -196,34 +231,8 @@ class FeedbackService:
             logger.error(f"[FeedbackService] Failed to save attempt: {e}")
             return None
 
-    async def save_hint_log(
-        self,
-        user_id: str,
-        problem_id: str,
-        hint_level: int,
-        hint_content: str,
-        attempt_id: Optional[str] = None,
-        xp_cost: int = 10,
-    ) -> bool:
-        """힌트 사용 기록 저장"""
-        try:
-            data = {
-                "user_id": user_id,
-                "problem_id": problem_id,
-                "hint_level": hint_level,
-                "hint_content": hint_content,
-                "xp_cost": xp_cost,
-            }
-
-            if attempt_id:
-                data["attempt_id"] = attempt_id
-
-            self.supabase.table("hint_logs").insert(data).execute()
-            return True
-
-        except Exception as e:
-            logger.error(f"[FeedbackService] Failed to save hint log: {e}")
-            return False
+    # NOTE: save_hint_log 제거됨 - hint_logs 테이블은 attempt_details로 통합됨
+    # 힌트 기록은 practice.py의 record_attempt_detail()에서 처리
 
     # ============================================================
     # 피드백 생성
@@ -684,11 +693,11 @@ class FeedbackService:
             profile_result = self.supabase.table("user_skill_profiles") \
                 .select("*") \
                 .eq("user_id", user_id) \
-                .single() \
+                .limit(1) \
                 .execute()
 
-            if profile_result.data:
-                profile = profile_result.data
+            if profile_result and profile_result.data and len(profile_result.data) > 0:
+                profile = profile_result.data[0]
             else:
                 # 새 프로파일 생성
                 profile = {
@@ -726,15 +735,40 @@ class FeedbackService:
             if is_correct:
                 success_rate[difficulty]["success"] += 1
 
-            # 4. 약점 토픽 분석 (실력 0.4 미만)
+            # 4. 약점/강점 토픽 분석
             weak_topics = [t for t, s in skill_by_topic.items() if s < 0.4]
+            strong_topics = [t for t, s in skill_by_topic.items() if s > 0.7]
 
-            # 5. DB 업데이트 (upsert)
+            # 5. 문제 유형별 통계 업데이트
+            stats_by_type = profile.get("stats_by_problem_type", {})
+            # (문제 유형은 이 함수에서 받지 않으므로 기존 값 유지)
+
+            # 6. 최근 토픽/난이도 추적
+            recent_topics = profile.get("recent_topics", []) or []
+            recent_difficulties = profile.get("recent_difficulties", []) or []
+
+            # 최근 토픽에 현재 문제 토픽 추가 (최대 20개)
+            for topic in problem_topics:
+                if topic and topic not in recent_topics:
+                    recent_topics.insert(0, topic)
+            recent_topics = recent_topics[:20]
+
+            # 최근 난이도 추가 (최대 10개)
+            if difficulty and difficulty not in recent_difficulties[:3]:
+                recent_difficulties.insert(0, difficulty)
+            recent_difficulties = recent_difficulties[:10]
+
+            # 7. DB 업데이트 (upsert)
+            # NOTE: total_problems_attempted, total_problems_solved는 user_stats에서 관리
+            #       (increment_user_stats RPC로 업데이트됨)
             update_data = {
                 "user_id": user_id,
                 "skill_by_topic": skill_by_topic,
                 "success_rate_by_difficulty": success_rate,
-                "weak_topics": weak_topics[:10],  # 최대 10개
+                "weak_topics": weak_topics[:10],
+                "strong_topics": strong_topics[:10],
+                "recent_topics": recent_topics,
+                "recent_difficulties": recent_difficulties,
                 "updated_at": "now()",
             }
 

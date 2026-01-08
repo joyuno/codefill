@@ -28,6 +28,82 @@ class HintService:
         self.supabase = get_supabase_client()
 
     # ============================================================
+    # base_problem_id 해결 (FK 제약 충족용)
+    # ============================================================
+
+    def resolve_base_problem_id(self, problem_id: str, problem_type: str = "blank") -> Optional[str]:
+        """
+        problem_id에서 base_problem_id를 결정합니다.
+        problem_hints 테이블이 base_problems와 FK 관계이므로 반드시 필요.
+
+        Args:
+            problem_id: problems_blank/puzzle/guided의 ID 또는 base_problems ID
+            problem_type: 'blank', 'puzzle', 'guided'
+
+        Returns:
+            base_problems.id (UUID 문자열) 또는 None
+        """
+        if not problem_id:
+            return None
+
+        from uuid import UUID as UUIDType
+
+        try:
+            # 1. UUID 형식인지 확인
+            try:
+                problem_uuid = UUIDType(problem_id)
+                uuid_str = str(problem_uuid)
+            except ValueError:
+                # UUID가 아니면 original_id로 처리
+                uuid_str = None
+
+            if uuid_str:
+                # 1-1. base_problems 테이블에서 직접 조회 (이미 base_problem_id인 경우)
+                bp_result = self.supabase.table("base_problems")\
+                    .select("id")\
+                    .eq("id", uuid_str)\
+                    .limit(1)\
+                    .execute()
+
+                if bp_result.data and len(bp_result.data) > 0:
+                    print(f"[HintService] ✓ Resolved as base_problem_id directly: {uuid_str[:8]}...")
+                    return bp_result.data[0]["id"]
+
+                # 1-2. 문제 유형별 테이블에서 base_problem_id 조회
+                table_name = f"problems_{problem_type}"
+                try:
+                    type_result = self.supabase.table(table_name)\
+                        .select("base_problem_id")\
+                        .eq("id", uuid_str)\
+                        .limit(1)\
+                        .execute()
+
+                    if type_result.data and len(type_result.data) > 0:
+                        base_problem_id = type_result.data[0].get("base_problem_id")
+                        if base_problem_id:
+                            print(f"[HintService] ✓ Resolved via {table_name}: {base_problem_id[:8]}...")
+                            return base_problem_id
+                except Exception as e:
+                    print(f"[HintService] Table lookup error for {table_name}: {e}")
+
+            # 2. original_id로 시도 (UUID가 아닌 경우)
+            bp_result = self.supabase.table("base_problems")\
+                .select("id")\
+                .eq("original_id", problem_id)\
+                .limit(1)\
+                .execute()
+
+            if bp_result.data and len(bp_result.data) > 0:
+                print(f"[HintService] ✓ Resolved via original_id: {bp_result.data[0]['id'][:8]}...")
+                return bp_result.data[0]["id"]
+
+            return None
+
+        except Exception as e:
+            print(f"[HintService] resolve_base_problem_id error: {e}")
+            return None
+
+    # ============================================================
     # DB 조회 메서드
     # ============================================================
 
@@ -101,25 +177,30 @@ class HintService:
         problem_type: str,
         hint_index: int,
     ) -> Optional[Dict[str, Any]]:
-        """DB에서 캐시된 힌트 조회"""
+        """DB에서 캐시된 힌트 조회 (problem_hints 테이블)"""
         try:
+            # .single() 대신 .limit(1) 사용 (데이터 없을 때 에러 방지)
             result = self.supabase.table("problem_hints") \
                 .select("hint_content") \
-                .eq("problem_id", problem_id) \
+                .eq("problem_id", str(problem_id)) \
                 .eq("problem_type", problem_type) \
                 .eq("hint_index", hint_index) \
-                .single() \
+                .limit(1) \
                 .execute()
 
-            if result.data:
+            if result.data and len(result.data) > 0:
+                print(f"[HintCache] ✓ HIT: {problem_type}/{problem_id[:8]}..., index={hint_index}")
                 logger.info(f"[HintCache] HIT: {problem_type}/{problem_id}, index={hint_index}")
                 return {
-                    "hint_content": result.data.get("hint_content", ""),
+                    "hint_content": result.data[0].get("hint_content", ""),
                 }
+
+            print(f"[HintCache] MISS: {problem_type}/{problem_id[:8]}..., index={hint_index} (generating...)")
             return None
 
         except Exception as e:
             # 캐시 조회 실패는 무시 (LLM 생성으로 진행)
+            print(f"[HintCache] Query error: {e}")
             logger.debug(f"[HintCache] MISS or error: {e}")
             return None
 
@@ -130,20 +211,31 @@ class HintService:
         hint_index: int,
         hint_content: str,
     ) -> bool:
-        """생성된 힌트를 DB에 캐시"""
+        """생성된 힌트를 DB에 캐시 (problem_hints 테이블)"""
         try:
-            self.supabase.table("problem_hints").upsert({
-                "problem_id": problem_id,
-                "problem_type": problem_type,
-                "hint_index": hint_index,
-                "hint_content": hint_content,
-            }, on_conflict="problem_id,problem_type,hint_index").execute()
+            # Supabase Python upsert 사용
+            result = self.supabase.table("problem_hints").upsert(
+                {
+                    "problem_id": str(problem_id),
+                    "problem_type": problem_type,
+                    "hint_index": hint_index,
+                    "hint_content": hint_content[:2000] if hint_content else "",
+                },
+                on_conflict="problem_id,problem_type,hint_index"
+            ).execute()
 
-            logger.info(f"[HintCache] SAVED: {problem_type}/{problem_id}, index={hint_index}")
-            return True
+            if result.data:
+                print(f"[HintCache] ✓ SAVED to problem_hints: {problem_type}/{problem_id[:8]}..., index={hint_index}")
+                logger.info(f"[HintCache] SAVED: {problem_type}/{problem_id}, index={hint_index}")
+                return True
+            else:
+                print(f"[HintCache] ⚠ Upsert returned no data: {problem_type}/{problem_id[:8]}...")
+                return False
 
         except Exception as e:
-            logger.warning(f"[HintCache] Save failed: {e}")
+            # 상세 에러 출력 (디버깅용)
+            print(f"[HintCache] ✗ Save FAILED: {problem_type}/{problem_id[:8]}..., error={e}")
+            logger.error(f"[HintCache] Save failed: {e}")
             return False
 
     # ============================================================
@@ -173,6 +265,13 @@ class HintService:
                 from_cache: bool,
             }
         """
+        # base_problem_id 해결 (FK 제약 충족용)
+        base_problem_id = self.resolve_base_problem_id(problem_id, "blank")
+        cache_problem_id = base_problem_id or problem_id  # FK용 ID 또는 폴백
+
+        if not base_problem_id:
+            print(f"[HintService] ⚠ Could not resolve base_problem_id for blank/{problem_id[:8]}...")
+
         # 코드 템플릿 가져오기
         if not code_template:
             blank_problem = self.get_blank_problem(problem_id)
@@ -188,9 +287,9 @@ class HintService:
                 "from_cache": False,
             }
 
-        # 1. 캐시에서 힌트 조회
+        # 1. 캐시에서 힌트 조회 (base_problem_id 사용)
         cached = self.get_cached_hint(
-            problem_id=problem_id,
+            problem_id=cache_problem_id,
             problem_type="blank",
             hint_index=blank_index,
         )
@@ -209,13 +308,16 @@ class HintService:
             blank_index=blank_index,
         )
 
-        # 캐시에 저장
-        self.save_hint_to_cache(
-            problem_id=problem_id,
-            problem_type="blank",
-            hint_index=blank_index,
-            hint_content=hint_content,
-        )
+        # 캐시에 저장 (base_problem_id가 있을 때만 - FK 제약)
+        if base_problem_id:
+            self.save_hint_to_cache(
+                problem_id=base_problem_id,
+                problem_type="blank",
+                hint_index=blank_index,
+                hint_content=hint_content,
+            )
+        else:
+            print(f"[HintService] ⚠ Skipping cache save - no base_problem_id for blank/{problem_id[:8]}...")
 
         return {
             "hint_index": blank_index,
@@ -393,6 +495,13 @@ class HintService:
                 from_cache: bool,
             }
         """
+        # base_problem_id 해결 (FK 제약 충족용)
+        base_problem_id = self.resolve_base_problem_id(problem_id, "puzzle")
+        cache_problem_id = base_problem_id or problem_id  # FK용 ID 또는 폴백
+
+        if not base_problem_id:
+            print(f"[HintService] ⚠ Could not resolve base_problem_id for puzzle/{problem_id[:8]}...")
+
         # 블록 정보 가져오기
         if not blocks:
             puzzle_problem = self.get_puzzle_problem(problem_id)
@@ -408,9 +517,9 @@ class HintService:
                 "from_cache": False,
             }
 
-        # 1. 캐시에서 힌트 조회
+        # 1. 캐시에서 힌트 조회 (base_problem_id 사용)
         cached = self.get_cached_hint(
-            problem_id=problem_id,
+            problem_id=cache_problem_id,
             problem_type="puzzle",
             hint_index=block_index,
         )
@@ -432,13 +541,16 @@ class HintService:
             all_blocks=blocks,
         )
 
-        # 캐시에 저장
-        self.save_hint_to_cache(
-            problem_id=problem_id,
-            problem_type="puzzle",
-            hint_index=block_index,
-            hint_content=hint_content,
-        )
+        # 캐시에 저장 (base_problem_id가 있을 때만 - FK 제약)
+        if base_problem_id:
+            self.save_hint_to_cache(
+                problem_id=base_problem_id,
+                problem_type="puzzle",
+                hint_index=block_index,
+                hint_content=hint_content,
+            )
+        else:
+            print(f"[HintService] ⚠ Skipping cache save - no base_problem_id for puzzle/{problem_id[:8]}...")
 
         return {
             "hint_index": block_index,
@@ -521,6 +633,13 @@ class HintService:
                 from_cache: bool,
             }
         """
+        # base_problem_id 해결 (FK 제약 충족용)
+        base_problem_id = self.resolve_base_problem_id(problem_id, "guided")
+        cache_problem_id = base_problem_id or problem_id  # FK용 ID 또는 폴백
+
+        if not base_problem_id:
+            print(f"[HintService] ⚠ Could not resolve base_problem_id for guided/{problem_id[:8]}...")
+
         # 단계 정보 가져오기
         if not steps:
             guided_problem = self.get_guided_problem(problem_id)
@@ -536,9 +655,9 @@ class HintService:
                 "from_cache": False,
             }
 
-        # 1. 캐시에서 힌트 조회
+        # 1. 캐시에서 힌트 조회 (base_problem_id 사용)
         cached = self.get_cached_hint(
-            problem_id=problem_id,
+            problem_id=cache_problem_id,
             problem_type="guided",
             hint_index=step_index,
         )
@@ -560,13 +679,16 @@ class HintService:
             all_steps=steps,
         )
 
-        # 캐시에 저장
-        self.save_hint_to_cache(
-            problem_id=problem_id,
-            problem_type="guided",
-            hint_index=step_index,
-            hint_content=hint_content,
-        )
+        # 캐시에 저장 (base_problem_id가 있을 때만 - FK 제약)
+        if base_problem_id:
+            self.save_hint_to_cache(
+                problem_id=base_problem_id,
+                problem_type="guided",
+                hint_index=step_index,
+                hint_content=hint_content,
+            )
+        else:
+            print(f"[HintService] ⚠ Skipping cache save - no base_problem_id for guided/{problem_id[:8]}...")
 
         return {
             "hint_index": step_index,

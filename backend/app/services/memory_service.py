@@ -16,8 +16,8 @@ class MemoryService:
     """사용자 세션 메모리 관리 서비스"""
 
     def __init__(self):
-        from ..database import get_db_sync
-        self.supabase = get_db_sync()
+        from ..database import get_supabase_client
+        self.supabase = get_supabase_client()
 
     async def create_problem_session_memory(
         self,
@@ -32,6 +32,7 @@ class MemoryService:
         hints_used: int = 0,
         time_spent: int = 0,
         attempt_count: int = 1,
+        attempt_id: Optional[str] = None,  # attempt 참조 (추가)
     ) -> Optional[str]:
         """
         문제 풀이 세션 메모리 생성
@@ -48,6 +49,7 @@ class MemoryService:
             hints_used: 힌트 사용 횟수
             time_spent: 풀이 시간 (초)
             attempt_count: 시도 횟수
+            attempt_id: 시도 ID (attempts 테이블 참조)
 
         Returns:
             생성된 메모리 ID 또는 None
@@ -96,6 +98,9 @@ class MemoryService:
                 "concepts_learned": concepts_learned,
                 "concepts_struggling": concepts_struggling,
                 "teaching_notes": teaching_notes,
+                # attempt 참조 (있으면 저장)
+                "attempt_id": attempt_id,
+                # 비정규화 필드 (빠른 조회용, attempt에서도 조회 가능)
                 "problem_id": problem_id,
                 "problem_name": problem_name,
                 "problem_type": problem_type,
