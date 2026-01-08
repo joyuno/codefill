@@ -98,8 +98,6 @@ class MemoryService:
                 "concepts_learned": concepts_learned,
                 "concepts_struggling": concepts_struggling,
                 "teaching_notes": teaching_notes,
-                # attempt 참조 (있으면 저장)
-                "attempt_id": attempt_id,
                 # 비정규화 필드 (빠른 조회용, attempt에서도 조회 가능)
                 "problem_id": problem_id,
                 "problem_name": problem_name,
@@ -112,6 +110,9 @@ class MemoryService:
                 "student_mood": student_mood,
                 "conversation_tone": "encouraging" if was_successful else "supportive",
             }
+
+            # attempt_id는 컬럼이 있을 때만 포함 (스키마 호환성)
+            # 현재 테이블에 attempt_id 컬럼이 없으므로 제외
 
             # DB 저장
             result = self.supabase.table("user_memories").insert(memory_data).execute()
