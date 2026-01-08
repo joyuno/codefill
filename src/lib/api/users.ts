@@ -367,6 +367,18 @@ export interface PublicBadge {
   rarity: string;
 }
 
+export interface PublicActivityData {
+  days: ActivityDay[];
+  totalDays: number;
+}
+
+export interface PublicProfileAll {
+  profile: PublicProfile;
+  badges: PublicBadge[];
+  farm: PublicFarm;
+  activity: PublicActivityData;
+}
+
 // =====================================================
 // Public Profile API (인증 불필요)
 // =====================================================
@@ -438,5 +450,57 @@ export const publicProfileApi = {
     const response = await api.get<DateActivityDetail>(`/users/${encodeURIComponent(username)}/public-activity/${date}`, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
+  },
+
+  /**
+   * Get all public profile data in a single API call (권장)
+   * Replaces: getProfile + getStats + getBadges + getFarm + getActivity
+   * 한 번의 API 호출로 모든 데이터 조회 - username lookup 1회만 수행
+   */
+  async getAll(username: string, days: number = 365): Promise<PublicProfileAll> {
+    const response = await api.get<{
+      profile: {
+        id: string;
+        username: string;
+        avatarUrl: string | null;
+        avatarColor: string;
+        level: number;
+        currentXP: number;
+        requiredXP: number;
+        totalXP: number;
+        solvedCount: number;
+        streak: number;
+        joinedAt: string;
+      };
+      badges: Array<{
+        id: string;
+        name: string;
+        icon: string;
+        icon_url?: string;
+        description: string;
+        rarity: string;
+      }>;
+      farm: PublicFarm;
+      activity: PublicActivityData;
+    }>(`/users/${encodeURIComponent(username)}/public-all?days=${days}`, false);
+
+    if (response.error) throw new Error(response.error.message);
+
+    const data = response.data!;
+
+    // Transform backend response to frontend types
+    return {
+      profile: data.profile,
+      badges: (data.badges || []).map(b => ({
+        id: b.id,
+        name: b.name,
+        icon: b.icon,
+        iconUrl: b.icon_url,
+        description: b.description,
+        rarity: b.rarity,
+      })),
+      farm: data.farm,
+      activity: data.activity,
+    };
   },
 };

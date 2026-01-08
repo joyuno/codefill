@@ -305,3 +305,17 @@ class PublicBadge(BaseModel):
     icon_url: Optional[str] = None
     description: str
     rarity: str = "common"
+
+
+class PublicActivityData(BaseModel):
+    """공개 활동 데이터 (잔디)."""
+    days: List[DailyActivity] = []
+    totalDays: int = 0
+
+
+class PublicProfileAll(BaseModel):
+    """공개 프로필 통합 응답 - 모든 public 데이터를 한 번에."""
+    profile: PublicProfile
+    badges: List[PublicBadge] = []
+    farm: PublicFarm
+    activity: PublicActivityData

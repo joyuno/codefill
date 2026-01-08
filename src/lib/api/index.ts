@@ -153,3 +153,21 @@ export {
   type SyncSolvedAcResponse,
   type TierInfo,
 } from './solvedac';
+export {
+  analysisApi,
+  type TopicScore,
+  type StatsSnapshot,
+  type RecommendedProblem,
+  type AnalysisReport,
+  type AnalysisReportResponse,
+} from './analysis';
+export {
+  rankingApi,
+} from './ranking';
+export type {
+  RankingPeriod,
+  RankingType,
+  RankingItem,
+  RankingListResponse,
+  MyRankingSummary,
+} from './ranking';

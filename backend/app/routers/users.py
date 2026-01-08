@@ -32,6 +32,8 @@ from ..models.user import (
     PublicFarmCharacter,
     PublicFarmSlot,
     PublicBadge,
+    PublicActivityData,
+    PublicProfileAll,
 )
 
 router = APIRouter()
@@ -1331,4 +1333,165 @@ async def get_public_badges(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get public badges: {str(e)}"
+        )
+
+
+@router.get("/{username}/public-all", response_model=PublicProfileAll)
+async def get_public_profile_all(
+    username: str,
+    days: int = 365,
+    db=Depends(get_db)
+):
+    """
+    Get all public profile data in a single request. No auth required.
+
+    Combines: profile, badges, farm, activity into one response.
+    This is optimized to reduce multiple API calls and DB queries.
+    """
+    try:
+        from datetime import datetime, timedelta
+
+        # 1. 사용자 조회 (한 번만!)
+        user = get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="사용자를 찾을 수 없습니다."
+            )
+
+        user_id = user["id"]
+
+        # 2. 모든 데이터 병렬 조회 (동일 user_id 사용)
+        # 2-1. Stats
+        stats_result = db.table("user_stats")\
+            .select("level, total_xp, problems_solved, current_streak")\
+            .eq("user_id", str(user_id))\
+            .single()\
+            .execute()
+        stats_data = stats_result.data or {}
+
+        level = stats_data.get("level", 1)
+        total_xp = stats_data.get("total_xp", 0)
+
+        # 2-2. Badges
+        badges_result = db.table("user_badges")\
+            .select("*, badges(*)")\
+            .eq("user_id", str(user_id))\
+            .execute()
+
+        icon_map = {
+            "first_problem": "🎯",
+            "streak_7": "🔥",
+            "streak_30": "🏆",
+            "streak_100": "👑",
+            "problems_50": "💪",
+            "problems_100": "🎖️",
+            "level_10": "⭐",
+            "level_50": "🌟",
+        }
+
+        badges = []
+        for badge_entry in (badges_result.data or []):
+            badge_data = badge_entry.get("badges", {}) or {}
+            code = badge_data.get("code", "")
+            badges.append(PublicBadge(
+                id=str(badge_data.get("id", "")),
+                name=badge_data.get("name", "Badge"),
+                icon=icon_map.get(code, "🏅"),
+                icon_url=badge_data.get("icon_url"),
+                description=badge_data.get("description", ""),
+                rarity=badge_data.get("rarity", "common"),
+            ))
+
+        # 2-3. Farm (user_farm 테이블 사용)
+        farm = PublicFarm(hasCharacter=False)
+        try:
+            farm_result = db.table("user_farm")\
+                .select("id, farm_level, gold, character_data, farm_slots")\
+                .eq("user_id", str(user_id))\
+                .single()\
+                .execute()
+
+            if farm_result.data:
+                farm_data = farm_result.data
+                character_data = farm_data.get("character_data")
+
+                if character_data:
+                    # farm_slots는 JSONB 컬럼
+                    farm_slots_json = farm_data.get("farm_slots") or []
+                    slots = [PublicFarmSlot(
+                        slotIndex=slot.get("slot", 0),
+                        cropType=slot.get("crop_code"),
+                        stage=slot.get("stage", 0),
+                        isReady=slot.get("stage", 0) >= 4,
+                    ) for slot in farm_slots_json]
+
+                    farm = PublicFarm(
+                        hasCharacter=True,
+                        character=PublicFarmCharacter(
+                            name=character_data.get("name", "Farmer"),
+                            hair=character_data.get("hair", "short"),
+                            hairColor=character_data.get("hair_color", "#8B4513"),
+                            face=character_data.get("face", "happy"),
+                            outfit=character_data.get("outfit", "basic"),
+                            outfitColor=character_data.get("outfit_color", "#4A90D9"),
+                            farmName=character_data.get("farm_name", "My Farm"),
+                        ),
+                        farmLevel=farm_data.get("farm_level", 1),
+                        gold=farm_data.get("gold", 0),
+                        slots=slots,
+                    )
+        except Exception:
+            pass  # Farm이 없으면 기본값 사용
+
+        # 2-4. Activity (365 days)
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        activity_result = db.table("daily_activity")\
+            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, bug_count, output_count, refactor_count")\
+            .eq("user_id", str(user_id))\
+            .gte("activity_date", start_date)\
+            .order("activity_date", desc=False)\
+            .execute()
+
+        activity_days = [DailyActivity(
+            date=item["activity_date"],
+            problems_solved=item.get("problems_solved", 0),
+            xp_earned=item.get("xp_earned", 0),
+            time_spent=item.get("time_spent", 0),
+            blank_count=item.get("blank_count", 0),
+            bug_count=item.get("bug_count", 0),
+            output_count=item.get("output_count", 0),
+            refactor_count=item.get("refactor_count", 0),
+        ) for item in (activity_result.data or [])]
+
+        # 3. 통합 응답 구성
+        return PublicProfileAll(
+            profile=PublicProfile(
+                id=str(user_id),
+                username=user.get("name", "User"),
+                avatarUrl=user.get("avatar_url"),
+                avatarColor="hsl(142, 71%, 45%)",
+                level=level,
+                currentXP=calculate_current_xp(total_xp, level),
+                requiredXP=calculate_required_xp(level),
+                totalXP=total_xp,
+                solvedCount=stats_data.get("problems_solved", 0),
+                streak=stats_data.get("current_streak", 0),
+                joinedAt=user.get("created_at", ""),
+            ),
+            badges=badges,
+            farm=farm,
+            activity=PublicActivityData(
+                days=activity_days,
+                totalDays=len(activity_days),
+            ),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get public profile: {str(e)}"
         )
