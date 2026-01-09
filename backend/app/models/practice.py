@@ -176,6 +176,19 @@ class RecordSubmission(BaseModel):
     submitted_code: Optional[str] = None  # 제출한 코드 (guided/코드 제출용)
     session_id: Optional[str] = None  # 세션 ID (세션 추적용)
 
+    # ============================================================
+    # 상세 기록용 필드 (attempt_details 테이블)
+    # ============================================================
+    # Blank 유형: 사용자 답변 정보
+    blank_answers: Optional[Dict[str, str]] = None  # {blank_id: user_answer}
+    blank_correct_answers: Optional[Dict[str, str]] = None  # {blank_id: correct_answer}
+    blank_results: Optional[Dict[str, bool]] = None  # {blank_id: is_correct}
+
+    # Puzzle 유형: 블록 순서 정보
+    puzzle_user_order: Optional[List[str]] = None  # 사용자가 배치한 블록 순서
+    puzzle_correct_order: Optional[List[str]] = None  # 정답 블록 순서
+    puzzle_wrong_positions: Optional[List[int]] = None  # 틀린 위치들
+
 
 class FeedbackData(BaseModel):
     """피드백 데이터 (record_solve 응답용)."""

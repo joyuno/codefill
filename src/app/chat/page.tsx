@@ -583,6 +583,11 @@ function ChatPageContent() {
             const timeSpentSeconds = solveStartTime
               ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
               : 0;
+            // ✅ 빈칸 정답 맵 구성 (blank_id -> correct_answer)
+            const blankCorrectAnswers: Record<string, string> = {};
+            (problem.blanks || []).forEach(blank => {
+              blankCorrectAnswers[blank.id] = blank.answer;
+            });
             const recordResult = await practiceApi.recordSolve({
               problemId: problem.id,
               baseProblemId: problem.baseProblemId || problem.originalId,
@@ -597,6 +602,10 @@ function ChatPageContent() {
               sessionId: sessionId || undefined,
               hintsUsed: previousHints.length,
               topics: problem.topics,
+              // ✅ attempt_details 상세 기록용 필드
+              blankAnswers: answers,  // 사용자 답변
+              blankCorrectAnswers,     // 정답
+              blankResults: result.results,  // 빈칸별 결과
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
@@ -631,6 +640,11 @@ function ChatPageContent() {
           const timeSpentSeconds = solveStartTime
             ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
             : 0;
+          // ✅ 빈칸 정답 맵 구성 (blank_id -> correct_answer)
+          const blankCorrectAnswers: Record<string, string> = {};
+          (problem.blanks || []).forEach(blank => {
+            blankCorrectAnswers[blank.id] = blank.answer;
+          });
           const recordResult = await practiceApi.recordSolve({
             problemId: problem.id,
             baseProblemId: problem.baseProblemId || problem.originalId,
@@ -645,6 +659,10 @@ function ChatPageContent() {
             sessionId: sessionId || undefined,
             hintsUsed: previousHints.length,
             topics: problem.topics,
+            // ✅ attempt_details 상세 기록용 필드
+            blankAnswers: answers,
+            blankCorrectAnswers,
+            blankResults: mockResults,
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
@@ -690,6 +708,16 @@ function ChatPageContent() {
             const timeSpentSeconds = solveStartTime
               ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
               : 0;
+            // ✅ 퍼즐 순서 정보 구성
+            const puzzleUserOrder = blockOrder.map(b => b.id);
+            const puzzleCorrectOrder = problem.correctOrder || (problem.puzzleBlocks || []).map(b => b.id);
+            // 틀린 위치 계산
+            const puzzleWrongPositions: number[] = [];
+            puzzleUserOrder.forEach((id, idx) => {
+              if (puzzleCorrectOrder[idx] !== id) {
+                puzzleWrongPositions.push(idx);
+              }
+            });
             const recordResult = await practiceApi.recordSolve({
               problemId: problem.id,
               baseProblemId: problem.baseProblemId || problem.originalId,
@@ -704,6 +732,10 @@ function ChatPageContent() {
               sessionId: sessionId || undefined,
               hintsUsed: previousHints.length,
               topics: problem.topics,
+              // ✅ attempt_details 상세 기록용 필드
+              puzzleUserOrder,
+              puzzleCorrectOrder,
+              puzzleWrongPositions,
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
@@ -734,6 +766,9 @@ function ChatPageContent() {
           const timeSpentSeconds = solveStartTime
             ? Math.floor((new Date().getTime() - solveStartTime.getTime()) / 1000)
             : 0;
+          // ✅ 퍼즐 순서 정보 구성
+          const puzzleUserOrder = blockOrder.map(b => b.id);
+          const puzzleCorrectOrder = problem.correctOrder || (problem.puzzleBlocks || []).map(b => b.id);
           const recordResult = await practiceApi.recordSolve({
             problemId: problem.id,
             baseProblemId: problem.baseProblemId || problem.originalId,
@@ -748,6 +783,9 @@ function ChatPageContent() {
             sessionId: sessionId || undefined,
             hintsUsed: previousHints.length,
             topics: problem.topics,
+            // ✅ attempt_details 상세 기록용 필드
+            puzzleUserOrder,
+            puzzleCorrectOrder,
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);

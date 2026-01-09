@@ -1847,7 +1847,7 @@ export function UnifiedPractice({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={runAllTestCases}
+                onClick={() => runAllTestCases()}
                 disabled={isRunning || isSubmitted}
               >
                 <Play className="mr-2 h-4 w-4" />

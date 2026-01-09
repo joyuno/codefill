@@ -150,12 +150,14 @@ class FeedbackService:
             return None
 
     def get_previous_attempts(self, user_id: str, problem_id: str) -> List[Dict[str, Any]]:
-        """이전 시도들 조회"""
+        """이전 시도들 조회 (base_problem_id 기준)"""
         try:
+            # problem_id에서 base_problem_id 추출 (UUID 또는 복합 ID 형태 처리)
+            base_problem_id = problem_id
             result = self.supabase.table("attempts") \
                 .select("id, is_correct, hints_used, submitted_at") \
                 .eq("user_id", user_id) \
-                .eq("problem_id", problem_id) \
+                .eq("base_problem_id", base_problem_id) \
                 .order("submitted_at") \
                 .execute()
             return result.data if result.data else []
@@ -168,12 +170,13 @@ class FeedbackService:
     # ============================================================
 
     def _get_next_attempt_number(self, user_id: str, problem_id: str) -> int:
-        """동일 문제에 대한 다음 시도 번호 계산"""
+        """동일 문제에 대한 다음 시도 번호 계산 (base_problem_id 기준)"""
         try:
+            base_problem_id = problem_id
             result = self.supabase.table("attempts")\
                 .select("attempt_number")\
                 .eq("user_id", user_id)\
-                .eq("problem_id", problem_id)\
+                .eq("base_problem_id", base_problem_id)\
                 .order("attempt_number", desc=True)\
                 .limit(1)\
                 .execute()
@@ -204,7 +207,7 @@ class FeedbackService:
 
             data = {
                 "user_id": user_id,
-                "problem_id": problem_id,
+                "base_problem_id": problem_id,  # base_problem_id 컬럼 사용
                 "is_correct": is_correct,
                 "score": score,
                 "submitted_code": submitted_code,
@@ -249,6 +252,8 @@ class FeedbackService:
         problem_info: Optional[Dict[str, Any]] = None,
         problem_type: str = "blank",
         attempt_count: Optional[int] = None,
+        attempt_id: Optional[str] = None,  # attempts 테이블 ID
+        base_problem_id: Optional[str] = None,  # base_problems 테이블 ID
     ) -> Dict[str, Any]:
         """
         문제 풀이 피드백 생성
@@ -263,6 +268,8 @@ class FeedbackService:
             problem_info: 추가 문제 정보
             problem_type: 문제 유형 (blank/puzzle/guided)
             attempt_count: 시도 횟수 (없으면 DB에서 조회)
+            attempt_id: attempts 테이블의 ID
+            base_problem_id: base_problems 테이블의 ID
 
         Returns:
             피드백 응답 딕셔너리
@@ -386,6 +393,8 @@ class FeedbackService:
                 difficulty=difficulty,
                 problem_type=problem_type,
                 topics=topics,
+                attempt_id=attempt_id,
+                base_problem_id=base_problem_id,
             )
 
             logger.info(f"[FeedbackService] Feedback generated: grade={result['grade']}, avg_score={avg_score}")
@@ -415,12 +424,13 @@ class FeedbackService:
         return "\n".join(lines)
 
     def _analyze_wrong_attempts(self, user_id: str, problem_id: str) -> str:
-        """틀린 시도 분석 (간단 버전)"""
+        """틀린 시도 분석 (간단 버전) - base_problem_id 기준"""
         try:
+            base_problem_id = problem_id
             result = self.supabase.table("attempts") \
                 .select("submitted_answer, submitted_at") \
                 .eq("user_id", user_id) \
-                .eq("problem_id", problem_id) \
+                .eq("base_problem_id", base_problem_id) \
                 .eq("is_correct", False) \
                 .order("submitted_at") \
                 .limit(5) \
@@ -508,6 +518,8 @@ class FeedbackService:
         difficulty: str,
         problem_type: str,
         topics: List[str],
+        attempt_id: Optional[str] = None,  # 직접 전달받음
+        base_problem_id: Optional[str] = None,  # base_problems.id
     ) -> bool:
         """
         🚀 피드백 결과를 feedback_history 테이블에 저장
@@ -521,19 +533,23 @@ class FeedbackService:
         try:
             avg_score = (scores["efficiency_score"] + scores["speed_score"] + scores["understanding_score"]) // 3
 
-            # 최근 attempt_id 조회
-            attempt_result = self.supabase.table("attempts") \
-                .select("id") \
-                .eq("user_id", user_id) \
-                .order("created_at", desc=True) \
-                .limit(1) \
-                .execute()
-
-            attempt_id = attempt_result.data[0]["id"] if attempt_result.data else None
+            # attempt_id가 없으면 최근 attempt 조회 (fallback)
+            if not attempt_id:
+                attempt_result = self.supabase.table("attempts") \
+                    .select("id, base_problem_id") \
+                    .eq("user_id", user_id) \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
+                if attempt_result.data:
+                    attempt_id = attempt_result.data[0]["id"]
+                    if not base_problem_id:
+                        base_problem_id = attempt_result.data[0].get("base_problem_id")
 
             feedback_data = {
                 "user_id": user_id,
-                "problem_id": problem_id,
+                "problem_id": problem_id,  # 레거시 호환
+                "base_problem_id": base_problem_id,  # 새로운 FK
                 "attempt_id": attempt_id,
                 # 등급 정보
                 "grade": result.get("grade", "learning"),
@@ -557,6 +573,7 @@ class FeedbackService:
                 "topics": topics,
             }
 
+            logger.info(f"[FeedbackService] Saving feedback_history: attempt_id={attempt_id}, base_problem_id={base_problem_id}, type={problem_type}")
             self.supabase.table("feedback_history").insert(feedback_data).execute()
 
             logger.info(f"[FeedbackService] Feedback history saved for user={user_id}, grade={result.get('grade')}")
@@ -675,6 +692,9 @@ class FeedbackService:
         problem_topics: List[str],
         difficulty: str,
         is_correct: bool,
+        problem_type: Optional[str] = None,  # 문제 유형 (blank/puzzle/guided)
+        time_spent: Optional[int] = None,     # 풀이 시간 (초)
+        hints_used: Optional[int] = None,     # 힌트 사용 횟수
     ) -> Dict[str, Any]:
         """
         사용자 스킬 프로필 업데이트 (ELO-like 알고리즘)
@@ -684,6 +704,9 @@ class FeedbackService:
             problem_topics: 문제 토픽 목록
             difficulty: 난이도 (easy/medium/hard/very_hard)
             is_correct: 정답 여부
+            problem_type: 문제 유형 (blank/puzzle/guided)
+            time_spent: 풀이 시간 (초)
+            hints_used: 힌트 사용 횟수
 
         Returns:
             업데이트된 스킬 정보
@@ -740,8 +763,50 @@ class FeedbackService:
             strong_topics = [t for t, s in skill_by_topic.items() if s > 0.7]
 
             # 5. 문제 유형별 통계 업데이트
-            stats_by_type = profile.get("stats_by_problem_type", {})
-            # (문제 유형은 이 함수에서 받지 않으므로 기존 값 유지)
+            stats_by_type = profile.get("stats_by_problem_type", {}) or {}
+            if problem_type:
+                if problem_type not in stats_by_type:
+                    stats_by_type[problem_type] = {"success": 0, "total": 0, "total_time": 0, "total_hints": 0}
+                stats_by_type[problem_type]["total"] += 1
+                if is_correct:
+                    stats_by_type[problem_type]["success"] += 1
+                if time_spent:
+                    stats_by_type[problem_type]["total_time"] = stats_by_type[problem_type].get("total_time", 0) + time_spent
+                if hints_used is not None:
+                    stats_by_type[problem_type]["total_hints"] = stats_by_type[problem_type].get("total_hints", 0) + hints_used
+                # 평균 계산
+                total_count = stats_by_type[problem_type]["total"]
+                if total_count > 0:
+                    stats_by_type[problem_type]["avg_time"] = round(stats_by_type[problem_type].get("total_time", 0) / total_count)
+                    stats_by_type[problem_type]["avg_hints"] = round(stats_by_type[problem_type].get("total_hints", 0) / total_count, 2)
+
+            # 5b. 전체 평균 풀이 시간/힌트 계산
+            total_time = sum(s.get("total_time", 0) for s in stats_by_type.values())
+            total_hints = sum(s.get("total_hints", 0) for s in stats_by_type.values())
+            total_count = sum(s.get("total", 0) for s in stats_by_type.values())
+            avg_solve_time = round(total_time / total_count) if total_count > 0 else None
+            avg_hints_per = round(total_hints / total_count, 2) if total_count > 0 else None
+
+            # 5c. 선호 문제 유형 (가장 많이 푼 유형)
+            preferred_type = None
+            if stats_by_type:
+                preferred_type = max(stats_by_type.keys(), key=lambda k: stats_by_type[k].get("total", 0))
+
+            # 5d. Streak 계산
+            current_streak = profile.get("current_streak", 0) or 0
+            longest_streak = profile.get("longest_streak", 0) or 0
+            if is_correct:
+                current_streak += 1
+                longest_streak = max(longest_streak, current_streak)
+            else:
+                current_streak = 0
+
+            # 5e. 총 문제 수 추적
+            total_problems_attempted = profile.get("total_problems_attempted", 0) or 0
+            total_problems_solved = profile.get("total_problems_solved", 0) or 0
+            total_problems_attempted += 1
+            if is_correct:
+                total_problems_solved += 1
 
             # 6. 최근 토픽/난이도 추적
             recent_topics = profile.get("recent_topics", []) or []
@@ -759,8 +824,6 @@ class FeedbackService:
             recent_difficulties = recent_difficulties[:10]
 
             # 7. DB 업데이트 (upsert)
-            # NOTE: total_problems_attempted, total_problems_solved는 user_stats에서 관리
-            #       (increment_user_stats RPC로 업데이트됨)
             update_data = {
                 "user_id": user_id,
                 "skill_by_topic": skill_by_topic,
@@ -769,8 +832,21 @@ class FeedbackService:
                 "strong_topics": strong_topics[:10],
                 "recent_topics": recent_topics,
                 "recent_difficulties": recent_difficulties,
+                # 새로운 필드들 추가
+                "stats_by_problem_type": stats_by_type,
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+                "total_problems_attempted": total_problems_attempted,
+                "total_problems_solved": total_problems_solved,
                 "updated_at": "now()",
             }
+            # Optional 필드들 (None이 아닐 때만)
+            if preferred_type:
+                update_data["preferred_problem_type"] = preferred_type
+            if avg_solve_time is not None:
+                update_data["avg_solve_time_seconds"] = avg_solve_time
+            if avg_hints_per is not None:
+                update_data["avg_hints_per_problem"] = avg_hints_per
 
             self.supabase.table("user_skill_profiles") \
                 .upsert(update_data, on_conflict="user_id") \
@@ -787,6 +863,390 @@ class FeedbackService:
         except Exception as e:
             logger.error(f"[FeedbackService] Failed to update skill profile: {e}")
             return {"skill_by_topic": {}, "weak_topics": [], "error": str(e)}
+
+    async def recalculate_skill_profile_from_history(
+        self,
+        user_id: str,
+        force_llm_analysis: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        🚀 히스토리 테이블 기반 user_skill_profiles 전체 재계산
+
+        attempts, user_memories 테이블을 분석하여 모든 컬럼을 채웁니다.
+        10개 이상 문제를 풀었을 때 LLM으로 learning_style, common_error_patterns 분석.
+
+        Args:
+            user_id: 사용자 UUID
+            force_llm_analysis: True면 10개 미만이어도 LLM 분석 실행
+
+        Returns:
+            업데이트된 스킬 프로필 정보
+        """
+        try:
+            logger.info(f"[FeedbackService] Recalculating skill profile for user {user_id[:8]}...")
+
+            # ============================================================
+            # 1. attempts 테이블에서 모든 시도 조회
+            # ============================================================
+            attempts_result = self.supabase.table("attempts") \
+                .select("*, base_problems(tags, difficulty, problem_type)") \
+                .eq("user_id", user_id) \
+                .order("created_at") \
+                .execute()
+
+            attempts = attempts_result.data or []
+            total_attempted = len(attempts)
+
+            if total_attempted == 0:
+                logger.info(f"[FeedbackService] No attempts found for user {user_id[:8]}")
+                return {"error": "No attempts found", "total_attempted": 0}
+
+            # ============================================================
+            # 2. 기본 통계 계산
+            # ============================================================
+            total_solved = sum(1 for a in attempts if a.get("is_correct"))
+            total_time = sum(a.get("time_spent", 0) or 0 for a in attempts)
+            total_hints = sum(a.get("hints_used", 0) or 0 for a in attempts)
+
+            avg_solve_time = round(total_time / total_attempted) if total_attempted > 0 else 0
+            avg_hints_per = round(total_hints / total_attempted, 2) if total_attempted > 0 else 0
+
+            # ============================================================
+            # 3. 문제 유형별 통계
+            # ============================================================
+            stats_by_type = {}
+            skill_by_topic = {}
+            success_rate_by_difficulty = {}
+            languages_used = {}
+
+            for attempt in attempts:
+                is_correct = attempt.get("is_correct", False)
+                time_spent = attempt.get("time_spent", 0) or 0
+                hints_used = attempt.get("hints_used", 0) or 0
+
+                # base_problems에서 정보 추출
+                base_problem = attempt.get("base_problems") or {}
+                problem_type = base_problem.get("problem_type", "unknown")
+                difficulty = base_problem.get("difficulty", "medium")
+                tags = base_problem.get("tags", []) or []
+
+                # 3a. 문제 유형별 통계
+                if problem_type not in stats_by_type:
+                    stats_by_type[problem_type] = {
+                        "success": 0, "total": 0,
+                        "total_time": 0, "total_hints": 0
+                    }
+                stats_by_type[problem_type]["total"] += 1
+                if is_correct:
+                    stats_by_type[problem_type]["success"] += 1
+                stats_by_type[problem_type]["total_time"] += time_spent
+                stats_by_type[problem_type]["total_hints"] += hints_used
+
+                # 3b. 난이도별 성공률
+                if difficulty not in success_rate_by_difficulty:
+                    success_rate_by_difficulty[difficulty] = {"success": 0, "total": 0}
+                success_rate_by_difficulty[difficulty]["total"] += 1
+                if is_correct:
+                    success_rate_by_difficulty[difficulty]["success"] += 1
+
+                # 3c. 토픽별 스킬 (ELO-like)
+                for topic in tags:
+                    if not topic:
+                        continue
+                    current_skill = skill_by_topic.get(topic, 0.5)
+                    if is_correct:
+                        new_skill = current_skill + 0.05 * (1 - current_skill)
+                    else:
+                        new_skill = current_skill - 0.03 * current_skill
+                    skill_by_topic[topic] = round(max(0.0, min(1.0, new_skill)), 3)
+
+                # 3d. 언어 사용 통계 (submitted_code에서 추론)
+                submitted_code = attempt.get("submitted_code", "")
+                if submitted_code:
+                    if "def " in submitted_code or "import " in submitted_code:
+                        languages_used["python"] = languages_used.get("python", 0) + 1
+                    elif "function " in submitted_code or "const " in submitted_code:
+                        languages_used["javascript"] = languages_used.get("javascript", 0) + 1
+                    elif "public class " in submitted_code or "void " in submitted_code:
+                        languages_used["java"] = languages_used.get("java", 0) + 1
+
+            # 문제 유형별 평균 계산
+            for ptype, stats in stats_by_type.items():
+                count = stats["total"]
+                if count > 0:
+                    stats["avg_time"] = round(stats["total_time"] / count)
+                    stats["avg_hints"] = round(stats["total_hints"] / count, 2)
+                    stats["success_rate"] = round(stats["success"] / count, 2)
+
+            # ============================================================
+            # 4. 선호 문제 유형/언어
+            # ============================================================
+            preferred_type = max(stats_by_type.keys(), key=lambda k: stats_by_type[k]["total"]) if stats_by_type else None
+            preferred_language = max(languages_used.keys(), key=lambda k: languages_used[k]) if languages_used else None
+
+            # ============================================================
+            # 5. 약점/강점 토픽
+            # ============================================================
+            weak_topics = [t for t, s in skill_by_topic.items() if s < 0.4]
+            strong_topics = [t for t, s in skill_by_topic.items() if s > 0.7]
+
+            # ============================================================
+            # 6. user_memories에서 추가 분석
+            # ============================================================
+            memories_result = self.supabase.table("user_memories") \
+                .select("concepts_learned, concepts_struggling, teaching_notes") \
+                .eq("user_id", user_id) \
+                .execute()
+
+            memories = memories_result.data or []
+
+            # 메모리에서 집계
+            all_concepts_learned = []
+            all_concepts_struggling = []
+            all_teaching_notes = []
+
+            for mem in memories:
+                all_concepts_learned.extend(mem.get("concepts_learned") or [])
+                all_concepts_struggling.extend(mem.get("concepts_struggling") or [])
+                all_teaching_notes.extend(mem.get("teaching_notes") or [])
+
+            # 빈도 집계
+            from collections import Counter
+            learned_counter = Counter(all_concepts_learned)
+            struggling_counter = Counter(all_concepts_struggling)
+
+            # weak_topics 보완 (메모리 기반)
+            for topic, count in struggling_counter.most_common(10):
+                if topic and topic not in weak_topics:
+                    weak_topics.append(topic)
+
+            # strong_topics 보완 (메모리 기반)
+            for topic, count in learned_counter.most_common(10):
+                if topic and topic not in strong_topics:
+                    strong_topics.append(topic)
+
+            # ============================================================
+            # 7. Streak 계산 (연속 정답)
+            # ============================================================
+            current_streak = 0
+            longest_streak = 0
+            temp_streak = 0
+
+            for attempt in attempts:
+                if attempt.get("is_correct"):
+                    temp_streak += 1
+                    longest_streak = max(longest_streak, temp_streak)
+                else:
+                    temp_streak = 0
+
+            # 마지막 연속 정답 수
+            for attempt in reversed(attempts):
+                if attempt.get("is_correct"):
+                    current_streak += 1
+                else:
+                    break
+
+            # ============================================================
+            # 8. LLM 분석 (10개 이상 풀었을 때)
+            # ============================================================
+            learning_style = None
+            common_error_patterns = None
+
+            if total_solved >= 10 or force_llm_analysis:
+                logger.info(f"[FeedbackService] Running LLM analysis for user {user_id[:8]} (solved={total_solved})")
+                llm_analysis = await self._analyze_learning_patterns_with_llm(
+                    user_id=user_id,
+                    attempts=attempts,
+                    memories=memories,
+                    skill_by_topic=skill_by_topic,
+                    stats_by_type=stats_by_type,
+                )
+                learning_style = llm_analysis.get("learning_style")
+                common_error_patterns = llm_analysis.get("common_error_patterns")
+
+            # ============================================================
+            # 9. recent_topics, recent_difficulties (최근 20개)
+            # ============================================================
+            recent_attempts = attempts[-20:] if len(attempts) > 20 else attempts
+            recent_topics = []
+            recent_difficulties = []
+
+            for a in reversed(recent_attempts):
+                bp = a.get("base_problems") or {}
+                tags = bp.get("tags") or []
+                diff = bp.get("difficulty")
+                for t in tags:
+                    if t and t not in recent_topics:
+                        recent_topics.append(t)
+                if diff and diff not in recent_difficulties:
+                    recent_difficulties.append(diff)
+
+            recent_topics = recent_topics[:20]
+            recent_difficulties = recent_difficulties[:10]
+
+            # ============================================================
+            # 10. DB 업데이트 (upsert)
+            # ============================================================
+            update_data = {
+                "user_id": user_id,
+                # 기본 통계
+                "total_problems_attempted": total_attempted,
+                "total_problems_solved": total_solved,
+                "avg_solve_time_seconds": avg_solve_time,
+                "avg_hints_per_problem": avg_hints_per,
+                # 분석 결과
+                "skill_by_topic": skill_by_topic,
+                "success_rate_by_difficulty": success_rate_by_difficulty,
+                "stats_by_problem_type": stats_by_type,
+                # 선호도
+                "preferred_problem_type": preferred_type,
+                "preferred_language": preferred_language,
+                # 강점/약점
+                "weak_topics": weak_topics[:15],
+                "strong_topics": strong_topics[:15],
+                # 최근 활동
+                "recent_topics": recent_topics,
+                "recent_difficulties": recent_difficulties,
+                # Streak
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+                # 타임스탬프
+                "updated_at": "now()",
+            }
+
+            # LLM 분석 결과 (있을 때만)
+            if learning_style:
+                update_data["learning_style"] = learning_style
+            if common_error_patterns:
+                update_data["common_error_patterns"] = common_error_patterns
+
+            self.supabase.table("user_skill_profiles") \
+                .upsert(update_data, on_conflict="user_id") \
+                .execute()
+
+            logger.info(f"[FeedbackService] Skill profile recalculated: user={user_id[:8]}, attempted={total_attempted}, solved={total_solved}")
+
+            return {
+                "success": True,
+                "total_attempted": total_attempted,
+                "total_solved": total_solved,
+                "weak_topics": weak_topics[:5],
+                "strong_topics": strong_topics[:5],
+                "preferred_type": preferred_type,
+                "learning_style": learning_style,
+                "llm_analysis_run": total_solved >= 10 or force_llm_analysis,
+            }
+
+        except Exception as e:
+            logger.error(f"[FeedbackService] Failed to recalculate skill profile: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    async def _analyze_learning_patterns_with_llm(
+        self,
+        user_id: str,
+        attempts: List[Dict[str, Any]],
+        memories: List[Dict[str, Any]],
+        skill_by_topic: Dict[str, float],
+        stats_by_type: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        LLM을 사용하여 학습 패턴 분석
+
+        분석 항목:
+        - learning_style: 학습 스타일 (visual, textual, hands-on, etc.)
+        - common_error_patterns: 자주 하는 실수 패턴
+        """
+        try:
+            # 분석용 요약 데이터 구성
+            total_attempts = len(attempts)
+            correct_attempts = [a for a in attempts if a.get("is_correct")]
+            wrong_attempts = [a for a in attempts if not a.get("is_correct")]
+
+            # 힌트 사용 패턴
+            hint_heavy = sum(1 for a in attempts if (a.get("hints_used") or 0) >= 3)
+            no_hint = sum(1 for a in attempts if (a.get("hints_used") or 0) == 0)
+
+            # 시간 패턴
+            times = [a.get("time_spent", 0) or 0 for a in attempts if a.get("time_spent")]
+            avg_time = sum(times) / len(times) if times else 0
+            fast_solves = sum(1 for t in times if t < avg_time * 0.5)
+            slow_solves = sum(1 for t in times if t > avg_time * 1.5)
+
+            # 약점 토픽
+            weak_topics = [t for t, s in skill_by_topic.items() if s < 0.4][:5]
+
+            # 메모리에서 teaching_notes 추출
+            teaching_notes = []
+            for mem in memories:
+                notes = mem.get("teaching_notes") or []
+                teaching_notes.extend(notes)
+            teaching_notes = list(set(teaching_notes))[:10]
+
+            # 프롬프트 구성
+            analysis_prompt = f"""당신은 코딩 학습 분석 전문가입니다.
+다음 학습자의 데이터를 분석하여 학습 스타일과 실수 패턴을 파악해주세요.
+
+## 학습자 데이터 요약
+- 총 시도: {total_attempts}회
+- 정답: {len(correct_attempts)}회 ({round(len(correct_attempts)/total_attempts*100)}%)
+- 오답: {len(wrong_attempts)}회
+
+## 힌트 사용 패턴
+- 힌트 많이 사용 (3개+): {hint_heavy}회
+- 힌트 미사용: {no_hint}회
+
+## 풀이 시간 패턴
+- 평균 풀이 시간: {round(avg_time)}초
+- 빠른 풀이 (평균의 50% 미만): {fast_solves}회
+- 느린 풀이 (평균의 150% 이상): {slow_solves}회
+
+## 문제 유형별 통계
+{json.dumps(stats_by_type, ensure_ascii=False, indent=2)}
+
+## 약점 토픽
+{weak_topics if weak_topics else "아직 파악된 약점 없음"}
+
+## 교수 노트 (이전 세션에서 기록된 관찰)
+{teaching_notes if teaching_notes else "없음"}
+
+위 데이터를 분석하여 다음 JSON 형식으로 응답해주세요:
+{{
+    "learning_style": "학습 스타일 (예: 'methodical', 'exploratory', 'hint-dependent', 'independent', 'fast-learner', 'careful-thinker' 중 하나 또는 조합)",
+    "learning_style_description": "학습 스타일에 대한 1-2문장 설명",
+    "common_error_patterns": ["실수 패턴 1", "실수 패턴 2", ...],
+    "recommendations": ["학습 추천 1", "학습 추천 2"]
+}}
+"""
+
+            messages = [
+                {"role": "system", "content": "학습 분석 전문가입니다. JSON 형식으로만 응답합니다."},
+                {"role": "user", "content": analysis_prompt},
+            ]
+
+            response = await openrouter_service.chat_completion(
+                model=settings.llm_model_hint,  # 가벼운 모델 사용
+                messages=messages,
+                temperature=0.3,
+                response_format={"type": "json_object"},
+            )
+
+            content = openrouter_service.get_content(response)
+            result = openrouter_service.parse_json_response(content)
+
+            logger.info(f"[FeedbackService] LLM analysis completed: style={result.get('learning_style')}")
+
+            return {
+                "learning_style": result.get("learning_style"),
+                "learning_style_description": result.get("learning_style_description"),
+                "common_error_patterns": result.get("common_error_patterns", []),
+                "recommendations": result.get("recommendations", []),
+            }
+
+        except Exception as e:
+            logger.error(f"[FeedbackService] LLM analysis failed: {e}")
+            return {}
 
     async def save_attempt_with_skill_update(
         self,

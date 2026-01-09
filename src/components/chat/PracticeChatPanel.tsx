@@ -712,6 +712,7 @@ export function PracticeChatPanel({
         throw new Error('이 문제에는 솔루션 코드가 없어요. 다른 문제를 선택해주세요!');
       }
 
+      // implementation 타입은 LLM 호출 없이 처리되므로 request는 blank/puzzle/guided 전용
       const request = {
         base_problem: {
           ...selectedBaseProblem,
@@ -719,7 +720,7 @@ export function PracticeChatPanel({
           description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
         },
-        problem_type: type,
+        problem_type: type as 'blank' | 'puzzle' | 'guided',  // implementation은 별도 처리
         user_level: 'intermediate' as const,
         language: targetLanguage,
       };

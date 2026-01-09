@@ -54,6 +54,19 @@ export interface RecordSubmission {
   timeSpent?: number;    // 풀이 소요 시간 (초)
   submittedCode?: string; // 제출한 코드 (guided/코드 제출용)
   sessionId?: string;    // 세션 ID (세션 추적용)
+
+  // ============================================================
+  // 상세 기록용 필드 (attempt_details 테이블)
+  // ============================================================
+  // Blank 유형: 사용자 답변 정보
+  blankAnswers?: Record<string, string>;      // {blank_id: user_answer}
+  blankCorrectAnswers?: Record<string, string>; // {blank_id: correct_answer}
+  blankResults?: Record<string, boolean>;     // {blank_id: is_correct}
+
+  // Puzzle 유형: 블록 순서 정보
+  puzzleUserOrder?: string[];     // 사용자가 배치한 블록 순서
+  puzzleCorrectOrder?: string[];  // 정답 블록 순서
+  puzzleWrongPositions?: number[]; // 틀린 위치들
 }
 
 export interface RecordResult {
@@ -346,6 +359,13 @@ export const practiceApi = {
       time_spent: submission.timeSpent,  // 풀이 소요 시간 (초)
       submitted_code: submission.submittedCode,  // 제출한 코드
       session_id: submission.sessionId,  // 세션 ID
+      // ✅ attempt_details 상세 기록용 필드
+      blank_answers: submission.blankAnswers,
+      blank_correct_answers: submission.blankCorrectAnswers,
+      blank_results: submission.blankResults,
+      puzzle_user_order: submission.puzzleUserOrder,
+      puzzle_correct_order: submission.puzzleCorrectOrder,
+      puzzle_wrong_positions: submission.puzzleWrongPositions,
     });
     if (response.error) throw new Error(response.error.message);
     const data = response.data!;

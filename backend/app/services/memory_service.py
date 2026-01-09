@@ -98,8 +98,8 @@ class MemoryService:
                 "concepts_learned": concepts_learned,
                 "concepts_struggling": concepts_struggling,
                 "teaching_notes": teaching_notes,
-                # 비정규화 필드 (빠른 조회용, attempt에서도 조회 가능)
-                "problem_id": problem_id,
+                # 비정규화 필드 (빠른 조회용)
+                # problem_id는 삭제됨 - attempt_id를 통해 조회
                 "problem_name": problem_name,
                 "problem_type": problem_type,
                 "problem_difficulty": difficulty,
@@ -113,9 +113,12 @@ class MemoryService:
                 "duration_seconds": time_spent,  # time_spent와 동일
             }
 
-            # attempt_id 추가 (FK 참조)
+            # attempt_id 추가 (FK 참조) - 필수 필드
             if attempt_id:
                 memory_data["attempt_id"] = attempt_id
+                logger.info(f"[MemoryService] Including attempt_id: {attempt_id[:8]}...")
+            else:
+                logger.warning(f"[MemoryService] No attempt_id provided - memory will not have attempt reference")
 
             # DB 저장
             result = self.supabase.table("user_memories").insert(memory_data).execute()

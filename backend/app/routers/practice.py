@@ -59,6 +59,86 @@ def get_next_attempt_number(db, user_id: str, base_problem_id: str) -> int:
         return 1
 
 
+def format_submitted_answer(
+    problem_type: str,
+    blank_answers: dict = None,
+    puzzle_user_order: list = None,
+    submitted_code: str = None,
+) -> Optional[str]:
+    """
+    문제 유형별로 submitted_answer를 올바른 형식으로 변환합니다.
+
+    ⚠️ 중요: 이 함수는 사용자가 실제로 입력/제출한 값을 저장합니다.
+    정답을 복사하는 것이 아니라 사용자의 마지막 입력값을 저장합니다.
+    - 제출 없이 포기하면 NULL
+    - 오답이라도 마지막 제출값 저장
+    - 정답이면 당연히 저장
+
+    형식 (problems_blank.answers 구조 참고):
+    - blank: ["사용자입력1", "사용자입력2", ...]
+    - puzzle: [{"id": "...", "indentation": 0}, ...]
+    - guided: 제출한 코드 그대로
+
+    Returns:
+        str | None: 포맷된 사용자 입력, 입력 없으면 None
+    """
+    import json
+
+    print(f"[format_submitted_answer] type={problem_type}, blank_answers={blank_answers is not None}, puzzle_order={puzzle_user_order is not None}, code={submitted_code is not None}")
+
+    if problem_type == "blank":
+        if blank_answers and len(blank_answers) > 0:
+            # blank_answers: {"blank-0": "print", "blank-1": "map", ...}
+            # 정렬된 순서로 배열로 변환 (사용자가 입력한 값들)
+            sorted_keys = sorted(blank_answers.keys(), key=lambda k: int(k.split('-')[-1]) if '-' in k else 0)
+            answers_array = [blank_answers.get(k, "") for k in sorted_keys]
+            result = json.dumps(answers_array, ensure_ascii=False)
+            print(f"[format_submitted_answer] blank result: {result[:100]}...")
+            return result
+        # blank이지만 blank_answers가 없으면 submitted_code에서 추출 시도
+        elif submitted_code:
+            try:
+                parsed = json.loads(submitted_code)
+                if isinstance(parsed, dict):
+                    # {"blank-0": "...", ...} 형태
+                    sorted_keys = sorted(parsed.keys(), key=lambda k: int(k.split('-')[-1]) if '-' in k else 0)
+                    answers_array = [parsed.get(k, "") for k in sorted_keys]
+                    return json.dumps(answers_array, ensure_ascii=False)
+                elif isinstance(parsed, list):
+                    return json.dumps(parsed, ensure_ascii=False)
+            except:
+                pass
+            return submitted_code
+        # 사용자 입력 없음 → NULL
+        print(f"[format_submitted_answer] blank: no user input → NULL")
+        return None
+
+    elif problem_type == "puzzle":
+        if puzzle_user_order and len(puzzle_user_order) > 0:
+            # puzzle_user_order: ["block-0", "block-1", ...] (ID 배열)
+            # 또는 이미 [{id, indentation}, ...] 형태일 수 있음
+            if isinstance(puzzle_user_order[0], str):
+                # ID 배열인 경우 객체 배열로 변환
+                blocks_array = [{"id": id, "indentation": 0} for id in puzzle_user_order]
+            else:
+                blocks_array = puzzle_user_order
+            return json.dumps(blocks_array, ensure_ascii=False)
+        # 사용자 입력 없음 → NULL
+        print(f"[format_submitted_answer] puzzle: no user input → NULL")
+        return None
+
+    elif problem_type == "guided" or problem_type == "implementation":
+        if submitted_code:
+            return submitted_code
+        # 사용자 입력 없음 → NULL
+        print(f"[format_submitted_answer] guided: no user input → NULL")
+        return None
+
+    # 알 수 없는 타입이거나 입력 없음 → NULL
+    print(f"[format_submitted_answer] unknown type or no input → NULL")
+    return None
+
+
 def check_blank_answers(submitted: dict, correct: list) -> tuple[bool, dict]:
     """Check blank fill answers."""
     results = {}
@@ -366,9 +446,49 @@ def record_attempt_detail(
         return False
 
 
-# NOTE: record_hint_log 함수 제거됨
-# hint_logs 테이블은 attempt_details로 통합
-# 힌트 기록은 record_attempt_detail()에서 xp_cost와 함께 처리
+# hint_logs 테이블에도 기록 (attempt_details와 병행)
+def record_hint_log(
+    db,
+    user_id: str,
+    problem_id: str,
+    attempt_id: str,
+    hint_level: int,
+    hint_content: str,
+    base_problem_id: str = None,
+    xp_cost: int = 5,
+) -> bool:
+    """
+    hint_logs 테이블에 힌트 사용 기록
+
+    Args:
+        db: Supabase client
+        user_id: 사용자 UUID
+        problem_id: 문제 ID (레거시)
+        attempt_id: 시도 ID
+        hint_level: 힌트 레벨 (1, 2, 3 등)
+        hint_content: 힌트 내용
+        base_problem_id: base_problems.id
+        xp_cost: XP 비용
+    """
+    try:
+        hint_data = {
+            "user_id": user_id,
+            "attempt_id": attempt_id if attempt_id and not attempt_id.startswith("temp_") else None,
+            "hint_level": hint_level,
+            "hint_content": hint_content[:1000] if hint_content else None,  # 내용 제한
+            "xp_cost": xp_cost,
+        }
+
+        # base_problem_id 추가 (새로운 FK)
+        if base_problem_id:
+            hint_data["base_problem_id"] = base_problem_id
+
+        db.table("hint_logs").insert(hint_data).execute()
+        print(f"[HintLog] Recorded: user={user_id[:8]}..., level={hint_level}, base_problem={base_problem_id[:8] if base_problem_id else 'None'}...")
+        return True
+    except Exception as e:
+        print(f"[HintLog] Error recording: {e}")
+        return False
 
 
 @router.post("/submit/blank", response_model=SubmissionResponse)
@@ -771,7 +891,12 @@ async def record_solve(
                     update_data = {
                         "is_correct": submission.is_correct,
                         "xp_earned": xp_earned,
-                        "submitted_answer": f"type:{submission.problem_type}",
+                        "submitted_answer": format_submitted_answer(
+                            problem_type=submission.problem_type,
+                            blank_answers=submission.blank_answers,
+                            puzzle_user_order=submission.puzzle_user_order,
+                            submitted_code=submission.submitted_code,
+                        ),
                         # ✅ 추가 필드
                         "submitted_code": submission.submitted_code,
                         "time_spent": submission.time_spent,
@@ -798,7 +923,12 @@ async def record_solve(
                     "is_correct": submission.is_correct,
                     "xp_earned": xp_earned,
                     "problem_type": submission.problem_type,
-                    "submitted_answer": f"type:{submission.problem_type}",
+                    "submitted_answer": format_submitted_answer(
+                        problem_type=submission.problem_type,
+                        blank_answers=submission.blank_answers,
+                        puzzle_user_order=submission.puzzle_user_order,
+                        submitted_code=submission.submitted_code,
+                    ),
                     "hints_used": submission.hints_used or 0,
                     "difficulty": submission.difficulty,
                     "problem_name": submission.problem_name,
@@ -844,9 +974,85 @@ async def record_solve(
                     detail_kwargs["blank_is_correct"] = submission.is_correct
                     # 힌트 레벨 (힌트 사용 횟수 기반)
                     detail_kwargs["blank_hint_level"] = min(submission.hints_used or 0, 2)
+
+                    # ✅ blank_correct_answers가 없으면 서버에서 조회
+                    blank_correct_answers = submission.blank_correct_answers
+                    if submission.blank_answers and not blank_correct_answers:
+                        try:
+                            # problems_blank 테이블에서 정답 조회
+                            if base_problem_id:
+                                blank_result = db.table("problems_blank").select("answers").eq("base_problem_id", base_problem_id).single().execute()
+                                if blank_result.data and blank_result.data.get("answers"):
+                                    answers_list = blank_result.data["answers"]  # ["answer1", "answer2", ...]
+                                    # blank_id 형식에 맞춰 dict 생성
+                                    blank_correct_answers = {}
+                                    for idx, answer in enumerate(answers_list):
+                                        blank_id = f"blank-{idx}"  # 또는 submission.blank_answers의 key 형식에 맞춤
+                                        blank_correct_answers[blank_id] = answer
+                                    print(f"[RecordSolve] Fetched {len(answers_list)} correct answers from DB")
+                        except Exception as fetch_err:
+                            print(f"[RecordSolve] Could not fetch correct answers: {fetch_err}")
+
+                    # blank_results 계산 (없으면 서버에서 계산)
+                    blank_results = submission.blank_results
+                    if submission.blank_answers and blank_correct_answers and not blank_results:
+                        blank_results = {}
+                        for blank_id, user_answer in submission.blank_answers.items():
+                            # blank_id 형식 맞춤 (blank-0, blank-1 등)
+                            correct = blank_correct_answers.get(blank_id)
+                            if correct is None:
+                                # 인덱스로 시도
+                                try:
+                                    idx = int(blank_id.split("-")[-1]) if "-" in blank_id else 0
+                                    correct = list(blank_correct_answers.values())[idx] if idx < len(blank_correct_answers) else None
+                                except:
+                                    pass
+                            blank_results[blank_id] = (user_answer.strip() == correct.strip()) if correct else False
+                        print(f"[RecordSolve] Computed blank_results: {blank_results}")
+
+                    # ✅ 빈칸 상세 답변 기록
+                    if submission.blank_answers:
+                        # 첫 번째 빈칸 정보만 기록 (대표값) - 전체는 JSON으로
+                        first_blank_id = next(iter(submission.blank_answers), None)
+                        if first_blank_id:
+                            detail_kwargs["blank_index"] = 0  # 첫 번째
+                            detail_kwargs["blank_user_answer"] = submission.blank_answers.get(first_blank_id)
+                            # 서버에서 조회한 정답 사용
+                            if blank_correct_answers:
+                                detail_kwargs["blank_correct_answer"] = blank_correct_answers.get(first_blank_id)
+                            # 서버에서 계산한 결과 사용
+                            if blank_results:
+                                detail_kwargs["blank_is_correct"] = blank_results.get(first_blank_id, submission.is_correct)
+
+                    # 개별 빈칸별로 여러 레코드 기록
+                    if submission.blank_answers and len(submission.blank_answers) > 1:
+                        for idx, (blank_id, user_answer) in enumerate(submission.blank_answers.items()):
+                            if idx == 0:
+                                continue  # 첫 번째는 위에서 이미 기록
+                            record_attempt_detail(
+                                db=db,
+                                attempt_id=str(attempt_id_used),
+                                action_type=action_type,
+                                step_number=idx + 1,
+                                blank_index=idx,
+                                blank_user_answer=user_answer,
+                                blank_correct_answer=blank_correct_answers.get(blank_id) if blank_correct_answers else None,
+                                blank_is_correct=blank_results.get(blank_id) if blank_results else None,
+                                hint_was_requested=False,
+                            )
+
                 elif submission.problem_type == "puzzle":
                     # puzzle은 puzzle_ 필드 사용
                     detail_kwargs["puzzle_validation_method"] = "exact"
+
+                    # ✅ 퍼즐 상세 순서 기록 (submission에서 전달된 경우)
+                    if submission.puzzle_user_order:
+                        detail_kwargs["puzzle_user_order"] = submission.puzzle_user_order
+                    if submission.puzzle_correct_order:
+                        detail_kwargs["puzzle_correct_order"] = submission.puzzle_correct_order
+                    if submission.puzzle_wrong_positions:
+                        detail_kwargs["puzzle_wrong_positions"] = submission.puzzle_wrong_positions
+
                 elif submission.problem_type == "guided":
                     detail_kwargs["guided_step"] = 0  # 최종 제출
                     detail_kwargs["guided_understanding_score"] = 1.0 if submission.is_correct else 0.5
@@ -861,7 +1067,7 @@ async def record_solve(
                     step_number=1,  # 최종 제출은 step 1
                     **detail_kwargs
                 )
-                print(f"[RecordSolve] Recorded attempt_detail: {action_type}")
+                print(f"[RecordSolve] Recorded attempt_detail: {action_type}, has_blank_answers={submission.blank_answers is not None}")
 
         except Exception as insert_err:
             # FK 제약 등으로 실패해도 XP 기록은 계속
@@ -942,8 +1148,11 @@ async def record_solve(
                     problem_topics=submission.topics,
                     difficulty=submission.difficulty or "medium",
                     is_correct=submission.is_correct,
+                    problem_type=submission.problem_type,
+                    time_spent=submission.time_spent,
+                    hints_used=submission.hints_used,
                 )
-                print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}")
+                print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}, type={submission.problem_type}")
             except Exception as skill_err:
                 print(f"[RecordSolve] Skill profile update error (non-blocking): {skill_err}")
 
@@ -975,6 +1184,7 @@ async def record_solve(
         # 피드백 생성 및 feedback_history 저장
         # ============================================================
         feedback_data = None
+        print(f"[RecordSolve] Feedback check: is_correct={submission.is_correct}, attempt_id_used={attempt_id_used}")
         if submission.is_correct:
             try:
                 from ..services.feedback_service import get_feedback_service
@@ -992,6 +1202,8 @@ async def record_solve(
                         "topics": submission.topics or [],
                     },
                     problem_type=submission.problem_type,
+                    attempt_id=str(attempt_id_used) if attempt_id_used else None,
+                    base_problem_id=base_problem_id,
                 )
 
                 # FeedbackData 모델로 변환
@@ -1032,16 +1244,50 @@ async def record_solve(
                             "improvements": feedback_data.improvements,
                         }
 
-                        db.table("attempts").update({
+                        print(f"[RecordSolve] Updating attempt {attempt_id_used} with feedback_grade={feedback_data.grade}, score={avg_score}")
+                        update_result = db.table("attempts").update({
                             "feedback_grade": feedback_data.grade,
                             "feedback_data": feedback_data_json,
                             "score": avg_score,
                         }).eq("id", attempt_id_used).execute()
-                        print(f"[RecordSolve] Updated attempt with feedback: grade={feedback_data.grade}, score={avg_score}")
+                        print(f"[RecordSolve] Feedback update result: {update_result.data}")
                     except Exception as fb_update_err:
-                        print(f"[RecordSolve] Failed to update attempt with feedback (non-blocking): {fb_update_err}")
+                        import traceback
+                        print(f"[RecordSolve] Failed to update attempt with feedback: {fb_update_err}")
+                        traceback.print_exc()
+                else:
+                    print(f"[RecordSolve] WARNING: No attempt_id_used for feedback update (feedback will not be saved)")
             except Exception as fb_err:
                 print(f"[RecordSolve] Feedback generation error (non-blocking): {fb_err}")
+
+        # ============================================================
+        # 마일스톤 체크: 특정 문제 수 도달 시 전체 스킬 프로필 재계산
+        # 10, 25, 50, 100, 200, 500 문제 정답 시 LLM 분석 포함 재계산
+        # ============================================================
+        if submission.is_correct:
+            try:
+                # 현재 정답 수 조회 (캐시 없이 실시간)
+                solved_count_result = db.table("attempts") \
+                    .select("id", count="exact") \
+                    .eq("user_id", str(user_id)) \
+                    .eq("is_correct", True) \
+                    .execute()
+
+                solved_count = solved_count_result.count or 0
+                milestones = [10, 25, 50, 100, 200, 500]
+
+                if solved_count in milestones:
+                    print(f"[RecordSolve] 🎉 Milestone reached: {solved_count} problems solved! Triggering full recalculation...")
+
+                    from ..services.feedback_service import get_feedback_service
+                    fb_service = get_feedback_service()
+                    recalc_result = await fb_service.recalculate_skill_profile_from_history(
+                        user_id=str(user_id),
+                        force_llm_analysis=True  # 마일스톤이므로 LLM 분석 강제
+                    )
+                    print(f"[RecordSolve] Recalculation result: {recalc_result}")
+            except Exception as milestone_err:
+                print(f"[RecordSolve] Milestone check error (non-blocking): {milestone_err}")
 
         message = "문제 풀이가 기록되었습니다!"
         if already_solved:
@@ -1063,6 +1309,82 @@ async def record_solve(
             success=False,
             xp_earned=0,
             message=f"기록 실패: {str(e)}"
+        )
+
+
+# ============================================================
+# 스킬 프로필 재계산 API
+# ============================================================
+class RecalculateSkillRequest(BaseModel):
+    """스킬 프로필 재계산 요청"""
+    force_llm_analysis: bool = False  # True면 10개 미만이어도 LLM 분석
+
+
+class RecalculateSkillResponse(BaseModel):
+    """스킬 프로필 재계산 응답"""
+    success: bool
+    total_attempted: Optional[int] = None
+    total_solved: Optional[int] = None
+    weak_topics: Optional[List[str]] = None
+    strong_topics: Optional[List[str]] = None
+    preferred_type: Optional[str] = None
+    learning_style: Optional[str] = None
+    llm_analysis_run: bool = False
+    error: Optional[str] = None
+
+
+@router.post("/skill-profile/recalculate", response_model=RecalculateSkillResponse)
+async def recalculate_skill_profile(
+    request: RecalculateSkillRequest = RecalculateSkillRequest(),
+    user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+    db=Depends(get_db)
+):
+    """
+    사용자 스킬 프로필을 히스토리 테이블 기반으로 전체 재계산합니다.
+
+    - attempts, user_memories 테이블을 분석하여 모든 컬럼을 채웁니다.
+    - 10개 이상 문제를 풀었을 때 LLM으로 learning_style, common_error_patterns 분석
+    - force_llm_analysis=True면 10개 미만이어도 LLM 분석 실행
+    """
+    if not user_id:
+        return RecalculateSkillResponse(
+            success=False,
+            error="로그인이 필요합니다."
+        )
+
+    try:
+        from ..services.feedback_service import get_feedback_service
+        fb_service = get_feedback_service()
+
+        result = await fb_service.recalculate_skill_profile_from_history(
+            user_id=str(user_id),
+            force_llm_analysis=request.force_llm_analysis,
+        )
+
+        if result.get("error"):
+            return RecalculateSkillResponse(
+                success=False,
+                error=result["error"]
+            )
+
+        return RecalculateSkillResponse(
+            success=True,
+            total_attempted=result.get("total_attempted"),
+            total_solved=result.get("total_solved"),
+            weak_topics=result.get("weak_topics"),
+            strong_topics=result.get("strong_topics"),
+            preferred_type=result.get("preferred_type"),
+            learning_style=result.get("learning_style"),
+            llm_analysis_run=result.get("llm_analysis_run", False),
+        )
+
+    except Exception as e:
+        import traceback
+        print(f"[RecalculateSkill] Error: {e}")
+        traceback.print_exc()
+        return RecalculateSkillResponse(
+            success=False,
+            error=str(e)
         )
 
 
@@ -1261,7 +1583,7 @@ async def get_blank_hint(
 
         hint_content = hint_result.get("hint_content", "힌트를 불러올 수 없습니다.")
 
-        # attempt_details에 힌트 요청 기록 (hint_logs 통합)
+        # attempt_details에 힌트 요청 기록
         if request.attempt_id:
             record_attempt_detail(
                 db=db,
@@ -1270,7 +1592,7 @@ async def get_blank_hint(
                 blank_index=request.blank_index,
                 blank_hint_content=hint_content[:500] if hint_content else None,
                 hint_was_requested=True,
-                xp_cost=5,  # hint_logs에서 통합
+                xp_cost=5,
             )
 
             # attempts 테이블의 hints_used, total_hints_requested 증가
@@ -1281,6 +1603,27 @@ async def get_blank_hint(
                     }).execute()
                 except Exception as e:
                     print(f"[BlankHint] Failed to increment hints: {e}")
+
+            # hint_logs 테이블에도 기록
+            if user_id and not request.attempt_id.startswith("temp_"):
+                try:
+                    # attempt에서 base_problem_id와 현재 hints_used 조회
+                    attempt_info = db.table("attempts").select("base_problem_id, hints_used").eq("id", request.attempt_id).single().execute()
+                    if attempt_info.data:
+                        base_problem_id = attempt_info.data.get("base_problem_id")
+                        hint_level = (attempt_info.data.get("hints_used") or 0)  # 이미 증가된 후
+                        record_hint_log(
+                            db=db,
+                            user_id=str(user_id),
+                            problem_id=request.problem_id,
+                            attempt_id=request.attempt_id,
+                            hint_level=hint_level,
+                            hint_content=hint_content,
+                            base_problem_id=base_problem_id,
+                            xp_cost=5,
+                        )
+                except Exception as e:
+                    print(f"[BlankHint] Failed to record hint_log: {e}")
 
         # 📍 응답 로깅
         response_blank_index = hint_result.get("blank_index", request.blank_index)
@@ -1347,7 +1690,7 @@ async def get_puzzle_hint(
 
         hint_content = hint_result.get("hint_content", "힌트를 불러올 수 없습니다.")
 
-        # attempt_details에 힌트 요청 기록 (hint_logs 통합)
+        # attempt_details에 힌트 요청 기록
         if request.attempt_id:
             record_attempt_detail(
                 db=db,
@@ -1355,7 +1698,7 @@ async def get_puzzle_hint(
                 action_type=AttemptDetailAction.PUZZLE_HINT_REQUEST.value,
                 puzzle_hint_content=hint_content[:500] if hint_content else None,
                 hint_was_requested=True,
-                xp_cost=5,  # hint_logs에서 통합
+                xp_cost=5,
             )
 
             # attempts 테이블의 hints_used, total_hints_requested 증가
@@ -1366,6 +1709,26 @@ async def get_puzzle_hint(
                     }).execute()
                 except Exception as e:
                     print(f"[PuzzleHint] Failed to increment hints: {e}")
+
+            # hint_logs 테이블에도 기록
+            if user_id and not request.attempt_id.startswith("temp_"):
+                try:
+                    attempt_info = db.table("attempts").select("base_problem_id, hints_used").eq("id", request.attempt_id).single().execute()
+                    if attempt_info.data:
+                        base_problem_id = attempt_info.data.get("base_problem_id")
+                        hint_level = (attempt_info.data.get("hints_used") or 0)
+                        record_hint_log(
+                            db=db,
+                            user_id=str(user_id),
+                            problem_id=request.problem_id,
+                            attempt_id=request.attempt_id,
+                            hint_level=hint_level,
+                            hint_content=hint_content,
+                            base_problem_id=base_problem_id,
+                            xp_cost=5,
+                        )
+                except Exception as e:
+                    print(f"[PuzzleHint] Failed to record hint_log: {e}")
 
         return PuzzleHintResponse(
             block_index=hint_result.get("hint_index", request.block_index),
@@ -1427,7 +1790,7 @@ async def get_guided_hint(
 
         hint_content = hint_result.get("hint_content", "힌트를 불러올 수 없습니다.")
 
-        # attempt_details에 힌트 요청 기록 (hint_logs 통합)
+        # attempt_details에 힌트 요청 기록
         if request.attempt_id:
             record_attempt_detail(
                 db=db,
@@ -1436,7 +1799,7 @@ async def get_guided_hint(
                 guided_step=request.step_index,
                 guided_tutor_response=hint_content[:1000] if hint_content else None,
                 hint_was_requested=True,
-                xp_cost=5,  # hint_logs에서 통합
+                xp_cost=5,
             )
 
             # attempts 테이블의 hints_used, total_hints_requested 증가
@@ -1447,6 +1810,26 @@ async def get_guided_hint(
                     }).execute()
                 except Exception as e:
                     print(f"[GuidedHint] Failed to increment hints: {e}")
+
+            # hint_logs 테이블에도 기록
+            if user_id and not request.attempt_id.startswith("temp_"):
+                try:
+                    attempt_info = db.table("attempts").select("base_problem_id, hints_used").eq("id", request.attempt_id).single().execute()
+                    if attempt_info.data:
+                        base_problem_id = attempt_info.data.get("base_problem_id")
+                        hint_level = (attempt_info.data.get("hints_used") or 0)
+                        record_hint_log(
+                            db=db,
+                            user_id=str(user_id),
+                            problem_id=request.problem_id,
+                            attempt_id=request.attempt_id,
+                            hint_level=hint_level,
+                            hint_content=hint_content,
+                            base_problem_id=base_problem_id,
+                            xp_cost=5,
+                        )
+                except Exception as e:
+                    print(f"[GuidedHint] Failed to record hint_log: {e}")
 
         return GuidedHintResponse(
             step_index=hint_result.get("hint_index", request.step_index),
