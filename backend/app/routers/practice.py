@@ -401,8 +401,21 @@ async def submit_blank(
         # Check answers
         is_correct, blank_results = check_blank_answers(submission.answers, correct_blanks)
 
-        # Calculate XP based on difficulty
-        xp_earned = XPConfig.get_xp_for_difficulty(difficulty, "blank") if is_correct else 0
+        # Check if already solved (for repeat solve detection)
+        already_solved = False
+        if is_correct:
+            prev_attempt = db.table("attempts")\
+                .select("id")\
+                .eq("user_id", str(user_id))\
+                .eq("problem_id", str(submission.problem_id))\
+                .eq("is_correct", True)\
+                .limit(1)\
+                .execute()
+            already_solved = bool(prev_attempt.data)
+
+        # Calculate XP based on difficulty (1/4 if repeat)
+        base_xp = XPConfig.get_xp_for_difficulty(difficulty, "blank") if is_correct else 0
+        xp_earned = base_xp // 4 if already_solved else base_xp
 
         # Save attempt with all fields
         attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
@@ -441,16 +454,17 @@ async def submit_blank(
                 "p_xp": xp_earned,
                 "p_problem_type": "blank",
                 "p_difficulty": difficulty,
+                "p_is_repeat": already_solved,
             }).execute()
 
-            # Check and award badges
+            # Check and award badges (only for first solve)
             badge_service = get_badge_service()
             awarded = await badge_service.check_and_award_badges(
                 user_id=str(user_id),
                 trigger_type='solve',
                 problem_type='blank',
                 difficulty=difficulty,
-            )
+            ) if not already_solved else []
             if awarded:
                 new_badges = [NewBadge(**b) for b in awarded]
 
@@ -536,8 +550,21 @@ async def submit_puzzle(
         if len(submission.block_order) != len(correct_order):
             all_correct = False
 
-        # Calculate XP based on difficulty
-        xp_earned = XPConfig.get_xp_for_difficulty(difficulty, "puzzle") if all_correct else 0
+        # Check if already solved (for repeat solve detection)
+        already_solved = False
+        if all_correct:
+            prev_attempt = db.table("attempts")\
+                .select("id")\
+                .eq("user_id", str(user_id))\
+                .eq("problem_id", str(submission.problem_id))\
+                .eq("is_correct", True)\
+                .limit(1)\
+                .execute()
+            already_solved = bool(prev_attempt.data)
+
+        # Calculate XP based on difficulty (1/4 if repeat)
+        base_xp = XPConfig.get_xp_for_difficulty(difficulty, "puzzle") if all_correct else 0
+        xp_earned = base_xp // 4 if already_solved else base_xp
 
         # Save attempt with all fields
         attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
@@ -578,18 +605,20 @@ async def submit_puzzle(
                 "p_xp": xp_earned,
                 "p_problem_type": "puzzle",
                 "p_difficulty": difficulty,
+                "p_is_repeat": already_solved,
             }).execute()
 
-            # Check and award badges
-            badge_service = get_badge_service()
-            awarded = await badge_service.check_and_award_badges(
-                user_id=str(user_id),
-                trigger_type='solve',
-                problem_type='puzzle',
-                difficulty=difficulty,
-            )
-            if awarded:
-                new_badges = [NewBadge(**b) for b in awarded]
+            # Check and award badges (only for first solve)
+            if not already_solved:
+                badge_service = get_badge_service()
+                awarded = await badge_service.check_and_award_badges(
+                    user_id=str(user_id),
+                    trigger_type='solve',
+                    problem_type='puzzle',
+                    difficulty=difficulty,
+                )
+                if awarded:
+                    new_badges = [NewBadge(**b) for b in awarded]
 
         if all_correct:
             feedback = "정답입니다! 코드 블록을 올바른 순서와 들여쓰기로 배열했습니다."
@@ -876,20 +905,22 @@ async def record_solve(
                     "p_xp": xp_earned,
                     "p_problem_type": submission.problem_type,
                     "p_difficulty": submission.difficulty,
+                    "p_is_repeat": already_solved,
                 }).execute()
-                print(f"[RecordSolve] Updated user stats: +{xp_earned} XP, type={submission.problem_type}")
+                print(f"[RecordSolve] Updated user stats: +{xp_earned} XP, type={submission.problem_type}, repeat={already_solved}")
 
-                # Check and award badges
-                badge_service = get_badge_service()
-                awarded = await badge_service.check_and_award_badges(
-                    user_id=str(user_id),
-                    trigger_type='solve',
-                    problem_type=submission.problem_type,
-                    difficulty=submission.difficulty,
-                )
-                if awarded:
-                    new_badges = [NewBadge(**b) for b in awarded]
-                    print(f"[RecordSolve] Awarded {len(awarded)} badges")
+                # Check and award badges (only for first solve)
+                if not already_solved:
+                    badge_service = get_badge_service()
+                    awarded = await badge_service.check_and_award_badges(
+                        user_id=str(user_id),
+                        trigger_type='solve',
+                        problem_type=submission.problem_type,
+                        difficulty=submission.difficulty,
+                    )
+                    if awarded:
+                        new_badges = [NewBadge(**b) for b in awarded]
+                        print(f"[RecordSolve] Awarded {len(awarded)} badges")
 
                 # Update mission progress (daily/weekly missions)
                 try:
