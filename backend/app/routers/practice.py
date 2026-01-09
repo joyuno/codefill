@@ -284,6 +284,18 @@ async def start_practice(
             except Exception as e:
                 print(f"[StartPractice] Session tracking error (non-blocking): {e}")
 
+            # ✅ chat_sessions 테이블에 attempt_id 연결
+            if request.chat_session_id:
+                try:
+                    db.table("chat_sessions").update({
+                        "attempt_id": str(attempt_id),
+                        "current_stage": "solving",
+                        "solve_start_time": started_at_dt.isoformat(),
+                    }).eq("id", request.chat_session_id).execute()
+                    print(f"[StartPractice] Linked attempt_id to chat_session: {request.chat_session_id}")
+                except Exception as e:
+                    print(f"[StartPractice] chat_sessions update error (non-blocking): {e}")
+
             return StartPracticeResponse(
                 attempt_id=str(attempt_id),
                 started_at=started_at,

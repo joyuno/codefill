@@ -228,6 +228,7 @@ class StartPracticeRequest(BaseModel):
     difficulty: Optional[str] = None
     problem_name: Optional[str] = None
     topics: Optional[List[str]] = None
+    chat_session_id: Optional[str] = None  # chat_sessions 테이블 연동용
 
 
 class StartPracticeResponse(BaseModel):
