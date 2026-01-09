@@ -52,13 +52,27 @@ class RejectionResult:
 # ============================================================
 
 UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시지 분석기입니다.
-사용자 메시지를 분석하여 의도, 값, 거부 여부를 한 번에 판단하세요.
+사용자 메시지를 분석하여 의도, 값, 거부 여부, **관련성**을 한 번에 판단하세요.
+
+## 0. 관련성 체크 (is_collection_related) - 중요!
+현재 "알고리즘 문제 추천을 위한 정보 수집" 단계입니다.
+메시지가 다음 중 하나에 해당하면 **true**:
+- 주제/난이도/언어 선택 관련 ("DP로 할게", "쉬운 거", "파이썬")
+- 추천 요청 ("추천해줘", "뭐가 좋아?", "알아서 골라줘")
+- 긍정/부정 응답 ("네", "좋아", "아니", "싫어", "다른 거")
+- 문제 풀이 관련 질문 ("DP가 뭐야?", "그래프 어려워?")
+
+메시지가 다음 중 하나에 해당하면 **false**:
+- 완전히 다른 주제 ("오늘 날씨 어때?", "안녕", "뭐해?")
+- 시스템 질문 ("뭐부터 해야해?", "이거 어떻게 써?", "도움말")
+- 일반 대화 ("심심해", "배고파", "힘들다")
 
 ## 1. 의도 분류 (intent)
 - "positive": 긍정/동의 ("네", "응", "좋아", "그래", "ㅇㅇ", "굳", "할게", "해줘", "시작")
 - "negative": 부정/거절 ("아니", "싫어", "말고", "다른거", "패스", "ㄴㄴ", "별로")
 - "value_input": 새 값 제시 ("DP로 해줘", "정렬", "파이썬", "쉬운 거")
 - "unclear": 질문/애매 ("그게 뭐야?", "음...", "모르겠어")
+- "off_topic": 관련 없는 메시지 (is_collection_related=false일 때)
 
 ## 2. 값 추출 (원하는 값만!)
 - **topic**: DP, 그래프, BFS/DFS, 정렬, 이분탐색, 그리디, 구현, 문자열, 기초, 수학, 스택/큐, 트리, 해시, 백트래킹
@@ -86,7 +100,8 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
 
 ## JSON 응답 형식
 {
-  "intent": "positive" | "negative" | "value_input" | "unclear",
+  "is_collection_related": true | false,
+  "intent": "positive" | "negative" | "value_input" | "unclear" | "off_topic",
   "confidence": 0.0-1.0,
   "values": {
     "topic": "DP" | null,
@@ -113,12 +128,13 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
 @dataclass
 class UnifiedAnalysisResult:
     """통합 분석 결과"""
-    intent: Literal["positive", "negative", "value_input", "unclear"]
+    intent: Literal["positive", "negative", "value_input", "unclear", "off_topic"]
     confidence: float
     values: Dict[str, Optional[str]]      # {"topic": "DP", "difficulty": null, ...}
     rejected: Dict[str, Optional[str]]    # {"topic": "기초", ...}
     rejection_reason: Optional[str]       # "too_hard", "want_different", ...
     alternative: Optional[Dict[str, str]] # {"value": "DP", "step": "topic"}
+    is_collection_related: bool = True    # 정보 수집과 관련 있는 메시지인지
 
 
 class CollectionTool:
@@ -189,13 +205,22 @@ class CollectionTool:
                 if step:
                     alternative["value"] = self._normalize_value(step, alternative["value"])
 
+            # is_collection_related 파싱 (기본값 True)
+            is_related = result.get("is_collection_related", True)
+            intent = result.get("intent", "unclear")
+
+            # intent가 off_topic이면 is_related=False
+            if intent == "off_topic":
+                is_related = False
+
             analysis = UnifiedAnalysisResult(
-                intent=result.get("intent", "unclear"),
+                intent=intent,
                 confidence=result.get("confidence", 0.5),
                 values=normalized_values,
                 rejected=rejected,
                 rejection_reason=result.get("rejection_reason"),
                 alternative=alternative if alternative.get("value") else None,
+                is_collection_related=is_related,
             )
 
             # 캐시 저장 (최대 100개)
@@ -215,6 +240,7 @@ class CollectionTool:
                 rejected={},
                 rejection_reason=None,
                 alternative=None,
+                is_collection_related=True,  # 에러 시 기본값은 관련 있음으로
             )
 
     # ============================================================
@@ -247,7 +273,10 @@ class CollectionTool:
             analysis = await self.analyze(message)
 
             # 거부된 값이 있으면 details에 기록
-            details = {"unified_analysis": True}
+            details = {
+                "unified_analysis": True,
+                "is_collection_related": analysis.is_collection_related,
+            }
             if analysis.rejected:
                 for step, rejected_val in analysis.rejected.items():
                     if rejected_val:
@@ -255,6 +284,11 @@ class CollectionTool:
                         details["rejected_step"] = step
                         details["rejected_value"] = rejected_val
                         print(f"[CollectionTool] Rejection detected: {step}={rejected_val}")
+
+            # 관련 없는 메시지면 별도 플래그
+            if not analysis.is_collection_related:
+                details["is_off_topic"] = True
+                print(f"[CollectionTool] Off-topic message detected: {message[:50]}...")
 
             # 신뢰도 높으면 바로 반환
             if analysis.confidence >= 0.60:

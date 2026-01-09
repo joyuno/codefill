@@ -203,11 +203,21 @@ class InfoCollectionGraph:
         # action_data 생성 (프론트엔드용)
         action_data = None
 
-        # 노드에서 반환된 chips가 있으면 사용
+        # 노드에서 반환된 chips가 있으면 **우선** 사용 (명시적 칩 > 기본 확인 칩)
         result_chips = result.get("chips")
 
-        if awaiting_confirmation and suggested_value:
-            # 확인 대기 상태 - 네/아니오 칩
+        if result_chips:
+            # 노드에서 명시적으로 반환한 칩 우선 (난이도 칩, 주제 칩 등)
+            action_data = {
+                "type": "selection",
+                "current_step": current_step,
+                "chips": result_chips,
+            }
+            # suggested_value도 함께 전달 (칩 선택 후 확인용)
+            if suggested_value:
+                action_data["suggested_value"] = suggested_value
+        elif awaiting_confirmation and suggested_value:
+            # 확인 대기 상태 - 기본 네/아니오 칩 (노드에서 칩을 반환하지 않은 경우만)
             action_data = {
                 "type": "confirmation",
                 "suggested_value": suggested_value,
@@ -216,13 +226,6 @@ class InfoCollectionGraph:
                     {"label": "네", "value": "yes", "category": "confirmation"},
                     {"label": "아니오, 다른 거", "value": "no", "category": "confirmation"},
                 ],
-            }
-        elif result_chips:
-            # 선택지 칩이 있는 경우 - 빠른 선택용
-            action_data = {
-                "type": "selection",
-                "current_step": current_step,
-                "chips": result_chips,
             }
 
         # 수집된 정보 - 그래프 결과 우선, 기존 값 fallback (상태 유실 방지)

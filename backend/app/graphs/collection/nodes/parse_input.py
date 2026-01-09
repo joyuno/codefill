@@ -155,6 +155,17 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
 
     print(f"[parse_input] Extraction: {extraction.values} (conf={extraction.confidence:.2f}, type={extraction.extraction_type})")
 
+    # ============================================================
+    # 3-1. 관련 없는 메시지 (off-topic) 처리
+    # ============================================================
+    is_off_topic = extraction.details.get("is_off_topic", False) if extraction.details else False
+    if is_off_topic:
+        print(f"[parse_input] Off-topic message detected, routing to handle with guidance")
+        updates["is_question"] = True
+        updates["question_type"] = "off_topic"
+        updates["is_off_topic"] = True
+        return updates
+
     # 현재 단계 값 확인
     current_value = extraction.values.get(current_step)
 

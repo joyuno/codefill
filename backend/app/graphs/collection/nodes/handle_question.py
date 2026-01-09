@@ -186,6 +186,29 @@ QUESTION_PROMPTS = {
 중요: 답변 마지막에 반드시 구체적인 값을 추천하세요.
 예: "DP로 해볼까요?" 또는 "Python으로 할까요?"
 """,
+    "off_topic": """
+사용자가 현재 정보 수집과 관련 없는 메시지를 보냈습니다.
+
+현재 수집 단계: {current_step}
+수집된 정보:
+- 주제: {topic}
+- 난이도: {difficulty}
+- 언어: {language}
+
+사용자 메시지: "{message}"
+
+중요 지침:
+1. 먼저 사용자 메시지에 대해 간단하고 친근하게 응답하세요 (1문장)
+2. 그 다음 "그럼 다시 문제 추천으로 돌아갈게요!" 같은 전환 문구
+3. 현재 단계({current_step})에 맞는 질문을 자연스럽게 하세요:
+   - topic: "어떤 알고리즘 주제로 연습해볼까요?"
+   - difficulty: "어떤 난이도로 할까요?"
+   - language: "어떤 언어로 풀어볼까요?"
+
+예시 응답:
+- "안녕하세요! 반가워요 😊 그럼 문제 추천을 시작해볼게요! 어떤 알고리즘 주제로 연습해볼까요?"
+- "힘내세요! 코딩하면 기분 풀릴 거예요. 자, 어떤 난이도로 해볼까요?"
+""",
     "rejection": """
 사용자가 이전 추천을 거절했거나 추천을 요청했습니다.
 
@@ -322,6 +345,12 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
                 {"label": "아니요, 다시", "value": "no", "category": "confirmation"},
             ],
         }
+
+    # ============================================================
+    # off_topic 타입일 때 특별 처리 (관련 없는 메시지)
+    # ============================================================
+    if question_type == "off_topic":
+        return await _handle_off_topic(state, current_step, message, user_context)
 
     # rejection 타입일 때 특별 처리
     if question_type == "rejection":
@@ -843,3 +872,100 @@ def _get_particle(word: str) -> str:
         return "으로" if jong > 0 else "로"
 
     return "으로"
+
+
+async def _handle_off_topic(
+    state: CollectionState,
+    current_step: str,
+    message: str,
+    user_context: dict = None,
+) -> Dict[str, Any]:
+    """
+    관련 없는 메시지(off-topic) 처리
+
+    1. 사용자 메시지에 간단히 응답
+    2. 현재 단계로 자연스럽게 유도
+    3. 선택 칩 제공 (추천값 없이)
+    """
+    from app.services.openrouter import openrouter_service
+
+    user_context = user_context or {}
+
+    # 현재 단계별 안내 메시지
+    step_guidance = {
+        "topic": "어떤 알고리즘 주제로 연습해볼까요?",
+        "difficulty": "어떤 난이도로 해볼까요?",
+        "language": "어떤 언어로 풀어볼까요?",
+    }
+
+    try:
+        # LLM으로 친근한 응답 + 안내 메시지 생성
+        prompt_template = QUESTION_PROMPTS.get("off_topic", QUESTION_PROMPTS["general"])
+        prompt = prompt_template.format(
+            current_step=current_step,
+            topic=state.get("topic") or "미선택",
+            difficulty=state.get("difficulty") or "미선택",
+            language=state.get("language") or "미선택",
+            message=message,
+        )
+
+        response = await openrouter_service.chat_completion(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "당신은 친근한 코딩 학습 도우미입니다. 짧고 자연스럽게 응답하세요."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.8,
+            max_tokens=200,
+        )
+
+        answer = openrouter_service.get_content(response)
+
+    except Exception as e:
+        print(f"[handle_question] Off-topic LLM error: {e}")
+        # fallback 응답
+        answer = f"네! 그럼 문제 추천으로 돌아갈게요. {step_guidance.get(current_step, '어떤 걸로 해볼까요?')}"
+
+    # 현재 단계에 맞는 선택 칩 생성
+    chips = await _get_step_chips(current_step, user_context)
+
+    return {
+        "response_message": answer,
+        "suggested_value": None,  # 추천값 없이 선택 유도
+        "awaiting_confirmation": False,
+        "is_question": False,
+        "chips": chips,
+    }
+
+
+async def _get_step_chips(current_step: str, user_context: dict = None) -> list:
+    """현재 단계에 맞는 선택 칩 반환"""
+    from app.tools.user_tools import get_user_tools
+
+    user_context = user_context or {}
+    tools = get_user_tools()
+
+    if current_step == "topic":
+        # 주제 칩 (개인화)
+        topic_result = await tools.get_topic_recommendations(
+            learning_goal=user_context.get("learning_goal", "unknown"),
+            experience_level=user_context.get("experience_level", "unknown"),
+            strong_algorithms=user_context.get("strong_algorithms", []),
+            limit=6,
+        )
+        return [c.to_dict() for c in topic_result.topic_chips][:6]
+
+    elif current_step == "difficulty":
+        # 난이도 칩
+        difficulty_result = tools.get_difficulty_recommendations(
+            experience_level=user_context.get("experience_level", "unknown"),
+        )
+        return [c.to_dict() for c in difficulty_result.difficulty_chips]
+
+    else:
+        # 언어 칩
+        return [
+            {"label": "Python", "value": "python", "category": "language"},
+            {"label": "Java", "value": "java", "category": "language"},
+            {"label": "C++", "value": "cpp", "category": "language"},
+        ]
