@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Swords, Coins, Star, Calendar } from 'lucide-react';
+import { Swords, Coins, Star, Calendar, Sprout, Trophy, Clock } from 'lucide-react';
 import {
-  AdventurerRank,
-  QuestSection,
-  RankingModal,
+  StatsSummary,
+  QuestCard,
+  LeaderboardSection,
 } from '@/components/challenge';
 import {
   rankingApi,
@@ -18,6 +18,7 @@ import {
 } from '@/lib/api';
 import { apiClient } from '@/lib/api/client';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 // 주간 남은 시간 계산
 function getRemainingWeekTime(): string {
@@ -39,7 +40,12 @@ function getRemainingWeekTime(): string {
   return `${hours}시간`;
 }
 
+type TabType = 'quests' | 'leaderboard';
+
 export default function ChallengePage() {
+  // Tab state
+  const [activeTab, setActiveTab] = useState<TabType>('quests');
+
   // User & Auth
   const [currentUserId, setCurrentUserId] = useState<string | undefined>();
   const isAuthenticated = apiClient.isAuthenticated();
@@ -47,7 +53,6 @@ export default function ChallengePage() {
   // Ranking
   const [myRanking, setMyRanking] = useState<MyRankingSummary | null>(null);
   const [isMyRankingLoading, setIsMyRankingLoading] = useState(true);
-  const [isRankingModalOpen, setIsRankingModalOpen] = useState(false);
 
   // Missions
   const [dailyData, setDailyData] = useState<DailyMissionsResponse | null>(null);
@@ -153,82 +158,250 @@ export default function ChallengePage() {
   };
 
   const remainingTime = getRemainingWeekTime();
+  const dailyMissions = dailyData?.missions || [];
+  const weeklyMissions = weeklyData?.challenges || [];
+
+  const dailyClaimable = dailyMissions.filter((m) => m.status === 'completed').length;
+  const weeklyClaimable = weeklyMissions.filter((m) => m.status === 'completed').length;
+  const totalClaimable = dailyClaimable + weeklyClaimable;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-950/30 via-background to-background">
-      <div className="container max-w-2xl mx-auto px-4 py-8">
-        {/* 헤더 */}
+    <div className="min-h-screen bg-gradient-to-b from-emerald-950/20 via-background to-background">
+      <div className="container max-w-5xl mx-auto px-4 py-8">
+        {/* 헤더 + 탭 */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-              <Swords className="h-5 w-5 text-primary" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                <Swords className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h1 className="quest-title text-2xl font-bold text-white tracking-wide">
+                  Quest Board
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  퀘스트를 완료하고 보상을 획득하세요
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="quest-title text-2xl font-bold text-white tracking-wide">
-                Quest Board
-              </h1>
-              <p className="text-sm text-emerald-300/70">
-                퀘스트를 완료하고 보상을 획득하세요
-              </p>
-            </div>
+
+            {/* 탭 */}
+            {isAuthenticated && (
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-card/50 border border-border/50">
+                <button
+                  onClick={() => setActiveTab('quests')}
+                  className={cn(
+                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    activeTab === 'quests'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-white hover:bg-muted/50'
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <Sprout className="w-4 h-4" />
+                    퀘스트
+                    {totalClaimable > 0 && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-white/20">
+                        {totalClaimable}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('leaderboard')}
+                  className={cn(
+                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    activeTab === 'leaderboard'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-white hover:bg-muted/50'
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <Trophy className="w-4 h-4" />
+                    리더보드
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
-
-        {/* 내 순위 (모험가 랭크) */}
-        <AdventurerRank
-          data={myRanking}
-          isLoading={isMyRankingLoading}
-          onViewRanking={() => setIsRankingModalOpen(true)}
-        />
 
         {/* 로그인 필요 안내 */}
         {!isAuthenticated ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="quest-card rounded-xl p-8 text-center"
+            className="quest-card rounded-xl p-12 text-center"
           >
             <Calendar className="w-16 h-16 mx-auto mb-4 text-primary/30" />
             <h2 className="text-lg font-semibold text-white mb-2">
               로그인이 필요합니다
             </h2>
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm text-muted-foreground">
               퀘스트를 확인하고 보상을 받으려면 로그인해주세요.
             </p>
           </motion.div>
         ) : (
           <>
-            {/* 일일 미션 */}
-            <QuestSection
-              title="Today's Quests"
-              variant="daily"
-              quests={dailyData?.missions || []}
-              isLoading={isMissionsLoading}
-              onClaim={handleClaim}
-            />
+            {/* 퀘스트 탭 */}
+            {activeTab === 'quests' && (
+              <motion.div
+                key="quests"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+              >
+                {/* 요약 카드 3개 */}
+                <StatsSummary
+                  ranking={myRanking}
+                  dailyMissions={dailyMissions}
+                  weeklyMissions={weeklyMissions}
+                  isLoading={isMyRankingLoading || isMissionsLoading}
+                  onViewRanking={() => setActiveTab('leaderboard')}
+                />
 
-            {/* 주간 챌린지 */}
-            <QuestSection
-              title="Weekly Challenge"
-              variant="weekly"
-              quests={weeklyData?.challenges || []}
-              isLoading={isMissionsLoading}
-              onClaim={handleClaim}
-              remainingTime={remainingTime}
-            />
+                {/* 2컬럼 그리드: 일일 미션 / 주간 챌린지 */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* 일일 미션 */}
+                  <motion.section
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                  >
+                    {/* 섹션 헤더 */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+                          <Sprout className="w-4 h-4 text-primary" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="font-semibold text-primary">Today&apos;s Quests</h2>
+                            {dailyClaimable > 0 && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-primary text-primary-foreground">
+                                {dailyClaimable}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 일일 미션 목록 */}
+                    {isMissionsLoading ? (
+                      <div className="space-y-2">
+                        {[0, 1, 2].map((i) => (
+                          <div
+                            key={i}
+                            className="h-16 rounded-xl bg-card/50 animate-pulse"
+                          />
+                        ))}
+                      </div>
+                    ) : dailyMissions.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center quest-card rounded-xl">
+                        <Sprout className="w-10 h-10 text-muted-foreground/30 mb-3" />
+                        <p className="text-muted-foreground text-sm">
+                          오늘의 퀘스트가 아직 없습니다
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {dailyMissions.map((quest, index) => (
+                          <QuestCard
+                            key={quest.id}
+                            quest={quest}
+                            variant="daily"
+                            onClaim={handleClaim}
+                            index={index}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </motion.section>
+
+                  {/* 주간 챌린지 */}
+                  <motion.section
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                  >
+                    {/* 섹션 헤더 */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+                          <Trophy className="w-4 h-4 text-yellow-400" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="font-semibold text-yellow-400">Weekly Challenge</h2>
+                            {weeklyClaimable > 0 && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-yellow-500 text-black">
+                                {weeklyClaimable}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{remainingTime}</span>
+                      </div>
+                    </div>
+
+                    {/* 주간 챌린지 목록 */}
+                    {isMissionsLoading ? (
+                      <div className="space-y-3">
+                        {[0, 1].map((i) => (
+                          <div
+                            key={i}
+                            className="h-32 rounded-xl bg-card/50 animate-pulse"
+                          />
+                        ))}
+                      </div>
+                    ) : weeklyMissions.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center quest-card rounded-xl">
+                        <Trophy className="w-10 h-10 text-muted-foreground/30 mb-3" />
+                        <p className="text-muted-foreground text-sm">
+                          이번 주 챌린지가 아직 없습니다
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {weeklyMissions.map((quest, index) => (
+                          <QuestCard
+                            key={quest.id}
+                            quest={quest}
+                            variant="weekly"
+                            onClaim={handleClaim}
+                            index={index}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </motion.section>
+                </div>
+              </motion.div>
+            )}
+
+            {/* 리더보드 탭 */}
+            {activeTab === 'leaderboard' && (
+              <motion.div
+                key="leaderboard"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <LeaderboardSection currentUserId={currentUserId} />
+              </motion.div>
+            )}
           </>
         )}
-
-        {/* 전체 순위 모달 */}
-        <RankingModal
-          open={isRankingModalOpen}
-          onOpenChange={setIsRankingModalOpen}
-          currentUserId={currentUserId}
-        />
       </div>
     </div>
   );
