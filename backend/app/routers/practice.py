@@ -41,13 +41,13 @@ router = APIRouter()
 # Helper Functions
 # ============================================================
 
-def get_next_attempt_number(db, user_id: str, problem_id: str) -> int:
-    """동일 문제에 대한 다음 시도 번호 계산"""
+def get_next_attempt_number(db, user_id: str, base_problem_id: str) -> int:
+    """동일 문제에 대한 다음 시도 번호 계산 (base_problem_id 기준)"""
     try:
         result = db.table("attempts")\
             .select("attempt_number")\
             .eq("user_id", user_id)\
-            .eq("problem_id", problem_id)\
+            .eq("base_problem_id", base_problem_id)\
             .order("attempt_number", desc=True)\
             .limit(1)\
             .execute()
@@ -237,17 +237,15 @@ async def start_practice(
             "started_at": started_at_dt.isoformat(),  # 시작 시간 명시적 저장
         }
 
-        # problem_id 추가 (UUID 형식인 경우만 - DB 컬럼이 UUID 타입)
+        # base_problem_id 추가 - base_problems.id로 변환해서 저장
+        # attempts.base_problem_id가 base_problems.id를 직접 참조
         if request.problem_id:
-            try:
-                problem_uuid = UUIDType(request.problem_id)
-                attempt_data["problem_id"] = str(problem_uuid)
-            except ValueError:
-                # UUID가 아닌 경우 저장하지 않음 (DB 컬럼이 UUID 타입이라 TEXT 저장 불가)
-                print(f"[StartPractice] Invalid UUID format, skipping problem_id: {request.problem_id[:50]}")
-
-        # Note: base_problem_id 컬럼이 DB에 없으므로 제외
-        # 반복 풀이 체크는 problem_id로 수행됨
+            resolved_problem_id = await resolve_base_problem_id(db, request.problem_id)
+            if resolved_problem_id:
+                attempt_data["base_problem_id"] = resolved_problem_id
+                print(f"[StartPractice] Resolved base_problem_id: {request.problem_id} -> {resolved_problem_id}")
+            else:
+                print(f"[StartPractice] WARNING: Could not resolve to base_problems.id: {request.problem_id}")
 
         # attempts 테이블에 pending 레코드 생성
         result = db.table("attempts").insert(attempt_data).execute()
@@ -739,11 +737,11 @@ async def record_solve(
 
         print(f"[RecordSolve] Resolved base_problem_id: {base_problem_id} (from problem_id={submission.problem_id})")
 
-        # 이미 푼 문제인지 확인 (base_problem_id로 검색 - 핵심 수정!)
+        # 이미 푼 문제인지 확인 (base_problem_id로 검색)
         already_solved = False
         xp_earned = base_xp
 
-        # 이전 풀이 체크: base_problem_id 우선, 없으면 problem_id 사용
+        # 이전 풀이 체크: base_problem_id 기준
         if base_problem_id:
             try:
                 prev_attempt = db.table("attempts")\
@@ -759,25 +757,7 @@ async def record_solve(
                     xp_earned = base_xp // 4  # 1/4 XP
                     print(f"[RecordSolve] Already solved (base_problem_id={base_problem_id}), reducing XP: {base_xp} -> {xp_earned}")
             except Exception as check_err:
-                print(f"[RecordSolve] Error checking previous solve by base_problem_id: {check_err}")
-
-        # base_problem_id로 못 찾았으면 problem_id로 체크
-        if not already_solved and submission.problem_id:
-            try:
-                prev_attempt = db.table("attempts")\
-                    .select("id")\
-                    .eq("user_id", str(user_id))\
-                    .eq("problem_id", submission.problem_id)\
-                    .eq("is_correct", True)\
-                    .limit(1)\
-                    .execute()
-
-                if prev_attempt.data and len(prev_attempt.data) > 0:
-                    already_solved = True
-                    xp_earned = base_xp // 4  # 1/4 XP
-                    print(f"[RecordSolve] Already solved (problem_id={submission.problem_id}), reducing XP: {base_xp} -> {xp_earned}")
-            except Exception as check_err:
-                print(f"[RecordSolve] Error checking previous solve by problem_id: {check_err}")
+                print(f"[RecordSolve] Error checking previous solve: {check_err}")
 
         # attempts 테이블에 기록 시도
         attempt_id_used = None
@@ -799,7 +779,7 @@ async def record_solve(
                     # session_id가 있으면 업데이트 (없으면 기존 유지)
                     if submission.session_id:
                         update_data["session_id"] = submission.session_id
-                    # base_problem_id가 있으면 업데이트
+                    # base_problem_id 업데이트 (base_problems.id 직접 참조)
                     if base_problem_id:
                         update_data["base_problem_id"] = base_problem_id
 
@@ -830,25 +810,17 @@ async def record_solve(
                     "session_id": submission.session_id,
                 }
 
-                # problem_id 추가 + attempt_number 계산
-                if submission.problem_id:
-                    try:
-                        problem_uuid = UUIDType(submission.problem_id)
-                        attempt_data["problem_id"] = str(problem_uuid)
-                        # 동일 문제 시도 번호 계산
-                        attempt_data["attempt_number"] = get_next_attempt_number(
-                            db, str(user_id), str(problem_uuid)
-                        )
-                    except ValueError:
-                        # UUID가 아니어도 저장
-                        attempt_data["problem_id"] = submission.problem_id
-                        attempt_data["attempt_number"] = 1
-                else:
-                    attempt_data["attempt_number"] = 1
-
-                # base_problem_id 추가 (반복 풀이 체크용)
+                # base_problem_id에 base_problems.id를 저장
+                # attempts.base_problem_id가 base_problems.id를 직접 참조함
                 if base_problem_id:
                     attempt_data["base_problem_id"] = base_problem_id
+                    # 동일 문제 시도 번호 계산 (base_problem_id 기준)
+                    attempt_data["attempt_number"] = get_next_attempt_number(
+                        db, str(user_id), base_problem_id
+                    )
+                else:
+                    attempt_data["attempt_number"] = 1
+                    print(f"[RecordSolve] WARNING: No base_problem_id resolved for problem_id={submission.problem_id}")
 
                 result = db.table("attempts").insert(attempt_data).execute()
                 if result.data and len(result.data) > 0:
@@ -1653,3 +1625,107 @@ async def get_session_stats(
     except Exception as e:
         print(f"[SessionStats] Error: {e}")
         return {"error": str(e)}
+
+
+# ============================================================
+# Debug Endpoints (개발용)
+# ============================================================
+
+@router.get("/debug/recent-data")
+async def debug_recent_data(
+    user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+    db=Depends(get_db),
+    limit: int = 5,
+):
+    """
+    디버깅용: 최근 attempts, user_memories 데이터 확인
+
+    DB에 데이터가 올바르게 저장되고 있는지 확인하는 엔드포인트입니다.
+    - attempts: base_problem_id, problem_id 확인
+    - user_memories: attempt_id 확인
+    """
+    if not user_id:
+        return {"error": "로그인이 필요합니다."}
+
+    try:
+        # 최근 attempts 조회
+        attempts_result = db.table("attempts")\
+            .select("id, user_id, base_problem_id, problem_id, problem_name, is_correct, xp_earned, created_at")\
+            .eq("user_id", str(user_id))\
+            .order("created_at", desc=True)\
+            .limit(limit)\
+            .execute()
+
+        # 최근 user_memories 조회
+        memories_result = db.table("user_memories")\
+            .select("id, user_id, problem_name, attempt_id, was_successful, created_at")\
+            .eq("user_id", str(user_id))\
+            .order("created_at", desc=True)\
+            .limit(limit)\
+            .execute()
+
+        return {
+            "user_id": str(user_id),
+            "recent_attempts": attempts_result.data or [],
+            "recent_memories": memories_result.data or [],
+            "summary": {
+                "attempts_count": len(attempts_result.data) if attempts_result.data else 0,
+                "attempts_with_base_problem_id": sum(
+                    1 for a in (attempts_result.data or []) if a.get("base_problem_id")
+                ),
+                "memories_count": len(memories_result.data) if memories_result.data else 0,
+                "memories_with_attempt_id": sum(
+                    1 for m in (memories_result.data or []) if m.get("attempt_id")
+                ),
+            }
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@router.get("/debug/resolve-problem/{problem_id}")
+async def debug_resolve_problem(
+    problem_id: str,
+    db=Depends(get_db),
+):
+    """
+    디버깅용: problem_id가 base_problems.id로 올바르게 변환되는지 확인
+
+    Args:
+        problem_id: 테스트할 문제 ID (UUID 또는 original_id 형식)
+
+    Returns:
+        resolve 결과와 base_problems 정보
+    """
+    try:
+        resolved_id = await resolve_base_problem_id(db, problem_id)
+
+        result = {
+            "input_problem_id": problem_id,
+            "resolved_base_problem_id": resolved_id,
+        }
+
+        if resolved_id:
+            # base_problems에서 상세 정보 조회
+            bp_result = db.table("base_problems")\
+                .select("id, original_id, name, difficulty, source")\
+                .eq("id", resolved_id)\
+                .limit(1)\
+                .execute()
+
+            if bp_result.data:
+                result["base_problem_info"] = bp_result.data[0]
+            else:
+                result["base_problem_info"] = None
+        else:
+            result["error"] = "Could not resolve to base_problems.id"
+
+        return result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "input_problem_id": problem_id}

@@ -55,7 +55,7 @@ async def get_current_user(
         # Get stats (필요한 컬럼만 선택)
         stats_result = db.table("user_stats").select(
             "user_id, level, total_xp, problems_solved, current_streak, longest_streak, "
-            "blank_solved, bug_solved, output_solved, refactor_solved"
+            "blank_solved, puzzle_solved, guided_solved"
         ).eq("user_id", str(user_id)).single().execute()
 
         # Get preferences (필요한 컬럼만 선택)
@@ -155,7 +155,7 @@ async def get_user_stats(
         result = db.table("user_stats")\
             .select(
                 "user_id, level, total_xp, problems_solved, current_streak, longest_streak, "
-                "blank_solved, bug_solved, output_solved, refactor_solved"
+                "blank_solved, puzzle_solved, guided_solved"
             )\
             .eq("user_id", str(user_id))\
             .single()\
@@ -271,7 +271,7 @@ async def get_user_activity(
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         result = db.table("daily_activity")\
-            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, bug_count, output_count, refactor_count")\
+            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, puzzle_count, guided_count")\
             .eq("user_id", str(user_id))\
             .gte("activity_date", start_date)\
             .order("activity_date", desc=False)\
@@ -283,9 +283,8 @@ async def get_user_activity(
             xp_earned=item.get("xp_earned", 0),
             time_spent=item.get("time_spent", 0),
             blank_count=item.get("blank_count", 0),
-            bug_count=item.get("bug_count", 0),
-            output_count=item.get("output_count", 0),
-            refactor_count=item.get("refactor_count", 0),
+            puzzle_count=item.get("puzzle_count", 0),
+            guided_count=item.get("guided_count", 0),
         ) for item in (result.data or [])]
 
     except Exception as e:
@@ -314,41 +313,22 @@ async def get_activity_by_date(
                 detail="Invalid date format. Use YYYY-MM-DD."
             )
 
-        # Get daily activity summary (필요한 컬럼만 선택)
+        # Get daily activity summary (limit(1)로 0~1개 결과 허용)
         daily_result = db.table("daily_activity")\
             .select("problems_solved, xp_earned")\
             .eq("user_id", str(user_id))\
             .eq("activity_date", date)\
-            .single()\
+            .limit(1)\
             .execute()
 
-        daily_data = daily_result.data or {}
+        daily_data = daily_result.data[0] if daily_result.data else {}
         problems_solved = daily_data.get("problems_solved", 0)
         xp_earned = daily_data.get("xp_earned", 0)
 
-        # Get solved problems on that date
+        # Get solved problems with base_problems.name via JOIN
         start_of_day = f"{date}T00:00:00"
         end_of_day = f"{date}T23:59:59"
-
-        attempts_result = db.table("attempts")\
-            .select("id, problem_type, xp_earned, submitted_at")\
-            .eq("user_id", str(user_id))\
-            .eq("is_correct", True)\
-            .gte("submitted_at", start_of_day)\
-            .lte("submitted_at", end_of_day)\
-            .order("submitted_at", desc=True)\
-            .execute()
-
-        problems = []
-        for attempt in (attempts_result.data or []):
-            problems.append(SolvedProblem(
-                id=str(attempt["id"]),
-                name="Solved Problem",
-                difficulty="medium",
-                problem_type=attempt.get("problem_type", "blank") or "blank",
-                xp_earned=attempt.get("xp_earned", 0) or 0,
-                solved_at=attempt["submitted_at"],
-            ))
+        problems = fetch_solved_problems_with_names(db, str(user_id), start_of_day, end_of_day)
 
         return DateActivityDetail(
             date=date,
@@ -974,6 +954,61 @@ def get_user_by_username(db, username: str):
     return result.data
 
 
+def fetch_solved_problems_with_names(db, user_id: str, start_of_day: str, end_of_day: str) -> list:
+    """
+    Helper: attempts에서 푼 문제를 가져와서 base_problems.name과 JOIN하여 반환.
+
+    단순화된 JOIN 경로:
+    attempts.base_problem_id -> base_problems.name
+    """
+    # 1. attempts에서 정답 제출 기록 가져오기 (base_problem_id 포함)
+    attempts_result = db.table("attempts")\
+        .select("id, base_problem_id, problem_type, xp_earned, submitted_at, difficulty")\
+        .eq("user_id", user_id)\
+        .eq("is_correct", True)\
+        .gte("submitted_at", start_of_day)\
+        .lte("submitted_at", end_of_day)\
+        .order("submitted_at", desc=True)\
+        .execute()
+
+    if not attempts_result.data:
+        return []
+
+    # 2. base_problem_id 목록 수집
+    base_ids = list(set(
+        str(a["base_problem_id"])
+        for a in attempts_result.data
+        if a.get("base_problem_id")
+    ))
+
+    # 3. base_problems에서 name 조회
+    base_to_name = {}
+    if base_ids:
+        base_result = db.table("base_problems")\
+            .select("id, name")\
+            .in_("id", base_ids)\
+            .execute()
+        for bp in (base_result.data or []):
+            base_to_name[str(bp["id"])] = bp.get("name", "Unknown Problem")
+
+    # 4. SolvedProblem 리스트 생성
+    problems = []
+    for attempt in attempts_result.data:
+        base_problem_id = attempt.get("base_problem_id")
+        problem_name = base_to_name.get(str(base_problem_id), "Unknown Problem") if base_problem_id else "Unknown Problem"
+
+        problems.append(SolvedProblem(
+            id=str(attempt["id"]),
+            name=problem_name,
+            difficulty=attempt.get("difficulty") or "medium",
+            problem_type=attempt.get("problem_type", "blank") or "blank",
+            xp_earned=attempt.get("xp_earned", 0) or 0,
+            solved_at=attempt["submitted_at"],
+        ))
+
+    return problems
+
+
 @router.get("/{username}/public-profile", response_model=PublicProfile)
 async def get_public_profile(
     username: str,
@@ -1101,7 +1136,7 @@ async def get_public_activity(
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         result = db.table("daily_activity")\
-            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, bug_count, output_count, refactor_count")\
+            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, puzzle_count, guided_count")\
             .eq("user_id", str(user_id))\
             .gte("activity_date", start_date)\
             .order("activity_date", desc=False)\
@@ -1113,9 +1148,8 @@ async def get_public_activity(
             xp_earned=item.get("xp_earned", 0),
             time_spent=item.get("time_spent", 0),
             blank_count=item.get("blank_count", 0),
-            bug_count=item.get("bug_count", 0),
-            output_count=item.get("output_count", 0),
-            refactor_count=item.get("refactor_count", 0),
+            puzzle_count=item.get("puzzle_count", 0),
+            guided_count=item.get("guided_count", 0),
         ) for item in (result.data or [])]
 
     except HTTPException:
@@ -1228,41 +1262,22 @@ async def get_public_activity_by_date(
 
         user_id = user["id"]
 
-        # Get daily activity summary (필요한 컬럼만 선택)
+        # Get daily activity summary (limit(1)로 0~1개 결과 허용)
         daily_result = db.table("daily_activity")\
             .select("problems_solved, xp_earned")\
             .eq("user_id", str(user_id))\
             .eq("activity_date", date)\
-            .single()\
+            .limit(1)\
             .execute()
 
-        daily_data = daily_result.data or {}
+        daily_data = daily_result.data[0] if daily_result.data else {}
         problems_solved = daily_data.get("problems_solved", 0)
         xp_earned = daily_data.get("xp_earned", 0)
 
-        # Get solved problems on that date
+        # Get solved problems with base_problems.name via JOIN
         start_of_day = f"{date}T00:00:00"
         end_of_day = f"{date}T23:59:59"
-
-        attempts_result = db.table("attempts")\
-            .select("id, problem_type, xp_earned, submitted_at")\
-            .eq("user_id", str(user_id))\
-            .eq("is_correct", True)\
-            .gte("submitted_at", start_of_day)\
-            .lte("submitted_at", end_of_day)\
-            .order("submitted_at", desc=True)\
-            .execute()
-
-        problems = []
-        for attempt in (attempts_result.data or []):
-            problems.append(SolvedProblem(
-                id=str(attempt["id"]),
-                name="Solved Problem",
-                difficulty="medium",
-                problem_type=attempt.get("problem_type", "blank") or "blank",
-                xp_earned=attempt.get("xp_earned", 0) or 0,
-                solved_at=attempt["submitted_at"],
-            ))
+        problems = fetch_solved_problems_with_names(db, str(user_id), start_of_day, end_of_day)
 
         return DateActivityDetail(
             date=date,
@@ -1448,7 +1463,7 @@ async def get_public_profile_all(
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         activity_result = db.table("daily_activity")\
-            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, bug_count, output_count, refactor_count")\
+            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, puzzle_count, guided_count")\
             .eq("user_id", str(user_id))\
             .gte("activity_date", start_date)\
             .order("activity_date", desc=False)\
@@ -1460,9 +1475,8 @@ async def get_public_profile_all(
             xp_earned=item.get("xp_earned", 0),
             time_spent=item.get("time_spent", 0),
             blank_count=item.get("blank_count", 0),
-            bug_count=item.get("bug_count", 0),
-            output_count=item.get("output_count", 0),
-            refactor_count=item.get("refactor_count", 0),
+            puzzle_count=item.get("puzzle_count", 0),
+            guided_count=item.get("guided_count", 0),
         ) for item in (activity_result.data or [])]
 
         # 3. 통합 응답 구성

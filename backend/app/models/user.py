@@ -39,9 +39,8 @@ class UserStats(BaseModel):
     problems_solved: int = 0
     problems_attempted: int = 0
     blank_solved: int = 0
-    bug_solved: int = 0
-    output_solved: int = 0
-    refactor_solved: int = 0
+    puzzle_solved: int = 0
+    guided_solved: int = 0
     current_streak: int = 0
     longest_streak: int = 0
     seeds: int = 0
@@ -119,9 +118,8 @@ class DailyActivity(BaseModel):
     xp_earned: int = 0
     time_spent: int = 0  # seconds
     blank_count: int = 0
-    bug_count: int = 0
-    output_count: int = 0
-    refactor_count: int = 0
+    puzzle_count: int = 0
+    guided_count: int = 0
 
 
 class RecentActivityType(str, Enum):
