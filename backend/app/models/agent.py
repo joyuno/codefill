@@ -189,6 +189,26 @@ class GuidedProblemResponse(BaseModel):
     checkpoints: List[str]  # 체크포인트/확인 사항
 
 
+# --- Guided Starter Code (에디터 기반 1대1 대화형) ---
+
+class GuidedStarterRequest(BaseModel):
+    """Request to get starter code for guided coding."""
+    original_id: str  # base_problems.original_id
+    language: LanguageEnum = LanguageEnum.PYTHON
+
+
+class GuidedStarterResponse(BaseModel):
+    """
+    Starter code for guided (1:1) coding problem.
+    - starter_code가 있으면 그대로 반환
+    - 없으면 solutions에서 해당 언어 코드의 앞 2줄 반환
+    """
+    original_id: str
+    language: str
+    starter_code: str  # 에디터에 미리 표시할 코드
+    has_starter_code: bool = False  # DB에 starter_code가 있었는지 여부
+
+
 # ============================================================
 # Code Generation Models
 # ============================================================

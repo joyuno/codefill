@@ -115,11 +115,11 @@ export default function PublicProfilePage() {
     }
   };
 
-  // 통합 API로 한 번에 모든 데이터 로드 (DB 쿼리 최적화)
+  // 통합 API로 한 번에 모든 데이터 로드 (RPC 함수로 DB 쿼리 최적화)
   useEffect(() => {
     let isMounted = true;
 
-    // username 변경 시 모든 상태 초기화 (이전 데이터 제거)
+    // username 변경 시 모든 상태 초기화
     setProfile(null);
     setBadges(null);
     setFarm(null);
@@ -129,7 +129,7 @@ export default function PublicProfilePage() {
 
     async function loadAllData() {
       try {
-        // 한 번의 API 호출로 모든 데이터 로드 (username lookup 1회만)
+        // 한 번의 API 호출로 모든 데이터 로드 (RPC 함수 사용)
         const data = await publicProfileApi.getAll(username, 365);
         if (isMounted) {
           setProfile(data.profile);

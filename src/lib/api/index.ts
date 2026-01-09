@@ -171,3 +171,12 @@ export type {
   RankingListResponse,
   MyRankingSummary,
 } from './ranking';
+export {
+  missionsApi,
+  type Mission,
+  type DailyMissionsResponse,
+  type WeeklyChallengesResponse,
+  type ClaimRewardResponse,
+  type MissionsSummary,
+  type AllMissionsResponse,
+} from './missions';

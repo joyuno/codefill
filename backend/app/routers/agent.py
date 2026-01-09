@@ -53,6 +53,8 @@ from ..models.agent import (
     BlankProblemResponse,
     PuzzleProblemResponse,
     GuidedProblemResponse,
+    GuidedStarterRequest,
+    GuidedStarterResponse,
     ProblemTypeEnum,
     # Code Generation
     CodeGenerationRequest,
@@ -1677,6 +1679,111 @@ async def generate_guided_problem(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Guided problem generation error: {str(e)}"
+        )
+
+
+# ============================================================
+# Guided Starter Code (에디터 기반 1대1 대화형)
+# ============================================================
+
+@router.post("/get/guided-starter", response_model=GuidedStarterResponse)
+async def get_guided_starter_code(
+    request: GuidedStarterRequest,
+    db=Depends(get_db),
+):
+    """
+    Get starter code for guided (1:1) coding problem.
+
+    - DB의 starter_code가 있으면 그대로 반환
+    - 없으면 solutions에서 해당 언어 코드의 앞 2줄 반환
+    - LLM 호출 없음, DB 조회만
+    """
+    try:
+        original_id = request.original_id
+        language = request.language.value
+
+        print(f"[Guided Starter] Fetching starter code: {original_id}, lang={language}")
+
+        # base_problems 테이블에서 조회
+        result = db.table("base_problems") \
+            .select("starter_code, solutions") \
+            .eq("original_id", original_id) \
+            .single() \
+            .execute()
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Problem not found: {original_id}"
+            )
+
+        data = result.data
+        starter_code = data.get("starter_code")
+        solutions = data.get("solutions") or []
+
+        # 1. starter_code가 있으면 그대로 반환
+        if starter_code and starter_code.strip():
+            print(f"[Guided Starter] Using DB starter_code")
+            return GuidedStarterResponse(
+                original_id=original_id,
+                language=language,
+                starter_code=starter_code,
+                has_starter_code=True,
+            )
+
+        # 2. 없으면 solutions에서 해당 언어 코드 찾기
+        code_from_solution = ""
+        for sol in solutions:
+            sol_lang = sol.get("language", "").lower()
+            if sol_lang == language.lower():
+                code_from_solution = sol.get("code", "")
+                break
+
+        if not code_from_solution:
+            # 해당 언어 솔루션이 없으면 첫 번째 솔루션 사용
+            if solutions:
+                code_from_solution = solutions[0].get("code", "")
+                print(f"[Guided Starter] No {language} solution, using first available")
+
+        # 3. 코드 길이에 따라 적절한 줄 수 추출 (구간별 고정)
+        if code_from_solution:
+            lines = code_from_solution.split('\n')
+            total_lines = len(lines)
+
+            # 구간별 starter code 줄 수 결정
+            if total_lines <= 10:
+                starter_lines = 1
+            elif total_lines <= 30:
+                starter_lines = 3
+            elif total_lines <= 50:
+                starter_lines = 5
+            elif total_lines <= 100:
+                starter_lines = 8
+            else:
+                starter_lines = 10
+
+            starter_code = '\n'.join(lines[:starter_lines])
+            print(f"[Guided Starter] Generated from solutions ({starter_lines}/{total_lines} lines)")
+        else:
+            starter_code = ""
+            print(f"[Guided Starter] No solution found, returning empty")
+
+        return GuidedStarterResponse(
+            original_id=original_id,
+            language=language,
+            starter_code=starter_code,
+            has_starter_code=False,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[Guided Starter] Error: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get starter code: {str(e)}"
         )
 
 
