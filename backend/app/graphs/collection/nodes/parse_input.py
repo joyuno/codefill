@@ -166,6 +166,19 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         updates["is_off_topic"] = True
         return updates
 
+    # ============================================================
+    # 3-2. 질문 메시지 처리 (Tool 기반)
+    # ============================================================
+    is_question_intent = extraction.details.get("is_question", False) if extraction.details else False
+    question_info = extraction.details.get("question_info") if extraction.details else None
+
+    if is_question_intent and question_info:
+        print(f"[parse_input] Question detected via Tool: {question_info}")
+        updates["is_question"] = True
+        updates["question_type"] = question_info.get("question_type", "explanation")
+        updates["question_info"] = question_info  # 전체 정보 전달
+        return updates
+
     # 현재 단계 값 확인
     current_value = extraction.values.get(current_step)
 

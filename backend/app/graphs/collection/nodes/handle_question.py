@@ -106,6 +106,34 @@ TIER_TO_DB = {
 DIFFICULTY_ORDER = ["easy", "medium", "medium_hard", "hard", "very_hard"]
 
 
+# 알고리즘 주제 설명 (LLM 프롬프트에서 참조)
+TOPIC_EXPLANATIONS = {
+    "DP": "동적 프로그래밍(Dynamic Programming)은 큰 문제를 작은 하위 문제로 나눠서 풀고, 그 결과를 저장해 재활용하는 기법입니다. 피보나치, 배낭 문제, 최장 공통 부분 수열 등이 대표적입니다.",
+    "그래프": "그래프는 정점(노드)과 간선(엣지)으로 이루어진 자료구조입니다. BFS, DFS, 최단경로(다익스트라, 플로이드), 최소신장트리 등이 주요 알고리즘입니다.",
+    "정렬": "정렬은 데이터를 특정 순서로 배열하는 알고리즘입니다. 버블정렬, 퀵정렬, 병합정렬, 힙정렬 등이 있으며, 시간복잡도와 안정성이 다릅니다.",
+    "구현": "구현 문제는 주어진 조건을 정확히 코드로 옮기는 능력을 평가합니다. 시뮬레이션, 완전탐색, 문자열 처리 등이 포함됩니다.",
+    "기초": "기초 문제는 프로그래밍의 기본 개념(반복문, 조건문, 배열 등)을 익히는 입문 단계입니다.",
+    "문자열": "문자열 알고리즘은 텍스트 처리에 관한 것으로, KMP, 라빈-카프, 트라이 등의 패턴 매칭 알고리즘이 포함됩니다.",
+    "이분탐색": "이분탐색은 정렬된 데이터에서 O(log n) 시간에 원하는 값을 찾는 알고리즘입니다. 매개변수 탐색에도 활용됩니다.",
+    "그리디": "그리디(탐욕법)는 각 단계에서 최선의 선택을 하는 알고리즘입니다. 활동 선택, 최소 동전 문제 등이 대표적입니다.",
+    "BFS/DFS": "BFS(너비우선탐색)와 DFS(깊이우선탐색)는 그래프/트리 탐색의 기본 알고리즘입니다. 최단경로, 연결요소 탐색에 활용됩니다.",
+    "백트래킹": "백트래킹은 가능한 모든 경우를 탐색하되, 조건에 맞지 않으면 되돌아가는 기법입니다. N-Queen, 스도쿠 등이 대표적입니다.",
+}
+
+# 난이도(티어) 설명
+DIFFICULTY_EXPLANATIONS = {
+    "실버": "실버 티어는 기본 개념 연습 단계입니다. 간단한 자료구조와 알고리즘의 기초를 익힐 수 있어요. 입문자에게 적합합니다.",
+    "골드": "골드 티어는 응용 문제 단계입니다. 기본 알고리즘을 조합해서 풀어야 하는 문제들이 많아요. 취업 준비에 기본이 되는 수준입니다.",
+    "플래티넘": "플래티넘 티어는 심화 응용 단계입니다. 세그먼트 트리, 고급 그래프 알고리즘 등이 필요해요. 대기업 코딩테스트 상위 문제 수준입니다.",
+    "다이아": "다이아 티어는 도전적인 문제들입니다. 복잡한 알고리즘 조합과 최적화가 필요해요. 알고리즘 대회 준비에 적합합니다.",
+    "마스터": "마스터 티어는 최상위 난이도입니다. 고급 수학적 사고와 창의적 문제 해결이 요구됩니다. 국제 대회 수준이에요.",
+    "easy": "실버 티어는 기본 개념 연습 단계입니다. 간단한 자료구조와 알고리즘의 기초를 익힐 수 있어요. 입문자에게 적합합니다.",
+    "medium": "골드 티어는 응용 문제 단계입니다. 기본 알고리즘을 조합해서 풀어야 하는 문제들이 많아요. 취업 준비에 기본이 되는 수준입니다.",
+    "medium_hard": "플래티넘 티어는 심화 응용 단계입니다. 세그먼트 트리, 고급 그래프 알고리즘 등이 필요해요. 대기업 코딩테스트 상위 문제 수준입니다.",
+    "hard": "다이아 티어는 도전적인 문제들입니다. 복잡한 알고리즘 조합과 최적화가 필요해요. 알고리즘 대회 준비에 적합합니다.",
+    "very_hard": "마스터 티어는 최상위 난이도입니다. 고급 수학적 사고와 창의적 문제 해결이 요구됩니다. 국제 대회 수준이에요.",
+}
+
 # 질문 유형별 프롬프트 (추천값 생성 포함)
 QUESTION_PROMPTS = {
     "recommendation": """
@@ -118,6 +146,7 @@ QUESTION_PROMPTS = {
 - 언어: {language}
 
 사용자 메시지: "{message}"
+{question_context}
 
 친절하게 추천해주세요. 반드시 아래 형식으로 답변하세요:
 
@@ -145,11 +174,14 @@ QUESTION_PROMPTS = {
 - 언어: {language}
 
 사용자 메시지: "{message}"
+{question_context}
 
-1. 간단하게 설명해주세요 (2-3문장)
+1. **반드시 질문에서 언급된 주제/개념에 대해 구체적으로 설명해주세요** (2-3문장)
 2. 그리고 현재 단계({current_step})에 맞는 값을 하나 추천하세요
 
-중요: 답변 마지막에 반드시 구체적인 값을 추천하세요.
+중요:
+- 질문의 핵심 내용에 먼저 답변하세요!
+- 답변 마지막에 구체적인 값을 추천하세요.
 예: "DP로 시작해볼까요?" 또는 "골드로 할까요?"
 """,
     "comparison": """
@@ -162,12 +194,55 @@ QUESTION_PROMPTS = {
 - 언어: {language}
 
 사용자 메시지: "{message}"
+{question_context}
 
-1. 간단히 비교해주세요 (2-3문장)
+1. **반드시 비교 대상들의 차이점을 구체적으로 설명해주세요** (2-3문장)
 2. 그리고 현재 단계({current_step})에 맞는 값을 하나 추천하세요
 
-중요: 답변 마지막에 반드시 구체적인 값을 추천하세요.
+중요:
+- 질문에서 언급된 대상들을 비교해주세요!
+- 답변 마지막에 구체적인 값을 추천하세요.
 예: "그래프로 해볼까요?" 또는 "플래티넘으로 할까요?"
+""",
+    "difficulty_inquiry": """
+사용자가 난이도/티어에 대해 질문했습니다.
+
+현재 수집 단계: {current_step}
+수집된 정보:
+- 주제: {topic}
+- 난이도: {difficulty}
+- 언어: {language}
+
+사용자 메시지: "{message}"
+{question_context}
+
+1. **반드시 질문한 난이도(티어)가 어느 정도 수준인지 구체적으로 설명해주세요** (2-3문장)
+   - 어떤 유형의 문제가 나오는지
+   - 어느 정도 실력이 필요한지
+   - 누구에게 적합한지
+2. 그리고 현재 단계({current_step})에 맞는 값을 하나 추천하세요
+
+중요: 질문에서 언급된 난이도에 대해 구체적으로 답변하세요!
+""",
+    "how_to": """
+사용자가 학습 방법/접근법에 대해 질문했습니다.
+
+현재 수집 단계: {current_step}
+수집된 정보:
+- 주제: {topic}
+- 난이도: {difficulty}
+- 언어: {language}
+
+사용자 메시지: "{message}"
+{question_context}
+
+1. **반드시 학습 방법이나 접근법에 대해 구체적으로 조언해주세요** (2-3문장)
+   - 추천 학습 순서
+   - 핵심 개념
+   - 연습 방법
+2. 그리고 현재 단계({current_step})에 맞는 값을 하나 추천하세요
+
+중요: 질문에 맞는 학습 조언을 먼저 해주세요!
 """,
     "general": """
 사용자가 질문을 했습니다.
@@ -179,6 +254,7 @@ QUESTION_PROMPTS = {
 - 언어: {language}
 
 사용자 메시지: "{message}"
+{question_context}
 
 1. 친절하게 답변하세요 (1-2문장)
 2. 그리고 현재 단계({current_step})에 맞는 값을 하나 추천하세요
@@ -302,6 +378,16 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
     rejection_reason = state.get("rejection_reason")
 
     # ============================================================
+    # question_info에서 상세 정보 추출 (Tool 기반 분석 결과)
+    # ============================================================
+    question_info = state.get("question_info", {}) or {}
+    question_target = question_info.get("question_target", "general")
+    question_subjects = question_info.get("question_subjects", [])
+
+    # question_subjects 기반 컨텍스트 생성
+    question_context = _build_question_context(question_type, question_target, question_subjects)
+
+    # ============================================================
     # Tool 호출: DB에서 사용자 프로필 조회 및 개인화 추천 생성
     # ============================================================
     user_context = state.get("user_context", {}) or {}
@@ -378,7 +464,7 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
             rejection_reason=rejection_reason or "없음",
         ) + suggested_difficulty_hint
     else:
-        # 일반 질문 처리
+        # 일반 질문 처리 (question_context 포함)
         prompt_template = QUESTION_PROMPTS.get(question_type, QUESTION_PROMPTS["general"])
         prompt = prompt_template.format(
             current_step=current_step,
@@ -386,7 +472,9 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
             difficulty=state.get("difficulty") or "미선택",
             language=state.get("language") or "미선택",
             message=message,
+            question_context=question_context,
         )
+        print(f"[handle_question] Question type: {question_type}, target: {question_target}, subjects: {question_subjects}")
 
     try:
         # ============================================================
@@ -969,3 +1057,62 @@ async def _get_step_chips(current_step: str, user_context: dict = None) -> list:
             {"label": "Java", "value": "java", "category": "language"},
             {"label": "C++", "value": "cpp", "category": "language"},
         ]
+
+
+def _build_question_context(
+    question_type: str,
+    question_target: str,
+    question_subjects: list,
+) -> str:
+    """
+    question_info를 기반으로 LLM 프롬프트에 추가할 컨텍스트 생성
+
+    Args:
+        question_type: 질문 유형 (explanation, comparison, difficulty_inquiry, etc.)
+        question_target: 질문 대상 (topic, difficulty, language, general)
+        question_subjects: 언급된 주제들 (["DP"], ["골드"], ["DP", "그래프"])
+
+    Returns:
+        LLM 프롬프트에 추가할 컨텍스트 문자열
+    """
+    if not question_subjects:
+        return ""
+
+    context_parts = []
+    context_parts.append(f"\n질문 대상: {question_target}")
+    context_parts.append(f"언급된 주제/개념: {', '.join(question_subjects)}")
+
+    # 주제별 설명 추가
+    subject_explanations = []
+    for subject in question_subjects:
+        # 주제 설명 찾기
+        subject_upper = subject.upper()
+        subject_lower = subject.lower()
+
+        # TOPIC_EXPLANATIONS에서 찾기
+        for key, explanation in TOPIC_EXPLANATIONS.items():
+            if key.upper() == subject_upper or key.lower() == subject_lower:
+                subject_explanations.append(f"- {key}: {explanation}")
+                break
+
+        # DIFFICULTY_EXPLANATIONS에서 찾기
+        for key, explanation in DIFFICULTY_EXPLANATIONS.items():
+            if key == subject or key.lower() == subject_lower:
+                subject_explanations.append(f"- {key}: {explanation}")
+                break
+
+    if subject_explanations:
+        context_parts.append("\n참고 정보 (이 정보를 활용해 답변하세요):")
+        context_parts.extend(subject_explanations)
+
+    # 질문 유형별 추가 안내
+    if question_type == "explanation":
+        context_parts.append("\n→ 위 주제/개념에 대해 쉽게 설명해주세요!")
+    elif question_type == "comparison":
+        context_parts.append("\n→ 위 항목들의 차이점과 특징을 비교해주세요!")
+    elif question_type == "difficulty_inquiry":
+        context_parts.append("\n→ 해당 난이도가 어느 정도 수준인지 설명해주세요!")
+    elif question_type == "how_to":
+        context_parts.append("\n→ 해당 주제의 학습 방법과 접근법을 조언해주세요!")
+
+    return "\n".join(context_parts)

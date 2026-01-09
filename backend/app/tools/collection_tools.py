@@ -47,6 +47,21 @@ class RejectionResult:
     suggested_action: Optional[str] = None  # "show_options" | "suggest_easier" | "suggest_different"
 
 
+@dataclass
+class QuestionInfo:
+    """질문 분석 정보"""
+    question_type: Optional[str]       # "explanation" | "comparison" | "difficulty_inquiry" | "recommendation" | "how_to"
+    question_target: Optional[str]     # "topic" | "difficulty" | "language" | "general"
+    question_subjects: List[str]       # ["DP"], ["DP", "그래프"], ["골드"] 등
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "question_type": self.question_type,
+            "question_target": self.question_target,
+            "question_subjects": self.question_subjects,
+        }
+
+
 # ============================================================
 # 프롬프트 정의 (통합)
 # ============================================================
@@ -71,8 +86,28 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
 - "positive": 긍정/동의 ("네", "응", "좋아", "그래", "ㅇㅇ", "굳", "할게", "해줘", "시작")
 - "negative": 부정/거절 ("아니", "싫어", "말고", "다른거", "패스", "ㄴㄴ", "별로")
 - "value_input": 새 값 제시 ("DP로 해줘", "정렬", "파이썬", "쉬운 거")
-- "unclear": 질문/애매 ("그게 뭐야?", "음...", "모르겠어")
+- "question": 질문/설명 요청 ("DP가 뭐야?", "골드면 어려워?", "파이썬이랑 자바 차이가 뭐야?")
+- "unclear": 애매한 응답 ("음...", "글쎄", "모르겠어")
 - "off_topic": 관련 없는 메시지 (is_collection_related=false일 때)
+
+## 1-1. 질문 분석 (intent=question일 때 필수!)
+**question_type** (질문 유형):
+- "explanation": 개념/용어 설명 요청 ("DP가 뭐야?", "그래프 알고리즘이 뭔데?", "골드면 어느 정도야?")
+- "comparison": 비교 요청 ("DP랑 그리디 차이가 뭐야?", "파이썬이랑 자바 뭐가 좋아?")
+- "difficulty_inquiry": 난이도 관련 질문 ("골드면 얼마나 어려워?", "플래티넘 풀 수 있을까?")
+- "recommendation": 추천 요청 ("뭐가 좋아?", "초보자한테 뭐 추천해?")
+- "how_to": 방법 질문 ("DP 어떻게 공부해?", "그래프 잘하려면?")
+
+**question_target** (질문 대상 카테고리):
+- "topic": 알고리즘 주제 관련 ("DP가 뭐야?", "그래프 어려워?")
+- "difficulty": 난이도 관련 ("골드면 어느 정도야?", "실버 쉬워?")
+- "language": 언어 관련 ("파이썬 좋아?", "C++ 빨라?")
+- "general": 일반적인 코딩/알고리즘 질문
+
+**question_subjects** (질문에서 언급된 구체적인 대상들, 배열):
+- 예: "DP가 뭐야?" → ["DP"]
+- 예: "DP랑 그래프 뭐가 달라?" → ["DP", "그래프"]
+- 예: "골드면 어려워?" → ["골드"]
 
 ## 2. 값 추출 (원하는 값만!)
 - **topic**: DP, 그래프, BFS/DFS, 정렬, 이분탐색, 그리디, 구현, 문자열, 기초, 수학, 스택/큐, 트리, 해시, 백트래킹
@@ -101,7 +136,7 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
 ## JSON 응답 형식
 {
   "is_collection_related": true | false,
-  "intent": "positive" | "negative" | "value_input" | "unclear" | "off_topic",
+  "intent": "positive" | "negative" | "value_input" | "question" | "unclear" | "off_topic",
   "confidence": 0.0-1.0,
   "values": {
     "topic": "DP" | null,
@@ -117,6 +152,11 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
   "alternative": {
     "value": "string" | null,
     "step": "topic" | "difficulty" | "language" | null
+  },
+  "question_info": {
+    "question_type": "explanation" | "comparison" | "difficulty_inquiry" | "recommendation" | "how_to" | null,
+    "question_target": "topic" | "difficulty" | "language" | "general" | null,
+    "question_subjects": ["DP", "골드"] | []
   }
 }"""
 
@@ -128,13 +168,14 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
 @dataclass
 class UnifiedAnalysisResult:
     """통합 분석 결과"""
-    intent: Literal["positive", "negative", "value_input", "unclear", "off_topic"]
+    intent: Literal["positive", "negative", "value_input", "question", "unclear", "off_topic"]
     confidence: float
     values: Dict[str, Optional[str]]      # {"topic": "DP", "difficulty": null, ...}
     rejected: Dict[str, Optional[str]]    # {"topic": "기초", ...}
     rejection_reason: Optional[str]       # "too_hard", "want_different", ...
     alternative: Optional[Dict[str, str]] # {"value": "DP", "step": "topic"}
     is_collection_related: bool = True    # 정보 수집과 관련 있는 메시지인지
+    question_info: Optional[QuestionInfo] = None  # 질문 분석 정보 (intent=question일 때)
 
 
 class CollectionTool:
@@ -213,6 +254,19 @@ class CollectionTool:
             if intent == "off_topic":
                 is_related = False
 
+            # question_info 파싱 (intent=question일 때)
+            question_info = None
+            if intent == "question":
+                q_info = result.get("question_info", {})
+                if q_info:
+                    question_info = QuestionInfo(
+                        question_type=q_info.get("question_type"),
+                        question_target=q_info.get("question_target"),
+                        question_subjects=q_info.get("question_subjects", []),
+                    )
+                    print(f"[CollectionTool] Question detected: type={question_info.question_type}, "
+                          f"target={question_info.question_target}, subjects={question_info.question_subjects}")
+
             analysis = UnifiedAnalysisResult(
                 intent=intent,
                 confidence=result.get("confidence", 0.5),
@@ -221,6 +275,7 @@ class CollectionTool:
                 rejection_reason=result.get("rejection_reason"),
                 alternative=alternative if alternative.get("value") else None,
                 is_collection_related=is_related,
+                question_info=question_info,
             )
 
             # 캐시 저장 (최대 100개)
@@ -241,6 +296,7 @@ class CollectionTool:
                 rejection_reason=None,
                 alternative=None,
                 is_collection_related=True,  # 에러 시 기본값은 관련 있음으로
+                question_info=None,
             )
 
     # ============================================================
@@ -276,6 +332,7 @@ class CollectionTool:
             details = {
                 "unified_analysis": True,
                 "is_collection_related": analysis.is_collection_related,
+                "intent": analysis.intent,  # intent 정보 추가
             }
             if analysis.rejected:
                 for step, rejected_val in analysis.rejected.items():
@@ -289,6 +346,12 @@ class CollectionTool:
             if not analysis.is_collection_related:
                 details["is_off_topic"] = True
                 print(f"[CollectionTool] Off-topic message detected: {message[:50]}...")
+
+            # 질문이면 question_info 추가
+            if analysis.intent == "question" and analysis.question_info:
+                details["is_question"] = True
+                details["question_info"] = analysis.question_info.to_dict()
+                print(f"[CollectionTool] Question info added to details: {details['question_info']}")
 
             # 신뢰도 높으면 바로 반환
             if analysis.confidence >= 0.60:

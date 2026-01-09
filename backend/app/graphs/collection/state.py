@@ -39,6 +39,8 @@ class CollectionState(TypedDict, total=False):
     is_question: bool                     # 사용자가 질문을 했는지
     extracted_value: Optional[str]        # 메시지에서 추출한 값
     question_type: Optional[str]          # 질문 유형 (recommendation, explanation, comparison)
+    question_info: Optional[Dict[str, Any]]  # 질문 상세 정보 (question_type, question_target, question_subjects)
+    is_off_topic: bool                    # 관련 없는 메시지인지
 
     # ============================================================
     # 추천/확인 관련 (handle_question 용)
