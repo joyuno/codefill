@@ -109,10 +109,13 @@ class MemoryService:
                 "attempt_count": attempt_count,
                 "student_mood": student_mood,
                 "conversation_tone": "encouraging" if was_successful else "supportive",
+                # 추가 필드
+                "duration_seconds": time_spent,  # time_spent와 동일
             }
 
-            # attempt_id는 컬럼이 있을 때만 포함 (스키마 호환성)
-            # 현재 테이블에 attempt_id 컬럼이 없으므로 제외
+            # attempt_id 추가 (FK 참조)
+            if attempt_id:
+                memory_data["attempt_id"] = attempt_id
 
             # DB 저장
             result = self.supabase.table("user_memories").insert(memory_data).execute()

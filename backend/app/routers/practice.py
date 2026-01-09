@@ -369,9 +369,9 @@ async def submit_blank(
 ):
     """Submit answer for blank-fill problem."""
     try:
-        # Get problem and correct answers
+        # Get problem and correct answers (+ title, tags for complete recording)
         result = db.table("problems")\
-            .select("answer_data, difficulty")\
+            .select("answer_data, difficulty, title, tags")\
             .eq("id", str(submission.problem_id))\
             .single()\
             .execute()
@@ -385,16 +385,18 @@ async def submit_blank(
         answer_data = result.data.get("answer_data", {})
         correct_blanks = answer_data.get("blanks", [])
         difficulty = result.data.get("difficulty")
+        problem_name = result.data.get("title")
+        topics = result.data.get("tags", [])
 
         # Check answers
         is_correct, blank_results = check_blank_answers(submission.answers, correct_blanks)
 
-        # Calculate XP
-        xp_earned = XPConfig.BLANK_CORRECT if is_correct else 0
+        # Calculate XP based on difficulty
+        xp_earned = XPConfig.get_xp_for_difficulty(difficulty, "blank") if is_correct else 0
 
-        # Save attempt with attempt_number
+        # Save attempt with all fields
         attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
-        db.table("attempts").insert({
+        attempt_result = db.table("attempts").insert({
             "user_id": str(user_id),
             "problem_id": str(submission.problem_id),
             "is_correct": is_correct,
@@ -403,8 +405,23 @@ async def submit_blank(
             "attempt_number": attempt_number,
             "problem_type": "blank",
             "difficulty": difficulty,
-            "started_at": datetime.utcnow().isoformat(),  # ✅ 시작 시간 추가
+            "problem_name": problem_name,
+            "topics": topics,
+            "hints_used": 0,
+            "total_hints_requested": 0,
+            "started_at": datetime.utcnow().isoformat(),
         }).execute()
+
+        # Record attempt_details for submission
+        if attempt_result.data and len(attempt_result.data) > 0:
+            attempt_id = attempt_result.data[0]["id"]
+            record_attempt_detail(
+                db=db,
+                attempt_id=str(attempt_id),
+                action_type=AttemptDetailAction.BLANK_SUBMIT.value,
+                step_number=1,
+                blank_is_correct=is_correct,
+            )
 
         # Update user stats and check badges if correct
         new_badges = None
@@ -453,9 +470,9 @@ async def submit_puzzle(
 ):
     """Submit answer for puzzle (Parsons) problem."""
     try:
-        # Get problem and correct answer data
+        # Get problem and correct answer data (+ title, tags for complete recording)
         result = db.table("problems")\
-            .select("answer_data, difficulty")\
+            .select("answer_data, difficulty, title, tags")\
             .eq("id", str(submission.problem_id))\
             .single()\
             .execute()
@@ -470,12 +487,16 @@ async def submit_puzzle(
         correct_order = answer_data.get("correct_order", [])
         correct_blocks = {b["id"]: b for b in answer_data.get("blocks", [])}
         difficulty = result.data.get("difficulty")
+        problem_name = result.data.get("title")
+        topics = result.data.get("tags", [])
 
         # Check block order and indentation
         puzzle_results = {}
         all_correct = True
+        wrong_positions = []
 
         submitted_ids = [b.id for b in submission.block_order]
+        user_order = [{"id": b.id, "indent": b.indentation} for b in submission.block_order]
 
         # Check if order matches
         for i, block in enumerate(submission.block_order):
@@ -494,27 +515,50 @@ async def submit_puzzle(
 
             if not is_block_correct:
                 all_correct = False
+                wrong_positions.append({
+                    "index": i,
+                    "block_id": block_id,
+                    "wrong_position": not is_correct_position,
+                    "wrong_indent": not is_correct_indent,
+                })
 
         # Also check if all required blocks are present
         if len(submission.block_order) != len(correct_order):
             all_correct = False
 
-        # Calculate XP
-        xp_earned = XPConfig.PUZZLE_CORRECT if all_correct else 0
+        # Calculate XP based on difficulty
+        xp_earned = XPConfig.get_xp_for_difficulty(difficulty, "puzzle") if all_correct else 0
 
-        # Save attempt with attempt_number
+        # Save attempt with all fields
         attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
-        db.table("attempts").insert({
+        attempt_result = db.table("attempts").insert({
             "user_id": str(user_id),
             "problem_id": str(submission.problem_id),
             "is_correct": all_correct,
-            "submitted_answer": str([{"id": b.id, "indent": b.indentation} for b in submission.block_order]),
+            "submitted_answer": str(user_order),
             "xp_earned": xp_earned,
             "attempt_number": attempt_number,
             "problem_type": "puzzle",
             "difficulty": difficulty,
-            "started_at": datetime.utcnow().isoformat(),  # ✅ 시작 시간 추가
+            "problem_name": problem_name,
+            "topics": topics,
+            "hints_used": 0,
+            "total_hints_requested": 0,
+            "started_at": datetime.utcnow().isoformat(),
         }).execute()
+
+        # Record attempt_details for submission
+        if attempt_result.data and len(attempt_result.data) > 0:
+            attempt_id = attempt_result.data[0]["id"]
+            record_attempt_detail(
+                db=db,
+                attempt_id=str(attempt_id),
+                action_type=AttemptDetailAction.PUZZLE_SUBMIT.value,
+                step_number=1,
+                puzzle_user_order=user_order,
+                puzzle_correct_order=correct_order,
+                puzzle_wrong_positions=wrong_positions if wrong_positions else None,
+            )
 
         # Update user stats and check badges if correct
         new_badges = None
@@ -786,26 +830,33 @@ async def record_solve(
                     "guided": AttemptDetailAction.GUIDED_STEP_COMPLETE.value,
                 }.get(submission.problem_type, "blank_submit")
 
-                detail_data = {
-                    "attempt_id": str(attempt_id_used),
-                    "action_type": action_type,
-                    "step_number": 1,  # 최종 제출은 step 1
+                # 문제 유형별 상세 데이터 준비
+                detail_kwargs = {
                     "hint_was_requested": submission.hints_used > 0 if submission.hints_used else False,
                 }
 
-                # 문제 유형별 추가 데이터
                 if submission.problem_type == "blank":
-                    detail_data["blank_is_correct"] = submission.is_correct
+                    detail_kwargs["blank_is_correct"] = submission.is_correct
+                    # 힌트 레벨 (힌트 사용 횟수 기반)
+                    detail_kwargs["blank_hint_level"] = min(submission.hints_used or 0, 2)
                 elif submission.problem_type == "puzzle":
-                    detail_data["blank_is_correct"] = submission.is_correct  # puzzle도 정답여부 저장
+                    # puzzle은 puzzle_ 필드 사용
+                    detail_kwargs["puzzle_validation_method"] = "exact"
                 elif submission.problem_type == "guided":
-                    detail_data["guided_step"] = 0  # 최종 제출
+                    detail_kwargs["guided_step"] = 0  # 최종 제출
+                    detail_kwargs["guided_understanding_score"] = 1.0 if submission.is_correct else 0.5
+                    if submission.topics:
+                        detail_kwargs["guided_concepts_covered"] = submission.topics
 
-                try:
-                    db.table("attempt_details").insert(detail_data).execute()
-                    print(f"[RecordSolve] Recorded attempt_detail: {action_type}")
-                except Exception as detail_err:
-                    print(f"[RecordSolve] Failed to record attempt_detail: {detail_err}")
+                # record_attempt_detail 함수 사용
+                record_attempt_detail(
+                    db=db,
+                    attempt_id=str(attempt_id_used),
+                    action_type=action_type,
+                    step_number=1,  # 최종 제출은 step 1
+                    **detail_kwargs
+                )
+                print(f"[RecordSolve] Recorded attempt_detail: {action_type}")
 
         except Exception as insert_err:
             # FK 제약 등으로 실패해도 XP 기록은 계속
