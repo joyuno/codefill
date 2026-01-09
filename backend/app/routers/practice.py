@@ -819,6 +819,37 @@ async def record_solve(
                     new_badges = [NewBadge(**b) for b in awarded]
                     print(f"[RecordSolve] Awarded {len(awarded)} badges")
 
+                # Update mission progress (daily/weekly missions)
+                try:
+                    from ..services.mission_service import MissionService
+                    mission_service = MissionService(db)
+
+                    # problem_type에 따른 condition_type 매핑
+                    condition_type = submission.problem_type  # blank, puzzle, output, bug, refactor
+                    if submission.problem_type == "guided":
+                        condition_type = "problems"  # guided는 일반 문제로 처리
+
+                    # 미션 진행률 업데이트 (일일 + 주간)
+                    mission_service.update_progress(
+                        user_id=str(user_id),
+                        condition_type=condition_type,
+                        difficulty=submission.difficulty,
+                        increment=1
+                    )
+
+                    # 'problems' 조건도 함께 업데이트 (모든 문제 풀이 미션)
+                    if condition_type != "problems":
+                        mission_service.update_progress(
+                            user_id=str(user_id),
+                            condition_type="problems",
+                            difficulty=submission.difficulty,
+                            increment=1
+                        )
+
+                    print(f"[RecordSolve] Updated mission progress: type={condition_type}, diff={submission.difficulty}")
+                except Exception as mission_err:
+                    print(f"[RecordSolve] Mission progress update error (non-blocking): {mission_err}")
+
             except Exception as rpc_err:
                 print(f"[RecordSolve] RPC error: {rpc_err}")
                 return RecordResponse(

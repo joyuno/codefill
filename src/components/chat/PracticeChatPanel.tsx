@@ -818,7 +818,15 @@ export function PracticeChatPanel({
           testCases: testCases || [],
         };
       } else {
-        const result = await agentApi.generateGuided(request);
+        // Guided: LLM 생성 + starter_code 가져오기 (병렬 호출)
+        const [guidedResult, starterResult] = await Promise.all([
+          agentApi.generateGuided(request),
+          agentApi.getGuidedStarter({
+            original_id: selectedBaseProblem.original_id || selectedBaseProblem.id || '',
+            language: targetLanguage,
+          }),
+        ]);
+
         // 새 형식: original_id, language, concepts[], flow[], checkpoints[]
         // 코드 추출 (code가 객체일 수 있음)
         const extractedCode = typeof selectedBaseProblem.code === 'string'
@@ -828,8 +836,8 @@ export function PracticeChatPanel({
             || '';
 
         generatedProblem = {
-          id: result.original_id || `generated-${Date.now()}`,
-          originalId: result.original_id,  // 잔디 클릭 시 문제 정보 표시용
+          id: guidedResult.original_id || `generated-${Date.now()}`,
+          originalId: guidedResult.original_id,  // 잔디 클릭 시 문제 정보 표시용
           baseProblemId: selectedBaseProblem.id,  // base_problems UUID
           title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
           description: selectedBaseProblem.description || selectedBaseProblem.question || '',
@@ -838,10 +846,11 @@ export function PracticeChatPanel({
           topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
           keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],  // tags 우선
           framework: targetLanguage,
-          concepts: result.concepts,  // string[]
-          flow: result.flow,          // string[]
-          checkpoints: result.checkpoints,  // string[]
+          concepts: guidedResult.concepts,  // string[]
+          flow: guidedResult.flow,          // string[]
+          checkpoints: guidedResult.checkpoints,  // string[]
           finalCodeReveal: extractedCode,  // 원본 코드를 최종 코드로 사용
+          codeSnippet: starterResult.starter_code,  // 에디터에 표시할 starter_code
           testCases: testCases || [],  // undefined 대신 빈 배열
         };
       }
@@ -892,7 +901,10 @@ export function PracticeChatPanel({
 
         setFlowState('guided_learning');
 
-        // Guided 모드에서는 onProblemSelect를 호출하지 않음 (채팅 UI 유지)
+        // Guided 모드: 왼쪽에 에디터 표시 + 오른쪽에 채팅 유지
+        if (onProblemSelect) {
+          onProblemSelect(generatedProblem);
+        }
         return;
       }
 

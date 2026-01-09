@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Home, FileCode, MessageCircle, BarChart2, Trophy } from 'lucide-react';
+import { Home, FileCode, MessageCircle, BarChart2, Target } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/problems', label: 'Problems', icon: FileCode },
   { href: '/chat', label: 'Chat', icon: MessageCircle },
   { href: '/analysis', label: 'Analysis', icon: BarChart2 },
-  { href: '/ranking', label: 'Ranking', icon: Trophy },
+  { href: '/ranking', label: 'Challenge', icon: Target },
 ];
 
 export function TopNav() {

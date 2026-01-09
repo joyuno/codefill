@@ -117,12 +117,49 @@ async function executeCode(sourceCode: string, language: string, stdin: string =
 }
 
 interface TestResult {
-  testCase: ConvertedTestCase;
-  passed: boolean;
-  actual?: any;
+  testId: string;  // 'base-0', 'base-1' 또는 CustomTestCase의 id
+  passed: boolean | null;  // null = 출력 확인용 (expected 없음)
+  actual?: string;
   error?: string;
   time?: number;
 }
+
+// 테스트 케이스 ID 생성 (base: 'base-{idx}', custom: 고유 id)
+const getTestId = (tc: ConvertedTestCase | CustomTestCase, idx: number): string => {
+  if ('isCustom' in tc && tc.isCustom) {
+    return (tc as CustomTestCase).id;
+  }
+  return `base-${idx}`;
+};
+
+// stdin 포맷팅 (공통)
+const formatStdin = (input: any): string => {
+  if (Array.isArray(input)) {
+    return input.map(v => JSON.stringify(v)).join('\n');
+  }
+  return input !== undefined ? String(input) : '';
+};
+
+// 테스트 결과 생성 (공통)
+const createTestResult = (
+  testId: string,
+  apiResult: { stdout?: string; stderr?: string; compile_output?: string; time?: string },
+  expected: any
+): TestResult => {
+  const actualOutput = apiResult.stdout?.trim() || '';
+  const expectedStr = expected !== undefined && expected !== ''
+    ? String(expected).trim()
+    : null;
+  const passed = expectedStr === null ? null : actualOutput === expectedStr;
+
+  return {
+    testId,
+    passed,
+    actual: actualOutput || apiResult.stderr || apiResult.compile_output || '(출력 없음)',
+    error: apiResult.stderr || apiResult.compile_output || undefined,
+    time: apiResult.time ? parseFloat(apiResult.time) * 1000 : undefined,
+  };
+};
 
 interface CustomTestCase extends ConvertedTestCase {
   id: string;
@@ -150,7 +187,7 @@ export function UnifiedPractice({
 }: UnifiedPracticeProps) {
   // 공통 상태
   const [code, setCode] = useState('');
-  const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [isRunning, setIsRunning] = useState(false);
   const [runningTestId, setRunningTestId] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -211,7 +248,7 @@ export function UnifiedPractice({
 
   // 문제/타입 변경 시 초기화
   useEffect(() => {
-    setTestResults([]);
+    setTestResults({});
     setIsSubmitted(false);
     setHintsUsed(0);
     setOutput('');
@@ -259,8 +296,16 @@ export function UnifiedPractice({
     } else if (problemType === 'implementation') {
       // implementation 문제는 빈 코드로 시작
       setCode('# 여기에 코드를 작성하세요\n');
+      // implementation 모드는 테스트 탭으로 자동 전환
+      setActiveTab('testcases');
+    } else if (problemType === 'guided') {
+      // guided 문제는 starter_code(codeSnippet)가 있으면 사용, 없으면 빈 코드
+      const starterCode = problem.codeSnippet || '# 여기에 코드를 작성하세요\n';
+      setCode(starterCode);
+      // guided 모드도 테스트 탭으로 자동 전환
+      setActiveTab('testcases');
     }
-  }, [problem.id, problemType]);
+  }, [problem.id, problemType, problem.codeSnippet]);
 
   // 블록 순서 변경 시 코드 업데이트 (baseIndentation 적용)
   useEffect(() => {
@@ -306,11 +351,11 @@ export function UnifiedPractice({
     if (problem.testCases && problem.testCases.length > 0) {
       return problem.testCases;
     }
-    // implementation 타입은 테스트 케이스가 없으면 빈 배열
-    if (problemType === 'implementation') {
+    // implementation/guided 타입은 테스트 케이스가 없으면 빈 배열
+    if (problemType === 'implementation' || problemType === 'guided') {
       return [];
     }
-    // blank, puzzle, guided는 테스트 케이스가 없으면 빈 배열 (더미 데이터 제거)
+    // blank, puzzle은 테스트 케이스가 없으면 빈 배열 (더미 데이터 제거)
     return [];
   }, [problem, problemType]);
 
@@ -399,46 +444,23 @@ export function UnifiedPractice({
 
   // 단일 테스트 실행
   const runSingleTest = async (testCase: ConvertedTestCase, idx: number) => {
-    setRunningTestId(`test-${idx}`);
+    const testId = getTestId(testCase, idx);
+    setRunningTestId(testId);
 
     const executableCode = getExecutableCode();
     const language = problem.framework || 'python';
-
-    // input을 stdin으로 변환
-    let stdin = '';
-    if (Array.isArray(testCase.input)) {
-      stdin = testCase.input.map(v => JSON.stringify(v)).join('\n');
-    } else if (testCase.input !== undefined) {
-      stdin = String(testCase.input);
-    }
+    const stdin = formatStdin(testCase.input);
 
     try {
       const apiResult = await executeCode(executableCode, language, stdin);
+      const result = createTestResult(testId, apiResult, testCase.expected);
 
-      const actualOutput = apiResult.stdout?.trim() || '';
-      const expectedStr = String(testCase.expected).trim();
-      const passed = actualOutput === expectedStr;
-
-      const result: TestResult = {
-        testCase,
-        passed,
-        actual: actualOutput || apiResult.stderr || apiResult.compile_output || '(출력 없음)',
-        error: apiResult.stderr || apiResult.compile_output || undefined,
-        time: apiResult.time ? parseFloat(apiResult.time) * 1000 : undefined,
-      };
-
-      setTestResults(prev => {
-        const existing = prev.findIndex(r => JSON.stringify(r.testCase) === JSON.stringify(testCase));
-        if (existing >= 0) {
-          const newResults = [...prev];
-          newResults[existing] = result;
-          return newResults;
-        }
-        return [...prev, result];
-      });
+      setTestResults(prev => ({ ...prev, [testId]: result }));
 
       // 단일 테스트 결과도 Output에 표시
-      let outputText = `[Test ${idx + 1}] ${passed ? '✓ PASS' : '✗ FAIL'}`;
+      let outputText = result.passed === null
+        ? `[Test ${idx + 1}] 실행 완료`
+        : `[Test ${idx + 1}] ${result.passed ? '✓ PASS' : '✗ FAIL'}`;
       if (apiResult.stdout) outputText += `\n출력: ${apiResult.stdout}`;
       if (apiResult.stderr) outputText += `\n에러: ${apiResult.stderr}`;
       if (apiResult.time) outputText += `\n시간: ${apiResult.time}s`;
@@ -449,19 +471,109 @@ export function UnifiedPractice({
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '실행 오류';
       const result: TestResult = {
-        testCase,
+        testId,
         passed: false,
         actual: errorMessage,
         error: errorMessage,
       };
 
-      setTestResults(prev => [...prev, result]);
+      setTestResults(prev => ({ ...prev, [testId]: result }));
       setOutput(`[Test ${idx + 1}] ✗ ERROR\n${errorMessage}`);
       return result;
 
     } finally {
       setRunningTestId(null);
     }
+  };
+
+  // 모든 테스트 케이스 실행 (implementation용) - 결과 반환
+  // forSubmit=true: 공식 테스트케이스(baseTestCases)만 실행 (최대 3개)
+  // forSubmit=false: 화면에 보이는 테스트케이스(visibleTestCases) 실행 (custom 포함)
+  const runAllTestCases = async (forSubmit: boolean = false): Promise<Record<string, TestResult>> => {
+    // 제출 시: 공식 테스트케이스 최대 3개만, 일반 실행 시: visible 테스트케이스 (custom 포함)
+    const targetTestCases = forSubmit ? baseTestCases.slice(0, 3) : visibleTestCases;
+
+    if (targetTestCases.length === 0) {
+      setOutput(forSubmit
+        ? '실행할 공식 테스트 케이스가 없습니다.'
+        : '실행할 테스트 케이스가 없습니다.\n테스트 케이스를 추가해주세요.');
+      return {};
+    }
+
+    setIsRunning(true);
+    // 제출 시에는 기존 결과 유지 (UI에 custom 결과도 보여야 함), 일반 실행 시에만 초기화
+    if (!forSubmit) {
+      setTestResults({});
+    }
+    setOutput(forSubmit ? '제출 중... 공식 테스트 실행' : '테스트 실행 중...');
+
+    const results: Record<string, TestResult> = {};
+    let passedCount = 0;
+    let judgedCount = 0;  // expected가 있는 테스트만 카운트
+
+    const executableCode = getExecutableCode();
+    const language = problem.framework || 'python';
+
+    for (let idx = 0; idx < targetTestCases.length; idx++) {
+      const tc = targetTestCases[idx];
+      // 제출 시에는 base 테스트케이스 인덱스 그대로 사용
+      const testId = forSubmit ? `base-${idx}` : getTestId(tc, idx);
+      setRunningTestId(testId);
+
+      const stdin = formatStdin(tc.input);
+
+      try {
+        const apiResult = await executeCode(executableCode, language, stdin);
+        const result = createTestResult(testId, apiResult, tc.expected);
+
+        if (result.passed === true) passedCount++;
+        if (result.passed !== null) judgedCount++;
+
+        results[testId] = result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '실행 오류';
+        results[testId] = {
+          testId,
+          passed: false,
+          actual: errorMessage,
+          error: errorMessage,
+        };
+        judgedCount++;
+      }
+    }
+
+    setRunningTestId(null);
+    // 제출 시에는 base 결과만 업데이트, 기존 custom 결과 유지
+    if (forSubmit) {
+      setTestResults(prev => ({ ...prev, ...results }));
+    } else {
+      setTestResults(results);
+    }
+    setIsRunning(false);
+
+    // Output에 요약 표시
+    const allPassed = judgedCount > 0 && passedCount === judgedCount;
+    const testLabel = forSubmit ? '공식 테스트' : '테스트';
+    const summary = forSubmit
+      ? (allPassed
+          ? `✓ 제출 완료! 모든 ${testLabel} 통과 (${passedCount}/${judgedCount})`
+          : `제출 완료 (${passedCount}/${judgedCount} 통과)`)
+      : (judgedCount > 0
+          ? `${testLabel} 완료: ${passedCount}/${judgedCount} 통과`
+          : `${testLabel} 완료: ${targetTestCases.length}개 실행`);
+    const details = targetTestCases.map((tc, idx) => {
+      const testId = forSubmit ? `base-${idx}` : getTestId(tc, idx);
+      const r = results[testId];
+      const label = forSubmit ? `[공식 ${idx + 1}]` : `[Test ${idx + 1}]`;
+      if (!r) return `${label} 미실행`;
+      if (r.passed === null) {
+        return `${label} 실행 완료${r.time ? ` (${r.time.toFixed(0)}ms)` : ''}`;
+      }
+      return `${label} ${r.passed ? '✓ PASS' : '✗ FAIL'}${r.time ? ` (${r.time.toFixed(0)}ms)` : ''}`;
+    }).join('\n');
+    setOutput(`${summary}\n\n${details}`);
+
+    return results;
   };
 
   // 테스트 실행 / 정답 체크
@@ -489,13 +601,13 @@ export function UnifiedPractice({
             ? `✓ 정답입니다! (${correctCount}/${totalCount})`
             : `✗ 오답입니다. (${correctCount}/${totalCount}) - 다시 시도해주세요.`
           );
-          const testResults: TestResult[] = [{
-            testCase: { input: '', expected: 'correct', isHidden: false },
+          const blankTestResults: TestResult[] = [{
+            testId: 'blank-result',
             passed: correct,
             actual: correct ? 'correct' : 'incorrect',
           }];
           // 빈칸 힌트 사용 횟수 전달
-          onSubmit(getExecutableCode(), testResults, blankHintsUsedCount);
+          onSubmit(getExecutableCode(), blankTestResults, blankHintsUsedCount);
           // 정답일 때만 수정 불가 상태로 전환
           if (correct) {
             setIsSubmitted(true);
@@ -526,13 +638,13 @@ export function UnifiedPractice({
             ? '✓ 정답입니다! 올바른 순서입니다.'
             : `✗ 오답입니다. (${correctCount}/${blocks.length}) - 순서를 다시 확인해주세요.`
           );
-          const testResults: TestResult[] = [{
-            testCase: { input: '', expected: 'correct order', isHidden: false },
+          const puzzleTestResults: TestResult[] = [{
+            testId: 'puzzle-result',
             passed: correct,
             actual: correct ? 'correct order' : 'wrong order',
           }];
           // 퍼즐 힌트 사용 횟수 전달
-          onSubmit(getExecutableCode(), testResults, puzzleHintsUsedCount);
+          onSubmit(getExecutableCode(), puzzleTestResults, puzzleHintsUsedCount);
           // 정답일 때만 수정 불가 상태로 전환
           if (correct) {
             setIsSubmitted(true);
@@ -545,41 +657,53 @@ export function UnifiedPractice({
 
       // Implementation: 실제 코드 실행
       const executableCode = getExecutableCode();
-      const language = problem.framework || 'python';
-
-      const result = await executeCode(executableCode, language, '');
-
-      let outputText = '';
-
-      if (result.compile_output) {
-        outputText += `[Compile]\n${result.compile_output}\n\n`;
-      }
-
-      if (result.stderr) {
-        outputText += `[Error]\n${result.stderr}\n\n`;
-      }
-
-      if (result.stdout) {
-        outputText += `[Output]\n${result.stdout}`;
-      }
-
-      if (!result.stdout && !result.stderr && !result.compile_output) {
-        outputText = '(실행 완료 - 출력 없음)';
-      }
-
-      if (result.time || result.memory) {
-        outputText += `\n\n--- 실행 정보 ---`;
-        if (result.time) outputText += `\n시간: ${result.time}s`;
-        if (result.memory) outputText += `\n메모리: ${Math.round(result.memory / 1024)}MB`;
-        outputText += `\n상태: ${result.status.description}`;
-      }
-
-      setOutput(outputText);
 
       if (isSubmit) {
-        onSubmit(executableCode, []);
-        setIsSubmitted(true);
+        // 제출 시: 모든 테스트 케이스 재실행 후 결과 전달
+        const results = await runAllTestCases(true);
+        const resultArray = Object.values(results);
+
+        // 테스트 통과 여부 확인 (expected가 있는 테스트만)
+        const judgedResults = resultArray.filter(r => r.passed !== null);
+        const allPassed = judgedResults.length > 0 && judgedResults.every(r => r.passed);
+
+        onSubmit(executableCode, resultArray);
+
+        // 모든 테스트 통과 시에만 수정 불가 상태로 전환
+        if (allPassed) {
+          setIsSubmitted(true);
+        }
       } else {
+        // 실행 시: 단순 코드 실행 (입력 없이)
+        const language = problem.framework || 'python';
+        const result = await executeCode(executableCode, language, '');
+
+        let outputText = '';
+
+        if (result.compile_output) {
+          outputText += `[Compile]\n${result.compile_output}\n\n`;
+        }
+
+        if (result.stderr) {
+          outputText += `[Error]\n${result.stderr}\n\n`;
+        }
+
+        if (result.stdout) {
+          outputText += `[Output]\n${result.stdout}`;
+        }
+
+        if (!result.stdout && !result.stderr && !result.compile_output) {
+          outputText = '(실행 완료 - 출력 없음)';
+        }
+
+        if (result.time || result.memory) {
+          outputText += `\n\n--- 실행 정보 ---`;
+          if (result.time) outputText += `\n시간: ${result.time}s`;
+          if (result.memory) outputText += `\n메모리: ${Math.round(result.memory / 1024)}MB`;
+          outputText += `\n상태: ${result.status.description}`;
+        }
+
+        setOutput(outputText);
         onRun(executableCode);
       }
 
@@ -741,7 +865,7 @@ export function UnifiedPractice({
 
   // 결과 리셋
   const resetResults = () => {
-    setTestResults([]);
+    setTestResults({});
     setOutput('');
   };
 
@@ -765,9 +889,10 @@ export function UnifiedPractice({
     }
   };
 
-  const passedCount = testResults.filter((r) => r.passed).length;
+  const judgedResults = Object.values(testResults).filter((r) => r.passed !== null);
+  const passedCount = judgedResults.filter((r) => r.passed === true).length;
   const totalTests = baseTestCases.length;
-  const testedCount = testResults.length;
+  const testedCount = judgedResults.length;  // 판정된 테스트만 카운트
 
   // 테스트 케이스 값을 보기 좋게 포맷팅
   const formatTestValue = (value: any): string => {
@@ -950,13 +1075,14 @@ export function UnifiedPractice({
 
   // 테스트 케이스 카드 렌더링
   const renderTestCaseCard = (tc: ConvertedTestCase | CustomTestCase, idx: number) => {
-    const result = testResults.find(
-      (r) => JSON.stringify(r.testCase) === JSON.stringify(tc)
-    );
-    const isExpanded = expandedTests.has(idx);
-    const isRunningThis = runningTestId === `test-${idx}`;
     const isCustom = 'isCustom' in tc && tc.isCustom;
     const customTc = isCustom ? (tc as CustomTestCase) : null;
+    const testId = getTestId(tc, idx);
+
+    // O(1) 직접 접근 (ID 기반)
+    const result = testResults[testId];
+    const isExpanded = expandedTests.has(idx);
+    const isRunningThis = runningTestId === testId;
 
     return (
       <Collapsible
@@ -967,9 +1093,11 @@ export function UnifiedPractice({
         <div
           className={`rounded-lg border transition-all ${
             result
-              ? result.passed
-                ? 'bg-green-500/5 border-green-500/30'
-                : 'bg-red-500/5 border-red-500/30'
+              ? result.passed === null
+                ? 'bg-blue-500/5 border-blue-500/30'  // 출력 확인용 (중립)
+                : result.passed
+                  ? 'bg-green-500/5 border-green-500/30'
+                  : 'bg-red-500/5 border-red-500/30'
               : 'bg-card border-border hover:border-primary/30'
           }`}
         >
@@ -984,7 +1112,9 @@ export function UnifiedPractice({
                 )}
                 <span className="text-sm font-medium">
                   {isCustom ? (
-                    <span className="text-primary">Custom {idx - baseTestCases.filter(t => !t.isHidden).length + 1}</span>
+                    <span className="text-primary">
+                      Custom {showCustomOnly ? idx + 1 : idx - baseTestCases.filter(t => !t.isHidden).length + 1}
+                    </span>
                   ) : (
                     `Case ${idx + 1}`
                   )}
@@ -999,27 +1129,32 @@ export function UnifiedPractice({
                 {isRunningThis && (
                   <Clock className="h-3.5 w-3.5 text-primary animate-spin" />
                 )}
-                {result && !isRunningThis && (
-                  <>
-                    {result.passed ? (
-                      <div className="flex items-center gap-1.5 text-green-500">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span className="text-xs font-medium">{result.time}ms</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 text-red-500">
-                        <XCircle className="h-4 w-4" />
-                        <span className="text-xs font-medium">{result.time}ms</span>
-                      </div>
+                {!isRunningThis && (
+                  <div className="flex items-center gap-2">
+                    {/* 결과 표시 */}
+                    {result && (
+                      result.passed === null ? (
+                        <div className="flex items-center gap-1.5 text-blue-500">
+                          <Terminal className="h-4 w-4" />
+                          <span className="text-xs font-medium">{result.time ? `${result.time.toFixed(0)}ms` : '완료'}</span>
+                        </div>
+                      ) : result.passed ? (
+                        <div className="flex items-center gap-1.5 text-green-500">
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span className="text-xs font-medium">{result.time ? `${result.time.toFixed(0)}ms` : ''}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-red-500">
+                          <XCircle className="h-4 w-4" />
+                          <span className="text-xs font-medium">{result.time ? `${result.time.toFixed(0)}ms` : ''}</span>
+                        </div>
+                      )
                     )}
-                  </>
-                )}
-                {!result && !isRunningThis && (
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* 실행/재실행 버튼 - 항상 표시 */}
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+                      className={`h-6 w-6 ${!result ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         runSingleTest(tc, idx);
@@ -1055,11 +1190,11 @@ export function UnifiedPractice({
                   )}
                 </div>
                 {isCustom ? (
-                  <Input
+                  <textarea
                     value={formatTestValue(customTc!.input)}
                     onChange={(e) => updateCustomTestCase(customTc!.id, 'input', e.target.value)}
-                    className="h-7 text-xs font-mono bg-background"
-                    placeholder='예: 1 2 3'
+                    className="text-xs font-mono text-foreground whitespace-pre-wrap bg-background/50 rounded p-2 min-h-[80px] max-h-[200px] overflow-auto w-full resize-y border-0 focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="입력값을 입력하세요 (여러 줄 가능)"
                   />
                 ) : (
                   <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all bg-background/50 rounded p-2 max-h-32 overflow-auto">
@@ -1068,13 +1203,13 @@ export function UnifiedPractice({
                 )}
               </div>
 
-              {/* Expected */}
-              <div className="rounded-md bg-secondary/50 p-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-                    Expected
-                  </span>
-                  {!isCustom && (
+              {/* Expected - 공식 테스트만 표시, 커스텀은 출력 확인용이라 숨김 */}
+              {!isCustom && (
+                <div className="rounded-md bg-secondary/50 p-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                      Expected
+                    </span>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1083,29 +1218,24 @@ export function UnifiedPractice({
                     >
                       <Copy className="h-3 w-3" />
                     </Button>
-                  )}
-                </div>
-                {isCustom ? (
-                  <Input
-                    value={formatTestValue(customTc!.expected)}
-                    onChange={(e) => updateCustomTestCase(customTc!.id, 'expected', e.target.value)}
-                    className="h-7 text-xs font-mono bg-background"
-                    placeholder='예: 6'
-                  />
-                ) : (
+                  </div>
                   <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all bg-background/50 rounded p-2 max-h-32 overflow-auto">
                     {formatTestValue(tc.expected)}
                   </pre>
-                )}
-              </div>
+                </div>
+              )}
 
-              {/* Actual (only if result exists and failed) */}
-              {result && !result.passed && (
-                <div className="rounded-md bg-red-500/10 border border-red-500/20 p-2">
-                  <span className="text-[10px] uppercase tracking-wider text-red-400 font-medium block mb-1">
-                    Actual
+              {/* Output - 실행 결과 */}
+              {result && (
+                <div className={`rounded-md bg-secondary/50 p-2 ${
+                  result.passed === false ? 'border border-red-500/30' : ''
+                }`}>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium block mb-1">
+                    Output
                   </span>
-                  <pre className="text-xs font-mono text-red-500 whitespace-pre-wrap break-all">
+                  <pre className={`text-xs font-mono whitespace-pre-wrap break-all bg-background/50 rounded p-2 max-h-32 overflow-auto ${
+                    result.passed === false ? 'text-red-400' : 'text-foreground'
+                  }`}>
                     {formatTestValue(result.actual)}
                   </pre>
                   {result.error && (
@@ -1325,7 +1455,7 @@ export function UnifiedPractice({
                           {showCustomOnly ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                           {showCustomOnly ? '전체 보기' : '커스텀만'}
                         </Button>
-                        {testResults.length > 0 && (
+                        {Object.keys(testResults).length > 0 && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1347,6 +1477,18 @@ export function UnifiedPractice({
                         추가
                       </Button>
                     </div>
+
+                    {/* Implementation/Guided 모드 안내 */}
+                    {(problemType === 'implementation' || problemType === 'guided') && visibleTestCases.length === 0 && (
+                      <div className="rounded-lg p-4 bg-primary/5 border border-primary/20 text-center space-y-2">
+                        <TestTube className="h-8 w-8 mx-auto text-primary/60" />
+                        <p className="text-sm font-medium text-foreground">테스트 케이스를 추가하세요</p>
+                        <p className="text-xs text-muted-foreground">
+                          위의 &apos;추가&apos; 버튼을 눌러 입력값과 예상 출력값을 설정하고,<br />
+                          코드가 올바르게 동작하는지 검증하세요.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Test Cases List */}
                     <div className="space-y-2">
@@ -1472,8 +1614,8 @@ export function UnifiedPractice({
           </div>
         )}
 
-        {/* Implementation 모드: 코드 에디터 */}
-        {problemType === 'implementation' && (
+        {/* Implementation/Guided 모드: 코드 에디터 */}
+        {(problemType === 'implementation' || problemType === 'guided') && (
           <div className="flex-1 min-h-0 overflow-hidden">
             <CodeEditor
               initialCode={code}
@@ -1522,13 +1664,13 @@ export function UnifiedPractice({
           </div>
         )}
 
-        {/* Output Console - implementation에서만 표시 */}
-        {problemType === 'implementation' && (
+        {/* 테스트 결과 Console - implementation/guided에서 표시 */}
+        {(problemType === 'implementation' || problemType === 'guided') && (
           <div className="shrink-0 border-t border-border bg-[#1e1e1e]">
             <div className="flex items-center justify-between px-4 py-2 border-b border-[#333]">
               <div className="flex items-center gap-2">
-                <Terminal className="h-4 w-4 text-[#808080]" />
-                <span className="text-sm font-medium text-[#cccccc]">Output</span>
+                <TestTube className="h-4 w-4 text-[#808080]" />
+                <span className="text-sm font-medium text-[#cccccc]">테스트 결과</span>
               </div>
               {testedCount > 0 && (
                 <Badge
@@ -1543,7 +1685,7 @@ export function UnifiedPractice({
               {isRunning ? (
                 <div className="flex items-center gap-2 text-sm text-[#808080]">
                   <Clock className="h-4 w-4 animate-spin" />
-                  실행 중...
+                  테스트 실행 중...
                 </div>
               ) : output ? (
                 <pre className="text-xs font-mono text-[#4ec9b0] whitespace-pre-wrap">
@@ -1551,7 +1693,7 @@ export function UnifiedPractice({
                 </pre>
               ) : (
                 <p className="text-xs text-[#808080]">
-                  코드를 실행하면 결과가 여기에 표시됩니다.
+                  왼쪽 테스트 탭에서 테스트 케이스를 추가하고, &apos;테스트 실행&apos; 버튼을 눌러 코드를 검증하세요.
                 </p>
               )}
             </div>
@@ -1563,7 +1705,7 @@ export function UnifiedPractice({
         <AnimatePresence>
           {((problemType === 'blank' && Object.keys(blankResults).length > 0) ||
             (problemType === 'puzzle' && Object.keys(puzzleResults).length > 0) ||
-            (problemType === 'implementation' && isSubmitted)) && (
+            ((problemType === 'implementation' || problemType === 'guided') && isSubmitted)) && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -1631,8 +1773,8 @@ export function UnifiedPractice({
                   </>
                 )}
 
-                {/* Implementation 결과 */}
-                {problemType === 'implementation' && (
+                {/* Implementation/Guided 결과 */}
+                {(problemType === 'implementation' || problemType === 'guided') && (
                   <>
                     {allPassed ? (
                       <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -1700,16 +1842,16 @@ export function UnifiedPractice({
                 포기
               </Button>
             )}
-            {/* 실행 버튼 - implementation에서만 표시 */}
-            {problemType === 'implementation' && (
+            {/* 테스트 실행 버튼 - implementation/guided에서 표시 */}
+            {(problemType === 'implementation' || problemType === 'guided') && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => runTests(false)}
+                onClick={runAllTestCases}
                 disabled={isRunning || isSubmitted}
               >
                 <Play className="mr-2 h-4 w-4" />
-                실행
+                테스트 실행
               </Button>
             )}
             <Button
@@ -1717,7 +1859,7 @@ export function UnifiedPractice({
               onClick={() => runTests(true)}
               disabled={isRunning || isSubmitted || (problemType === 'blank' && filledCount < totalBlanks)}
             >
-              {problemType === 'implementation' ? (
+              {(problemType === 'implementation' || problemType === 'guided') ? (
                 <>
                   <Send className="mr-2 h-4 w-4" />
                   제출

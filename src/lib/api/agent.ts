@@ -115,6 +115,19 @@ export interface GuidedProblemResponse {
   checkpoints: string[];  // 체크포인트/확인 사항
 }
 
+// Guided Starter Code (에디터 기반 1대1 대화형)
+export interface GuidedStarterRequest {
+  original_id: string;
+  language: 'python' | 'java' | 'cpp';
+}
+
+export interface GuidedStarterResponse {
+  original_id: string;
+  language: string;
+  starter_code: string;      // 에디터에 미리 표시할 코드
+  has_starter_code: boolean; // DB에 starter_code가 있었는지 여부
+}
+
 // Code Generation
 export interface CodeGenerationRequest {
   user_request: Record<string, unknown>;
@@ -516,6 +529,18 @@ export const agentApi = {
    */
   async generateGuided(request: ProblemGenerationRequest): Promise<GuidedProblemResponse> {
     const response = await api.post<GuidedProblemResponse>('/agent/generate/guided', request, true);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Get Guided Starter Code (에디터 기반 1대1 대화형)
+   * - DB에 starter_code 있으면 그대로 반환
+   * - 없으면 solutions 코드 앞 2줄 반환
+   * - LLM 호출 없음
+   */
+  async getGuidedStarter(request: GuidedStarterRequest): Promise<GuidedStarterResponse> {
+    const response = await api.post<GuidedStarterResponse>('/agent/get/guided-starter', request, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
