@@ -32,7 +32,13 @@ ALTER TABLE daily_activity
     DROP COLUMN IF EXISTS refactor_count;
 
 -- ============================================================
--- 3. user_skill_profiles에서 user_stats와 중복 컬럼 삭제
+-- 3. 의존 View 삭제 (컬럼 삭제 전)
+-- ============================================================
+DROP VIEW IF EXISTS public.cf_user_profiles CASCADE;
+DROP VIEW IF EXISTS public.cf_user_skill_vectors CASCADE;
+
+-- ============================================================
+-- 4. user_skill_profiles에서 user_stats와 중복 컬럼 삭제
 -- ============================================================
 ALTER TABLE user_skill_profiles
     DROP COLUMN IF EXISTS total_problems_solved,
@@ -40,6 +46,49 @@ ALTER TABLE user_skill_profiles
     DROP COLUMN IF EXISTS current_streak,
     DROP COLUMN IF EXISTS longest_streak,
     DROP COLUMN IF EXISTS total_xp_earned;
+
+-- ============================================================
+-- 5. View 재생성 (컬럼 삭제 후)
+-- ============================================================
+-- cf_user_skill_vectors: total_problems_solved 대신 user_stats에서 조인
+CREATE OR REPLACE VIEW public.cf_user_skill_vectors AS
+SELECT
+    usp.user_id,
+    usp.skill_by_topic,
+    usp.success_rate_by_difficulty,
+    usp.strong_topics,
+    usp.weak_topics,
+    usp.learning_style,
+    COALESCE(us.problems_solved, 0) AS total_problems_solved,
+    usp.avg_solve_time_seconds,
+    usp.avg_hints_per_problem
+FROM public.user_skill_profiles usp
+LEFT JOIN public.user_stats us ON usp.user_id = us.user_id;
+
+-- cf_user_profiles 재생성
+CREATE OR REPLACE VIEW public.cf_user_profiles AS
+SELECT
+    COALESCE(upm.user_id, usp.user_id, ulc.user_id) AS user_id,
+    upm.problem_count,
+    upm.avg_rating,
+    usp.skill_by_topic,
+    usp.strong_topics,
+    usp.weak_topics,
+    usp.total_problems_solved,
+    ulc.all_concepts_learned,
+    ulc.all_concepts_struggling,
+    ulc.successful_sessions,
+    ulc.avg_hints_needed
+FROM (
+    SELECT
+        user_id,
+        COUNT(DISTINCT problem_id) AS problem_count,
+        AVG(implicit_rating) AS avg_rating
+    FROM public.cf_user_problem_matrix
+    GROUP BY user_id
+) upm
+FULL OUTER JOIN public.cf_user_skill_vectors usp ON upm.user_id = usp.user_id
+FULL OUTER JOIN public.cf_user_learning_context ulc ON COALESCE(upm.user_id, usp.user_id) = ulc.user_id;
 
 -- ============================================================
 -- 4. increment_user_stats 함수 업데이트 (레거시 로직 제거)
