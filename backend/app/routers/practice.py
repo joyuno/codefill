@@ -731,14 +731,13 @@ async def record_solve(
         already_solved = False
         xp_earned = base_xp
 
-        # problem_id로 이전 풀이 체크 (base_problem_id 컬럼이 DB에 없음)
-        problem_id_for_check = submission.problem_id
-        if problem_id_for_check:
+        # 이전 풀이 체크: base_problem_id 우선, 없으면 problem_id 사용
+        if base_problem_id:
             try:
                 prev_attempt = db.table("attempts")\
                     .select("id")\
                     .eq("user_id", str(user_id))\
-                    .eq("problem_id", problem_id_for_check)\
+                    .eq("base_problem_id", base_problem_id)\
                     .eq("is_correct", True)\
                     .limit(1)\
                     .execute()
@@ -746,9 +745,27 @@ async def record_solve(
                 if prev_attempt.data and len(prev_attempt.data) > 0:
                     already_solved = True
                     xp_earned = base_xp // 4  # 1/4 XP
-                    print(f"[RecordSolve] Already solved problem (problem_id={problem_id_for_check}), reducing XP: {base_xp} -> {xp_earned}")
+                    print(f"[RecordSolve] Already solved (base_problem_id={base_problem_id}), reducing XP: {base_xp} -> {xp_earned}")
             except Exception as check_err:
-                print(f"[RecordSolve] Error checking previous solve: {check_err}")
+                print(f"[RecordSolve] Error checking previous solve by base_problem_id: {check_err}")
+
+        # base_problem_id로 못 찾았으면 problem_id로 체크
+        if not already_solved and submission.problem_id:
+            try:
+                prev_attempt = db.table("attempts")\
+                    .select("id")\
+                    .eq("user_id", str(user_id))\
+                    .eq("problem_id", submission.problem_id)\
+                    .eq("is_correct", True)\
+                    .limit(1)\
+                    .execute()
+
+                if prev_attempt.data and len(prev_attempt.data) > 0:
+                    already_solved = True
+                    xp_earned = base_xp // 4  # 1/4 XP
+                    print(f"[RecordSolve] Already solved (problem_id={submission.problem_id}), reducing XP: {base_xp} -> {xp_earned}")
+            except Exception as check_err:
+                print(f"[RecordSolve] Error checking previous solve by problem_id: {check_err}")
 
         # attempts 테이블에 기록 시도
         attempt_id_used = None
@@ -770,6 +787,9 @@ async def record_solve(
                     # session_id가 있으면 업데이트 (없으면 기존 유지)
                     if submission.session_id:
                         update_data["session_id"] = submission.session_id
+                    # base_problem_id가 있으면 업데이트
+                    if base_problem_id:
+                        update_data["base_problem_id"] = base_problem_id
 
                     db.table("attempts").update(update_data).eq("id", submission.attempt_id).execute()
                     attempt_id_used = submission.attempt_id
@@ -814,8 +834,9 @@ async def record_solve(
                 else:
                     attempt_data["attempt_number"] = 1
 
-                # Note: base_problem_id 컬럼이 DB에 없으므로 제외
-                # 반복 풀이 체크는 problem_id로 수행됨
+                # base_problem_id 추가 (반복 풀이 체크용)
+                if base_problem_id:
+                    attempt_data["base_problem_id"] = base_problem_id
 
                 result = db.table("attempts").insert(attempt_data).execute()
                 if result.data and len(result.data) > 0:
