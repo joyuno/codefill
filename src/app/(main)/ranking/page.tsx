@@ -2,25 +2,16 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Trophy, Users, Target, Calendar, CalendarRange, Coins, Star } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent } from '@/components/ui/card';
+import { Swords, Coins, Star, Calendar } from 'lucide-react';
 import {
-  MyRankSummary,
-  RankingTabs,
-  RankingFilter,
-  RankingTable,
-  RankingPagination,
-} from '@/components/ranking';
-import { DailyMissionsPanel } from '@/components/missions/DailyMissionsPanel';
-import { WeeklyChallengesPanel } from '@/components/missions/WeeklyChallengesPanel';
+  AdventurerRank,
+  QuestSection,
+  RankingModal,
+} from '@/components/challenge';
 import {
   rankingApi,
   usersApi,
   missionsApi,
-  type RankingPeriod,
-  type RankingType,
-  type RankingItem,
   type MyRankingSummary,
   type DailyMissionsResponse,
   type WeeklyChallengesResponse,
@@ -28,67 +19,54 @@ import {
 import { apiClient } from '@/lib/api/client';
 import { toast } from 'sonner';
 
-const ITEMS_PER_PAGE = 20;
+// 주간 남은 시간 계산
+function getRemainingWeekTime(): string {
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
 
-type MainTab = 'ranking' | 'daily' | 'weekly';
+  const nextMonday = new Date(now);
+  nextMonday.setDate(now.getDate() + daysUntilMonday);
+  nextMonday.setHours(0, 0, 0, 0);
 
-export default function RankingPage() {
-  // Main tab state
-  const [mainTab, setMainTab] = useState<MainTab>('ranking');
+  const diff = nextMonday.getTime() - now.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
 
-  // Ranking state
-  const [period, setPeriod] = useState<RankingPeriod>('global');
-  const [type, setType] = useState<RankingType>('xp');
-  const [page, setPage] = useState(1);
-  const [items, setItems] = useState<RankingItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [myRanking, setMyRanking] = useState<MyRankingSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isMyRankingLoading, setIsMyRankingLoading] = useState(true);
+  if (days > 0) {
+    return `${days}일 ${hours}시간`;
+  }
+  return `${hours}시간`;
+}
+
+export default function ChallengePage() {
+  // User & Auth
   const [currentUserId, setCurrentUserId] = useState<string | undefined>();
-
-  // Missions state
-  const [dailyData, setDailyData] = useState<DailyMissionsResponse | null>(null);
-  const [weeklyData, setWeeklyData] = useState<WeeklyChallengesResponse | null>(null);
-  const [isMissionsLoading, setIsMissionsLoading] = useState(false);
-
   const isAuthenticated = apiClient.isAuthenticated();
 
-  // Fetch ranking data
-  const fetchRanking = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      let response;
+  // Ranking
+  const [myRanking, setMyRanking] = useState<MyRankingSummary | null>(null);
+  const [isMyRankingLoading, setIsMyRankingLoading] = useState(true);
+  const [isRankingModalOpen, setIsRankingModalOpen] = useState(false);
 
-      switch (period) {
-        case 'weekly':
-          response = await rankingApi.getWeeklyRanking(
-            type === 'streak' ? 'xp' : type,
-            page,
-            ITEMS_PER_PAGE
-          );
-          break;
-        case 'monthly':
-          response = await rankingApi.getMonthlyRanking(
-            type === 'streak' ? 'xp' : type,
-            page,
-            ITEMS_PER_PAGE
-          );
-          break;
-        default:
-          response = await rankingApi.getGlobalRanking(type, page, ITEMS_PER_PAGE);
+  // Missions
+  const [dailyData, setDailyData] = useState<DailyMissionsResponse | null>(null);
+  const [weeklyData, setWeeklyData] = useState<WeeklyChallengesResponse | null>(null);
+  const [isMissionsLoading, setIsMissionsLoading] = useState(true);
+
+  // Fetch current user ID
+  useEffect(() => {
+    const fetchUserId = async () => {
+      if (!isAuthenticated) return;
+      try {
+        const profile = await usersApi.getProfile();
+        setCurrentUserId(profile.id);
+      } catch {
+        // Ignore error
       }
-
-      setItems(response.items);
-      setTotal(response.total);
-    } catch (error) {
-      console.error('Failed to fetch ranking:', error);
-      setItems([]);
-      setTotal(0);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [period, type, page]);
+    };
+    fetchUserId();
+  }, [isAuthenticated]);
 
   // Fetch my ranking
   const fetchMyRanking = useCallback(async () => {
@@ -108,9 +86,12 @@ export default function RankingPage() {
     }
   }, [isAuthenticated]);
 
-  // Fetch missions data
+  // Fetch missions
   const fetchMissions = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setIsMissionsLoading(false);
+      return;
+    }
 
     setIsMissionsLoading(true);
     try {
@@ -126,49 +107,10 @@ export default function RankingPage() {
     }
   }, [isAuthenticated]);
 
-  // Get current user ID
-  useEffect(() => {
-    const fetchUserId = async () => {
-      if (!isAuthenticated) return;
-      try {
-        const profile = await usersApi.getProfile();
-        setCurrentUserId(profile.id);
-      } catch {
-        // Ignore error
-      }
-    };
-    fetchUserId();
-  }, [isAuthenticated]);
-
-  // Fetch ranking data on mount and when filters change
-  useEffect(() => {
-    if (mainTab === 'ranking') {
-      fetchRanking();
-    }
-  }, [fetchRanking, mainTab]);
-
   useEffect(() => {
     fetchMyRanking();
-  }, [fetchMyRanking]);
-
-  // Fetch missions when switching to mission tabs
-  useEffect(() => {
-    if ((mainTab === 'daily' || mainTab === 'weekly') && isAuthenticated) {
-      fetchMissions();
-    }
-  }, [mainTab, isAuthenticated, fetchMissions]);
-
-  // Reset page when period or type changes
-  useEffect(() => {
-    setPage(1);
-  }, [period, type]);
-
-  // Reset type to 'xp' if switching away from global (no streak for weekly/monthly)
-  useEffect(() => {
-    if (period !== 'global' && type === 'streak') {
-      setType('xp');
-    }
-  }, [period, type]);
+    fetchMissions();
+  }, [fetchMyRanking, fetchMissions]);
 
   // Handle mission claim
   const handleClaim = async (missionId: string) => {
@@ -177,206 +119,117 @@ export default function RankingPage() {
       if (result?.success) {
         toast.success(
           <div className="flex flex-col gap-1">
-            <span className="font-medium">보상 획득!</span>
+            <span className="font-semibold text-yellow-400">보상 획득!</span>
             <div className="flex items-center gap-3 text-sm">
               {result.goldEarned > 0 && (
-                <span className="flex items-center gap-1 text-yellow-500">
+                <span className="flex items-center gap-1 text-yellow-400">
                   <Coins className="w-3.5 h-3.5" />
                   +{result.goldEarned}
                 </span>
               )}
               {result.xpEarned > 0 && (
-                <span className="flex items-center gap-1 text-blue-500">
+                <span className="flex items-center gap-1 text-blue-400">
                   <Star className="w-3.5 h-3.5" />
                   +{result.xpEarned}
                 </span>
               )}
               {result.seedsEarned && Object.keys(result.seedsEarned).length > 0 && (
-                <span className="text-green-500">
+                <span className="text-emerald-400">
                   씨앗 +{Object.values(result.seedsEarned).reduce((a, b) => a + b, 0)}
                 </span>
               )}
             </div>
           </div>
         );
-        // Reload missions to update status
-        await fetchMissions();
+        // Refresh data
+        await Promise.all([fetchMissions(), fetchMyRanking()]);
       } else {
         toast.error(result?.error || '보상 수령에 실패했습니다.');
       }
     } catch (error) {
-      console.error('[Missions] Claim error:', error);
+      console.error('[Challenge] Claim error:', error);
       toast.error('보상 수령 중 오류가 발생했습니다.');
     }
   };
 
-  const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
-
-  // Calculate completed missions count for badges
-  const dailyCompletedCount = dailyData?.missions.filter(m => m.status === 'completed').length || 0;
-  const weeklyCompletedCount = weeklyData?.challenges.filter(c => c.status === 'completed').length || 0;
+  const remainingTime = getRemainingWeekTime();
 
   return (
-    <div className="container max-w-4xl mx-auto px-4 py-8">
-      {/* 헤더 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
-      >
-        <div className="flex items-center gap-3 mb-2">
-          <Target className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold">도전</h1>
-        </div>
-        <p className="text-muted-foreground">
-          순위를 확인하고, 미션을 완료하여 보상을 획득하세요
-        </p>
-      </motion.div>
-
-      {/* 메인 탭 */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="mb-6"
-      >
-        <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTab)}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="ranking" className="flex items-center gap-2">
-              <Trophy className="w-4 h-4" />
-              <span>순위표</span>
-            </TabsTrigger>
-            <TabsTrigger value="daily" className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              <span>일일 미션</span>
-              {dailyCompletedCount > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-500 text-white rounded-full">
-                  {dailyCompletedCount}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="weekly" className="flex items-center gap-2">
-              <CalendarRange className="w-4 h-4" />
-              <span>주간 챌린지</span>
-              {weeklyCompletedCount > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 text-xs bg-purple-500 text-white rounded-full">
-                  {weeklyCompletedCount}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </motion.div>
-
-      {/* 순위표 탭 콘텐츠 */}
-      {mainTab === 'ranking' && (
+    <div className="min-h-screen bg-gradient-to-b from-emerald-950/30 via-background to-background">
+      <div className="container max-w-2xl mx-auto px-4 py-8">
+        {/* 헤더 */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
         >
-          {/* 내 순위 요약 (로그인한 경우만) */}
-          {isAuthenticated && (
-            <MyRankSummary data={myRanking} isLoading={isMyRankingLoading} />
-          )}
-
-          {/* 필터 영역 */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <RankingTabs value={period} onChange={setPeriod} />
-            <RankingFilter period={period} value={type} onChange={setType} />
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+              <Swords className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="quest-title text-2xl font-bold text-white tracking-wide">
+                Quest Board
+              </h1>
+              <p className="text-sm text-emerald-300/70">
+                퀘스트를 완료하고 보상을 획득하세요
+              </p>
+            </div>
           </div>
-
-          {/* 총 인원 */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-            <Users className="h-4 w-4" />
-            <span>
-              총 <span className="font-medium text-foreground">{total.toLocaleString()}</span>명
-            </span>
-          </div>
-
-          {/* 랭킹 테이블 */}
-          <RankingTable
-            items={items}
-            type={type}
-            isLoading={isLoading}
-            currentUserId={currentUserId}
-          />
-
-          {/* 페이지네이션 */}
-          <RankingPagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            isLoading={isLoading}
-          />
         </motion.div>
-      )}
 
-      {/* 일일 미션 탭 콘텐츠 */}
-      {mainTab === 'daily' && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          {!isAuthenticated ? (
-            <Card className="border-border/50">
-              <CardContent className="py-12">
-                <div className="flex flex-col items-center justify-center text-center">
-                  <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h2 className="text-lg font-semibold mb-2">로그인이 필요합니다</h2>
-                  <p className="text-sm text-muted-foreground">
-                    일일 미션을 확인하려면 로그인해주세요.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-border/50">
-              <CardContent className="py-6">
-                <DailyMissionsPanel
-                  data={dailyData}
-                  isLoading={isMissionsLoading}
-                  onClaim={handleClaim}
-                />
-              </CardContent>
-            </Card>
-          )}
-        </motion.div>
-      )}
+        {/* 내 순위 (모험가 랭크) */}
+        <AdventurerRank
+          data={myRanking}
+          isLoading={isMyRankingLoading}
+          onViewRanking={() => setIsRankingModalOpen(true)}
+        />
 
-      {/* 주간 챌린지 탭 콘텐츠 */}
-      {mainTab === 'weekly' && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          {!isAuthenticated ? (
-            <Card className="border-border/50">
-              <CardContent className="py-12">
-                <div className="flex flex-col items-center justify-center text-center">
-                  <CalendarRange className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h2 className="text-lg font-semibold mb-2">로그인이 필요합니다</h2>
-                  <p className="text-sm text-muted-foreground">
-                    주간 챌린지를 확인하려면 로그인해주세요.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-border/50">
-              <CardContent className="py-6">
-                <WeeklyChallengesPanel
-                  data={weeklyData}
-                  isLoading={isMissionsLoading}
-                  onClaim={handleClaim}
-                />
-              </CardContent>
-            </Card>
-          )}
-        </motion.div>
-      )}
+        {/* 로그인 필요 안내 */}
+        {!isAuthenticated ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="quest-card rounded-xl p-8 text-center"
+          >
+            <Calendar className="w-16 h-16 mx-auto mb-4 text-primary/30" />
+            <h2 className="text-lg font-semibold text-white mb-2">
+              로그인이 필요합니다
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              퀘스트를 확인하고 보상을 받으려면 로그인해주세요.
+            </p>
+          </motion.div>
+        ) : (
+          <>
+            {/* 일일 미션 */}
+            <QuestSection
+              title="Today's Quests"
+              variant="daily"
+              quests={dailyData?.missions || []}
+              isLoading={isMissionsLoading}
+              onClaim={handleClaim}
+            />
+
+            {/* 주간 챌린지 */}
+            <QuestSection
+              title="Weekly Challenge"
+              variant="weekly"
+              quests={weeklyData?.challenges || []}
+              isLoading={isMissionsLoading}
+              onClaim={handleClaim}
+              remainingTime={remainingTime}
+            />
+          </>
+        )}
+
+        {/* 전체 순위 모달 */}
+        <RankingModal
+          open={isRankingModalOpen}
+          onOpenChange={setIsRankingModalOpen}
+          currentUserId={currentUserId}
+        />
+      </div>
     </div>
   );
 }

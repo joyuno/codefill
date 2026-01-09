@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -69,6 +71,28 @@
     --code-string: 142 71% 60%;
     --code-function: 199 89% 60%;
     --code-variable: 38 92% 60%;
+
+    /* Challenge/Quest Theme (Growth & Harvest) */
+    --quest-bg: 0 0% 5%;
+    --quest-card: 0 0% 7%;
+    --quest-card-hover: 0 0% 9%;
+
+    /* Daily - 연두색 (새싹/성장) */
+    --quest-daily: 142 71% 45%;
+    --quest-daily-glow: 142 71% 55%;
+    --quest-daily-bg: 142 50% 8%;
+    --quest-daily-border: 142 50% 25%;
+
+    /* Weekly - 골드 (수확/보상) */
+    --quest-weekly: 45 100% 50%;
+    --quest-weekly-glow: 45 100% 60%;
+    --quest-weekly-bg: 45 50% 8%;
+    --quest-weekly-border: 45 50% 25%;
+
+    /* Common */
+    --quest-xp: 210 100% 60%;
+    --quest-complete: 160 84% 39%;
+    --quest-progress-bg: 0 0% 15%;
   }
 }
 
@@ -103,6 +127,93 @@
 
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+
+  /* Quest/Challenge Utilities */
+  .quest-card {
+    background: hsl(var(--quest-card));
+    border: 1px solid hsl(0 0% 20%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .quest-card-daily {
+    background: linear-gradient(135deg, hsl(var(--quest-daily-bg)), hsl(var(--quest-card)));
+    border-color: hsl(var(--quest-daily-border) / 0.4);
+  }
+
+  .quest-card-weekly {
+    background: linear-gradient(135deg, hsl(var(--quest-weekly-bg)), hsl(var(--quest-card)));
+    border-color: hsl(var(--quest-weekly-border) / 0.4);
+  }
+
+  .quest-card-claimable-daily {
+    border-color: hsl(var(--quest-daily) / 0.6);
+    box-shadow:
+      0 0 25px hsl(var(--quest-daily) / 0.15),
+      0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .quest-card-claimable-weekly {
+    border-color: hsl(var(--quest-weekly) / 0.6);
+    box-shadow:
+      0 0 25px hsl(var(--quest-weekly) / 0.15),
+      0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .glow-primary-pulse {
+    animation: primary-pulse 2s ease-in-out infinite;
+  }
+
+  .glow-gold-pulse {
+    animation: gold-pulse 2s ease-in-out infinite;
+  }
+
+  .quest-progress-daily {
+    background: linear-gradient(90deg, hsl(142 71% 35%), hsl(142 71% 50%), hsl(160 84% 45%));
+    background-size: 200% 100%;
+  }
+
+  .quest-progress-weekly {
+    background: linear-gradient(90deg, hsl(45 100% 40%), hsl(45 100% 55%), hsl(38 100% 50%));
+    background-size: 200% 100%;
+  }
+
+  .quest-shimmer {
+    animation: shimmer 3s linear infinite;
+  }
+
+  .quest-title {
+    font-family: 'Cinzel', 'Georgia', serif;
+    letter-spacing: 0.05em;
+  }
+}
+
+@keyframes primary-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px hsl(var(--quest-daily) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 25px hsl(var(--quest-daily) / 0.6);
+  }
+}
+
+@keyframes gold-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px hsl(var(--quest-weekly) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 25px hsl(var(--quest-weekly) / 0.6);
+  }
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-30px) scale(1.2);
   }
 }
 
