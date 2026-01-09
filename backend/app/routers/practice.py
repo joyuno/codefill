@@ -1241,6 +1241,15 @@ async def get_blank_hint(
     """
     from ..services.hint_service import get_hint_service
 
+    # 📍 인덱스 디버깅 로그
+    print(f"[BlankHint] 📥 Received request: problem_id={request.problem_id[:8]}..., blank_index={request.blank_index}")
+    if request.code_template:
+        # 코드 템플릿에서 빈칸 패턴 확인
+        import re
+        indexed = re.findall(r'_(\d+)_', request.code_template)
+        legacy = request.code_template.count('___')
+        print(f"[BlankHint] 📊 Template has: indexed_blanks={sorted(set(indexed)) if indexed else 'none'}, legacy_blanks={legacy}")
+
     hint_service = get_hint_service()
 
     try:
@@ -1273,14 +1282,19 @@ async def get_blank_hint(
                 except Exception as e:
                     print(f"[BlankHint] Failed to increment hints: {e}")
 
+        # 📍 응답 로깅
+        response_blank_index = hint_result.get("blank_index", request.blank_index)
+        from_cache = hint_result.get("from_cache", False)
+        print(f"[BlankHint] 📤 Response: blank_index={response_blank_index}, from_cache={from_cache}, hint_preview={hint_content[:60]}...")
+
         return BlankHintResponse(
-            blank_index=hint_result.get("blank_index", request.blank_index),
+            blank_index=response_blank_index,
             hint_content=hint_content,
-            from_cache=hint_result.get("from_cache", False),
+            from_cache=from_cache,
         )
 
     except Exception as e:
-        print(f"[BlankHint] Error: {e}")
+        print(f"[BlankHint] ❌ Error: {e}")
         return BlankHintResponse(
             blank_index=request.blank_index,
             hint_content=f"힌트 생성 오류: {str(e)}",

@@ -254,7 +254,7 @@ class HintService:
 
         Args:
             problem_id: problems_blank 테이블의 ID
-            blank_index: 빈칸 인덱스
+            blank_index: 빈칸 인덱스 (0-based, 프론트에서 0부터 전달)
             code_template: 코드 템플릿
             additional_info: 추가 정보
 
@@ -265,6 +265,14 @@ class HintService:
                 from_cache: bool,
             }
         """
+        # 📍 인덱스 검증 및 로깅
+        print(f"[HintService] 📥 generate_blank_hint called: problem_id={problem_id[:8]}..., blank_index={blank_index}")
+
+        # blank_index 유효성 검증 (음수이면 0으로)
+        if blank_index < 0:
+            print(f"[HintService] ⚠ Invalid negative blank_index={blank_index}, correcting to 0")
+            blank_index = 0
+
         # base_problem_id 해결 (FK 제약 충족용)
         base_problem_id = self.resolve_base_problem_id(problem_id, "blank")
         cache_problem_id = base_problem_id or problem_id  # FK용 ID 또는 폴백
@@ -287,6 +295,19 @@ class HintService:
                 "from_cache": False,
             }
 
+        # 📍 코드 템플릿에서 빈칸 개수 확인 (인덱스 검증용)
+        import re
+        indexed_pattern = re.compile(r'_(\d+)_')
+        all_blanks = indexed_pattern.findall(code_template)
+        legacy_blanks = code_template.count("___")
+        total_blanks = len(set(all_blanks)) if all_blanks else legacy_blanks
+
+        print(f"[HintService] 📊 Code template analysis: indexed_blanks={sorted(set(all_blanks)) if all_blanks else 'none'}, legacy_blanks={legacy_blanks}, total={total_blanks}")
+
+        # blank_index가 범위를 벗어나면 경고
+        if total_blanks > 0 and blank_index >= total_blanks:
+            print(f"[HintService] ⚠ blank_index={blank_index} >= total_blanks={total_blanks}, may be off-by-one error!")
+
         # 1. 캐시에서 힌트 조회 (base_problem_id 사용)
         cached = self.get_cached_hint(
             problem_id=cache_problem_id,
@@ -296,13 +317,15 @@ class HintService:
 
         if cached:
             # 캐시 HIT
+            print(f"[HintService] ✓ Cache HIT for blank_index={blank_index}")
             return {
-                "hint_index": blank_index,
+                "blank_index": blank_index,
                 "hint_content": cached["hint_content"],
                 "from_cache": True,
             }
 
         # 2. 캐시 MISS: LLM으로 힌트 생성 (역할 설명만, 정답 없음)
+        print(f"[HintService] 🔄 Cache MISS - generating hint for blank_index={blank_index}")
         hint_content = await self._generate_blank_role_hint(
             code_template=code_template,
             blank_index=blank_index,
@@ -320,7 +343,7 @@ class HintService:
             print(f"[HintService] ⚠ Skipping cache save - no base_problem_id for blank/{problem_id[:8]}...")
 
         return {
-            "hint_index": blank_index,
+            "blank_index": blank_index,
             "hint_content": hint_content,
             "from_cache": False,
         }
@@ -332,6 +355,7 @@ class HintService:
     ) -> str:
         """
         빈칸 역할/이유 힌트 생성 (정답 알려주지 않음)
+        DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
             from .openrouter import openrouter_service
@@ -339,30 +363,55 @@ class HintService:
             # 빈칸 주변 코드 추출
             surrounding_code = self._extract_surrounding_context(code_template, blank_index)
 
-            prompt = f"""다음 코드에서 빈칸 #{blank_index + 1}에 어떤 종류의 값이 들어가야 하는지 1-2줄로 힌트를 주세요.
+            # 📍 힌트 대상 빈칸을 코드에서 명확히 표시 (off-by-one 방지)
+            # _N_ 패턴에서 해당 빈칸만 마커로 감싸기
+            import re
+            marked_code = re.sub(
+                f'_{blank_index}_',
+                f'>>HERE>>_{blank_index}_<<HERE<<',
+                surrounding_code
+            )
+            # 레거시 ___ 패턴도 처리 (첫 번째만 마킹)
+            if f'>>HERE>>_{blank_index}_<<HERE<<' not in marked_code and '___' in marked_code:
+                # blank_index번째 ___를 찾아서 마킹
+                legacy_count = 0
+                def replace_nth(match):
+                    nonlocal legacy_count
+                    if legacy_count == blank_index:
+                        legacy_count += 1
+                        return '>>HERE>>___<<HERE<<'
+                    legacy_count += 1
+                    return match.group(0)
+                marked_code = re.sub('___', replace_nth, surrounding_code)
 
-코드 컨텍스트:
+            print(f"[HintService] Generating blank hint: index={blank_index}, marked_code_preview={marked_code[:120]}...")
+
+            prompt = f"""다음 코드에서 >>HERE>> ... <<HERE<< 로 표시된 빈칸에 어떤 종류의 값이 들어가야 하는지 1-2줄로 힌트를 주세요.
+
+코드 컨텍스트 (힌트 대상 빈칸이 >>HERE>>...<<HERE<< 로 표시됨):
 ```
-{surrounding_code}
+{marked_code}
 ```
 
 규칙:
 - 정답을 직접 알려주지 마세요
 - "이 자리에는 ~하는 역할의 코드가 필요해요" 형식으로 설명
 - 예: "리스트 길이를 구하는 함수", "반복 횟수를 정하는 값", "조건을 비교하는 연산자"
+- 불특정 상수나 매직넘버(예: 큰 숫자 1000000007)는 "특정 값의 상수"라고만 힌트
 - 한국어 1-2문장으로 간결하게"""
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",
+                model="deepseek-v3",  # 코드 이해력이 뛰어난 DeepSeek V3 사용
                 messages=[
-                    {"role": "system", "content": "You are a helpful coding tutor. Give hints about what KIND of code goes in the blank, without revealing the answer. Respond in Korean, 1-2 sentences only."},
+                    {"role": "system", "content": "You are a helpful coding tutor. Give hints about what KIND of code goes in the blank, without revealing the answer. For magic numbers or constants, just say it's a 'constant value' without specifying the exact number. Respond in Korean, 1-2 sentences only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=100,
+                max_tokens=150,
             )
 
             hint = openrouter_service.get_content(response)
+            print(f"[HintService] Generated hint for blank {blank_index}: {hint[:50]}...")
             return hint.strip()
 
         except Exception as e:
@@ -428,7 +477,12 @@ class HintService:
             return "이 빈칸은 코드의 핵심 로직에 필요한 부분이에요."
 
     def _extract_surrounding_context(self, code_template: str, blank_index: int) -> str:
-        """빈칸 주변 코드 추출 - _N_ 패턴 및 레거시 ___ 패턴 지원"""
+        """빈칸 주변 코드 추출 - _N_ 패턴 및 레거시 ___ 패턴 지원
+
+        Args:
+            code_template: 전체 코드 템플릿
+            blank_index: 0-based 빈칸 인덱스
+        """
         import re
 
         if not code_template:
@@ -440,6 +494,7 @@ class HintService:
         indexed_pattern = re.compile(r'_(\d+)_')
         target_line_idx = 0
         found = False
+        found_blank_num = None
 
         for i, line in enumerate(lines):
             matches = indexed_pattern.findall(line)
@@ -447,6 +502,7 @@ class HintService:
                 if int(match) == blank_index:
                     target_line_idx = i
                     found = True
+                    found_blank_num = int(match)
                     break
             if found:
                 break
@@ -459,8 +515,18 @@ class HintService:
                 if count > 0:
                     if blank_count <= blank_index < blank_count + count:
                         target_line_idx = i
+                        found = True
+                        found_blank_num = blank_index
                         break
                     blank_count += count
+
+        # 📍 인덱스 매칭 로깅
+        print(f"[HintService] 🔍 _extract_surrounding_context: blank_index={blank_index}, found={found}, found_blank_num={found_blank_num}, target_line={target_line_idx}")
+
+        if found:
+            print(f"[HintService] 📍 Target line: '{lines[target_line_idx][:80]}...'")
+        else:
+            print(f"[HintService] ⚠ Could not find blank_{blank_index} in code template!")
 
         # 앞뒤 3줄 추출
         start = max(0, target_line_idx - 3)
@@ -564,12 +630,16 @@ class HintService:
         block_index: int,
         all_blocks: List[Dict[str, Any]],
     ) -> str:
-        """퍼즐 블록 역할 힌트 생성 (순서 알려주지 않음)"""
+        """퍼즐 블록 역할 힌트 생성 (순서 알려주지 않음)
+        DeepSeek V3 사용 - 코드 이해력이 뛰어남
+        """
         try:
             from .openrouter import openrouter_service
 
             # 전체 블록 코드 (컨텍스트용)
             all_code = "\n".join([b.get("code", "") for b in all_blocks])
+
+            print(f"[HintService] Generating puzzle hint: block_index={block_index}, block_code={block_code[:50]}...")
 
             prompt = f"""다음 코드 블록이 전체 프로그램에서 어떤 역할을 하는지 1-2줄로 설명하세요.
 
@@ -590,16 +660,17 @@ class HintService:
 - 한국어 1-2문장으로 간결하게"""
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",
+                model="deepseek-v3",  # 코드 이해력이 뛰어난 DeepSeek V3 사용
                 messages=[
                     {"role": "system", "content": "You are a helpful coding tutor. Explain what the code block does without revealing its position. Respond in Korean, 1-2 sentences only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=100,
+                max_tokens=150,
             )
 
             hint = openrouter_service.get_content(response)
+            print(f"[HintService] Generated puzzle hint for block {block_index}: {hint[:50]}...")
             return hint.strip()
 
         except Exception as e:
@@ -702,11 +773,15 @@ class HintService:
         step_index: int,
         all_steps: List[Any],
     ) -> str:
-        """Guided 단계 힌트 생성"""
+        """Guided 단계 힌트 생성
+        DeepSeek V3 사용 - 코드 이해력이 뛰어남
+        """
         try:
             from .openrouter import openrouter_service
 
             total_steps = len(all_steps)
+
+            print(f"[HintService] Generating guided hint: step_index={step_index}, total_steps={total_steps}")
 
             prompt = f"""현재 단계 {step_index + 1}/{total_steps}에서 학습자가 무엇을 해야 하는지 1-2줄로 도움을 주세요.
 
@@ -720,16 +795,17 @@ class HintService:
 - 한국어 1-2문장으로 간결하게"""
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",
+                model="deepseek-v3",  # 코드 이해력이 뛰어난 DeepSeek V3 사용
                 messages=[
                     {"role": "system", "content": "You are a Socratic coding tutor. Guide the learner with questions without giving direct answers. Respond in Korean, 1-2 sentences only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=100,
+                max_tokens=150,
             )
 
             hint = openrouter_service.get_content(response)
+            print(f"[HintService] Generated guided hint for step {step_index}: {hint[:50]}...")
             return hint.strip()
 
         except Exception as e:
