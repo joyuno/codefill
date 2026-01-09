@@ -271,7 +271,7 @@ async def get_user_activity(
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         result = db.table("daily_activity")\
-            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, bug_count, output_count, refactor_count")\
+            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, output_count, refactor_count")\
             .eq("user_id", str(user_id))\
             .gte("activity_date", start_date)\
             .order("activity_date", desc=False)\
@@ -283,7 +283,6 @@ async def get_user_activity(
             xp_earned=item.get("xp_earned", 0),
             time_spent=item.get("time_spent", 0),
             blank_count=item.get("blank_count", 0),
-            bug_count=item.get("bug_count", 0),
             output_count=item.get("output_count", 0),
             refactor_count=item.get("refactor_count", 0),
         ) for item in (result.data or [])]
@@ -1101,7 +1100,7 @@ async def get_public_activity(
         start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         result = db.table("daily_activity")\
-            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, bug_count, output_count, refactor_count")\
+            .select("activity_date, problems_solved, xp_earned, time_spent, blank_count, output_count, refactor_count")\
             .eq("user_id", str(user_id))\
             .gte("activity_date", start_date)\
             .order("activity_date", desc=False)\
@@ -1113,7 +1112,6 @@ async def get_public_activity(
             xp_earned=item.get("xp_earned", 0),
             time_spent=item.get("time_spent", 0),
             blank_count=item.get("blank_count", 0),
-            bug_count=item.get("bug_count", 0),
             output_count=item.get("output_count", 0),
             refactor_count=item.get("refactor_count", 0),
         ) for item in (result.data or [])]
@@ -1409,7 +1407,6 @@ async def get_public_profile_all(
             xp_earned=item.get("xp_earned", 0),
             time_spent=item.get("time_spent", 0),
             blank_count=item.get("blank_count", 0),
-            bug_count=item.get("bug_count", 0),
             output_count=item.get("output_count", 0),
             refactor_count=item.get("refactor_count", 0),
         ) for item in activity_data.get("days", [])]

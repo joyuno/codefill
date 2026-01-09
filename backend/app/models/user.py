@@ -119,7 +119,6 @@ class DailyActivity(BaseModel):
     xp_earned: int = 0
     time_spent: int = 0  # seconds
     blank_count: int = 0
-    bug_count: int = 0
     output_count: int = 0
     refactor_count: int = 0
 
