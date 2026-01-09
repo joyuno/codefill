@@ -57,8 +57,7 @@ class UserHistoryService:
         """
         try:
             result = self.db.table('user_skill_profiles').select(
-                'weak_topics, strong_topics, preferred_difficulty, '
-                'total_problems_solved, success_rate, avg_solve_time, '
+                'weak_topics, strong_topics, '
                 'recent_topics, updated_at'
             ).eq(
                 'user_id', user_id
@@ -171,9 +170,6 @@ class UserHistoryService:
             context['skill_summary'] = {
                 'weak_topics': skill_profile.get('weak_topics', [])[:3],
                 'strong_topics': skill_profile.get('strong_topics', [])[:3],
-                'preferred_difficulty': skill_profile.get('preferred_difficulty'),
-                'total_solved': skill_profile.get('total_problems_solved', 0),
-                'success_rate': skill_profile.get('success_rate'),
             }
 
             # 추천 생성 (약점 주제 기반)
