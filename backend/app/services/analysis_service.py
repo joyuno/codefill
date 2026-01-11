@@ -47,6 +47,15 @@ class AnalysisService:
             "difficultySnapshot": data.get("difficulty_snapshot", {}),
             "recommendedProblems": data.get("recommended_problems", []),
             "createdAt": data.get("created_at"),
+            # 새로 추가된 필드들
+            "conceptsStruggling": data.get("concepts_struggling", []),
+            "conceptsLearned": data.get("concepts_learned", []),
+            "hintUsage": data.get("hint_usage", {}),
+            "learningStyle": data.get("learning_style", {}),
+            "commonErrorPatterns": data.get("common_error_patterns", {}),
+            "moodDistribution": data.get("mood_distribution", {}),
+            "breakthroughMoments": data.get("breakthrough_moments", []),
+            "teachingNotes": data.get("teaching_notes", []),
         }
 
     async def generate_analysis(self, user_id: UUID) -> Dict[str, Any]:
@@ -83,6 +92,15 @@ class AnalysisService:
             },
             "difficulty_snapshot": user_data.get("difficulty_stats", {}),
             "recommended_problems": recommended,
+            # 새로 추가된 필드들
+            "concepts_struggling": user_data.get("concepts_struggling", []),
+            "concepts_learned": user_data.get("concepts_learned", []),
+            "hint_usage": user_data.get("hint_usage", {}),
+            "learning_style": user_data.get("learning_style", {}),
+            "common_error_patterns": user_data.get("common_error_patterns", {}),
+            "mood_distribution": user_data.get("mood_distribution", {}),
+            "breakthrough_moments": user_data.get("breakthrough_moments", []),
+            "teaching_notes": user_data.get("teaching_notes", []),
         }
 
         # Upsert (insert or update)
@@ -103,6 +121,15 @@ class AnalysisService:
             "difficultySnapshot": user_data.get("difficulty_stats", {}),
             "recommendedProblems": recommended,
             "createdAt": datetime.utcnow().isoformat(),
+            # 새로 추가된 필드들
+            "conceptsStruggling": user_data.get("concepts_struggling", []),
+            "conceptsLearned": user_data.get("concepts_learned", []),
+            "hintUsage": user_data.get("hint_usage", {}),
+            "learningStyle": user_data.get("learning_style", {}),
+            "commonErrorPatterns": user_data.get("common_error_patterns", {}),
+            "moodDistribution": user_data.get("mood_distribution", {}),
+            "breakthroughMoments": user_data.get("breakthrough_moments", []),
+            "teachingNotes": user_data.get("teaching_notes", []),
         }
 
     async def _collect_user_data(self, user_id: UUID) -> Dict[str, Any]:
@@ -120,37 +147,72 @@ class AnalysisService:
             data["problems_solved"] = stats.get("problems_solved", 0)
             data["streak"] = stats.get("current_streak", 0)
 
-        # 2. user_skill_profiles
-        skill_result = self.db.table("user_skill_profiles").select(
-            "skill_by_topic, weak_topics, strong_topics, success_rate_by_difficulty"
-        ).eq("user_id", str(user_id)).execute()
-
-        if skill_result.data and len(skill_result.data) > 0:
-            skill = skill_result.data[0]
-            data["skill_by_topic"] = skill.get("skill_by_topic", {})
-            data["weak_topics"] = skill.get("weak_topics", [])
-            data["strong_topics"] = skill.get("strong_topics", [])
-
-            # Process difficulty stats
-            diff_raw = skill.get("success_rate_by_difficulty", {})
-            difficulty_stats = {}
-            for diff, stats in (diff_raw or {}).items():
-                if isinstance(stats, dict):
-                    total = stats.get("total", 0)
-                    success = stats.get("success", 0)
-                    difficulty_stats[diff] = round(success / total, 2) if total > 0 else 0
-                else:
-                    difficulty_stats[diff] = float(stats) if stats else 0
-            data["difficulty_stats"] = difficulty_stats
-
-        # 3. Overall accuracy from attempts
-        attempts_result = self.db.table("attempts").select(
-            "is_correct"
+        # 2. attempts 테이블에서 스킬 데이터 직접 계산
+        attempts_for_skill = self.db.table("attempts").select(
+            "topics, difficulty, is_correct"
         ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").execute()
 
-        if attempts_result.data:
-            total = len(attempts_result.data)
-            correct = sum(1 for a in attempts_result.data if a.get("is_correct"))
+        # 토픽별 성공률 계산
+        topic_stats = {}  # {topic: {"success": 0, "total": 0}}
+        difficulty_raw = {}  # {difficulty: {"success": 0, "total": 0}}
+
+        if attempts_for_skill.data:
+            for attempt in attempts_for_skill.data:
+                is_correct = attempt.get("is_correct", False)
+                topics = attempt.get("topics") or []
+                difficulty = attempt.get("difficulty")
+
+                # 토픽별 집계
+                for topic in topics:
+                    if topic not in topic_stats:
+                        topic_stats[topic] = {"success": 0, "total": 0}
+                    topic_stats[topic]["total"] += 1
+                    if is_correct:
+                        topic_stats[topic]["success"] += 1
+
+                # 난이도별 집계
+                if difficulty:
+                    if difficulty not in difficulty_raw:
+                        difficulty_raw[difficulty] = {"success": 0, "total": 0}
+                    difficulty_raw[difficulty]["total"] += 1
+                    if is_correct:
+                        difficulty_raw[difficulty]["success"] += 1
+
+        # skill_by_topic 계산 (성공률 0.0~1.0)
+        skill_by_topic = {}
+        weak_topics = []
+        strong_topics = []
+
+        for topic, stats in topic_stats.items():
+            if stats["total"] > 0:
+                rate = round(stats["success"] / stats["total"], 2)
+                skill_by_topic[topic] = rate
+                if rate < 0.4:
+                    weak_topics.append(topic)
+                elif rate > 0.7:
+                    strong_topics.append(topic)
+
+        data["skill_by_topic"] = skill_by_topic
+        data["weak_topics"] = weak_topics
+        data["strong_topics"] = strong_topics
+
+        # difficulty_stats 계산
+        difficulty_stats = {}
+        for diff, stats in difficulty_raw.items():
+            if stats["total"] > 0:
+                difficulty_stats[diff] = round(stats["success"] / stats["total"], 2)
+            else:
+                difficulty_stats[diff] = 0
+        data["difficulty_stats"] = difficulty_stats
+
+        # learning_style, common_error_patterns은 user_memories에서 추출 (아래에서 처리)
+        data["learning_style"] = {}
+        data["common_error_patterns"] = {}
+
+        # 3. Overall accuracy (위에서 조회한 attempts_for_skill 데이터 활용)
+        if attempts_for_skill.data:
+            total = len(attempts_for_skill.data)
+            correct = sum(1 for a in attempts_for_skill.data if a.get("is_correct"))
             data["accuracy"] = round(correct / total, 2) if total > 0 else 0
         else:
             data["accuracy"] = 0
@@ -159,7 +221,7 @@ class AnalysisService:
         memories_result = self.db.table("user_memories").select(
             "summary, key_topics, concepts_learned, concepts_struggling, "
             "teaching_notes, breakthrough_moments, student_mood, "
-            "problem_name, was_successful, hints_needed, created_at"
+            "problem_name, was_successful, hints_needed, created_at, learning_insights"
         ).eq("user_id", str(user_id)).order(
             "created_at", desc=True
         ).limit(10).execute()
@@ -172,6 +234,7 @@ class AnalysisService:
             all_breakthroughs = []
             mood_counts = {}
             session_summaries = []
+            learning_insights_list = []
 
             for mem in memories_result.data:
                 # 어려워한 개념
@@ -204,12 +267,28 @@ class AnalysisService:
                         "hints_needed": mem.get("hints_needed"),
                     })
 
+                # learning_insights 수집
+                insights = mem.get("learning_insights")
+                if insights and isinstance(insights, dict):
+                    learning_insights_list.append(insights)
+
             data["concepts_struggling"] = list(set(all_struggling))[:10]
             data["concepts_learned"] = list(set(all_learned))[:10]
             data["teaching_notes"] = all_teaching_notes[:5]
             data["breakthrough_moments"] = all_breakthroughs[:5]
             data["mood_distribution"] = mood_counts
             data["recent_sessions"] = session_summaries[:5]
+
+            # learning_style 추출 (가장 최근 learning_insights에서)
+            if learning_insights_list:
+                latest_insights = learning_insights_list[0]
+                data["learning_style"] = {
+                    "prefers_examples": latest_insights.get("prefers_examples", False),
+                    "prefers_analogies": latest_insights.get("prefers_analogies", False),
+                    "hint_sensitivity": latest_insights.get("hint_sensitivity", "medium"),
+                    "pace": latest_insights.get("pace", "medium"),
+                }
+                data["common_error_patterns"] = latest_insights.get("common_errors", {})
 
         # 5. attempt_details - 힌트 사용 패턴 및 오류 분석
         # 최근 시도들의 ID 조회
@@ -345,13 +424,21 @@ class AnalysisService:
         strengths = []
         for topic in (strong_topics or [])[:5]:
             score = skill_by_topic.get(topic, 0.7)
-            strengths.append({"topic": topic, "score": round(score, 2)})
+            strengths.append({
+                "topic": topic,
+                "score": round(score, 2),
+                "insight": f"{topic} 영역에서 높은 성취도를 보이고 있습니다."
+            })
 
         # Weaknesses
         weaknesses = []
         for topic in (weak_topics or [])[:5]:
             score = skill_by_topic.get(topic, 0.3)
-            weaknesses.append({"topic": topic, "score": round(score, 2)})
+            weaknesses.append({
+                "topic": topic,
+                "score": round(score, 2),
+                "insight": f"{topic} 기초 개념부터 다시 학습하면 빠르게 향상될 수 있습니다."
+            })
 
         # Summary text
         if weaknesses:

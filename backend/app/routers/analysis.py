@@ -11,6 +11,8 @@ from ..models.analysis import (
     TopicScore,
     StatsSnapshot,
     RecommendedProblem,
+    HintUsage,
+    LearningStyle,
 )
 from ..services.analysis_service import AnalysisService, InsufficientDataError
 
@@ -35,11 +37,11 @@ async def get_analysis_report(
             id=report_data.get("id"),
             summaryText=report_data.get("summaryText", ""),
             strengths=[
-                TopicScore(topic=s["topic"], score=s["score"])
+                TopicScore(topic=s["topic"], score=s["score"], insight=s.get("insight"))
                 for s in report_data.get("strengths", [])
             ],
             weaknesses=[
-                TopicScore(topic=w["topic"], score=w["score"])
+                TopicScore(topic=w["topic"], score=w["score"], insight=w.get("insight"))
                 for w in report_data.get("weaknesses", [])
             ],
             recommendations=report_data.get("recommendations", []),
@@ -52,6 +54,15 @@ async def get_analysis_report(
                 for p in report_data.get("recommendedProblems", [])
             ],
             createdAt=report_data.get("createdAt"),
+            # 새로 추가된 필드들
+            conceptsStruggling=report_data.get("conceptsStruggling", []),
+            conceptsLearned=report_data.get("conceptsLearned", []),
+            hintUsage=HintUsage(**report_data["hintUsage"]) if report_data.get("hintUsage") and report_data["hintUsage"] else None,
+            learningStyle=LearningStyle(**report_data["learningStyle"]) if report_data.get("learningStyle") and report_data["learningStyle"] else None,
+            commonErrorPatterns=report_data.get("commonErrorPatterns", {}),
+            moodDistribution=report_data.get("moodDistribution", {}),
+            breakthroughMoments=report_data.get("breakthroughMoments", []),
+            teachingNotes=report_data.get("teachingNotes", []),
         )
 
         return AnalysisReportResponse(hasReport=True, report=report)
@@ -75,11 +86,11 @@ async def generate_analysis(
             id=report_data.get("id"),
             summaryText=report_data.get("summaryText", ""),
             strengths=[
-                TopicScore(topic=s["topic"], score=s["score"])
+                TopicScore(topic=s["topic"], score=s["score"], insight=s.get("insight"))
                 for s in report_data.get("strengths", [])
             ],
             weaknesses=[
-                TopicScore(topic=w["topic"], score=w["score"])
+                TopicScore(topic=w["topic"], score=w["score"], insight=w.get("insight"))
                 for w in report_data.get("weaknesses", [])
             ],
             recommendations=report_data.get("recommendations", []),
@@ -92,6 +103,15 @@ async def generate_analysis(
                 for p in report_data.get("recommendedProblems", [])
             ],
             createdAt=report_data.get("createdAt"),
+            # 새로 추가된 필드들
+            conceptsStruggling=report_data.get("conceptsStruggling", []),
+            conceptsLearned=report_data.get("conceptsLearned", []),
+            hintUsage=HintUsage(**report_data["hintUsage"]) if report_data.get("hintUsage") and report_data["hintUsage"] else None,
+            learningStyle=LearningStyle(**report_data["learningStyle"]) if report_data.get("learningStyle") and report_data["learningStyle"] else None,
+            commonErrorPatterns=report_data.get("commonErrorPatterns", {}),
+            moodDistribution=report_data.get("moodDistribution", {}),
+            breakthroughMoments=report_data.get("breakthroughMoments", []),
+            teachingNotes=report_data.get("teachingNotes", []),
         )
 
     except InsufficientDataError as e:

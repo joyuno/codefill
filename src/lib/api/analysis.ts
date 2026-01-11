@@ -13,6 +13,7 @@ import { api } from './client';
 export interface TopicScore {
   topic: string;
   score: number;
+  insight?: string; // LLM이 생성한 인사이트
 }
 
 export interface StatsSnapshot {
@@ -31,6 +32,20 @@ export interface RecommendedProblem {
   reason: string;
 }
 
+export interface HintUsage {
+  total_requested: number;
+  helpful_count: number;
+  helpful_rate: number;
+  avg_hint_level: number;
+}
+
+export interface LearningStyle {
+  prefers_examples?: boolean;
+  prefers_analogies?: boolean;
+  hint_sensitivity?: string; // "low" | "medium" | "high"
+  pace?: string; // "slow" | "medium" | "fast"
+}
+
 export interface AnalysisReport {
   id?: string;
   summaryText: string;
@@ -43,6 +58,15 @@ export interface AnalysisReport {
   difficultySnapshot: Record<string, number>;
   recommendedProblems: RecommendedProblem[];
   createdAt?: string;
+  // 새로 추가된 필드들
+  conceptsStruggling: string[];
+  conceptsLearned: string[];
+  hintUsage?: HintUsage;
+  learningStyle?: LearningStyle;
+  commonErrorPatterns: Record<string, number>;
+  moodDistribution: Record<string, number>;
+  breakthroughMoments: string[];
+  teachingNotes: string[];
 }
 
 export interface AnalysisReportResponse {
