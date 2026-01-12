@@ -7,7 +7,6 @@ import { Brain, RefreshCw, Loader2, Sparkles, FileCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScoreOverview } from '@/components/analysis/ScoreOverview';
 import { SkillRadar } from '@/components/analysis/SkillRadar';
-import { SkillAnalysisPanel } from '@/components/analysis/SkillAnalysisPanel';
 import { HintUsageCard } from '@/components/analysis/HintUsageCard';
 import { LearningStyleCard } from '@/components/analysis/LearningStyleCard';
 import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
@@ -238,45 +237,105 @@ export default function AnalysisPage() {
         </div>
       </motion.div>
 
-      {/* Row 2: SkillRadar + Analysis */}
+      {/* Row 2: 스킬 분석 (레이더 오른쪽 플로팅) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
       >
-        <div className="grid grid-cols-1 lg:grid-cols-2">
-          {/* 레이더 차트 - 왼쪽 절반 */}
-          <div className="relative p-6 lg:p-8 flex flex-col items-center justify-center min-h-[420px] bg-gradient-to-br from-zinc-900 to-zinc-950">
-            {/* 배경 장식 */}
-            <div className="absolute inset-0 opacity-30">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-primary/5 blur-3xl" />
+        <div className="p-6">
+          {/* 상단: 강점/약점 + 레이더 */}
+          <div className="flex gap-6">
+            {/* 왼쪽: 강점/약점 텍스트 */}
+            <div className="flex-1 space-y-5">
+              {/* 강점 영역 */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <h4 className="text-sm font-semibold text-zinc-200">강점 영역</h4>
+                </div>
+                <div className="space-y-2">
+                  {report.strengths.slice(0, 3).map((s, i) => (
+                    <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                      <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                        {Math.round(s.score * 100)}%
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-zinc-100">{s.topic}</span>
+                        {s.insight && (
+                          <p className="text-xs text-zinc-500 mt-0.5 line-clamp-1">{s.insight}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {report.strengths.length === 0 && (
+                    <p className="text-xs text-zinc-600">아직 데이터가 부족합니다</p>
+                  )}
+                </div>
+              </div>
+
+              {/* 보완 필요 */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-amber-500" />
+                  <h4 className="text-sm font-semibold text-zinc-200">보완 필요</h4>
+                </div>
+                <div className="space-y-2">
+                  {report.weaknesses.slice(0, 3).map((w, i) => (
+                    <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                      <span className="text-xs font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                        {Math.round(w.score * 100)}%
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-zinc-100">{w.topic}</span>
+                        {w.insight && (
+                          <p className="text-xs text-zinc-500 mt-0.5 line-clamp-1">{w.insight}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {report.weaknesses.length === 0 && (
+                    <p className="text-xs text-zinc-600">모든 영역에서 잘하고 있어요!</p>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="relative z-10 w-full max-w-[380px]">
-              <SkillRadar
-                skills={Object.entries(report.skillSnapshot || {}).map(([topic, score]) => ({
-                  topic,
-                  score: score as number,
-                }))}
-                size={340}
-              />
+            {/* 오른쪽: 레이더 차트 */}
+            <div className="hidden md:flex flex-shrink-0 items-center justify-center">
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary/5 rounded-full blur-2xl" />
+                <SkillRadar
+                  skills={Object.entries(report.skillSnapshot || {}).map(([topic, score]) => ({
+                    topic,
+                    score: score as number,
+                  }))}
+                  size={200}
+                />
+              </div>
             </div>
           </div>
 
-          {/* 분석 패널 - 오른쪽 절반 */}
-          <div className="border-t lg:border-t-0 lg:border-l border-zinc-800 bg-zinc-900/50">
-            <div className="p-5 border-b border-zinc-800">
-              <h3 className="text-lg font-bold text-zinc-100">AI 스킬 분석</h3>
-              <p className="text-xs text-zinc-500 mt-1">
-                학습 패턴을 기반으로 한 맞춤 분석
-              </p>
+          {/* 하단: AI 추천 */}
+          <div className="mt-6 pt-5 border-t border-zinc-800">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <h4 className="text-sm font-semibold text-zinc-200">AI 추천</h4>
             </div>
-            <SkillAnalysisPanel
-              strengths={report.strengths}
-              weaknesses={report.weaknesses}
-              recommendations={report.recommendations}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {report.recommendations.slice(0, 3).map((rec, i) => (
+                <div
+                  key={i}
+                  className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 hover:border-blue-500/30 transition-colors"
+                >
+                  <p className="text-sm text-zinc-300 leading-relaxed line-clamp-2">{rec}</p>
+                </div>
+              ))}
+              {report.recommendations.length === 0 && (
+                <p className="text-xs text-zinc-600">추천 사항이 없습니다</p>
+              )}
+            </div>
           </div>
         </div>
       </motion.div>
