@@ -47,45 +47,51 @@ ANALYSIS_SYSTEM_PROMPT = """
 
 ---
 
-## 보조 지표
+## 활용 가능한 모든 데이터
 
-### 오류 패턴 분석
+### 1. 기본 통계
+- `level`: 현재 레벨
+- `problems_solved`: 총 해결한 문제 수
+- `streak`: 연속 학습 일수
+- `accuracy`: 전체 정답률
 
-**1차 데이터: concepts_struggling (필수 참조)**
-- 사용자가 반복적으로 어려워한 개념들의 목록입니다
-- 이 데이터를 기반으로 오류 패턴을 분석하세요
-- 예: `["점화식 도출", "상태 정의", "방문 체크"]` → DP 상태 정의와 Graph 탐색에서 패턴 문제
+### 2. BKT Mastery (핵심)
+- `bkt_mastery`: 토픽별 마스터리 확률
+  - `mastery`: 0.0~1.0 (80% 이상 = 숙달)
+  - `attempt_count`: 시도 횟수
+  - `correct_count`: 정답 횟수
 
-**2차 데이터: error_analysis (있을 경우만)**
-- `dominant_type`이 null이 아닌 경우에만 SRK 분류 참조
-- skill: 타이핑 실수 → 제출 전 검토 습관화
-- rule: 경계값 오류 (i<n vs i<=n) → 엣지 케이스 테스트
-- knowledge: 개념 이해 부족 → 기초 개념 복습
+### 3. Bloom's Taxonomy
+- `bloom_metrics`: 인지 수준별 성취도
+  - `apply_rate`: 쉬운 문제 정답률 (적용 단계)
+  - `analyze_rate`: 중간 문제 정답률 (분석 단계)
+  - `create_rate`: 어려운 문제 정답률 (창조 단계)
+  - `current_level`: 현재 도달한 인지 수준
+  - `gap_analysis`: 다음 레벨까지 필요한 것
 
-### 학습 기록 (user_memories)
-- `concepts_struggling`: 반복적으로 어려워하는 개념 → **약점 원인 분석의 핵심 데이터**
-- `concepts_learned`: 학습 완료된 개념
-- `breakthrough_moments`: 이해 도약이 일어난 순간
-- `mood_distribution`: 학습 중 감정 분포 (frustrated, confused, curious, confident)
+### 4. 학습 기록 (user_memories)
+- `concepts_struggling`: 반복적으로 어려워한 개념 → **약점 원인의 핵심**
+- `concepts_learned`: 학습 완료된 개념 → **강점 근거**
+- `breakthrough_moments`: 이해 도약 순간 → **성공 경험**
+- `teaching_notes`: AI 튜터가 기록한 학습 팁
+- `mood_distribution`: 감정 분포 (frustrated, confused, curious, confident)
+- `recent_sessions`: 최근 학습 세션
+  - `problem_name`: 문제명
+  - `was_successful`: 성공 여부
+  - `hints_needed`: 사용한 힌트 수
 
-### 힌트 사용 (hint_usage)
+### 5. 힌트 사용 패턴 (hint_usage)
 - `total_requested`: 총 힌트 요청 횟수
 - `avg_per_problem`: 문제당 평균 힌트 사용
-- `by_level`: 힌트 레벨별 사용 횟수 (높은 레벨 = 더 많은 도움)
+- `by_level`: 레벨별 힌트 사용 (1=작은 힌트, 3=거의 정답)
+- `helpful_rate`: 힌트가 도움이 된 비율
 
-### 학습 스타일 추론 (learning_style 입력 데이터)
-입력 데이터에 `learning_style` 필드가 있으면 다음을 참고하여 type을 결정하세요:
-- `hint_sensitivity`: "high"면 hint-dependent 경향, "low"면 independent 경향
-- `pace`: "slow"면 methodical 경향, "fast"면 exploratory 경향
-- `prefers_examples`: true면 예시 기반 학습 선호
-
-**type 결정 기준:**
-| type | 조건 |
-|------|------|
-| **independent** | hint_sensitivity=low, 문제당 힌트 < 1 |
-| **hint-dependent** | hint_sensitivity=high, 문제당 힌트 >= 2 |
-| **methodical** | pace=slow, 풀이 시간 안정적 |
-| **exploratory** | pace=fast, 다양한 토픽 시도 |
+### 6. 오류 패턴
+- `concepts_struggling`을 기반으로 분석
+- `error_analysis`: SRK 분류 (데이터 있을 경우)
+  - skill: 타이핑/부주의 실수
+  - rule: 경계값 오류
+  - knowledge: 개념 이해 부족
 
 ---
 
@@ -128,13 +134,12 @@ ANALYSIS_SYSTEM_PROMPT = """
   }},
 
   "common_error_patterns": [
-    "반드시 concepts_struggling 데이터를 분석하여 생성. 각 항목을 '원인 → 결과' 형식으로 작성",
-    "예시 (concepts_struggling에 '점화식 도출'이 있는 경우): 'dp[i]의 정의를 명확히 하지 않고 코드 작성 → 점화식 오류 발생'",
-    "예시 (concepts_struggling에 '방문 체크'가 있는 경우): 'visited 체크를 재귀 호출 후에 수행 → 무한 루프 발생'",
-    "concepts_struggling이 비어있으면 빈 배열 [] 반환"
+    "concepts_struggling의 각 항목을 '원인 → 결과' 형식으로 변환",
+    "예: '점화식 도출' → 'dp[i] 정의 없이 코드 작성 시작 → 점화식 오류'",
+    "예: '방문 체크' → 'visited를 큐 삽입 후가 아닌 pop 후에 처리 → 중복 방문'"
   ],
 
-  "detailed_feedback": "## 학습 분석 리포트\\n\\n### 토픽별 Mastery 현황\\n| 토픽 | Mastery | 시도 | 정답 | 상태 |\\n|------|---------|------|------|------|\\n| Array | 92% | 8 | 8 | 숙달 |\\n| DP | 11% | 10 | 2 | 미숙 |\\n\\n### 약점 원인 분석\\nDP mastery가 11%인 원인:\\n- 10회 시도 중 2회만 정답 (정답률 20%)\\n- 최근 6회 연속 오답으로 mastery 급락\\n- concepts_struggling: 점화식 도출, 상태 정의, 2차원 DP\\n- 오류 유형: rule 60% (경계값 오류)\\n\\n### 개선 방안\\n1. DP 문제 접근법 변경\\n   - 코드 작성 전 dp[i]가 의미하는 바를 문장으로 정의\\n   - n=1,2,3 케이스를 손으로 계산하여 패턴 파악\\n2. 경계값 검증 습관화\\n   - 반복문 조건 작성 후 i=0, i=n-1, i=n 대입 테스트"
+  "detailed_feedback": "## 종합 학습 분석\\n\\n### 현재 위치\\n레벨 7 | 총 35문제 해결 | 5일 연속 학습 중 | 전체 정답률 68%\\n\\n### 인지 수준 (Bloom's Taxonomy)\\n- **Apply (적용)**: 85% - 기본 문법과 자료구조 활용 능숙\\n- **Analyze (분석)**: 55% - 문제 분석 능력 향상 중\\n- **Create (창조)**: 20% - 복잡한 알고리즘 설계는 아직 어려움\\n→ 현재 'Analyze' 단계, 'Create' 단계 도달을 위해 DP/Graph 심화 필요\\n\\n### 토픽별 Mastery 현황\\n| 토픽 | Mastery | 시도 | 정답 | 상태 |\\n|------|---------|------|------|------|\\n| Array | 99% | 8 | 8 | 숙달 |\\n| String | 99% | 7 | 7 | 숙달 |\\n| Sorting | 97% | 5 | 4 | 숙달 |\\n| BFS | 29% | 6 | 3 | 학습필요 |\\n| DP | 11% | 10 | 2 | 학습필요 |\\n| Graph | 11% | 8 | 1 | 학습필요 |\\n\\n### 강점 분석\\n**Array, String, Sorting**은 mastery 90% 이상으로 안정적입니다.\\n- 학습 완료된 개념: 투 포인터, 슬라이딩 윈도우, 문자열 파싱, 퀵소트 파티션\\n- 이 토픽들에서 breakthrough moment: '투 포인터로 O(n) 해결', '파티션 과정 이해'\\n\\n### 약점 원인 분석\\n**DP (mastery 11%)**\\n- 10회 시도 중 2회만 정답, 최근 6회 연속 오답\\n- 어려워하는 개념: 상태 정의, 점화식 도출, 메모이제이션, 2차원 DP\\n- AI 튜터 노트: '작은 케이스부터 시작하도록 유도 필요'\\n\\n**Graph (mastery 11%)**\\n- 8회 시도 중 1회만 정답\\n- 어려워하는 개념: 방문 체크, 재귀 종료 조건, 그래프 표현\\n- AI 튜터 노트: '그래프 시각화가 필요'\\n\\n### 학습 패턴 분석\\n**힌트 사용**: 문제당 평균 1.5개, 레벨 2~3 힌트 주로 사용\\n**감정 분포**: frustrated 40%, confused 25%, curious 20%, confident 15%\\n→ DP/Graph에서 좌절감이 높음. 난이도를 낮춰 성공 경험 쌓기 권장\\n\\n### 최근 학습 이력\\n- 'DP 배낭 문제' - 실패 (힌트 3개)\\n- 'Graph 최단경로' - 실패 (힌트 3개)\\n- 'BFS 미로 탐색' - 성공 (힌트 2개)\\n- 'Sorting 알고리즘' - 성공 (힌트 0개)\\n\\n### 맞춤 개선 방안\\n1. **DP 기초부터 재시작**: 1차원 DP (피보나치, 계단 오르기)로 dp[i] 정의 연습\\n2. **Graph 시각화 습관화**: 문제 풀기 전 노드와 간선을 직접 그려보기\\n3. **성공 경험 쌓기**: 현재 confident 비율이 15%로 낮음. 쉬운 문제로 자신감 회복\\n4. **힌트 의존도 줄이기**: 레벨 1 힌트만 보고 5분 더 고민해보기"
 }}
 ```
 
@@ -162,10 +167,15 @@ ANALYSIS_SYSTEM_PROMPT = """
 
 ### detailed_feedback 작성법
 
-마크다운 테이블과 구조화된 형식 사용:
-- 토픽별 현황을 테이블로 정리
-- 약점 원인을 데이터 기반으로 분석
-- 개선 방안을 구체적 액션으로 제시
+**반드시 아래 7개 섹션을 모두 포함하세요:**
+
+1. **현재 위치**: level, problems_solved, streak, accuracy 활용
+2. **인지 수준 (Bloom's Taxonomy)**: bloom_metrics의 apply/analyze/create_rate 활용
+3. **토픽별 Mastery 현황**: bkt_mastery 테이블 (토픽, mastery%, 시도, 정답, 상태)
+4. **강점 분석**: strong_topics + concepts_learned + breakthrough_moments 연결
+5. **약점 원인 분석**: weak_topics + concepts_struggling + teaching_notes 연결
+6. **학습 패턴 분석**: hint_usage + mood_distribution 활용
+7. **맞춤 개선 방안**: 위 분석을 종합한 구체적 액션 아이템
 
 ---
 
@@ -175,8 +185,14 @@ ANALYSIS_SYSTEM_PROMPT = """
 2. **한국어 사용** - 존댓말 사용
 3. **데이터 근거 필수** - 모든 판단에 수치 포함 (mastery %, 시도 횟수, 정답 수)
 4. **추상적 표현 금지** - "잘하고 있다", "더 노력해야 한다" 등 사용 금지
-5. **원인 분석 필수** - 약점의 경우 왜 약한지 concepts_struggling 데이터와 연결
-6. **실행 가능한 조언** - 구체적으로 무엇을 어떻게 해야 하는지 명시
-7. **common_error_patterns 필수 생성** - concepts_struggling이 비어있지 않으면 반드시 패턴 분석
-8. **learning_style 필수 생성** - type, description, strategy 모두 채워야 함
+5. **모든 데이터 활용** - 제공된 모든 데이터를 detailed_feedback에 반영
+6. **detailed_feedback 7개 섹션 필수** - 현재 위치, Bloom, Mastery, 강점, 약점, 학습패턴, 개선방안
+7. **common_error_patterns 필수** - concepts_struggling 기반으로 생성
+8. **learning_style 필수** - hint_usage, mood_distribution 기반으로 type/description/strategy 결정
+
+### learning_style type 결정 기준
+- **independent**: 문제당 힌트 < 1, confident 비율 높음
+- **hint-dependent**: 문제당 힌트 >= 2, 레벨 3 힌트 자주 사용
+- **methodical**: 풀이 시간 안정적, frustrated 낮음
+- **exploratory**: 다양한 토픽 시도, curious 높음
 """

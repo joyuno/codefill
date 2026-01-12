@@ -625,7 +625,7 @@ class AnalysisService:
                     {"role": "user", "content": "위 데이터를 분석하고 JSON으로 응답하세요."}
                 ],
                 temperature=0.7,
-                max_tokens=1500,
+                max_tokens=3000,
             )
 
             content = openrouter_service.get_content(response)
