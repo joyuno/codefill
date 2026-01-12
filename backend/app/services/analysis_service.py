@@ -112,10 +112,10 @@ class AnalysisService:
         # 1. 사용자 데이터 수집
         user_data = await self._collect_user_data(user_id)
 
-        # 2. 데이터 충분한지 확인
+        # 2. 데이터 충분한지 확인 (BKT 신뢰도를 위해 최소 10문제 필요)
         problems_solved = user_data.get("problems_solved", 0)
-        if problems_solved < 1:
-            raise InsufficientDataError("분석을 위해 최소 1개 이상의 문제를 풀어주세요.")
+        if problems_solved < 10:
+            raise InsufficientDataError(f"분석을 위해 최소 10개 이상의 문제를 풀어주세요. (현재 {problems_solved}개)")
 
         # 3. 분석 생성 (LLM 사용, 실패 시 템플릿 폴백)
         analysis = await self._generate_analysis_with_llm(user_data)
@@ -152,6 +152,9 @@ class AnalysisService:
             "bkt_mastery": user_data.get("bkt_mastery", {}),
             "bloom_metrics": user_data.get("bloom_metrics", {}),
             "error_analysis": user_data.get("error_analysis", {}),
+            # BKT 기반 강점/약점 토픽
+            "weak_topics": user_data.get("weak_topics", []),
+            "strong_topics": user_data.get("strong_topics", []),
         }
 
         # Upsert (insert or update)
@@ -382,6 +385,20 @@ class AnalysisService:
             }
             for topic, result in bkt_results.items()
         }
+
+        # 4-1-1. BKT 기반으로 weak_topics, strong_topics 재계산
+        # (기존 단순 정답률 대신 BKT mastery 사용)
+        bkt_based_weak = []
+        bkt_based_strong = []
+        for topic, bkt_data in data["bkt_mastery"].items():
+            mastery = bkt_data["mastery"]
+            if mastery < 0.5:
+                bkt_based_weak.append(topic)
+            elif mastery >= 0.8:
+                bkt_based_strong.append(topic)
+
+        data["weak_topics"] = bkt_based_weak
+        data["strong_topics"] = bkt_based_strong
 
         # 4-2. Bloom's Taxonomy 메트릭 계산
         # difficulty_stats를 Bloom 형식으로 변환
