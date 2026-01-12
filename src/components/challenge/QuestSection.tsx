@@ -44,11 +44,11 @@ export function QuestSection({
       className={cn('', className)}
     >
       {/* 섹션 헤더 */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
           <div
             className={cn(
-              'w-9 h-9 rounded-xl flex items-center justify-center',
+              'w-10 h-10 rounded-xl flex items-center justify-center',
               variant === 'daily'
                 ? 'bg-primary/20 text-primary'
                 : 'bg-yellow-500/20 text-yellow-400'
@@ -60,7 +60,7 @@ export function QuestSection({
             <div className="flex items-center gap-2">
               <h2
                 className={cn(
-                  'font-semibold',
+                  'quest-title font-semibold tracking-wide',
                   variant === 'daily' ? 'text-primary' : 'text-yellow-400'
                 )}
               >
@@ -69,7 +69,7 @@ export function QuestSection({
               {claimableCount > 0 && (
                 <span
                   className={cn(
-                    'px-1.5 py-0.5 text-[10px] font-medium rounded-full',
+                    'px-2 py-0.5 text-[10px] font-bold rounded-full animate-pulse',
                     variant === 'daily'
                       ? 'bg-primary text-primary-foreground'
                       : 'bg-yellow-500 text-black'
@@ -79,11 +79,11 @@ export function QuestSection({
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              {completedCount}/{quests.length} 완료
+            <p className="text-xs text-muted-foreground mt-0.5">
+              <span className="font-medium text-white">{completedCount}</span>/{quests.length} 완료
               {claimedCount > 0 && (
-                <span className="text-emerald-400 ml-1">
-                  · {claimedCount} 수령
+                <span className="text-emerald-400 ml-2">
+                  +{claimedCount} 수령
                 </span>
               )}
             </p>
@@ -93,16 +93,16 @@ export function QuestSection({
         {/* 우측 정보 */}
         <div className="flex items-center gap-3">
           {totalGoldEarned > 0 && (
-            <div className="flex items-center gap-1 text-yellow-400 text-sm">
+            <div className="flex items-center gap-1.5 text-yellow-400 text-sm bg-yellow-500/10 px-3 py-1.5 rounded-lg">
               <Coins className="w-4 h-4" />
-              <span className="font-medium">+{totalGoldEarned}</span>
+              <span className="font-semibold">+{totalGoldEarned}</span>
             </div>
           )}
 
           {variant === 'weekly' && remainingTime && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-lg border border-border/50">
               <Clock className="w-3.5 h-3.5" />
-              <span>{remainingTime}</span>
+              <span className="font-medium">{remainingTime}</span>
             </div>
           )}
         </div>

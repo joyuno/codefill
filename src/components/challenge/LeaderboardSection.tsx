@@ -90,16 +90,18 @@ export function LeaderboardSection({ currentUserId }: LeaderboardSectionProps) {
       transition={{ duration: 0.3 }}
     >
       {/* 섹션 헤더 */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center">
-            <Trophy className="w-5 h-5 text-purple-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500/20 to-amber-500/20 flex items-center justify-center">
+            <Trophy className="w-5 h-5 text-yellow-400" />
           </div>
           <div>
-            <h2 className="font-semibold text-purple-400">Leaderboard</h2>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <h2 className="quest-title font-semibold text-yellow-400 tracking-wide">
+              Leaderboard
+            </h2>
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
               <Users className="w-3 h-3" />
-              총 {total.toLocaleString()}명
+              총 <span className="text-white font-medium">{total.toLocaleString()}</span>명의 모험가
             </p>
           </div>
         </div>

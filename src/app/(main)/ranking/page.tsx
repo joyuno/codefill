@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Swords, Coins, Star, Calendar, Sprout, Trophy } from 'lucide-react';
+import { Coins, Star, Sprout, Trophy } from 'lucide-react';
 import {
   StatsSummary,
   QuestSection,
@@ -166,46 +166,42 @@ export default function ChallengePage() {
   const totalClaimable = dailyClaimable + weeklyClaimable;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-950/20 via-background to-background">
-      <div className="container max-w-5xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
+      <div className="container max-w-5xl mx-auto px-4 py-10">
         {/* 헤더 + 탭 */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
+          className="mb-8"
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                <Swords className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h1 className="quest-title text-2xl font-bold text-white tracking-wide">
-                  Quest Board
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  퀘스트를 완료하고 보상을 획득하세요
-                </p>
-              </div>
-            </div>
+          {/* 페이지 타이틀 */}
+          <div className="text-center mb-6">
+            <h1 className="quest-title text-3xl font-bold text-white tracking-wider mb-2">
+              Ranking Board
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              도전하고, 성장하고, 정상에 오르세요
+            </p>
+          </div>
 
-            {/* 탭 */}
-            {isAuthenticated && (
-              <div className="flex items-center gap-1 p-1 rounded-xl bg-card/50 border border-border/50">
+          {/* 탭 */}
+          {isAuthenticated && (
+            <div className="flex items-center justify-center">
+              <div className="flex items-center gap-1 p-1.5 rounded-2xl bg-card/80 border border-border/50 backdrop-blur-sm">
                 <button
                   onClick={() => setActiveTab('quests')}
                   className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    'px-6 py-2.5 rounded-xl text-sm font-medium transition-all',
                     activeTab === 'quests'
-                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
                       : 'text-muted-foreground hover:text-white hover:bg-muted/50'
                   )}
                 >
                   <span className="flex items-center gap-2">
                     <Sprout className="w-4 h-4" />
-                    퀘스트
+                    일일 퀘스트
                     {totalClaimable > 0 && (
-                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-white/20">
+                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-white/20 font-bold">
                         {totalClaimable}
                       </span>
                     )}
@@ -214,9 +210,9 @@ export default function ChallengePage() {
                 <button
                   onClick={() => setActiveTab('leaderboard')}
                   className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    'px-6 py-2.5 rounded-xl text-sm font-medium transition-all',
                     activeTab === 'leaderboard'
-                      ? 'bg-purple-600 text-white shadow-sm'
+                      ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-lg shadow-yellow-500/25'
                       : 'text-muted-foreground hover:text-white hover:bg-muted/50'
                   )}
                 >
@@ -226,8 +222,8 @@ export default function ChallengePage() {
                   </span>
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </motion.div>
 
         {/* 로그인 필요 안내 */}
@@ -235,14 +231,16 @@ export default function ChallengePage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="quest-card rounded-xl p-12 text-center"
+            className="quest-card rounded-2xl p-16 text-center"
           >
-            <Calendar className="w-16 h-16 mx-auto mb-4 text-primary/30" />
-            <h2 className="text-lg font-semibold text-white mb-2">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
+              <Trophy className="w-10 h-10 text-primary/50" />
+            </div>
+            <h2 className="quest-title text-xl font-semibold text-white mb-3">
               로그인이 필요합니다
             </h2>
-            <p className="text-sm text-muted-foreground">
-              퀘스트를 확인하고 보상을 받으려면 로그인해주세요.
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              랭킹을 확인하고 일일 퀘스트에 도전하려면 로그인해주세요.
             </p>
           </motion.div>
         ) : (
