@@ -120,10 +120,7 @@ class AnalysisService:
         # 3. 분석 생성 (LLM 사용, 실패 시 템플릿 폴백)
         analysis = await self._generate_analysis_with_llm(user_data)
 
-        # 3. 추천 문제 조회
-        recommended = await self._get_recommended_problems(user_id, user_data)
-
-        # 4. DB 저장 (upsert) - 새 필드들 포함
+        # 4. DB 저장 (upsert) - 새 필드들 포함 (문제 추천은 별도 API로 분리)
         report_data = {
             "user_id": str(user_id),
             "summary_text": analysis["summary"],
@@ -139,7 +136,7 @@ class AnalysisService:
                 "streak": user_data.get("streak", 0),
             },
             "difficulty_snapshot": user_data.get("difficulty_stats", {}),
-            "recommended_problems": recommended,
+            "recommended_problems": [],  # 별도 API로 분리됨
             # 새로 추가된 필드들
             "concepts_struggling": user_data.get("concepts_struggling", []),
             "concepts_learned": user_data.get("concepts_learned", []),
@@ -173,7 +170,7 @@ class AnalysisService:
             "skillSnapshot": user_data.get("skill_by_topic", {}),
             "statsSnapshot": report_data["stats_snapshot"],
             "difficultySnapshot": user_data.get("difficulty_stats", {}),
-            "recommendedProblems": recommended,
+            "recommendedProblems": [],  # 별도 API로 분리됨
             "createdAt": datetime.utcnow().isoformat(),
             # 새로 추가된 필드들
             "conceptsStruggling": user_data.get("concepts_struggling", []),
@@ -191,6 +188,26 @@ class AnalysisService:
             "bloomMetrics": user_data.get("bloom_metrics", {}),
             "errorAnalysis": user_data.get("error_analysis", {}),
         }
+
+    async def recommend_problems(self, user_id: UUID) -> List[Dict[str, Any]]:
+        """
+        추천 문제 조회 (별도 API).
+
+        분석 생성과 분리하여 사용자가 명시적으로 요청할 때만 실행.
+        약점 기반 문제 추천을 수행하고 DB에 저장.
+        """
+        # 1. 사용자 데이터 수집
+        user_data = await self._collect_user_data(user_id)
+
+        # 2. 추천 문제 조회
+        recommended = await self._get_recommended_problems(user_id, user_data)
+
+        # 3. DB에 추천 문제 업데이트
+        self.db.table("user_analysis_reports").update({
+            "recommended_problems": recommended
+        }).eq("user_id", str(user_id)).execute()
+
+        return recommended
 
     async def _collect_user_data(self, user_id: UUID) -> Dict[str, Any]:
         """사용자 학습 데이터 수집."""

@@ -5,10 +5,11 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Brain, RefreshCw, Loader2, Sparkles, FileCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ScoreRing } from '@/components/analysis/ScoreRing';
+import { ScoreOverview } from '@/components/analysis/ScoreOverview';
 import { SkillRadar } from '@/components/analysis/SkillRadar';
 import { SkillAnalysisPanel } from '@/components/analysis/SkillAnalysisPanel';
 import { HintUsageCard } from '@/components/analysis/HintUsageCard';
+import { LearningStyleCard } from '@/components/analysis/LearningStyleCard';
 import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
 import { AICoachingSection } from '@/components/analysis/AICoachingSection';
 import { analysisApi, type AnalysisReport } from '@/lib/api';
@@ -211,24 +212,29 @@ export default function AnalysisPage() {
         </motion.div>
       )}
 
-      {/* Row 1: ScoreRing + HintUsage */}
+      {/* Row 1: ScoreRing + HintUsage + LearningStyle */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
       >
-        {/* 종합 점수 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 flex items-center justify-center min-h-[280px]">
-          <ScoreRing
+        {/* 종합 점수 + 스탯 + 난이도별 정답률 */}
+        <div className="min-h-[280px]">
+          <ScoreOverview
             score={overallScore}
             stats={report.statsSnapshot}
-            size={160}
+            difficultySnapshot={report.difficultySnapshot}
           />
         </div>
 
         {/* 힌트 사용 패턴 */}
         <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
           <HintUsageCard hintUsage={report.hintUsage} />
+        </div>
+
+        {/* 학습 스타일 */}
+        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
+          <LearningStyleCard learningStyle={report.learningStyle} />
         </div>
       </motion.div>
 
@@ -298,7 +304,7 @@ export default function AnalysisPage() {
         transition={{ delay: 0.16 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
       >
-        <RecommendedProblems problems={report.recommendedProblems} />
+        <RecommendedProblems initialProblems={report.recommendedProblems} />
       </motion.div>
     </div>
   );

@@ -28,11 +28,10 @@ class HintUsage(BaseModel):
 
 
 class LearningStyle(BaseModel):
-    """학습 스타일."""
-    prefers_examples: bool = False
-    prefers_analogies: bool = False
-    hint_sensitivity: str = "medium"  # low, medium, high
-    pace: str = "medium"  # slow, medium, fast
+    """학습 스타일 (LLM 생성)."""
+    type: Optional[str] = None  # "methodical | exploratory | hint-dependent | independent | fast-learner | careful-thinker"
+    description: Optional[str] = None  # 학습 스타일에 대한 설명
+    strategy: Optional[str] = None  # 이 스타일에 맞는 학습 전략
 
 
 class RecommendedProblem(BaseModel):

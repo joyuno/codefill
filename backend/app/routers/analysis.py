@@ -172,6 +172,30 @@ async def generate_analysis(
         raise HTTPException(status_code=500, detail=f"분석 생성 실패: {str(e)}")
 
 
+@router.post("/recommend-problems", response_model=list[RecommendedProblem])
+async def recommend_problems(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    추천 문제 조회 (분석과 분리됨).
+
+    약점 기반으로 추천 문제를 검색하고 DB에 저장합니다.
+    분석 생성과 별도로 호출하여 필요할 때만 실행합니다.
+    """
+    try:
+        service = AnalysisService(db)
+        problems = await service.recommend_problems(user_id)
+
+        return [
+            RecommendedProblem(**p)
+            for p in problems
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"추천 문제 조회 실패: {str(e)}")
+
+
 # ============================================================
 # 스킬 스냅샷 API (성장 추적용)
 # ============================================================

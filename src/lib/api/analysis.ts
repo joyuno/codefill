@@ -42,10 +42,9 @@ export interface HintUsage {
 }
 
 export interface LearningStyle {
-  prefers_examples?: boolean;
-  prefers_analogies?: boolean;
-  hint_sensitivity?: string; // "low" | "medium" | "high"
-  pace?: string; // "slow" | "medium" | "fast"
+  type?: string; // "methodical | exploratory | hint-dependent | independent | fast-learner | careful-thinker"
+  description?: string; // 학습 스타일에 대한 설명
+  strategy?: string; // 이 스타일에 맞는 학습 전략
 }
 
 // =====================================================
@@ -160,8 +159,22 @@ export async function generateAnalysis() {
   });
 }
 
+/**
+ * Get recommended problems (separate from analysis)
+ * 약점 기반 문제 추천을 별도로 요청
+ */
+export async function recommendProblems() {
+  return apiClient.request<RecommendedProblem[]>('/analysis/recommend-problems', {
+    method: 'POST',
+    body: {},
+    requireAuth: true,
+    timeout: 60000, // 1분 타임아웃
+  });
+}
+
 // Export as namespace
 export const analysisApi = {
   getReport,
   generateAnalysis,
+  recommendProblems,
 };
