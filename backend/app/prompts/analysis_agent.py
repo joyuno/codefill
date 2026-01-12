@@ -139,7 +139,7 @@ ANALYSIS_SYSTEM_PROMPT = """
     "예: '방문 체크' → 'visited를 큐 삽입 후가 아닌 pop 후에 처리 → 중복 방문'"
   ],
 
-  "detailed_feedback": "## 종합 학습 분석\\n\\n### 현재 위치\\n레벨 7 | 총 35문제 해결 | 5일 연속 학습 중 | 전체 정답률 68%\\n\\n### 인지 수준 (Bloom's Taxonomy)\\n- **Apply (적용)**: 85% - 기본 문법과 자료구조 활용 능숙\\n- **Analyze (분석)**: 55% - 문제 분석 능력 향상 중\\n- **Create (창조)**: 20% - 복잡한 알고리즘 설계는 아직 어려움\\n→ 현재 'Analyze' 단계, 'Create' 단계 도달을 위해 DP/Graph 심화 필요\\n\\n### 토픽별 Mastery 현황\\n| 토픽 | Mastery | 시도 | 정답 | 상태 |\\n|------|---------|------|------|------|\\n| Array | 99% | 8 | 8 | 숙달 |\\n| String | 99% | 7 | 7 | 숙달 |\\n| Sorting | 97% | 5 | 4 | 숙달 |\\n| BFS | 29% | 6 | 3 | 학습필요 |\\n| DP | 11% | 10 | 2 | 학습필요 |\\n| Graph | 11% | 8 | 1 | 학습필요 |\\n\\n### 강점 분석\\n**Array, String, Sorting**은 mastery 90% 이상으로 안정적입니다.\\n- 학습 완료된 개념: 투 포인터, 슬라이딩 윈도우, 문자열 파싱, 퀵소트 파티션\\n- 이 토픽들에서 breakthrough moment: '투 포인터로 O(n) 해결', '파티션 과정 이해'\\n\\n### 약점 원인 분석\\n**DP (mastery 11%)**\\n- 10회 시도 중 2회만 정답, 최근 6회 연속 오답\\n- 어려워하는 개념: 상태 정의, 점화식 도출, 메모이제이션, 2차원 DP\\n- AI 튜터 노트: '작은 케이스부터 시작하도록 유도 필요'\\n\\n**Graph (mastery 11%)**\\n- 8회 시도 중 1회만 정답\\n- 어려워하는 개념: 방문 체크, 재귀 종료 조건, 그래프 표현\\n- AI 튜터 노트: '그래프 시각화가 필요'\\n\\n### 학습 패턴 분석\\n**힌트 사용**: 문제당 평균 1.5개, 레벨 2~3 힌트 주로 사용\\n**감정 분포**: frustrated 40%, confused 25%, curious 20%, confident 15%\\n→ DP/Graph에서 좌절감이 높음. 난이도를 낮춰 성공 경험 쌓기 권장\\n\\n### 최근 학습 이력\\n- 'DP 배낭 문제' - 실패 (힌트 3개)\\n- 'Graph 최단경로' - 실패 (힌트 3개)\\n- 'BFS 미로 탐색' - 성공 (힌트 2개)\\n- 'Sorting 알고리즘' - 성공 (힌트 0개)\\n\\n### 맞춤 개선 방안\\n1. **DP 기초부터 재시작**: 1차원 DP (피보나치, 계단 오르기)로 dp[i] 정의 연습\\n2. **Graph 시각화 습관화**: 문제 풀기 전 노드와 간선을 직접 그려보기\\n3. **성공 경험 쌓기**: 현재 confident 비율이 15%로 낮음. 쉬운 문제로 자신감 회복\\n4. **힌트 의존도 줄이기**: 레벨 1 힌트만 보고 5분 더 고민해보기"
+  "detailed_feedback": "## 약점 집중 분석\\n\\n### 1. DP (mastery 11%)\\n\\n**현황**: 10회 시도 중 2회 정답. 최근 6회 연속 오답으로 mastery 급락.\\n\\n**원인 분석**\\n- 어려워하는 개념: 상태 정의, 점화식 도출, 2차원 DP\\n- 최근 실패: 'DP 배낭 문제'에서 힌트 3개 사용에도 실패\\n- AI 튜터 진단: '작은 케이스부터 시작하도록 유도 필요'\\n\\n**개선 방법**\\n1. dp[i]가 무엇을 의미하는지 문장으로 먼저 정의하세요\\n2. n=1,2,3 케이스를 손으로 계산하여 점화식 패턴을 찾으세요\\n3. 1차원 DP (피보나치, 계단 오르기)부터 다시 시작하세요\\n\\n---\\n\\n### 2. Graph (mastery 11%)\\n\\n**현황**: 8회 시도 중 1회 정답.\\n\\n**원인 분석**\\n- 어려워하는 개념: 방문 체크, 재귀 종료 조건, 그래프 표현\\n- 최근 실패: 'Graph 최단경로'에서 다익스트라 구현 실패\\n- AI 튜터 진단: '그래프 시각화가 필요'\\n\\n**개선 방법**\\n1. 문제를 읽고 노드와 간선을 직접 그려보세요\\n2. BFS는 큐 삽입 시점에, DFS는 함수 진입 시점에 visited 체크하세요\\n3. 간단한 BFS 미로 탐색부터 연습하세요\\n\\n---\\n\\n### 학습 패턴 진단\\n\\n**힌트 의존도**: 실패한 문제에서 레벨 3 힌트 집중 사용 → 스스로 풀이 전 힌트에 의존하는 경향\\n**감정 상태**: frustrated 40% → DP/Graph 실패로 좌절감 누적\\n\\n**권장 사항**: 현재 자신감이 낮은 상태입니다. 숙달된 Array/String 문제로 리듬을 회복한 후 약점 토픽에 도전하세요."
 }}
 ```
 
@@ -165,17 +165,19 @@ ANALYSIS_SYSTEM_PROMPT = """
 - "DP mastery 11%. 10회 시도 중 2회 정답. 최근 6회 연속 오답. concepts_struggling에서 '점화식 도출', '상태 정의' 반복 등장"
 - "Array mastery 92%. 8회 전체 정답. 연속 정답으로 mastery 안정권 진입"
 
-### detailed_feedback 작성법
+### detailed_feedback 작성법 (약점 중심)
 
-**반드시 아래 7개 섹션을 모두 포함하세요:**
+**구조: 약점 토픽별로 현황 → 원인 → 개선 방법**
 
-1. **현재 위치**: level, problems_solved, streak, accuracy 활용
-2. **인지 수준 (Bloom's Taxonomy)**: bloom_metrics의 apply/analyze/create_rate 활용
-3. **토픽별 Mastery 현황**: bkt_mastery 테이블 (토픽, mastery%, 시도, 정답, 상태)
-4. **강점 분석**: strong_topics + concepts_learned + breakthrough_moments 연결
-5. **약점 원인 분석**: weak_topics + concepts_struggling + teaching_notes 연결
-6. **학습 패턴 분석**: hint_usage + mood_distribution 활용
-7. **맞춤 개선 방안**: 위 분석을 종합한 구체적 액션 아이템
+각 약점 토픽에 대해:
+1. **현황**: mastery %, 시도/정답 수, 최근 패턴
+2. **원인 분석**: concepts_struggling + recent_sessions + teaching_notes
+3. **개선 방법**: 구체적 액션 아이템 3개
+
+마지막에 **학습 패턴 진단**:
+- hint_usage 기반 힌트 의존도 분석
+- mood_distribution 기반 감정 상태 진단
+- 종합 권장 사항 1줄
 
 ---
 
@@ -185,10 +187,9 @@ ANALYSIS_SYSTEM_PROMPT = """
 2. **한국어 사용** - 존댓말 사용
 3. **데이터 근거 필수** - 모든 판단에 수치 포함 (mastery %, 시도 횟수, 정답 수)
 4. **추상적 표현 금지** - "잘하고 있다", "더 노력해야 한다" 등 사용 금지
-5. **모든 데이터 활용** - 제공된 모든 데이터를 detailed_feedback에 반영
-6. **detailed_feedback 7개 섹션 필수** - 현재 위치, Bloom, Mastery, 강점, 약점, 학습패턴, 개선방안
-7. **common_error_patterns 필수** - concepts_struggling 기반으로 생성
-8. **learning_style 필수** - hint_usage, mood_distribution 기반으로 type/description/strategy 결정
+5. **detailed_feedback은 약점 중심** - 강점/Bloom/통계는 생략, 약점 토픽별 분석에 집중
+6. **common_error_patterns 필수** - concepts_struggling 기반으로 생성
+7. **learning_style 필수** - hint_usage, mood_distribution 기반으로 type/description/strategy 결정
 
 ### learning_style type 결정 기준
 - **independent**: 문제당 힌트 < 1, confident 비율 높음
