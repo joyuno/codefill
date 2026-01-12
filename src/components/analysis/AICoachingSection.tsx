@@ -11,10 +11,13 @@ import {
   Keyboard,
   GitBranch,
   Brain,
+  Zap,
+  Target,
+  Lightbulb,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ErrorAnalysis } from '@/lib/api/analysis';
+import type { ErrorAnalysis, BKTMastery, TopicScore } from '@/lib/api/analysis';
 
 interface AICoachingSectionProps {
   summaryText: string;
@@ -23,6 +26,11 @@ interface AICoachingSectionProps {
   breakthroughMoments?: string[];
   commonErrorPatterns?: string[];
   errorAnalysis?: ErrorAnalysis;
+  // BKT 기반 분석 (새로 추가)
+  strengths?: TopicScore[];
+  weaknesses?: TopicScore[];
+  recommendations?: string[];
+  bktMastery?: BKTMastery;
 }
 
 // SRK 에러 타입별 설정
@@ -60,8 +68,13 @@ export function AICoachingSection({
   breakthroughMoments = [],
   commonErrorPatterns = [],
   errorAnalysis,
+  strengths = [],
+  weaknesses = [],
+  recommendations = [],
+  bktMastery,
 }: AICoachingSectionProps) {
   const hasErrorAnalysis = errorAnalysis && errorAnalysis.dominant_type && Object.keys(errorAnalysis.patterns).length > 0;
+  const hasStrengthsWeaknesses = strengths.length > 0 || weaknesses.length > 0;
 
   return (
     <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
@@ -89,6 +102,109 @@ export function AICoachingSection({
             <p className="text-zinc-300 leading-relaxed italic">
               "{summaryText}"
             </p>
+          </motion.div>
+        )}
+
+        {/* BKT 기반 강점/약점 */}
+        {hasStrengthsWeaknesses && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+          >
+            {/* 강점 */}
+            {strengths.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+                    Strengths
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  {strengths.slice(0, 3).map((item, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, x: -5 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.15 + index * 0.05 }}
+                      className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-emerald-300">{item.topic}</span>
+                        <span className="text-xs font-bold text-emerald-400">
+                          {Math.round(item.score * 100)}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-400 leading-relaxed">{item.insight}</p>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 약점 */}
+            {weaknesses.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-rose-400" />
+                  <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+                    Areas to Improve
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  {weaknesses.slice(0, 3).map((item, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, x: -5 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.15 + index * 0.05 }}
+                      className="p-3 rounded-lg bg-rose-500/5 border border-rose-500/20"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-rose-300">{item.topic}</span>
+                        <span className="text-xs font-bold text-rose-400">
+                          {Math.round(item.score * 100)}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-400 leading-relaxed">{item.insight}</p>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* 추천 사항 */}
+        {recommendations.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="space-y-3"
+          >
+            <div className="flex items-center gap-2">
+              <Lightbulb className="w-4 h-4 text-blue-400" />
+              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+                Recommendations
+              </h3>
+            </div>
+            <div className="space-y-2">
+              {recommendations.slice(0, 3).map((rec, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, x: -5 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 + index * 0.05 }}
+                  className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10"
+                >
+                  <ChevronRight className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-zinc-300">{rec}</p>
+                </motion.div>
+              ))}
+            </div>
           </motion.div>
         )}
 
