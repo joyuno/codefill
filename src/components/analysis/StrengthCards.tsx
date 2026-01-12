@@ -131,7 +131,7 @@ export function StrengthCards({ strengths, maxCards = 6 }: StrengthCardsProps) {
 
               {/* 연습하기 링크 */}
               <Link
-                href={`/practice?topic=${encodeURIComponent(strength.topic)}`}
+                href={`/problems?topic=${encodeURIComponent(strength.topic)}`}
                 className="mt-2 flex items-center gap-1 text-xs text-zinc-500 hover:text-primary transition-colors"
               >
                 <TrendingUp className="w-3 h-3" />

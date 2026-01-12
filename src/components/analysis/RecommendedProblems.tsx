@@ -65,7 +65,7 @@ export function RecommendedProblems({ problems }: RecommendedProblemsProps) {
           Recommended Problems
         </h3>
         <Link
-          href="/practice"
+          href="/problems"
           className="flex items-center gap-1 text-xs text-zinc-500 hover:text-primary transition-colors"
         >
           전체 보기
@@ -87,7 +87,7 @@ export function RecommendedProblems({ problems }: RecommendedProblemsProps) {
               className="flex-shrink-0 w-64"
             >
               <Link
-                href={`/problem/${problem.originalId || problem.id}`}
+                href={`/problems/${problem.originalId || problem.id}`}
                 className="block p-4 rounded-lg bg-zinc-900/50 border border-zinc-700/50 hover:border-zinc-600 transition-all duration-200 hover:scale-[1.02] group"
               >
                 {/* 헤더 */}
