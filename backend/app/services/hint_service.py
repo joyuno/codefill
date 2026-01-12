@@ -239,7 +239,7 @@ class HintService:
             return False
 
     # ============================================================
-    # Blank 힌트 - 이유/역할 설명만 (정답 제공 안함)
+    # Blank 힌트 - 정답 + 왜 정답인지 핵심 설명 (1-2줄)
     # ============================================================
 
     async def generate_blank_hint(
@@ -250,7 +250,7 @@ class HintService:
         additional_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        빈칸 힌트 - 이유/역할 설명만 제공 (정답 알려주지 않음)
+        빈칸 힌트 - 정답과 왜 정답인지 핵심 설명 제공
 
         Args:
             problem_id: problems_blank 테이블의 ID
@@ -261,7 +261,8 @@ class HintService:
         Returns:
             {
                 blank_index: int,
-                hint_content: str,  # 이유/역할 설명 (1-2줄)
+                answer: str,  # 정답
+                hint_content: str,  # 왜 정답인지 핵심 설명 (1-2줄)
                 from_cache: bool,
             }
         """
@@ -280,7 +281,8 @@ class HintService:
         if not base_problem_id:
             print(f"[HintService] ⚠ Could not resolve base_problem_id for blank/{problem_id[:8]}...")
 
-        # 코드 템플릿 가져오기
+        # 빈칸 문제 정보 가져오기
+        blank_problem = None
         if not code_template:
             blank_problem = self.get_blank_problem(problem_id)
             if blank_problem:
@@ -291,9 +293,24 @@ class HintService:
         if not code_template:
             return {
                 "blank_index": blank_index,
+                "answer": "",
                 "hint_content": "코드 정보를 불러올 수 없습니다.",
                 "from_cache": False,
             }
+
+        # 정답 배열 가져오기
+        answers = []
+        if blank_problem:
+            answers = blank_problem.get("answers", [])
+        elif additional_info:
+            answers = additional_info.get("answers", [])
+
+        # 해당 빈칸의 정답 가져오기
+        answer = ""
+        if blank_index < len(answers):
+            answer = answers[blank_index]
+        else:
+            print(f"[HintService] ⚠ blank_index={blank_index} >= answers length={len(answers)}")
 
         # 📍 코드 템플릿에서 빈칸 개수 확인 (인덱스 검증용)
         import re
@@ -316,19 +333,21 @@ class HintService:
         )
 
         if cached:
-            # 캐시 HIT
+            # 캐시 HIT - 정답과 함께 반환
             print(f"[HintService] ✓ Cache HIT for blank_index={blank_index}")
             return {
                 "blank_index": blank_index,
+                "answer": answer,
                 "hint_content": cached["hint_content"],
                 "from_cache": True,
             }
 
-        # 2. 캐시 MISS: LLM으로 힌트 생성 (역할 설명만, 정답 없음)
-        print(f"[HintService] 🔄 Cache MISS - generating hint for blank_index={blank_index}")
-        hint_content = await self._generate_blank_role_hint(
+        # 2. 캐시 MISS: LLM으로 정답 설명 생성 (정답 + 왜 정답인지)
+        print(f"[HintService] 🔄 Cache MISS - generating hint for blank_index={blank_index}, answer={answer}")
+        hint_content = await self._generate_blank_answer_hint(
             code_template=code_template,
             blank_index=blank_index,
+            answer=answer,
         )
 
         # 캐시에 저장 (base_problem_id가 있을 때만 - FK 제약)
@@ -344,17 +363,19 @@ class HintService:
 
         return {
             "blank_index": blank_index,
+            "answer": answer,
             "hint_content": hint_content,
             "from_cache": False,
         }
 
-    async def _generate_blank_role_hint(
+    async def _generate_blank_answer_hint(
         self,
         code_template: str,
         blank_index: int,
+        answer: str,
     ) -> str:
         """
-        빈칸 역할/이유 힌트 생성 (정답 알려주지 않음)
+        빈칸 정답 설명 힌트 생성 (정답 + 왜 정답인지 1-2줄 핵심 설명)
         DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
@@ -384,26 +405,25 @@ class HintService:
                     return match.group(0)
                 marked_code = re.sub('___', replace_nth, surrounding_code)
 
-            print(f"[HintService] Generating blank hint: index={blank_index}, marked_code_preview={marked_code[:120]}...")
+            print(f"[HintService] Generating blank answer hint: index={blank_index}, answer={answer}, marked_code_preview={marked_code[:100]}...")
 
-            prompt = f"""다음 코드에서 >>HERE>> ... <<HERE<< 로 표시된 빈칸에 어떤 종류의 값이 들어가야 하는지 1-2줄로 힌트를 주세요.
+            prompt = f"""다음 코드에서 >>HERE>> ... <<HERE<< 로 표시된 빈칸의 정답은 "{answer}"입니다.
+왜 이 정답이 맞는지 1-2줄로 핵심만 간결하게 설명해주세요.
 
-코드 컨텍스트 (힌트 대상 빈칸이 >>HERE>>...<<HERE<< 로 표시됨):
+코드 컨텍스트:
 ```
 {marked_code}
 ```
 
 규칙:
-- 정답을 직접 알려주지 마세요
-- "이 자리에는 ~하는 역할의 코드가 필요해요" 형식으로 설명
-- 예: "리스트 길이를 구하는 함수", "반복 횟수를 정하는 값", "조건을 비교하는 연산자"
-- 불특정 상수나 매직넘버(예: 큰 숫자 1000000007)는 "특정 값의 상수"라고만 힌트
-- 한국어 1-2문장으로 간결하게"""
+- "~이기 때문에 {answer}가 필요해요" 또는 "~를 위해 {answer}를 사용해요" 형식
+- 코드 흐름/문법적 역할을 간결히 설명
+- 한국어 1-2문장으로 핵심만 설명"""
 
             response = await openrouter_service.chat_completion(
                 model="deepseek-v3",  # 코드 이해력이 뛰어난 DeepSeek V3 사용
                 messages=[
-                    {"role": "system", "content": "You are a helpful coding tutor. Give hints about what KIND of code goes in the blank, without revealing the answer. For magic numbers or constants, just say it's a 'constant value' without specifying the exact number. Respond in Korean, 1-2 sentences only."},
+                    {"role": "system", "content": "You are a helpful coding tutor. Explain WHY this answer is correct in 1-2 sentences. Focus on the code logic and syntax role. Respond in Korean only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
@@ -411,12 +431,14 @@ class HintService:
             )
 
             hint = openrouter_service.get_content(response)
-            print(f"[HintService] Generated hint for blank {blank_index}: {hint[:50]}...")
+            print(f"[HintService] Generated answer hint for blank {blank_index}: {hint[:50]}...")
             return hint.strip()
 
         except Exception as e:
-            logger.error(f"[HintService] Blank role hint error: {e}")
-            return "이 빈칸은 코드의 핵심 로직에 필요한 부분이에요. 주변 코드를 살펴보세요."
+            logger.error(f"[HintService] Blank answer hint error: {e}")
+            # 폴백: 정답 유형 기반 간단 설명
+            answer_type = self._detect_answer_type(answer)
+            return f"이 자리에는 {answer_type}인 '{answer}'가 필요해요."
 
     async def _generate_blank_explanation(
         self,

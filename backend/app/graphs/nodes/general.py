@@ -159,7 +159,7 @@ async def handle_general(state: ChatState) -> Dict[str, Any]:
 """
 
     messages = [{"role": "system", "content": system_prompt}]
-    for msg in conversation_history[-4:]:
+    for msg in conversation_history[-6:]:  # 꼬리 질문 맥락 유지
         messages.append({
             "role": msg.get("role", "user"),
             "content": msg.get("content", "")
@@ -249,28 +249,151 @@ async def handle_inappropriate_message(state: ChatState) -> Dict[str, Any]:
 
 
 async def handle_affirmation(state: ChatState) -> Dict[str, Any]:
-    """긍정 응답 처리 (네, 좋아요 등)"""
-    # 이전 제안이 있었는지 확인
+    """
+    긍정 응답 처리 (네, 좋아요 등)
+
+    - 문제 검색 결과가 있으면 → 문제 선택
+    - 추천 주제/난이도가 있으면 → 언어 확인 후 검색 진행
+    - 🚀 CF 추천 수락 시 클릭 이벤트 트래킹
+    """
     search_results = state.get("search_results", [])
     generated_problem = state.get("generated_problem")
+    collected_info = state.get("collected_info", {})
+    user_context = state.get("user_context", {})
 
     if search_results or generated_problem:
         # 문제가 있으면 선택으로 처리
         return await handle_problem_selection_internal(state)
-    else:
-        response = "좋아요! 어떤 문제를 풀어볼까요?"
-        return {
-            "response_message": response,
-            "next_node": "respond",
-        }
+
+    # 추천을 수락한 경우: topics와 difficulty가 있으면 검색 진행
+    if collected_info.get("topics") and collected_info.get("difficulty"):
+        # 🚀 CF 추천 수락 시 클릭 이벤트 트래킹
+        rec_type = collected_info.get("recommendation_type", "")
+        if rec_type.startswith("cf_"):
+            try:
+                from ...services.collaborative_filtering import get_collaborative_service
+                cf_service = get_collaborative_service()
+                user_id = user_context.get("user_id")
+                if user_id:
+                    await cf_service.track_recommendation_click(
+                        user_id=user_id,
+                        topic=collected_info["topics"][0],
+                        difficulty=collected_info["difficulty"],
+                    )
+            except Exception as e:
+                print(f"[HandleAffirmation] CF tracking error (non-blocking): {e}")
+
+        if collected_info.get("language"):
+            # 모든 정보가 있으면 바로 검색
+            return {
+                "response_message": "좋아요! 문제를 찾아볼게요!",
+                "collected_info": collected_info,
+                "is_info_complete": True,
+                "action_trigger": "search_problems",
+                "next_node": "search_problems",
+            }
+        else:
+            # 언어만 물어보기
+            return {
+                "response_message": "좋아요! 어떤 프로그래밍 언어로 풀어볼까요?",
+                "collected_info": collected_info,
+                "is_info_complete": False,
+                "suggested_actions": [
+                    {"label": "Python", "value": "python", "description": "인기 1위"},
+                    {"label": "Java", "value": "java", "description": "기업 선호"},
+                    {"label": "C++", "value": "cpp", "description": "성능 최적화"},
+                ],
+                "next_node": "respond",
+            }
+
+    # 기본 응답
+    response = "좋아요! 어떤 문제를 풀어볼까요?"
+    return {
+        "response_message": response,
+        "next_node": "respond",
+    }
 
 
 async def handle_negation(state: ChatState) -> Dict[str, Any]:
-    """부정 응답 처리 (아니요, 다른 거 등)"""
-    response = "알겠어요! 다른 걸로 해볼까요? 어떤 주제나 난이도를 원하세요?"
+    """
+    부정 응답 처리 (아니요, 다른 거 등)
+
+    핵심: 현재 추천된 topics를 rejected_topics에 추가하고 초기화
+    → 다음 추천에서 rejected_topics 제외
+    """
+    from .collect import _generate_dynamic_topic_suggestions
+
+    collected_info = state.get("collected_info", {})
+    user_context = state.get("user_context", {})
+    personalization = user_context.get("personalization", {})
+
+    # 현재 topics를 rejected_topics에 추가
+    current_topics = collected_info.get("topics", [])
+    rejected_topics = list(collected_info.get("rejected_topics", []))
+
+    for topic in current_topics:
+        if topic and topic not in rejected_topics:
+            rejected_topics.append(topic)
+
+    # 새로운 collected_info 생성 (topics, difficulty 초기화)
+    new_collected_info = {
+        "topics": [],  # 초기화
+        "difficulty": None,  # 초기화
+        "language": collected_info.get("language"),  # 언어는 유지
+        "specific_needs": None,
+        "time_available": None,
+        "selected_problem": None,
+        "selected_problem_index": None,
+        "rejected_topics": rejected_topics,  # 거부된 주제들 누적
+    }
+
+    # 새로운 주제 선택지 생성 (rejected_topics 제외)
+    try:
+        # personalization에 rejected_topics 정보 추가
+        enriched_personalization = dict(personalization)
+        enriched_personalization["rejected_topics"] = rejected_topics
+
+        message, suggested_actions = await _generate_dynamic_topic_suggestions(
+            user_context=user_context,
+            personalization=enriched_personalization,
+        )
+
+        # rejected_topics에 있는 주제는 제외
+        filtered_actions = [
+            action for action in suggested_actions
+            if action.get("value") not in rejected_topics
+        ]
+
+        if not filtered_actions:
+            # 모든 추천이 거부됨 - 기본 선택지 제공
+            filtered_actions = [
+                {"label": "구현", "value": "implementation", "description": "기본기 연습"},
+                {"label": "문자열", "value": "string", "description": "문자열 처리"},
+                {"label": "수학", "value": "math", "description": "수학 문제"},
+            ]
+            # rejected에 없는 것만 필터
+            filtered_actions = [
+                a for a in filtered_actions if a.get("value") not in rejected_topics
+            ]
+
+        response = f"알겠어요! {message if filtered_actions else '다른 주제를 직접 입력해주세요!'}"
+
+    except Exception as e:
+        print(f"[HandleNegation] Error generating suggestions: {e}")
+        response = "알겠어요! 다른 주제로 해볼까요? 어떤 알고리즘을 연습하고 싶으세요?"
+        filtered_actions = [
+            {"label": "DP", "value": "dp", "description": "동적 프로그래밍"},
+            {"label": "그래프", "value": "graph", "description": "BFS/DFS"},
+            {"label": "구현", "value": "implementation", "description": "시뮬레이션"},
+        ]
+        filtered_actions = [
+            a for a in filtered_actions if a.get("value") not in rejected_topics
+        ]
 
     return {
         "response_message": response,
+        "collected_info": new_collected_info,
+        "suggested_actions": filtered_actions[:4] if filtered_actions else None,
         "next_node": "respond",
     }
 

@@ -11,6 +11,9 @@ from ..models.analysis import (
     TopicScore,
     StatsSnapshot,
     RecommendedProblem,
+    SkillSnapshot,
+    SkillSnapshotsResponse,
+    SkillProfileResponse,
 )
 from ..services.analysis_service import AnalysisService, InsufficientDataError
 
@@ -98,3 +101,95 @@ async def generate_analysis(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 생성 실패: {str(e)}")
+
+
+# ============================================================
+# 스킬 스냅샷 API (성장 추적용)
+# ============================================================
+
+@router.get("/snapshots", response_model=SkillSnapshotsResponse)
+async def get_skill_snapshots(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    스킬 스냅샷 히스토리 조회.
+
+    10문제마다 저장된 스냅샷을 시간순으로 반환합니다.
+    성장 그래프, 과거 비교 등에 활용.
+    """
+    try:
+        result = db.table("user_skill_snapshots") \
+            .select("*") \
+            .eq("user_id", str(user_id)) \
+            .order("snapshot_at") \
+            .execute()
+
+        snapshots = []
+        for row in (result.data or []):
+            snapshots.append(SkillSnapshot(
+                id=str(row.get("id")),
+                snapshotAt=row.get("snapshot_at", 0),
+                problemsSolved=row.get("problems_solved", 0),
+                problemsAttempted=row.get("problems_attempted", 0),
+                skillByTopic=row.get("skill_by_topic", {}),
+                weakTopics=row.get("weak_topics", []),
+                strongTopics=row.get("strong_topics", []),
+                learningStyle=row.get("learning_style"),
+                avgSolveTimeSeconds=row.get("avg_solve_time_seconds"),
+                avgHintsPerProblem=row.get("avg_hints_per_problem"),
+                currentStreak=row.get("current_streak", 0),
+                longestStreak=row.get("longest_streak", 0),
+                createdAt=row.get("created_at"),
+            ))
+
+        return SkillSnapshotsResponse(
+            snapshots=snapshots,
+            totalCount=len(snapshots),
+        )
+
+    except Exception as e:
+        return SkillSnapshotsResponse(snapshots=[], totalCount=0)
+
+
+@router.get("/profile", response_model=SkillProfileResponse)
+async def get_skill_profile(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    현재 스킬 프로필 조회 (user_analysis_reports 기반).
+
+    실시간 스킬 추적 데이터를 반환합니다.
+    """
+    try:
+        result = db.table("user_analysis_reports") \
+            .select("*") \
+            .eq("user_id", str(user_id)) \
+            .single() \
+            .execute()
+
+        if not result.data:
+            return SkillProfileResponse(hasProfile=False)
+
+        row = result.data
+        return SkillProfileResponse(
+            hasProfile=True,
+            skillByTopic=row.get("skill_by_topic", {}),
+            weakTopics=row.get("weak_topics", []),
+            strongTopics=row.get("strong_topics", []),
+            totalProblemsSolved=row.get("total_problems_solved", 0),
+            totalProblemsAttempted=row.get("total_problems_attempted", 0),
+            avgSolveTimeSeconds=row.get("avg_solve_time_seconds"),
+            avgHintsPerProblem=row.get("avg_hints_per_problem"),
+            currentStreak=row.get("current_streak", 0),
+            longestStreak=row.get("longest_streak", 0),
+            preferredProblemType=row.get("preferred_problem_type"),
+            preferredLanguage=row.get("preferred_language"),
+            learningStyle=row.get("learning_style"),
+            commonErrorPatterns=row.get("common_error_patterns"),
+            updatedAt=row.get("updated_at"),
+        )
+
+    except Exception as e:
+        return SkillProfileResponse(hasProfile=False)

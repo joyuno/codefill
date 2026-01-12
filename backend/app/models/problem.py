@@ -141,6 +141,8 @@ class BaseProblemListItem(BaseModel):
     tags: List[str] = []
     source: Optional[str] = None
     input_output: Optional[dict] = None
+    view_count: int = 0  # 조회수
+    like_count: int = 0  # 좋아요 수
 
     @field_validator('input_output', mode='before')
     @classmethod

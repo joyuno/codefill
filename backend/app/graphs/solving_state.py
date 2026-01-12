@@ -78,6 +78,7 @@ class SolvingState(TypedDict, total=False):
 
     # === 플로우 제어 ===
     next_node: Optional[str]
+    pre_classified_intent: Optional[str]  # orchestrator에서 분류한 의도 (LLM 기반)
 
 
 # 풀이 중 의도 → 노드 매핑
@@ -91,4 +92,18 @@ SOLVING_INTENT_TO_NODE = {
     "next_step": "guide_next_step",  # guided 문제 전용
     "question": "answer_question",  # 일반 질문
     "summarize_problem": "summarize_problem",  # 문제 요약
+    # 채팅 기반 도움 (기존 힌트 버튼과 별개)
+    "chat_assist": "chat_assist",  # 채팅으로 간접 힌트/개념 설명
+    "concept_explain": "chat_assist",  # 개념 설명 요청
+    "approach_hint": "chat_assist",  # 접근법 힌트
+    "validate_direction": "chat_assist",  # 방향 확인 ("이렇게 하면 맞아?")
+}
+
+
+# 채팅 도움 관련 의도 (chat_assist 노드로 라우팅)
+CHAT_ASSIST_INTENTS = {
+    "chat_assist",
+    "concept_explain",
+    "approach_hint",
+    "validate_direction",
 }

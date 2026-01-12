@@ -175,6 +175,7 @@ class RecordSubmission(BaseModel):
     time_spent: Optional[int] = None  # 풀이 시간 (초)
     submitted_code: Optional[str] = None  # 제출한 코드 (guided/코드 제출용)
     session_id: Optional[str] = None  # 세션 ID (세션 추적용)
+    chat_session_id: Optional[str] = None  # 🚀 chat_sessions 테이블 ID (대화 기록 조회용)
 
     # ============================================================
     # 상세 기록용 필드 (attempt_details 테이블)
@@ -278,6 +279,7 @@ class SessionEndRequest(BaseModel):
     reason: Optional[str] = None
     is_correct: Optional[bool] = None
     score: Optional[int] = None
+    chat_session_id: Optional[str] = None  # 🚀 대화 기록 조회용
 
 
 class SessionEndResponse(BaseModel):

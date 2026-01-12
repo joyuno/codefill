@@ -73,6 +73,10 @@ class DiscoveryState(TypedDict, total=False):
     problem_type: Optional[str]  # blank, puzzle, guided
     is_confirmed: bool  # 문제 확정 여부
 
+    # === 문제 질문 (inquire_problem) ===
+    inquiry_target: Optional[str]  # 질문 대상 (인덱스 또는 문제명)
+    inquiry_question: Optional[str]  # 원본 질문
+
     # === 응답 ===
     response_message: str
     action_trigger: Optional[str]  # search_problems, select_problem_type, generate_problem
@@ -81,6 +85,7 @@ class DiscoveryState(TypedDict, total=False):
     # === 플로우 제어 ===
     next_node: Optional[str]
     route_to: Optional[str]  # solving, respond
+    fallback_reason: Optional[str]  # 의도 파악 실패 사유
 
     # === 에러 ===
     error: Optional[str]
@@ -97,6 +102,7 @@ DISCOVERY_INTENTS = {
     "problem_selection",
     "more_search",
     "generate_new",
+    "inquire_problem",  # 검색 결과 문제에 대한 질문
 }
 
 # 검색 후 바로 문제 목록을 보여주는 의도

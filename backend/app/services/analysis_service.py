@@ -66,7 +66,7 @@ class AnalysisService:
         # 3. 추천 문제 조회
         recommended = await self._get_recommended_problems(user_id, user_data)
 
-        # 4. DB 저장 (upsert)
+        # 4. DB 저장 (upsert) - 새 필드들 포함
         report_data = {
             "user_id": str(user_id),
             "summary_text": analysis["summary"],
@@ -83,6 +83,17 @@ class AnalysisService:
             },
             "difficulty_snapshot": user_data.get("difficulty_stats", {}),
             "recommended_problems": recommended,
+            # 새로운 분석 필드
+            "learning_style": analysis.get("learning_style"),
+            "common_error_patterns": analysis.get("common_error_patterns"),
+            # user_memories 기반 데이터
+            "concepts_learned": user_data.get("concepts_learned", []),
+            "concepts_struggling": user_data.get("concepts_struggling", []),
+            "teaching_notes": user_data.get("teaching_notes", []),
+            "breakthrough_moments": user_data.get("breakthrough_moments", []),
+            "mood_distribution": user_data.get("mood_distribution", {}),
+            "hint_usage": user_data.get("hint_usage", {}),
+            "updated_at": "now()",
         }
 
         # Upsert (insert or update)
@@ -120,9 +131,13 @@ class AnalysisService:
             data["problems_solved"] = stats.get("problems_solved", 0)
             data["streak"] = stats.get("current_streak", 0)
 
-        # 2. user_skill_profiles
-        skill_result = self.db.table("user_skill_profiles").select(
-            "skill_by_topic, weak_topics, strong_topics, success_rate_by_difficulty"
+        # 2. user_analysis_reports (스킬 프로필) - 모든 새 컬럼 포함
+        skill_result = self.db.table("user_analysis_reports").select(
+            "skill_by_topic, weak_topics, strong_topics, success_rate_by_difficulty, "
+            "stats_by_problem_type, total_problems_solved, total_problems_attempted, "
+            "avg_solve_time_seconds, avg_hints_per_problem, current_streak, longest_streak, "
+            "preferred_problem_type, preferred_language, recent_topics, recent_difficulties, "
+            "learning_style, common_error_patterns"
         ).eq("user_id", str(user_id)).execute()
 
         if skill_result.data and len(skill_result.data) > 0:
@@ -130,6 +145,21 @@ class AnalysisService:
             data["skill_by_topic"] = skill.get("skill_by_topic", {})
             data["weak_topics"] = skill.get("weak_topics", [])
             data["strong_topics"] = skill.get("strong_topics", [])
+
+            # 새로 추가된 필드들
+            data["stats_by_problem_type"] = skill.get("stats_by_problem_type", {})
+            data["total_problems_solved"] = skill.get("total_problems_solved", 0)
+            data["total_problems_attempted"] = skill.get("total_problems_attempted", 0)
+            data["avg_solve_time_seconds"] = skill.get("avg_solve_time_seconds")
+            data["avg_hints_per_problem"] = skill.get("avg_hints_per_problem")
+            data["current_streak"] = skill.get("current_streak", 0)
+            data["longest_streak"] = skill.get("longest_streak", 0)
+            data["preferred_problem_type"] = skill.get("preferred_problem_type")
+            data["preferred_language"] = skill.get("preferred_language")
+            data["recent_topics"] = skill.get("recent_topics", [])
+            data["recent_difficulties"] = skill.get("recent_difficulties", [])
+            data["existing_learning_style"] = skill.get("learning_style")
+            data["existing_error_patterns"] = skill.get("common_error_patterns")
 
             # Process difficulty stats
             diff_raw = skill.get("success_rate_by_difficulty", {})
@@ -322,12 +352,37 @@ class AnalysisService:
                     "insight": w.get("insight", ""),
                 })
 
+        # learning_style 정규화
+        learning_style = result.get("learning_style")
+        if learning_style and isinstance(learning_style, dict):
+            learning_style = {
+                "type": learning_style.get("type", "independent"),
+                "description": learning_style.get("description", ""),
+                "strategy": learning_style.get("strategy", ""),
+            }
+        elif learning_style and isinstance(learning_style, str):
+            learning_style = {"type": learning_style, "description": "", "strategy": ""}
+        else:
+            # 기존 데이터 유지 또는 기본값
+            learning_style = user_data.get("existing_learning_style") or {
+                "type": "independent",
+                "description": "아직 학습 스타일 분석 중입니다.",
+                "strategy": "다양한 문제를 풀어보며 자신만의 학습 패턴을 찾아보세요."
+            }
+
+        # common_error_patterns 정규화
+        error_patterns = result.get("common_error_patterns", [])
+        if not error_patterns:
+            error_patterns = user_data.get("existing_error_patterns", [])
+
         return {
             "summary": result.get("summary", "분석 결과를 생성했습니다."),
             "strengths": strengths,
             "weaknesses": weaknesses,
             "recommendations": result.get("recommendations", ["꾸준히 문제를 풀며 실력을 쌓아가세요!"]),
             "study_plan": result.get("study_plan", "다양한 유형의 문제에 도전해보세요!"),
+            "learning_style": learning_style,
+            "common_error_patterns": error_patterns,
         }
 
     def _generate_analysis_content(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -382,12 +437,24 @@ class AnalysisService:
         else:
             study_plan = "다양한 유형의 문제에 도전해보세요!"
 
+        # Learning style (기존 데이터 유지 또는 기본값)
+        learning_style = user_data.get("existing_learning_style") or {
+            "type": "independent",
+            "description": "아직 학습 스타일 분석 중입니다.",
+            "strategy": "다양한 문제를 풀어보며 자신만의 학습 패턴을 찾아보세요."
+        }
+
+        # Common error patterns (기존 데이터 유지 또는 빈 배열)
+        error_patterns = user_data.get("existing_error_patterns", [])
+
         return {
             "summary": summary,
             "strengths": strengths,
             "weaknesses": weaknesses,
             "recommendations": recommendations,
             "study_plan": study_plan,
+            "learning_style": learning_style,
+            "common_error_patterns": error_patterns,
         }
 
     async def _get_recommended_problems(

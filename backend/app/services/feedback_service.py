@@ -683,7 +683,7 @@ class FeedbackService:
 
 
     # ============================================================
-    # user_skill_profiles 업데이트 (ELO-like)
+    # user_analysis_reports 업데이트 (ELO-like)
     # ============================================================
 
     async def update_skill_profile(
@@ -713,7 +713,7 @@ class FeedbackService:
         """
         try:
             # 1. 현재 프로파일 조회 (없으면 생성)
-            profile_result = self.supabase.table("user_skill_profiles") \
+            profile_result = self.supabase.table("user_analysis_reports") \
                 .select("*") \
                 .eq("user_id", user_id) \
                 .limit(1) \
@@ -848,7 +848,7 @@ class FeedbackService:
             if avg_hints_per is not None:
                 update_data["avg_hints_per_problem"] = avg_hints_per
 
-            self.supabase.table("user_skill_profiles") \
+            self.supabase.table("user_analysis_reports") \
                 .upsert(update_data, on_conflict="user_id") \
                 .execute()
 
@@ -870,7 +870,7 @@ class FeedbackService:
         force_llm_analysis: bool = False,
     ) -> Dict[str, Any]:
         """
-        🚀 히스토리 테이블 기반 user_skill_profiles 전체 재계산
+        🚀 히스토리 테이블 기반 user_analysis_reports 전체 재계산
 
         attempts, user_memories 테이블을 분석하여 모든 컬럼을 채웁니다.
         10개 이상 문제를 풀었을 때 LLM으로 learning_style, common_error_patterns 분석.
@@ -889,7 +889,7 @@ class FeedbackService:
             # 1. attempts 테이블에서 모든 시도 조회
             # ============================================================
             attempts_result = self.supabase.table("attempts") \
-                .select("*, base_problems(tags, difficulty, problem_type)") \
+                .select("*, base_problems(tags, difficulty)") \
                 .eq("user_id", user_id) \
                 .order("created_at") \
                 .execute()
@@ -924,11 +924,11 @@ class FeedbackService:
                 time_spent = attempt.get("time_spent", 0) or 0
                 hints_used = attempt.get("hints_used", 0) or 0
 
-                # base_problems에서 정보 추출
+                # attempts에서 problem_type, base_problems에서 난이도/태그 추출
+                problem_type = attempt.get("problem_type") or "unknown"
                 base_problem = attempt.get("base_problems") or {}
-                problem_type = base_problem.get("problem_type", "unknown")
-                difficulty = base_problem.get("difficulty", "medium")
-                tags = base_problem.get("tags", []) or []
+                difficulty = attempt.get("difficulty") or base_problem.get("difficulty", "medium")
+                tags = attempt.get("topics") or base_problem.get("tags", []) or []
 
                 # 3a. 문제 유형별 통계
                 if problem_type not in stats_by_type:
@@ -994,7 +994,7 @@ class FeedbackService:
             # 6. user_memories에서 추가 분석
             # ============================================================
             memories_result = self.supabase.table("user_memories") \
-                .select("concepts_learned, concepts_struggling, teaching_notes") \
+                .select("concepts_learned, concepts_struggling, teaching_notes, breakthrough_moments, student_mood") \
                 .eq("user_id", user_id) \
                 .execute()
 
@@ -1004,11 +1004,18 @@ class FeedbackService:
             all_concepts_learned = []
             all_concepts_struggling = []
             all_teaching_notes = []
+            all_breakthrough_moments = []
+            mood_counts = {}
 
             for mem in memories:
                 all_concepts_learned.extend(mem.get("concepts_learned") or [])
                 all_concepts_struggling.extend(mem.get("concepts_struggling") or [])
                 all_teaching_notes.extend(mem.get("teaching_notes") or [])
+                all_breakthrough_moments.extend(mem.get("breakthrough_moments") or [])
+                # 감정 분포 집계
+                mood = mem.get("student_mood")
+                if mood:
+                    mood_counts[mood] = mood_counts.get(mood, 0) + 1
 
             # 빈도 집계
             from collections import Counter
@@ -1024,6 +1031,39 @@ class FeedbackService:
             for topic, count in learned_counter.most_common(10):
                 if topic and topic not in strong_topics:
                     strong_topics.append(topic)
+
+            # ============================================================
+            # 6b. attempt_details에서 hint_usage 수집
+            # ============================================================
+            hint_usage = {}
+            attempt_ids = [a["id"] for a in attempts if a.get("id")]
+
+            if attempt_ids:
+                details_result = self.supabase.table("attempt_details") \
+                    .select("hint_was_requested, hint_was_helpful, blank_hint_level") \
+                    .in_("attempt_id", attempt_ids) \
+                    .execute()
+
+                if details_result.data:
+                    total_hints_requested = 0
+                    helpful_hints = 0
+                    hint_levels = []
+
+                    for detail in details_result.data:
+                        if detail.get("hint_was_requested"):
+                            total_hints_requested += 1
+                            if detail.get("hint_was_helpful"):
+                                helpful_hints += 1
+                        hint_level = detail.get("blank_hint_level")
+                        if hint_level is not None:
+                            hint_levels.append(hint_level)
+
+                    hint_usage = {
+                        "total_requested": total_hints_requested,
+                        "helpful_count": helpful_hints,
+                        "helpful_rate": round(helpful_hints / total_hints_requested, 2) if total_hints_requested > 0 else 0,
+                        "avg_hint_level": round(sum(hint_levels) / len(hint_levels), 2) if hint_levels else 0,
+                    }
 
             # ============================================================
             # 7. Streak 계산 (연속 정답)
@@ -1073,8 +1113,10 @@ class FeedbackService:
 
             for a in reversed(recent_attempts):
                 bp = a.get("base_problems") or {}
-                tags = bp.get("tags") or []
-                diff = bp.get("difficulty")
+                # attempts.topics 우선, 없으면 base_problems.tags
+                tags = a.get("topics") or bp.get("tags") or []
+                # attempts.difficulty 우선, 없으면 base_problems.difficulty
+                diff = a.get("difficulty") or bp.get("difficulty")
                 for t in tags:
                     if t and t not in recent_topics:
                         recent_topics.append(t)
@@ -1110,21 +1152,54 @@ class FeedbackService:
                 # Streak
                 "current_streak": current_streak,
                 "longest_streak": longest_streak,
+                # user_memories 기반 데이터 (NULL 방지: 빈 배열/객체 기본값)
+                "concepts_learned": list(set(all_concepts_learned))[:15] if all_concepts_learned else [],
+                "concepts_struggling": list(set(all_concepts_struggling))[:15] if all_concepts_struggling else [],
+                "teaching_notes": all_teaching_notes[:10] if all_teaching_notes else [],
+                "breakthrough_moments": list(set(all_breakthrough_moments))[:10] if all_breakthrough_moments else [],
+                "mood_distribution": mood_counts if mood_counts else {},
+                # hint_usage (attempt_details 기반)
+                "hint_usage": hint_usage if hint_usage else {},
                 # 타임스탬프
                 "updated_at": "now()",
             }
 
-            # LLM 분석 결과 (있을 때만)
-            if learning_style:
-                update_data["learning_style"] = learning_style
-            if common_error_patterns:
-                update_data["common_error_patterns"] = common_error_patterns
+            # LLM 분석 결과 (없으면 빈 객체/배열로 기본값 설정)
+            update_data["learning_style"] = learning_style if learning_style else {
+                "type": "analyzing",
+                "description": "아직 학습 스타일을 분석 중입니다. 10문제 이상 풀면 더 정확한 분석이 가능합니다.",
+                "strategy": "다양한 유형의 문제를 풀어보세요."
+            }
+            update_data["common_error_patterns"] = common_error_patterns if common_error_patterns else []
 
-            self.supabase.table("user_skill_profiles") \
+            self.supabase.table("user_analysis_reports") \
                 .upsert(update_data, on_conflict="user_id") \
                 .execute()
 
             logger.info(f"[FeedbackService] Skill profile recalculated: user={user_id[:8]}, attempted={total_attempted}, solved={total_solved}")
+
+            # ============================================================
+            # 11. 스냅샷 저장 (10문제 단위)
+            # ============================================================
+            snapshot_at = (total_attempted // 10) * 10
+            if snapshot_at >= 10:
+                await self._save_skill_snapshot(
+                    user_id=user_id,
+                    snapshot_at=snapshot_at,
+                    problems_solved=total_solved,
+                    problems_attempted=total_attempted,
+                    skill_by_topic=skill_by_topic,
+                    success_rate_by_difficulty=success_rate_by_difficulty,
+                    stats_by_problem_type=stats_by_type,
+                    weak_topics=weak_topics[:15],
+                    strong_topics=strong_topics[:15],
+                    learning_style=learning_style,
+                    common_error_patterns=common_error_patterns,
+                    avg_solve_time_seconds=avg_solve_time,
+                    avg_hints_per_problem=avg_hints_per,
+                    current_streak=current_streak,
+                    longest_streak=longest_streak,
+                )
 
             return {
                 "success": True,
@@ -1135,6 +1210,7 @@ class FeedbackService:
                 "preferred_type": preferred_type,
                 "learning_style": learning_style,
                 "llm_analysis_run": total_solved >= 10 or force_llm_analysis,
+                "snapshot_saved_at": snapshot_at if snapshot_at >= 10 else None,
             }
 
         except Exception as e:
@@ -1142,6 +1218,65 @@ class FeedbackService:
             import traceback
             traceback.print_exc()
             return {"error": str(e)}
+
+    async def _save_skill_snapshot(
+        self,
+        user_id: str,
+        snapshot_at: int,
+        problems_solved: int,
+        problems_attempted: int,
+        skill_by_topic: Dict[str, float],
+        success_rate_by_difficulty: Dict[str, Dict[str, int]],
+        stats_by_problem_type: Dict[str, Dict[str, Any]],
+        weak_topics: List[str],
+        strong_topics: List[str],
+        learning_style: Optional[Any],
+        common_error_patterns: Optional[List[str]],
+        avg_solve_time_seconds: int,
+        avg_hints_per_problem: float,
+        current_streak: int,
+        longest_streak: int,
+    ) -> bool:
+        """
+        스킬 프로필 스냅샷 저장 (10문제 단위)
+
+        성장 추적 및 히스토리 그래프용 데이터 저장.
+        동일 snapshot_at에 대해 upsert (덮어쓰기).
+        """
+        try:
+            snapshot_data = {
+                "user_id": user_id,
+                "snapshot_at": snapshot_at,
+                "problems_solved": problems_solved,
+                "problems_attempted": problems_attempted,
+                "skill_by_topic": skill_by_topic,
+                "success_rate_by_difficulty": success_rate_by_difficulty,
+                "stats_by_problem_type": stats_by_problem_type,
+                "weak_topics": weak_topics,
+                "strong_topics": strong_topics,
+                "avg_solve_time_seconds": avg_solve_time_seconds,
+                "avg_hints_per_problem": avg_hints_per_problem,
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+            }
+
+            # LLM 분석 결과 (있을 때만)
+            if learning_style:
+                snapshot_data["learning_style"] = learning_style if isinstance(learning_style, dict) else {"style": learning_style}
+            if common_error_patterns:
+                snapshot_data["common_error_patterns"] = common_error_patterns
+
+            # upsert: 동일 user_id + snapshot_at 조합이면 업데이트
+            self.supabase.table("user_skill_snapshots") \
+                .upsert(snapshot_data, on_conflict="user_id,snapshot_at") \
+                .execute()
+
+            logger.info(f"[FeedbackService] Skill snapshot saved: user={user_id[:8]}, at={snapshot_at} problems")
+            return True
+
+        except Exception as e:
+            logger.warning(f"[FeedbackService] Failed to save skill snapshot: {e}")
+            return False
 
     async def _analyze_learning_patterns_with_llm(
         self,
@@ -1213,9 +1348,12 @@ class FeedbackService:
 
 위 데이터를 분석하여 다음 JSON 형식으로 응답해주세요:
 {{
-    "learning_style": "학습 스타일 (예: 'methodical', 'exploratory', 'hint-dependent', 'independent', 'fast-learner', 'careful-thinker' 중 하나 또는 조합)",
-    "learning_style_description": "학습 스타일에 대한 1-2문장 설명",
-    "common_error_patterns": ["실수 패턴 1", "실수 패턴 2", ...],
+    "learning_style": {{
+        "type": "학습 스타일 (예: 'methodical', 'exploratory', 'hint-dependent', 'independent', 'fast-learner', 'careful-thinker' 중 하나 또는 조합)",
+        "description": "학습 스타일에 대한 1-2문장 설명 (한국어)",
+        "strategy": "이 스타일에 맞는 학습 전략 조언 (한국어)"
+    }},
+    "common_error_patterns": ["반복되는 실수 패턴 1 (구체적으로)", "반복되는 실수 패턴 2", ...],
     "recommendations": ["학습 추천 1", "학습 추천 2"]
 }}
 """
@@ -1235,11 +1373,19 @@ class FeedbackService:
             content = openrouter_service.get_content(response)
             result = openrouter_service.parse_json_response(content)
 
-            logger.info(f"[FeedbackService] LLM analysis completed: style={result.get('learning_style')}")
+            learning_style = result.get("learning_style")
+            # 문자열인 경우 객체로 변환 (구버전 호환)
+            if isinstance(learning_style, str):
+                learning_style = {
+                    "type": learning_style,
+                    "description": result.get("learning_style_description", ""),
+                    "strategy": "",
+                }
+
+            logger.info(f"[FeedbackService] LLM analysis completed: style={learning_style.get('type') if learning_style else 'N/A'}")
 
             return {
-                "learning_style": result.get("learning_style"),
-                "learning_style_description": result.get("learning_style_description"),
+                "learning_style": learning_style,
                 "common_error_patterns": result.get("common_error_patterns", []),
                 "recommendations": result.get("recommendations", []),
             }

@@ -58,6 +58,13 @@ async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
     current_offset = state.get("search_offset", 0)
     selection_index = state.get("selection_index")
 
+    # 0. 문제 질문 의도 (inquire_problem)
+    inquiry_target = state.get("inquiry_target")
+    if intent == "inquire_problem" or inquiry_target:
+        if search_results:
+            print(f"[DiscoveryGraph] Problem inquiry detected: target={inquiry_target}")
+            return {"next_node": "inquire_problem"}
+
     # 1. 오케스트레이터에서 이미 선택 인덱스를 감지한 경우 → 바로 선택 처리
     if selection_index and search_results:
         print(f"[DiscoveryGraph] Using pre-detected selection_index: {selection_index}")
@@ -91,7 +98,15 @@ async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
     if collected_info.get("topics") or collected_info.get("difficulty"):
         return {"search_offset": 0, "next_node": "search_problems"}
 
-    # 7. 기본: 검색
+    # 7. Fallback: 의도 파악 실패 → 사용자에게 알리고 재검색
+    # 검색 결과가 있는데 의도를 모르면 clarification 제공
+    if search_results:
+        return {
+            "next_node": "fallback_clarify",
+            "fallback_reason": "intent_unclear",
+        }
+
+    # 8. 기본: 검색
     return {"search_offset": 0, "next_node": "search_problems"}
 
 
@@ -504,6 +519,117 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+async def inquire_problem_node(state: DiscoveryState) -> Dict[str, Any]:
+    """
+    검색 결과에서 특정 문제에 대한 질문을 처리합니다.
+
+    사용자가 문제 선택 전에 특정 문제에 대해 질문할 때:
+    - "taco_749 요약해줘"
+    - "두 번째 문제 뭐야?"
+    - "3번 어떤 내용이야?"
+    - "이거 뭐에 도움되냐?"
+    """
+    from ..tools.problem_inquiry_tool import get_problem_inquiry_tool
+
+    message = state.get("message", "")
+    inquiry_target = state.get("inquiry_target")
+    search_results = state.get("search_results", [])
+    filtered_results = state.get("filtered_results", [])
+    user_context = state.get("user_context", {})
+    conversation_history = state.get("conversation_history", [])
+
+    # 검색 결과 확보
+    if not search_results:
+        search_results = filtered_results or user_context.get("search_results", [])
+
+    if not search_results:
+        return {
+            "response_message": "먼저 문제를 검색해주세요! 어떤 주제로 연습하고 싶으신가요?",
+            "next_node": "respond",
+        }
+
+    # inquiry_target이 없으면 메시지에서 추출 시도
+    if not inquiry_target:
+        # 숫자 패턴
+        import re
+        num_match = re.search(r'(\d+)\s*번', message)
+        if num_match:
+            inquiry_target = num_match.group(1)
+        else:
+            # 문제명 패턴 (taco_xxx)
+            name_match = re.search(r'(taco_\d+)', message, re.IGNORECASE)
+            if name_match:
+                inquiry_target = name_match.group(1)
+            else:
+                # 서수 패턴
+                ordinal_map = {"첫": "1", "두": "2", "세": "3", "네": "4", "다섯": "5"}
+                for word, idx in ordinal_map.items():
+                    if word in message:
+                        inquiry_target = idx
+                        break
+
+    if not inquiry_target:
+        return {
+            "response_message": "어떤 문제에 대해 궁금하신가요? 번호나 이름을 알려주세요!",
+            "next_node": "respond",
+        }
+
+    # Tool을 사용하여 질문 처리 (대화 히스토리 포함 - 꼬리 질문 맥락)
+    inquiry_tool = get_problem_inquiry_tool()
+    result = await inquiry_tool.inquire(
+        question=message,
+        inquiry_target=inquiry_target,
+        search_results=search_results,
+        conversation_history=conversation_history,
+    )
+
+    # 응답 구성 (선택 유도 포함)
+    if result.success:
+        response_message = result.response + "\n\n이 문제를 선택하시려면 번호를 말씀해주세요!"
+    else:
+        response_message = result.response
+
+    return {
+        "response_message": response_message,
+        "awaiting_selection": True,  # 선택 대기 상태 유지
+        "next_node": "respond",
+    }
+
+
+async def fallback_clarify_node(state: DiscoveryState) -> Dict[str, Any]:
+    """
+    의도 파악 실패 시 사용자에게 명확한 피드백 제공.
+
+    - 현재 검색 결과가 있는 상태에서 의도를 파악하지 못함
+    - 사용자에게 선택지를 다시 안내
+    """
+    search_results = state.get("search_results", [])
+    fallback_reason = state.get("fallback_reason", "unknown")
+
+    # 검색 결과가 있으면 선택 안내
+    if search_results:
+        problem_count = len(search_results)
+        response_message = (
+            f"요청을 정확히 이해하지 못했어요. 😅\n\n"
+            f"현재 {problem_count}개의 문제가 검색되어 있어요:\n"
+            f"• 번호로 선택하기 (예: \"1번\", \"두 번째\")\n"
+            f"• 문제에 대해 질문하기 (예: \"1번 문제 설명해줘\")\n"
+            f"• 다른 문제 찾기 (예: \"다른 문제 더 보여줘\")\n"
+            f"• 새로 검색하기 (예: \"그래프 문제로 바꿔줘\")"
+        )
+    else:
+        response_message = (
+            "요청을 정확히 이해하지 못했어요. 😅\n\n"
+            "어떤 주제의 문제를 풀고 싶으신가요?"
+        )
+
+    return {
+        "response_message": response_message,
+        "awaiting_selection": True,
+        "next_node": "respond",
+    }
+
+
 async def confirm_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     선택된 문제를 확정하고 문제 유형 선택 UI를 표시합니다.
@@ -598,7 +724,7 @@ def route_after_discovery_intent(state: DiscoveryState) -> str:
     if state.get("force_generate") and next_node == "generate_problem":
         return "confirm_generation"
 
-    valid_nodes = {"search_problems", "handle_selection", "filter_results", "generate_problem", "confirm_generation"}
+    valid_nodes = {"search_problems", "handle_selection", "filter_results", "generate_problem", "confirm_generation", "inquire_problem", "fallback_clarify"}
     return next_node if next_node in valid_nodes else "search_problems"
 
 
@@ -644,6 +770,8 @@ def create_discovery_graph(checkpointer=None) -> StateGraph:
     workflow.add_node("confirm_generation", confirm_generation_node)
     workflow.add_node("generate_problem", generate_problem_node)
     workflow.add_node("handle_selection", handle_selection_node)
+    workflow.add_node("inquire_problem", inquire_problem_node)  # 문제 질문 노드
+    workflow.add_node("fallback_clarify", fallback_clarify_node)  # 의도 파악 실패 시 clarification
     workflow.add_node("confirm_problem", confirm_problem_node)
     workflow.add_node("respond", respond_node)
 
@@ -660,6 +788,8 @@ def create_discovery_graph(checkpointer=None) -> StateGraph:
             "filter_results": "filter_results",
             "confirm_generation": "confirm_generation",  # 확인 노드로 먼저 이동
             "generate_problem": "generate_problem",  # 확인 없이 직접 생성 (fallback)
+            "inquire_problem": "inquire_problem",  # 문제 질문
+            "fallback_clarify": "fallback_clarify",  # 의도 파악 실패 시 clarification
         }
     )
 
@@ -702,6 +832,12 @@ def create_discovery_graph(checkpointer=None) -> StateGraph:
 
     # confirm_problem → respond
     workflow.add_edge("confirm_problem", "respond")
+
+    # inquire_problem → respond
+    workflow.add_edge("inquire_problem", "respond")
+
+    # fallback_clarify → respond
+    workflow.add_edge("fallback_clarify", "respond")
 
     # respond → END
     workflow.add_edge("respond", END)
@@ -746,6 +882,8 @@ class DiscoveryGraph:
         user_context: dict = None,
         search_results: list = None,
         selection_index: int = None,
+        inquiry_target: str = None,
+        inquiry_question: str = None,
     ) -> Dict[str, Any]:
         """
         그래프를 실행합니다.
@@ -758,6 +896,8 @@ class DiscoveryGraph:
             user_context: 사용자 컨텍스트
             search_results: 이전 검색 결과 (있으면)
             selection_index: intent_tool에서 감지한 선택 인덱스 (1-based)
+            inquiry_target: 질문 대상 (인덱스 또는 문제명)
+            inquiry_question: 원본 질문
 
         Returns:
             {
@@ -778,6 +918,8 @@ class DiscoveryGraph:
             "user_context": user_context or {},
             "search_results": search_results or [],
             "selection_index": selection_index,  # 오케스트레이터에서 전달받은 선택 인덱스
+            "inquiry_target": inquiry_target,  # 질문 대상 (인덱스 또는 문제명)
+            "inquiry_question": inquiry_question,  # 원본 질문
         }
 
         result = await self.graph.ainvoke(initial_state)

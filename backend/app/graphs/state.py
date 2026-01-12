@@ -21,6 +21,8 @@ class CollectedInfo(TypedDict, total=False):
     time_available: Optional[int]
     selected_problem: Optional[str]
     selected_problem_index: Optional[int]
+    rejected_topics: List[str]  # 사용자가 거부한 주제들 (추천에서 제외용)
+    recommendation_type: Optional[str]  # 🚀 CF 추천 타입 (cf_similar, cf_trending, cf_popular 등)
 
 
 class IntentResult(TypedDict, total=False):

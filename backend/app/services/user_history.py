@@ -1,6 +1,10 @@
 """
 User History Service
 사용자의 풀이 기록과 스킬 프로필을 조회하여 개인화된 추천에 활용
+
+🚀 협업 필터링 통합:
+- 유사 사용자 기반 추천
+- 트렌딩 주제 추천
 """
 
 from typing import Optional, List, Dict, Any
@@ -8,6 +12,23 @@ from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_cf_recommendations(user_id: str, limit: int = 3) -> List[Dict[str, Any]]:
+    """
+    협업 필터링 추천 조회 (비동기)
+
+    Returns:
+        CF 추천 목록 [{topic, difficulty, score, reason, source}]
+    """
+    try:
+        from .collaborative_filtering import get_collaborative_service
+        cf_service = get_collaborative_service()
+        recommendations = await cf_service.get_recommendations(user_id, limit=limit)
+        return [rec.to_dict() for rec in recommendations]
+    except Exception as e:
+        logger.warning(f"[UserHistory] CF recommendations failed: {e}")
+        return []
 
 
 class UserHistoryService:
@@ -56,7 +77,7 @@ class UserHistoryService:
             Skill profile with weak/strong topics
         """
         try:
-            result = self.db.table('user_skill_profiles').select(
+            result = self.db.table('user_analysis_reports').select(
                 'weak_topics, strong_topics, '
                 'recent_topics, updated_at'
             ).eq(
@@ -136,15 +157,28 @@ class UserHistoryService:
         Returns:
             Personalization context for LLM
         """
-        # 병렬로 데이터 조회
-        recent_attempts = await self.get_recent_attempts(user_id, limit=5)
-        skill_profile = await self.get_skill_profile(user_id)
+        import asyncio
+
+        # 🚀 병렬로 데이터 조회 (CF 추천 포함)
+        recent_attempts_task = self.get_recent_attempts(user_id, limit=10)
+        skill_profile_task = self.get_skill_profile(user_id)
+        topic_stats_task = self.get_topic_stats(user_id)
+        cf_recommendations_task = _get_cf_recommendations(user_id, limit=3)
+
+        recent_attempts, skill_profile, topic_stats, cf_recommendations = await asyncio.gather(
+            recent_attempts_task,
+            skill_profile_task,
+            topic_stats_task,
+            cf_recommendations_task,
+        )
 
         context = {
             'has_history': len(recent_attempts) > 0,
             'recent_problems': [],
             'skill_summary': None,
-            'recommendations': []
+            'recommendations': [],
+            'topic_stats': {},  # 🚀 주제별 성공률 데이터
+            'cf_recommendations': cf_recommendations,  # 🚀 협업 필터링 추천
         }
 
         # 최근 풀이 요약
@@ -165,11 +199,19 @@ class UserHistoryService:
                     recent_topics.add(topic)
             context['recent_topics'] = list(recent_topics)[:5]
 
+        # 🚀 주제별 통계 추가 (성공률, 푼 난이도)
+        if topic_stats:
+            context['topic_stats'] = topic_stats
+
+        # 선호 난이도 계산 (성공률 70%+ 중 최고 난이도)
+        preferred_difficulty = self._calculate_preferred_difficulty(topic_stats, recent_attempts)
+
         # 스킬 프로필 요약
         if skill_profile:
             context['skill_summary'] = {
                 'weak_topics': skill_profile.get('weak_topics', [])[:3],
                 'strong_topics': skill_profile.get('strong_topics', [])[:3],
+                'preferred_difficulty': preferred_difficulty,  # 🚀 추가
             }
 
             # 추천 생성 (약점 주제 기반)
@@ -178,8 +220,16 @@ class UserHistoryService:
                 context['recommendations'].append({
                     'type': 'weak_topic',
                     'topics': weak_topics[:2],
+                    'difficulty': 'easy',  # 약점은 쉬운 것부터
                     'reason': '아직 연습이 더 필요한 주제'
                 })
+        else:
+            # skill_profile이 없어도 기본 summary 생성
+            context['skill_summary'] = {
+                'weak_topics': [],
+                'strong_topics': [],
+                'preferred_difficulty': preferred_difficulty,
+            }
 
         # 최근 풀이 기반 추천
         if recent_attempts:
@@ -216,6 +266,48 @@ class UserHistoryService:
             return difficulty_order[min(idx + 1, len(difficulty_order) - 1)]
         except ValueError:
             return 'medium'
+
+    def _calculate_preferred_difficulty(
+        self,
+        topic_stats: Dict[str, Any],
+        recent_attempts: List[Dict[str, Any]]
+    ) -> str:
+        """
+        선호 난이도 계산 (정답률 70%+ 중 가장 높은 난이도)
+
+        Args:
+            topic_stats: 주제별 통계 (success_rate, common_difficulty 포함)
+            recent_attempts: 최근 풀이 기록
+
+        Returns:
+            추천 난이도 (easy, medium, medium_hard, hard, very_hard)
+        """
+        difficulty_order = ['easy', 'medium', 'medium_hard', 'hard', 'very_hard']
+        difficulty_stats = {}  # difficulty -> {'total': N, 'correct': N}
+
+        # 최근 시도에서 난이도별 성공률 계산
+        for attempt in recent_attempts:
+            diff = attempt.get('difficulty', 'medium')
+            is_correct = attempt.get('is_correct', False)
+
+            if diff not in difficulty_stats:
+                difficulty_stats[diff] = {'total': 0, 'correct': 0}
+
+            difficulty_stats[diff]['total'] += 1
+            if is_correct:
+                difficulty_stats[diff]['correct'] += 1
+
+        # 성공률 70% 이상인 가장 높은 난이도 찾기
+        preferred = 'easy'
+        for diff in difficulty_order:
+            stats = difficulty_stats.get(diff, {})
+            total = stats.get('total', 0)
+            correct = stats.get('correct', 0)
+
+            if total >= 2 and (correct / total) >= 0.7:
+                preferred = diff
+
+        return preferred
 
 
 def get_user_history_service(db) -> UserHistoryService:

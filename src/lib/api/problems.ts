@@ -44,6 +44,8 @@ export interface BaseProblemListItem {
     inputs?: string[];
     outputs?: string[];
   } | null;
+  view_count: number;  // 조회수
+  like_count: number;  // 좋아요 수
 }
 
 export interface BaseProblemDetail {

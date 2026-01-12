@@ -39,6 +39,68 @@ const COLOR_MAP: Record<string, string> = {
   pink: '#e91e8a',
 };
 
+// 농장 캐시 관리
+const FARM_CACHE_KEY = 'codefill_farm_cache';
+const FARM_CACHE_TTL = 1000 * 60 * 30; // 30분 (농장 페이지 방문 시 갱신되므로 넉넉하게)
+
+interface FarmCache {
+  data: UserFarm;
+  timestamp: number;
+}
+
+function getFarmFromCache(): UserFarm | null {
+  try {
+    const cached = localStorage.getItem(FARM_CACHE_KEY);
+    if (!cached) return null;
+
+    const parsed: FarmCache = JSON.parse(cached);
+    const now = Date.now();
+
+    // TTL 체크 (기본 30분, 하지만 농장 페이지 방문 시 갱신됨)
+    if (now - parsed.timestamp > FARM_CACHE_TTL) {
+      localStorage.removeItem(FARM_CACHE_KEY);
+      return null;
+    }
+
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function setFarmToCache(data: UserFarm): void {
+  try {
+    const cache: FarmCache = {
+      data,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(FARM_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // localStorage 쓰기 실패 무시
+  }
+}
+
+// 농장 페이지 방문 플래그 (sessionStorage로 세션 내 추적)
+const FARM_VISITED_KEY = 'codefill_farm_visited';
+
+export function markFarmVisited(): void {
+  sessionStorage.setItem(FARM_VISITED_KEY, Date.now().toString());
+}
+
+export function checkAndClearFarmVisited(): boolean {
+  const visited = sessionStorage.getItem(FARM_VISITED_KEY);
+  if (visited) {
+    sessionStorage.removeItem(FARM_VISITED_KEY);
+    return true;
+  }
+  return false;
+}
+
+// 외부에서 캐시 갱신용 (농장 페이지에서 호출)
+export function updateFarmCache(data: UserFarm): void {
+  setFarmToCache(data);
+}
+
 // 샘플 작물 데이터 (Modern Farm 에셋 기반)
 const SAMPLE_CROPS: Array<{ type: CropVariety; stage: CropStage }> = [
   { type: 'tomato', stage: 4 },
@@ -81,9 +143,20 @@ const RARITY_ORDER: Record<string, number> = {
 export function SidebarProfile({ username, publicData, badges: propBadges }: SidebarProfileProps) {
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
-  const [farm, setFarm] = useState<UserFarm | null>(null);
+  // 본인 프로필: 캐시에서 초기값 로드 (즉시 표시)
+  const [farm, setFarm] = useState<UserFarm | null>(() => {
+    if (typeof window === 'undefined') return null;
+    // 타인 프로필이면 캐시 사용 안함
+    if (username) return null;
+    return getFarmFromCache();
+  });
   const [publicFarm, setPublicFarm] = useState<PublicFarm | null>(null);
-  const [farmLoading, setFarmLoading] = useState(false);
+  // 캐시가 있으면 로딩 상태 false로 시작
+  const [farmLoading, setFarmLoading] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    if (username) return false;
+    return !getFarmFromCache();
+  });
   const [farmError, setFarmError] = useState<string | null>(null);
   const [badges, setBadges] = useState<BadgeType[]>([]);
   const [publicBadges, setPublicBadges] = useState<PublicBadge[]>([]);
@@ -122,22 +195,51 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const requiredXP = profile?.required_xp || 100;
   const xpProgress = (currentXP / requiredXP) * 100;
 
-  // Load farm data from API
-  const loadFarmData = async () => {
-    setFarmLoading(true);
+  // Load farm data from API (with caching for own profile)
+  const loadFarmData = async (forceRefresh = false) => {
     setFarmError(null);
 
     try {
       if (isOwnProfile) {
-        // 본인 프로필: 기존 API 사용
+        // 본인 프로필: 캐시 우선 사용
         if (!isAuthenticated) {
           setFarmLoading(false);
           return;
         }
+
+        // 1. 이미 farm 데이터가 있으면 (초기 캐시 로딩) 백그라운드 갱신만 체크
+        if (farm && !forceRefresh) {
+          // 농장 페이지 방문 후면 백그라운드 갱신
+          const shouldRefresh = checkAndClearFarmVisited();
+          if (shouldRefresh) {
+            farmApi.getFarm().then((data) => {
+              setFarm(data);
+              setFarmToCache(data);
+            }).catch(() => {
+              // 백그라운드 갱신 실패는 무시
+            });
+          }
+          return;
+        }
+
+        // 2. farm이 없으면 캐시 확인 (초기 로딩 이후 재마운트 시)
+        if (!forceRefresh) {
+          const cached = getFarmFromCache();
+          if (cached) {
+            setFarm(cached);
+            setFarmLoading(false);
+            return;
+          }
+        }
+
+        // 3. 캐시도 없으면 API 호출
+        setFarmLoading(true);
         const data = await farmApi.getFarm();
         setFarm(data);
+        setFarmToCache(data);
       } else if (username) {
-        // 타인 프로필: 공개 API 사용
+        // 타인 프로필: 공개 API 사용 (캐싱 없음)
+        setFarmLoading(true);
         const data = await publicProfileApi.getFarm(username);
         setPublicFarm(data);
       }
@@ -238,16 +340,23 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const handleCharacterCreate = async (newCharacter: CharacterData) => {
     try {
       // API 호출로 캐릭터 생성
+      // 새 형식: color가 직접 hex 값 (예: '#3d2314')
+      // 레거시 형식: color가 키 (예: 'brown') - COLOR_MAP으로 변환 필요
+      const hairColor = newCharacter.appearance.color.startsWith('#')
+        ? newCharacter.appearance.color
+        : COLOR_MAP[newCharacter.appearance.color] || '#8B4513';
+
       const updatedFarm = await farmApi.createCharacter({
         name: newCharacter.name,
         hair: newCharacter.appearance.hair,
-        hairColor: COLOR_MAP[newCharacter.appearance.color] || '#8B4513',
+        hairColor,
         face: newCharacter.appearance.face,
         outfit: newCharacter.appearance.clothes,
-        outfitColor: COLOR_MAP[newCharacter.appearance.color] || '#8B4513',
+        outfitColor: hairColor,
         farmName: newCharacter.farmName,
       });
       setFarm(updatedFarm);
+      setFarmToCache(updatedFarm); // 캐시도 업데이트
       setShowCharacterModal(false);
     } catch (error) {
       console.error('캐릭터 생성 실패:', error);

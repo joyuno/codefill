@@ -26,6 +26,7 @@ from .nodes.solving import (
     show_solution,
     answer_question,
     summarize_problem,
+    chat_assist,
 )
 
 
@@ -43,6 +44,7 @@ def route_after_solving_intent(state: SolvingState) -> str:
         "show_solution",
         "answer_question",
         "summarize_problem",
+        "chat_assist",  # 채팅 기반 간접 도움
         "respond",
     }
 
@@ -83,6 +85,7 @@ def create_solving_graph() -> StateGraph:
     workflow.add_node("show_solution", show_solution)
     workflow.add_node("answer_question", answer_question)
     workflow.add_node("summarize_problem", summarize_problem)
+    workflow.add_node("chat_assist", chat_assist)  # 채팅 기반 간접 도움
     workflow.add_node("respond", respond_node)
 
     # ===== 엣지 정의 =====
@@ -102,6 +105,7 @@ def create_solving_graph() -> StateGraph:
             "show_solution": "show_solution",
             "answer_question": "answer_question",
             "summarize_problem": "summarize_problem",
+            "chat_assist": "chat_assist",  # 채팅 기반 간접 도움
             "respond": "respond",
         }
     )
@@ -114,6 +118,7 @@ def create_solving_graph() -> StateGraph:
     workflow.add_edge("show_solution", "respond")
     workflow.add_edge("answer_question", "respond")
     workflow.add_edge("summarize_problem", "respond")
+    workflow.add_edge("chat_assist", "respond")  # 채팅 기반 간접 도움
 
     # respond에서 종료
     workflow.add_edge("respond", END)
@@ -151,6 +156,7 @@ class ProblemSolvingGraph:
         user_progress: dict = None,
         conversation_history: list = None,
         previous_hints: list = None,
+        solving_intent: str = None,
     ) -> Dict[str, Any]:
         """
         그래프를 실행합니다.
@@ -161,6 +167,7 @@ class ProblemSolvingGraph:
             user_progress: 사용자 진행 상황
             conversation_history: 대화 히스토리
             previous_hints: 이전 힌트들
+            solving_intent: orchestrator에서 분류한 의도 (LLM 기반)
 
         Returns:
             그래프 실행 결과
@@ -172,6 +179,7 @@ class ProblemSolvingGraph:
             "conversation_history": conversation_history or [],
             "previous_hints": previous_hints or [],
             "hint_level": len(previous_hints) if previous_hints else 0,
+            "pre_classified_intent": solving_intent,  # orchestrator에서 분류한 의도
         }
 
         result = await self.graph.ainvoke(initial_state)

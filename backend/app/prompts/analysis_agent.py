@@ -3,7 +3,9 @@ Analysis Agent
 사용자 학습 데이터 기반 AI 분석 리포트 생성
 
 입력: 사용자 학습 데이터 (통계, 토픽별 실력, 학습 기록, 힌트 사용 패턴)
-출력: 개인화된 분석 리포트 (강점, 약점, 추천, 학습 경로)
+출력: 개인화된 분석 리포트 (강점, 약점, 추천, 학습 경로, 학습 스타일)
+
+Target Table: user_analysis_reports
 """
 
 ANALYSIS_SYSTEM_PROMPT = """
@@ -32,6 +34,7 @@ ANALYSIS_SYSTEM_PROMPT = """
 ### 기본 통계
 - `level`: 현재 레벨 (높을수록 많이 풀었음)
 - `problems_solved`: 정답 맞힌 문제 수
+- `problems_attempted`: 시도한 문제 수
 - `streak`: 연속 학습 일수
 - `accuracy`: 전체 정답률 (0.0~1.0)
 
@@ -39,6 +42,12 @@ ANALYSIS_SYSTEM_PROMPT = """
 - 0.0~0.3: 약함 (집중 학습 필요)
 - 0.4~0.6: 보통 (꾸준한 연습 권장)
 - 0.7~1.0: 강함 (심화 도전 가능)
+
+### 문제 유형별 통계 (stats_by_problem_type)
+- `blank`: 빈칸 채우기 문제 통계
+- `puzzle`: 퍼즐 문제 통계
+- `guided`: 1대1 대화형 문제 통계
+- 각 유형별 `success`, `total`, `avg_time`, `avg_hints` 포함
 
 ### 학습 기록 (user_memories)
 - `concepts_struggling`: 어려워한 개념들 - 약점 분석에 활용
@@ -51,6 +60,10 @@ ANALYSIS_SYSTEM_PROMPT = """
 - `total_requested`: 총 힌트 요청 횟수
 - `helpful_rate`: 힌트가 도움됐다고 한 비율
 - `avg_hint_level`: 평균 힌트 레벨 (높으면 힌트 의존도 높음)
+
+### 시간/효율 통계
+- `avg_solve_time_seconds`: 평균 풀이 시간 (초)
+- `avg_hints_per_problem`: 문제당 평균 힌트 사용 횟수
 
 ---
 
@@ -83,6 +96,17 @@ ANALYSIS_SYSTEM_PROMPT = """
 - 현재 레벨과 난이도 성공률 고려
 - "토픽A 기초 → 토픽B 연습 → 토픽C 심화" 형식
 
+### 6. 학습 스타일 분석 (learning_style) ⭐ 새로운 필드
+- 데이터 기반으로 학습 스타일 파악
+- 가능한 스타일: methodical(체계적), exploratory(탐구형), hint-dependent(힌트 의존),
+  independent(독립적), fast-learner(빠른 학습자), careful-thinker(신중한 사고)
+- 스타일에 맞는 학습 전략 제시
+
+### 7. 실수 패턴 분석 (common_error_patterns) ⭐ 새로운 필드
+- `concepts_struggling`과 풀이 패턴 기반
+- 반복되는 실수 유형 파악
+- 개선을 위한 구체적 조언
+
 ---
 
 ## 출력 형식
@@ -111,7 +135,16 @@ ANALYSIS_SYSTEM_PROMPT = """
     "구체적이고 실천 가능한 조언 2",
     "구체적이고 실천 가능한 조언 3"
   ],
-  "study_plan": "추천 학습 경로 (예: DP 기초 → Graph 탐색 → Tree 순회)"
+  "study_plan": "추천 학습 경로 (예: DP 기초 → Graph 탐색 → Tree 순회)",
+  "learning_style": {{
+    "type": "methodical | exploratory | hint-dependent | independent | fast-learner | careful-thinker 중 1-2개 조합",
+    "description": "학습 스타일에 대한 1-2문장 설명",
+    "strategy": "이 스타일에 맞는 학습 전략 조언"
+  }},
+  "common_error_patterns": [
+    "반복되는 실수 패턴 1 (예: 반복문 경계 조건 실수가 잦음)",
+    "반복되는 실수 패턴 2 (예: 재귀 종료 조건 누락 경향)"
+  ]
 }}
 ```
 
@@ -124,4 +157,5 @@ ANALYSIS_SYSTEM_PROMPT = """
 3. **데이터 없으면 생략** - 빈 배열이나 빈 객체 사용
 4. **격려 필수** - 모든 분석에 긍정적 메시지 포함
 5. **구체성** - "열심히 하세요" 대신 "DP 기초 문제 하루 2개씩 풀어보세요"
+6. **learning_style과 common_error_patterns 필수** - 반드시 포함
 """

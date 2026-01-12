@@ -484,6 +484,65 @@ async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
         }
 
 
+async def chat_assist(state: SolvingState) -> Dict[str, Any]:
+    """
+    채팅 기반 간접 도움을 제공합니다.
+
+    기존 힌트 버튼과 별개로, 채팅으로 질문하면:
+    - 개념 설명 (정답 노출 없이)
+    - 방향 확인 ("이렇게 하면 맞아?")
+    - 간접 힌트 ("어떻게 시작해야 해?")
+
+    DB에서 문제 정보를 조회하여 LLM이 참고하되,
+    정답은 절대 직접 출력하지 않습니다.
+    """
+    from ...tools.solving_assist_tool import get_solving_assist_tool, AssistType
+
+    message = state.get("message", "")
+    problem_context = state.get("problem_context", {})
+    user_progress = state.get("user_progress", {})
+    conversation_history = state.get("conversation_history", [])
+    intent_result = state.get("intent_result", {})
+
+    # 도움 유형 결정
+    assist_tool = get_solving_assist_tool()
+
+    # intent_result에서 sub_intent가 있으면 사용, 아니면 메시지에서 분류
+    sub_intent = intent_result.get("sub_intent", "")
+    if sub_intent == "concept_explain":
+        assist_type = AssistType.CONCEPT_EXPLAIN
+    elif sub_intent == "approach_hint":
+        assist_type = AssistType.APPROACH_HINT
+    elif sub_intent == "validate_direction":
+        assist_type = AssistType.VALIDATE_DIRECTION
+    else:
+        # 메시지에서 자동 분류
+        assist_type = assist_tool.classify_assist_type(message)
+
+    # Tool 호출
+    result = await assist_tool.assist(
+        message=message,
+        problem_context=problem_context,
+        assist_type=assist_type,
+        user_progress=user_progress,
+        conversation_history=conversation_history,
+    )
+
+    if result.success:
+        response_message = result.response
+    else:
+        response_message = "도움을 드리는 중 문제가 발생했어요. 다시 질문해주세요!"
+
+    return {
+        "response_message": response_message,
+        "action_trigger": "chat_assist_provided",
+        "action_data": {
+            "assist_type": result.assist_type.value,
+        },
+        "next_node": "respond",
+    }
+
+
 async def answer_question(state: SolvingState) -> Dict[str, Any]:
     """
     일반 질문에 답변합니다.
@@ -504,7 +563,7 @@ async def answer_question(state: SolvingState) -> Dict[str, Any]:
 """
 
     messages = [{"role": "system", "content": system_prompt}]
-    for msg in conversation_history[-4:]:
+    for msg in conversation_history[-6:]:  # 꼬리 질문 맥락 유지
         messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
     messages.append({"role": "user", "content": message})
 

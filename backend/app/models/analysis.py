@@ -48,3 +48,49 @@ class AnalysisReportResponse(BaseModel):
     """분석 리포트 응답."""
     hasReport: bool
     report: Optional[AnalysisReport] = None
+
+
+# ============================================================
+# 스킬 스냅샷 (성장 추적용)
+# ============================================================
+
+class SkillSnapshot(BaseModel):
+    """10문제마다 저장되는 스킬 스냅샷."""
+    id: Optional[str] = None
+    snapshotAt: int  # 10, 20, 30... (몇 번째 문제에서 스냅샷)
+    problemsSolved: int = 0
+    problemsAttempted: int = 0
+    skillByTopic: Dict[str, float] = {}
+    weakTopics: List[str] = []
+    strongTopics: List[str] = []
+    learningStyle: Optional[Dict] = None
+    avgSolveTimeSeconds: Optional[int] = None
+    avgHintsPerProblem: Optional[float] = None
+    currentStreak: int = 0
+    longestStreak: int = 0
+    createdAt: Optional[str] = None
+
+
+class SkillSnapshotsResponse(BaseModel):
+    """스킬 스냅샷 목록 응답."""
+    snapshots: List[SkillSnapshot] = []
+    totalCount: int = 0
+
+
+class SkillProfileResponse(BaseModel):
+    """현재 스킬 프로필 응답 (user_analysis_reports 기반)."""
+    hasProfile: bool
+    skillByTopic: Dict[str, float] = {}
+    weakTopics: List[str] = []
+    strongTopics: List[str] = []
+    totalProblemsSolved: int = 0
+    totalProblemsAttempted: int = 0
+    avgSolveTimeSeconds: Optional[int] = None
+    avgHintsPerProblem: Optional[float] = None
+    currentStreak: int = 0
+    longestStreak: int = 0
+    preferredProblemType: Optional[str] = None
+    preferredLanguage: Optional[str] = None
+    learningStyle: Optional[Dict] = None
+    commonErrorPatterns: Optional[List[str]] = None
+    updatedAt: Optional[str] = None

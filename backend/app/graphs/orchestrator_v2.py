@@ -221,6 +221,7 @@ class ChatOrchestratorV2:
                     user_progress=user_context.get("user_progress", {}),
                     conversation_history=conversation_history,
                     previous_hints=session_state.get("previous_hints", []),
+                    solving_intent=intent_result.action.value,  # LLM이 분류한 의도 전달
                 )
 
         # ============================================================
@@ -251,6 +252,22 @@ class ChatOrchestratorV2:
                 user_context=user_context,
                 search_results=search_results,
                 selection_index=intent_result.selection_index,
+            )
+
+        # ============================================================
+        # 4-1. 문제 질문 → Discovery Graph (inquire_problem)
+        # 검색 결과 중 특정 문제에 대한 질문 처리
+        # ============================================================
+        if intent_result.action == ActionType.INQUIRE_PROBLEM and search_results:
+            return await self._process_discovery(
+                message=message,
+                intent="inquire_problem",
+                collected_info=collected_info,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                search_results=search_results,
+                inquiry_target=intent_result.inquiry_target,
+                inquiry_question=message,
             )
 
         # ============================================================
@@ -449,6 +466,8 @@ class ChatOrchestratorV2:
         user_context: dict,
         search_results: list,
         selection_index: int = None,
+        inquiry_target: str = None,
+        inquiry_question: str = None,
     ) -> Dict[str, Any]:
         """Discovery 그래프 실행"""
         result = await self.discovery_graph.invoke(
@@ -459,6 +478,8 @@ class ChatOrchestratorV2:
             user_context=user_context,
             search_results=search_results,
             selection_index=selection_index,
+            inquiry_target=inquiry_target,
+            inquiry_question=inquiry_question,
         )
 
         return {
@@ -482,6 +503,7 @@ class ChatOrchestratorV2:
         user_progress: dict,
         conversation_history: list,
         previous_hints: list,
+        solving_intent: str = None,
     ) -> Dict[str, Any]:
         """Solving 그래프 실행"""
         result = await self.solving_graph.invoke(
@@ -490,6 +512,7 @@ class ChatOrchestratorV2:
             user_progress=user_progress,
             conversation_history=conversation_history,
             previous_hints=previous_hints,
+            solving_intent=solving_intent,  # orchestrator에서 분류한 의도
         )
 
         return {

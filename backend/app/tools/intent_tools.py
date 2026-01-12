@@ -38,12 +38,21 @@ class ActionType(str, Enum):
     GENERATE_NEW = "generate_new"
     CHANGE_FILTER = "change_filter"
     SELECT_PROBLEM_TYPE = "select_problem_type"
+    INQUIRE_PROBLEM = "inquire_problem"  # 검색 결과 문제에 대한 질문
 
-    # Solving
-    REQUEST_HINT = "request_hint"
+    # Solving (세부 의도)
+    REQUEST_HINT = "request_hint"  # 힌트 버튼용 (레벨 증가)
     SUBMIT_CODE = "submit_code"
     ASK_QUESTION = "ask_question"
     GIVE_UP = "give_up"
+    # 채팅 기반 도움 (힌트 버튼과 별개)
+    CHAT_ASSIST = "chat_assist"  # 일반 채팅 도움
+    CONCEPT_EXPLAIN = "concept_explain"  # 개념 설명
+    APPROACH_HINT = "approach_hint"  # 접근법 힌트
+    VALIDATE_DIRECTION = "validate_direction"  # 방향 확인
+    CODE_REVIEW = "code_review"  # 코드 리뷰
+    FEEDBACK_REQUEST = "feedback_request"  # 피드백 요청
+    SUMMARIZE_PROBLEM = "summarize_problem"  # 문제 요약
 
     # Confirmation
     AFFIRM = "affirm"
@@ -70,6 +79,10 @@ class IntentResult:
     # 선택 관련
     selection_index: Optional[int] = None
     selection_type: Optional[str] = None
+
+    # 문제 질문 관련 (inquire_problem)
+    inquiry_target: Optional[str] = None  # 질문 대상 (인덱스 또는 문제명)
+    inquiry_question: Optional[str] = None  # 원본 질문
 
     # 추가 정보
     requires_context: Optional[str] = None
@@ -110,10 +123,20 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - show_more: 더 보기 ("다른 거", "더 보여줘", "더 찾아")
 - generate_new: 새 문제 생성 ("새로운 문제", "비슷한 문제 생성")
 - select_problem_type: 문제 유형 선택 ("빈칸", "퍼즐", "대화형")
+- inquire_problem: 검색 결과 문제에 대한 질문 ("taco_749 요약해줘", "두 번째 문제 뭐야?", "이거 뭐에 도움되냐", "3번 어떤 내용이야?")
 
 **solving:**
-- request_hint: 힌트 요청 ("힌트", "모르겠어", "어려워", "도와줘")
-- ask_question: 질문, 요약 요청 ("이게 뭐야?", "왜 틀렸어?", "요약해줘", "문제 설명")
+- request_hint: 명시적 힌트 버튼 요청 ("힌트 줘", "hint")
+- submit_code: 코드 제출/실행 ("제출", "실행해", "채점")
+- give_up: 포기/정답 보기 ("포기", "정답 보여줘", "답이 뭐야")
+- summarize_problem: 문제 요약 요청 ("요약해줘", "문제 설명해줘")
+- chat_assist: 채팅 도움 요청 ("모르겠어", "어려워", "도와줘", "알려줘")
+- concept_explain: 개념 설명 요청 ("이게 뭐야?", "왜 이렇게?", "원리가 뭐야")
+- approach_hint: 접근법 질문 ("어떻게 시작해?", "어떻게 접근?", "방법이 뭐야")
+- validate_direction: 방향 확인 ("이렇게 하면 맞아?", "이 방향이 맞나?", "틀렸나?")
+- code_review: 코드 리뷰 요청 ("코드 봐줘", "리뷰해줘", "이 코드 어때")
+- feedback_request: 피드백 요청 ("피드백 줘", "어떻게 개선해?")
+- ask_question: 일반 질문 (위에 해당 안 되는 질문)
 
 **confirmation:**
 - affirm: 긍정 ("네", "응", "좋아", "그걸로", "ㅇㅇ", "굳")
@@ -137,6 +160,12 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - "기초는 싫다" → topic=null (기초 거부), action=negate
 - 거부하는 값은 extracted_values에 넣지 말 것
 
+### 5. 문제 질문 (inquire_problem)
+- "taco_749 요약해줘" → inquiry_target="taco_749"
+- "두 번째 문제 뭐야?" → inquiry_target="2"
+- "3번 어떤 내용이야?" → inquiry_target="3"
+- 질문의 의도: 요약, 도움말, 내용 설명, 난이도 설명 등
+
 ## 응답 형식 (JSON)
 {{
   "category": "info_collection|discovery|solving|confirmation|general",
@@ -144,6 +173,8 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
   "confidence": 0.0-1.0,
   "extracted_values": {{"topic": null, "difficulty": null, "language": null, "learning_goal": null, "experience_level": null, "problem_type": null}},
   "selection_index": null,
+  "inquiry_target": null,
+  "inquiry_question": null,
   "suggested_route": "collection|discovery|solving|respond"
 }}
 """

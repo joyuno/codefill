@@ -559,13 +559,29 @@ async def submit_blank(
         # Record attempt_details for submission
         if attempt_result.data and len(attempt_result.data) > 0:
             attempt_id = attempt_result.data[0]["id"]
-            record_attempt_detail(
-                db=db,
-                attempt_id=str(attempt_id),
-                action_type=AttemptDetailAction.BLANK_SUBMIT.value,
-                step_number=1,
-                blank_is_correct=is_correct,
-            )
+
+            # 🚀 빈칸별 상세 기록 (첫 번째 빈칸 + 나머지)
+            import json
+            answers_list = list(submission.answers.items())
+
+            for idx, (blank_id, user_answer) in enumerate(answers_list):
+                # 정답 찾기
+                correct_answer = None
+                for blank in correct_blanks:
+                    if blank.get("id") == blank_id:
+                        correct_answer = blank.get("answer")
+                        break
+
+                record_attempt_detail(
+                    db=db,
+                    attempt_id=str(attempt_id),
+                    action_type=AttemptDetailAction.BLANK_SUBMIT.value,
+                    step_number=idx + 1,
+                    blank_index=idx,
+                    blank_user_answer=user_answer,
+                    blank_correct_answer=correct_answer,
+                    blank_is_correct=blank_results.get(blank_id, False),
+                )
 
         # Update user stats and check badges if correct
         new_badges = None
@@ -1169,7 +1185,7 @@ async def record_solve(
                 )
 
         # ============================================================
-        # user_skill_profiles 업데이트 (ELO-like 스킬 추적)
+        # user_analysis_reports 업데이트 (ELO-like 스킬 추적)
         # ============================================================
         if submission.topics and len(submission.topics) > 0:
             try:
@@ -1185,17 +1201,63 @@ async def record_solve(
                     hints_used=submission.hints_used,
                 )
                 print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}, type={submission.problem_type}")
+
+                # ============================================================
+                # 🚀 매 10문제마다 전체 스킬 프로필 재계산 (LLM 분석 포함)
+                # ============================================================
+                try:
+                    # user_stats에서 현재 problems_solved 확인
+                    stats_check = db.table("user_stats").select("problems_solved").eq("user_id", str(user_id)).single().execute()
+                    problems_solved = stats_check.data.get("problems_solved", 0) if stats_check.data else 0
+
+                    # 10의 배수면 백그라운드로 전체 재계산 실행
+                    if problems_solved > 0 and problems_solved % 10 == 0:
+                        import asyncio
+                        print(f"[RecordSolve] 🎯 Triggering full skill profile recalculation (solved={problems_solved})")
+
+                        async def run_recalculation():
+                            try:
+                                result = await feedback_service.recalculate_skill_profile_from_history(
+                                    user_id=str(user_id),
+                                    force_llm_analysis=(problems_solved >= 10),
+                                )
+                                print(f"[RecordSolve] ✅ Skill profile recalculated: {result.get('weak_topics', [])[:3]}")
+                            except Exception as e:
+                                print(f"[RecordSolve] ❌ Recalculation error: {e}")
+
+                        # 백그라운드 태스크로 실행 (응답 지연 방지)
+                        asyncio.create_task(run_recalculation())
+
+                except Exception as recalc_check_err:
+                    print(f"[RecordSolve] Recalculation check error (non-blocking): {recalc_check_err}")
+
             except Exception as skill_err:
                 print(f"[RecordSolve] Skill profile update error (non-blocking): {skill_err}")
 
         # ============================================================
-        # user_memories 세션 메모리 생성
+        # user_memories 세션 메모리 생성 (🚀 LLM 기반 인사이트)
         # ============================================================
         try:
             from ..services.memory_service import get_memory_service
+            from ..services.chat_session import get_chat_session_service
             import uuid as uuid_module
+
             memory_service = get_memory_service()
             session_id = submission.attempt_id or str(uuid_module.uuid4())
+
+            # 🚀 대화 기록 가져오기 (chat_session_id가 있는 경우)
+            chat_messages = None
+            if submission.chat_session_id:
+                try:
+                    chat_service = get_chat_session_service(db)
+                    chat_messages = await chat_service.get_history(
+                        session_id=submission.chat_session_id,
+                        limit=30  # 최근 30개 메시지
+                    )
+                    print(f"[RecordSolve] Fetched {len(chat_messages)} chat messages for insights")
+                except Exception as chat_err:
+                    print(f"[RecordSolve] Chat history fetch error (non-blocking): {chat_err}")
+
             await memory_service.create_problem_session_memory(
                 user_id=str(user_id),
                 session_id=session_id,
@@ -1206,9 +1268,11 @@ async def record_solve(
                 topics=submission.topics or [],
                 was_successful=submission.is_correct,
                 hints_used=submission.hints_used or 0,
-                attempt_id=str(attempt_id_used) if attempt_id_used else None,  # attempt 참조 추가
+                attempt_id=str(attempt_id_used) if attempt_id_used else None,
+                chat_messages=chat_messages,  # 🚀 대화 기록 전달
+                time_spent=submission.time_spent or 0,
             )
-            print(f"[RecordSolve] Created session memory for user {str(user_id)[:8]}...")
+            print(f"[RecordSolve] Created session memory with LLM insights for user {str(user_id)[:8]}...")
         except Exception as mem_err:
             print(f"[RecordSolve] Memory creation error (non-blocking): {mem_err}")
 
@@ -1982,6 +2046,19 @@ async def session_end(
             # 🧠 skip 시에도 user_memories 저장 (어려워하는 주제 추적)
             if session:
                 try:
+                    # 🚀 대화 기록 가져오기
+                    chat_messages = None
+                    if request.chat_session_id:
+                        try:
+                            from ..services.chat_session import get_chat_session_service
+                            chat_service = get_chat_session_service(db)
+                            chat_messages = await chat_service.get_history(
+                                session_id=request.chat_session_id,
+                                limit=30
+                            )
+                        except Exception as chat_err:
+                            print(f"[SessionEnd] Chat history fetch error: {chat_err}")
+
                     await memory_service.create_problem_session_memory(
                         user_id=str(user_id),
                         session_id=request.session_id,
@@ -1994,6 +2071,7 @@ async def session_end(
                         hints_used=session.hints_used,
                         time_spent=result.get("time_spent", 0),
                         attempt_count=session.attempt_count,
+                        chat_messages=chat_messages,  # 🚀 대화 기록 전달
                     )
                     print(f"[SessionEnd] Created memory for skipped session: {request.session_id}")
                 except Exception as mem_err:
@@ -2007,6 +2085,19 @@ async def session_end(
             # 🧠 abandon 시에도 user_memories 저장 (어려워하는 주제 추적)
             if session:
                 try:
+                    # 🚀 대화 기록 가져오기
+                    chat_messages = None
+                    if request.chat_session_id:
+                        try:
+                            from ..services.chat_session import get_chat_session_service
+                            chat_service = get_chat_session_service(db)
+                            chat_messages = await chat_service.get_history(
+                                session_id=request.chat_session_id,
+                                limit=30
+                            )
+                        except Exception as chat_err:
+                            print(f"[SessionEnd] Chat history fetch error: {chat_err}")
+
                     await memory_service.create_problem_session_memory(
                         user_id=str(user_id),
                         session_id=request.session_id,
@@ -2019,6 +2110,7 @@ async def session_end(
                         hints_used=session.hints_used,
                         time_spent=result.get("time_spent", 0),
                         attempt_count=session.attempt_count,
+                        chat_messages=chat_messages,  # 🚀 대화 기록 전달
                     )
                     print(f"[SessionEnd] Created memory for abandoned session: {request.session_id}")
                 except Exception as mem_err:
@@ -2189,3 +2281,117 @@ async def debug_resolve_problem(
         import traceback
         traceback.print_exc()
         return {"error": str(e), "input_problem_id": problem_id}
+
+
+# ============================================================
+# 문제 조회수/좋아요 API
+# ============================================================
+
+class ProblemViewRequest(BaseModel):
+    """조회수 증가 요청"""
+    base_problem_id: str
+
+
+class ProblemLikeRequest(BaseModel):
+    """좋아요 토글 요청"""
+    base_problem_id: str
+
+
+class ProblemLikeResponse(BaseModel):
+    """좋아요 토글 응답"""
+    success: bool
+    is_liked: bool
+    like_count: int
+
+
+class ProblemStatsResponse(BaseModel):
+    """문제 통계 응답"""
+    base_problem_id: str
+    view_count: int
+    like_count: int
+    is_liked: bool  # 현재 사용자의 좋아요 여부
+
+
+@router.post("/problems/view")
+async def increment_view_count(
+    request: ProblemViewRequest,
+    db=Depends(get_db),
+):
+    """
+    문제 조회수 증가 (문제 유형 생성 시 호출)
+    """
+    try:
+        db.rpc("increment_problem_view", {"p_base_problem_id": request.base_problem_id}).execute()
+        return {"success": True}
+    except Exception as e:
+        print(f"[IncrementView] Error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/problems/like", response_model=ProblemLikeResponse)
+async def toggle_problem_like(
+    request: ProblemLikeRequest,
+    db=Depends(get_db),
+    user_id: UUID = Depends(get_user_id_from_token),
+):
+    """
+    문제 좋아요 토글 (로그인 필요)
+    """
+    try:
+        result = db.rpc("toggle_problem_like", {
+            "p_user_id": str(user_id),
+            "p_base_problem_id": request.base_problem_id
+        }).execute()
+        
+        data = result.data
+        return ProblemLikeResponse(
+            success=True,
+            is_liked=data.get("is_liked", False),
+            like_count=data.get("like_count", 0)
+        )
+    except Exception as e:
+        print(f"[ToggleLike] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/problems/{base_problem_id}/stats", response_model=ProblemStatsResponse)
+async def get_problem_stats(
+    base_problem_id: str,
+    db=Depends(get_db),
+    user_id: UUID = Depends(get_user_id_from_token_optional),
+):
+    """
+    문제 통계 조회 (조회수, 좋아요 수, 현재 사용자 좋아요 여부)
+    """
+    try:
+        # 문제 통계 조회
+        problem = db.table("base_problems")\
+            .select("view_count, like_count")\
+            .eq("id", base_problem_id)\
+            .single()\
+            .execute()
+        
+        if not problem.data:
+            raise HTTPException(status_code=404, detail="Problem not found")
+        
+        # 현재 사용자 좋아요 여부
+        is_liked = False
+        if user_id:
+            like_check = db.table("problem_likes")\
+                .select("id")\
+                .eq("user_id", str(user_id))\
+                .eq("base_problem_id", base_problem_id)\
+                .execute()
+            is_liked = bool(like_check.data)
+        
+        return ProblemStatsResponse(
+            base_problem_id=base_problem_id,
+            view_count=problem.data.get("view_count", 0),
+            like_count=problem.data.get("like_count", 0),
+            is_liked=is_liked
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[GetStats] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

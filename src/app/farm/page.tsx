@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useFarm, getSeedCount } from '@/hooks/useFarm';
 import { useToast } from '@/hooks/useToast';
+import { updateFarmCache, markFarmVisited } from '@/components/dashboard/SidebarProfile';
 import {
   Loader2,
   AlertCircle,
@@ -108,6 +109,21 @@ export default function FarmPage() {
       router.push('/');
     }
   }, [isLoading, farm, router]);
+
+  // 농장 데이터 캐시 업데이트 (farm 변경 시)
+  useEffect(() => {
+    if (farm) {
+      updateFarmCache(farm);
+    }
+  }, [farm]);
+
+  // 페이지 떠날 때 방문 플래그 설정
+  useEffect(() => {
+    return () => {
+      // 다음에 SidebarProfile이 로드될 때 백그라운드 갱신하도록 플래그 설정
+      markFarmVisited();
+    };
+  }, []);
 
   // 파생 상태 - 레거시 호환성
   const placementMode = hotbarMode === 'placement';

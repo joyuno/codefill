@@ -1092,6 +1092,14 @@ async def generate_blank_problem(
         base_problem_id = problem_save_service.get_base_problem_id(original_id)
         print(f"[Blank Gen] base_problem_id from DB: {base_problem_id}")
 
+        # 🚀 조회수 증가 (문제 유형 생성 시)
+        if base_problem_id:
+            try:
+                db.rpc("increment_problem_view", {"p_base_problem_id": base_problem_id}).execute()
+                print(f"[Blank Gen] Incremented view count for: {base_problem_id}")
+            except Exception as view_err:
+                print(f"[Blank Gen] View count increment error (non-blocking): {view_err}")
+
         if base_problem_id:
             # 1. 유저가 이미 가지고 있는지 확인
             if creator_id:
@@ -1283,6 +1291,14 @@ async def generate_puzzle_problem(
         problem_save_service = get_problem_save_service()
         base_problem_id = problem_save_service.get_base_problem_id(original_id)
         print(f"[Puzzle Gen] base_problem_id from DB: {base_problem_id}")
+
+        # 🚀 조회수 증가 (문제 유형 생성 시)
+        if base_problem_id:
+            try:
+                db.rpc("increment_problem_view", {"p_base_problem_id": base_problem_id}).execute()
+                print(f"[Puzzle Gen] Incremented view count for: {base_problem_id}")
+            except Exception as view_err:
+                print(f"[Puzzle Gen] View count increment error (non-blocking): {view_err}")
 
         if base_problem_id:
             if creator_id:
@@ -1522,6 +1538,14 @@ async def generate_guided_problem(
         problem_save_service = get_problem_save_service()
         base_problem_id = problem_save_service.get_base_problem_id(original_id)
         print(f"[Guided Gen] base_problem_id from DB: {base_problem_id}")
+
+        # 🚀 조회수 증가 (문제 유형 생성 시)
+        if base_problem_id:
+            try:
+                db.rpc("increment_problem_view", {"p_base_problem_id": base_problem_id}).execute()
+                print(f"[Guided Gen] Incremented view count for: {base_problem_id}")
+            except Exception as view_err:
+                print(f"[Guided Gen] View count increment error (non-blocking): {view_err}")
 
         if base_problem_id:
             if creator_id:

@@ -149,6 +149,7 @@ export default function ProblemsPage() {
                     <th className="w-24 py-3 px-2">난이도</th>
                     <th className="w-20 py-3 px-2">출처</th>
                     <th className="py-3 px-2 hidden lg:table-cell">태그</th>
+                    <th className="w-24 py-3 px-2 hidden md:table-cell">통계</th>
                     <th className="w-24 py-3 px-2 pr-4"></th>
                   </tr>
                 </thead>

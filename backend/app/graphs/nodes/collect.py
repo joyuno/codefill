@@ -245,6 +245,18 @@ def _get_fallback_topic_suggestions(
     return message, suggested_actions[:4]
 
 
+def _get_lower_difficulty(current: str) -> str:
+    """한 단계 낮은 난이도 반환"""
+    difficulty_order = ["easy", "medium", "medium_hard", "hard", "very_hard"]
+    try:
+        idx = difficulty_order.index(current)
+        if idx > 0:
+            return difficulty_order[idx - 1]
+    except ValueError:
+        pass
+    return current
+
+
 async def _generate_dynamic_difficulty_suggestions(
     user_context: dict,
     personalization: dict,
@@ -353,49 +365,83 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
     intent = intent_result.get("intent", "")
 
     # ============================================================
-    # 히스토리 기반 개인화 추천 (new_problem intent)
+    # 히스토리 기반 개인화 추천 (new_problem, random_recommend intent)
+    # 🔧 수정: 바로 검색하지 않고 확인 단계를 거침
     # ============================================================
+    rejected_topics = existing_info.get("rejected_topics", [])
+
     if intent in ["new_problem", "random_recommend"] and not existing_info.get("topics"):
-        personalized = _generate_personalized_recommendation(user_context)
+        personalization = user_context.get("personalization", {})
+        personalized = _generate_personalized_recommendation(user_context, rejected_topics)
 
         if personalized.get("has_recommendation"):
-            # 개인화 추천이 있으면 자동으로 정보 설정
+            # 개인화 추천이 있으면 제안 (바로 적용하지 않고 확인)
             rec_topics = personalized.get("topics", [])
             rec_difficulty = personalized.get("difficulty")
             rec_message = personalized.get("message", "")
             rec_type = personalized.get("recommendation_type", "")
 
-            # 언어가 있으면 바로 검색, 없으면 언어만 물어보기
-            language = existing_info.get("language")
+            # 🔧 핵심: 추천을 제안하지만 바로 적용하지 않음
+            # topics와 difficulty를 설정하되, 사용자 확인을 위해 suggested_actions 제공
+            suggested_actions = [
+                {
+                    "label": f"{rec_topics[0]} ({rec_difficulty})" if rec_topics else "추천 문제",
+                    "value": "accept_recommendation",
+                    "description": "추천대로 할게요"
+                },
+                {
+                    "label": "다른 주제",
+                    "value": "other_topic",
+                    "description": "다른 걸로 할래요"
+                },
+            ]
 
+            # 추천 정보를 임시로 저장 (확인 후 적용)
             merged_info = {
-                "topics": rec_topics,
+                "topics": rec_topics,  # 임시 저장
                 "difficulty": rec_difficulty,
-                "language": language,
+                "language": existing_info.get("language"),
                 "specific_needs": None,
                 "time_available": None,
                 "selected_problem": None,
                 "selected_problem_index": None,
+                "rejected_topics": rejected_topics,
+                "recommendation_type": rec_type,  # 🚀 CF 트래킹용
             }
 
-            if language:
-                # 언어까지 있으면 추천 메시지 + 바로 검색
-                return {
-                    "collected_info": merged_info,
-                    "is_info_complete": True,
-                    "response_message": rec_message,
-                    "action_trigger": "search_problems",
-                    "next_node": "search_problems",
-                }
-            else:
-                # 언어 선택 필요
-                return {
-                    "collected_info": merged_info,
-                    "is_info_complete": False,
-                    "response_message": f"{rec_message}\n\n어떤 언어로 풀어볼까요? (Python, Java, C++)",
-                    "action_trigger": None,
-                    "next_node": "respond",
-                }
+            # 🔧 확인 메시지와 함께 선택지 제공 (바로 검색하지 않음)
+            confirmation_message = f"{rec_message}"
+
+            return {
+                "collected_info": merged_info,
+                "is_info_complete": False,  # 🔧 확인 대기
+                "response_message": confirmation_message,
+                "suggested_actions": suggested_actions,
+                "action_trigger": None,
+                "next_node": "respond",
+            }
+        else:
+            # 개인화 추천이 없으면 동적 주제 선택지 생성
+            message, suggested_actions = await _generate_dynamic_topic_suggestions(
+                user_context=user_context,
+                personalization=personalization,
+            )
+            # rejected_topics 제외
+            filtered_actions = [
+                a for a in suggested_actions if a.get("value") not in rejected_topics
+            ]
+
+            return {
+                "collected_info": {
+                    **existing_info,
+                    "rejected_topics": rejected_topics,
+                },
+                "is_info_complete": False,
+                "response_message": message,
+                "suggested_actions": filtered_actions[:4],
+                "action_trigger": None,
+                "next_node": "respond",
+            }
 
     # 현재 상태 정보 구성
     context_info = _build_context_info(state)
@@ -480,6 +526,7 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         "time_available": _merge_field(new_info.get("time_available"), existing_info.get("time_available")),
         "selected_problem": _merge_field(new_info.get("selected_problem"), existing_info.get("selected_problem")),
         "selected_problem_index": _merge_field(new_info.get("selected_problem_index"), existing_info.get("selected_problem_index")),
+        "rejected_topics": existing_info.get("rejected_topics", []),  # 거부된 주제 유지
     }
 
     # 🚀 협업 필터링: 새로운 선택 로깅 (비차단)
@@ -535,10 +582,11 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
     else:
         next_node = "respond"  # 추가 질문 응답
 
-    # random_recommend 의도도 단계별로 정보 수집
+    # random_recommend 또는 new_problem 의도도 단계별로 정보 수집
     suggested_actions = None  # 🚀 동적 선택지
+    rejected_topics_list = merged_info.get("rejected_topics", [])
 
-    if intent == "random_recommend":
+    if intent in ["random_recommend", "new_problem"]:
         user_context = state.get("user_context", {})
         personalization = user_context.get("personalization", {})
 
@@ -549,6 +597,10 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
                 user_context=user_context,
                 personalization=personalization,
             )
+            # 🔧 rejected_topics 필터링
+            suggested_actions = [
+                a for a in suggested_actions if a.get("value") not in rejected_topics_list
+            ]
             next_node = "respond"
 
         # 2. 난이도가 없으면 🚀 동적 난이도 선택지
@@ -614,7 +666,7 @@ async def free_chat(state: ChatState) -> Dict[str, Any]:
 """.format(intent=intent_result.get("intent", "unknown"))
 
     messages = [{"role": "system", "content": system_prompt}]
-    for msg in conversation_history[-4:]:
+    for msg in conversation_history[-6:]:  # 꼬리 질문 맥락 유지
         messages.append({
             "role": msg.get("role", "user"),
             "content": msg.get("content", "")
@@ -681,9 +733,17 @@ def _build_context_info(state: ChatState) -> str:
     return "\n".join(parts) if parts else "없음"
 
 
-def _generate_personalized_recommendation(user_context: dict) -> dict:
+def _generate_personalized_recommendation(user_context: dict, rejected_topics: list = None) -> dict:
     """
     사용자 히스토리 기반 개인화 추천 생성
+
+    🚀 협업 필터링 통합:
+    - cf_recommendations 우선 사용
+    - source별 맞춤 메시지 (similar_user, trending, popular)
+
+    Args:
+        user_context: 사용자 컨텍스트
+        rejected_topics: 사용자가 거부한 주제들 (제외)
 
     Returns:
         {
@@ -691,11 +751,76 @@ def _generate_personalized_recommendation(user_context: dict) -> dict:
             "topics": list[str],
             "difficulty": str,
             "message": str,
-            "recommendation_type": str,  # level_up, retry, weak_topic
+            "recommendation_type": str,  # level_up, retry, weak_topic, cf_similar, cf_trending, cf_popular
         }
     """
     personalization = user_context.get("personalization", {})
+    rejected_topics = rejected_topics or []
 
+    # 난이도 한글 변환
+    diff_display_map = {
+        "easy": "실버", "medium": "골드",
+        "medium_hard": "플래티넘", "hard": "다이아", "very_hard": "마스터"
+    }
+
+    # ============================================================
+    # 🚀 CF 추천 우선 사용 (유사 사용자, 트렌딩, 인기)
+    # ============================================================
+    cf_recommendations = personalization.get("cf_recommendations", [])
+
+    for cf_rec in cf_recommendations:
+        cf_topic = cf_rec.get("topic", "")
+        cf_difficulty = cf_rec.get("difficulty", "medium")
+        cf_reason = cf_rec.get("reason", "")
+        cf_source = cf_rec.get("source", "")
+        cf_score = cf_rec.get("score", 0)
+
+        # rejected_topics 체크
+        if cf_topic in rejected_topics:
+            continue
+
+        diff_display = diff_display_map.get(cf_difficulty, cf_difficulty)
+
+        # source별 맞춤 메시지 생성
+        if cf_source == "similar_user":
+            message = (
+                f"👥 **비슷한 학습자들**이 **{cf_topic}**을 많이 풀고 있어요!\n"
+                f"{cf_reason}\n"
+                f"**{diff_display}** 난이도로 시작해볼까요?"
+            )
+            rec_type = "cf_similar"
+
+        elif cf_source == "trending":
+            message = (
+                f"📈 **{cf_topic}**이 요즘 인기 급상승 중이에요!\n"
+                f"{cf_reason}\n"
+                f"트렌드에 맞춰 도전해볼까요?"
+            )
+            rec_type = "cf_trending"
+
+        elif cf_source == "popular":
+            message = (
+                f"🔥 **{cf_topic}**은 이번 주 인기 주제예요!\n"
+                f"{cf_reason}\n"
+                f"**{diff_display}** 난이도로 시작해볼까요?"
+            )
+            rec_type = "cf_popular"
+
+        else:
+            continue
+
+        return {
+            "has_recommendation": True,
+            "topics": [cf_topic],
+            "difficulty": cf_difficulty,
+            "message": message,
+            "recommendation_type": rec_type,
+            "cf_score": cf_score,
+        }
+
+    # ============================================================
+    # CF 추천이 없으면 기존 히스토리 기반 추천 사용
+    # ============================================================
     if not personalization.get("has_history"):
         return {"has_recommendation": False}
 
@@ -706,41 +831,91 @@ def _generate_personalized_recommendation(user_context: dict) -> dict:
     if not recommendations:
         return {"has_recommendation": False}
 
-    # 첫 번째 추천 사용
-    rec = recommendations[0]
+    # 🔧 rejected_topics에 없는 추천 찾기
+    valid_rec = None
+    for rec in recommendations:
+        rec_topics = rec.get("topics", [])
+        # 추천 주제가 rejected에 없는 경우만 사용
+        if rec_topics and not any(t in rejected_topics for t in rec_topics):
+            valid_rec = rec
+            break
+
+    if not valid_rec:
+        return {"has_recommendation": False}
+
+    rec = valid_rec
     rec_type = rec.get("type")
     rec_topics = rec.get("topics", [])
     rec_difficulty = rec.get("difficulty")
     rec_reason = rec.get("reason", "")
 
-    # 난이도 한글 변환
-    diff_display = {
-        "easy": "쉬움", "medium": "보통",
-        "medium_hard": "중상", "hard": "어려움", "very_hard": "매우 어려움"
-    }.get(rec_difficulty, rec_difficulty)
+    # 🚀 주제별 통계 가져오기 (동적 메시지용)
+    topic_stats = personalization.get("topic_stats", {})
+    preferred_difficulty = skill_summary.get("preferred_difficulty", "medium")
 
-    # 추천 타입별 동적 메시지 생성
+    # 난이도 변환 (상단에서 정의한 diff_display_map 재사용)
+    diff_display = diff_display_map.get(rec_difficulty, rec_difficulty)
+    preferred_diff_display = diff_display_map.get(preferred_difficulty, preferred_difficulty)
+
+    # 🚀 주제별 성공률 기반 동적 메시지 생성
+    topic = rec_topics[0] if rec_topics else "알고리즘"
+    topic_stat = topic_stats.get(topic, {})
+    success_rate = topic_stat.get("success_rate", 0)  # 0-100
+    topic_common_diff = topic_stat.get("common_difficulty", "medium")
+
     if rec_type == "level_up" and rec_topics:
-        topic = rec_topics[0]
-        message = (
-            f"💡 지난번에 **{topic}** 문제를 잘 푸셨네요!\n"
-            f"이번엔 **{diff_display}** 난이도로 도전해볼까요?\n\n"
-            f"바로 검색할까요, 아니면 다른 주제를 원하시나요?"
-        )
+        # 성공률에 따른 맞춤 메시지
+        if success_rate >= 80:
+            message = (
+                f"🔥 **{topic}** 성공률 {success_rate:.0f}%! 대단해요!\n"
+                f"**{diff_display}** 난이도로 레벨업 해볼까요?"
+            )
+        elif success_rate >= 60:
+            message = (
+                f"💡 **{topic}** 문제를 잘 풀고 계시네요!\n"
+                f"이번엔 **{diff_display}** 난이도로 도전해볼까요?"
+            )
+        else:
+            message = (
+                f"💪 지난번 **{topic}**을 풀었어요!\n"
+                f"**{diff_display}** 난이도로 한 번 더 해볼까요?"
+            )
+
     elif rec_type == "retry" and rec_topics:
-        topic = rec_topics[0]
-        message = (
-            f"💪 **{topic}** 연습이 더 필요해 보여요!\n"
-            f"같은 난이도로 비슷한 문제 찾아볼까요?"
-        )
+        # 실패한 주제 → 같은 난이도 또는 낮춤
+        if success_rate < 40 and success_rate > 0:
+            # 성공률 낮으면 난이도 낮추기 제안
+            lower_diff = _get_lower_difficulty(rec_difficulty)
+            lower_display = diff_display_map.get(lower_diff, lower_diff)
+            message = (
+                f"💪 **{topic}** 성공률이 {success_rate:.0f}%예요.\n"
+                f"**{lower_display}**부터 다시 연습해볼까요? 아니면 같은 난이도로 도전?"
+            )
+            rec_difficulty = lower_diff  # 난이도 조정
+        else:
+            message = (
+                f"📝 **{topic}** 연습을 더 해볼까요?\n"
+                f"비슷한 **{diff_display}** 문제 찾아드릴게요!"
+            )
+
     elif rec_type == "weak_topic" and rec_topics:
-        topic = rec_topics[0]
+        # 약점 주제 → 쉬운 것부터
         weak_topics = skill_summary.get("weak_topics", [])
-        message = (
-            f"📚 **{topic}**은(는) 아직 연습이 더 필요해요!\n"
-            f"쉬운 문제부터 차근차근 풀어볼까요?"
-        )
+
+        # 다른 주제에서 잘하는 난이도 참조
+        if preferred_difficulty in ["medium", "medium_hard", "hard", "very_hard"]:
+            message = (
+                f"📚 **{topic}**은 아직 연습이 필요해 보여요!\n"
+                f"다른 주제에서 **{preferred_diff_display}**까지 푸셨으니,\n"
+                f"**{topic}**도 실버부터 시작하면 금방 따라잡을 거예요!"
+            )
+        else:
+            message = (
+                f"📚 **{topic}** 연습을 시작해볼까요?\n"
+                f"쉬운 문제부터 차근차근 풀어봐요!"
+            )
         rec_difficulty = "easy"
+
     else:
         return {"has_recommendation": False}
 
