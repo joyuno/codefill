@@ -7,13 +7,10 @@ import { Brain, RefreshCw, Loader2, Sparkles, FileCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScoreRing } from '@/components/analysis/ScoreRing';
 import { SkillRadar } from '@/components/analysis/SkillRadar';
-import { WeaknessBubbles } from '@/components/analysis/WeaknessBubbles';
+import { SkillAnalysisPanel } from '@/components/analysis/SkillAnalysisPanel';
 import { HintUsageCard } from '@/components/analysis/HintUsageCard';
-import { ConceptsPanel } from '@/components/analysis/ConceptsPanel';
-import { LearningInsights } from '@/components/analysis/LearningInsights';
-import { StrengthCards } from '@/components/analysis/StrengthCards';
-import { RecommendationsSection } from '@/components/analysis/RecommendationsSection';
 import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
+import { AICoachingSection } from '@/components/analysis/AICoachingSection';
 import { analysisApi, type AnalysisReport } from '@/lib/api';
 
 // 종합 점수 계산 (0-100)
@@ -97,14 +94,6 @@ export default function AnalysisPage() {
   const overallScore = useMemo(() =>
     report ? calculateOverallScore(report) : 0
   , [report]);
-
-  const skillData = useMemo(() => {
-    if (!report?.skillSnapshot) return [];
-    return Object.entries(report.skillSnapshot).map(([topic, score]) => ({
-      topic,
-      score,
-    }));
-  }, [report]);
 
   // ===== 로딩 =====
   if (isLoading) {
@@ -222,14 +211,14 @@ export default function AnalysisPage() {
         </motion.div>
       )}
 
-      {/* Row 1: ScoreRing | SkillRadar | HintUsageCard */}
+      {/* Row 1: ScoreRing + HintUsage */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
       >
         {/* 종합 점수 */}
-        <div className="md:col-span-1 lg:col-span-3 rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 flex items-center justify-center min-h-[280px]">
+        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 flex items-center justify-center min-h-[280px]">
           <ScoreRing
             score={overallScore}
             stats={report.statsSnapshot}
@@ -237,85 +226,79 @@ export default function AnalysisPage() {
           />
         </div>
 
-        {/* 스킬 레이더 */}
-        <div className="md:col-span-1 lg:col-span-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 min-h-[280px]">
-          <SkillRadar skills={skillData} size={240} />
-        </div>
-
         {/* 힌트 사용 패턴 */}
-        <div className="md:col-span-2 lg:col-span-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
+        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
           <HintUsageCard hintUsage={report.hintUsage} />
         </div>
       </motion.div>
 
-      {/* Row 2: ConceptsPanel */}
+      {/* Row 2: SkillRadar + Analysis */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
+        transition={{ delay: 0.08 }}
+        className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
       >
-        <ConceptsPanel
-          conceptsStruggling={report.conceptsStruggling || []}
-          conceptsLearned={report.conceptsLearned || []}
-          breakthroughMoments={report.breakthroughMoments || []}
-        />
-      </motion.div>
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          {/* 레이더 차트 - 왼쪽 절반 */}
+          <div className="relative p-6 lg:p-8 flex flex-col items-center justify-center min-h-[420px] bg-gradient-to-br from-zinc-900 to-zinc-950">
+            {/* 배경 장식 */}
+            <div className="absolute inset-0 opacity-30">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-primary/5 blur-3xl" />
+            </div>
 
-      {/* Row 3: LearningInsights */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-        className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
-      >
-        <LearningInsights
-          learningStyle={report.learningStyle}
-          moodDistribution={report.moodDistribution || {}}
-          teachingNotes={report.teachingNotes || []}
-        />
-      </motion.div>
+            <div className="relative z-10 w-full max-w-[380px]">
+              <SkillRadar
+                skills={Object.entries(report.skillSnapshot || {}).map(([topic, score]) => ({
+                  topic,
+                  score: score as number,
+                }))}
+                size={340}
+              />
+            </div>
+          </div>
 
-      {/* Row 4: WeaknessBubbles | StrengthCards */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="grid grid-cols-1 lg:grid-cols-2 gap-4"
-      >
-        {/* 약점 버블 맵 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 min-h-[300px]">
-          <WeaknessBubbles
-            weaknesses={report.weaknesses}
-            allSkills={report.skillSnapshot}
-            maxBubbles={6}
-          />
-        </div>
-
-        {/* 강점 카드 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800">
-          <StrengthCards strengths={report.strengths} maxCards={6} />
+          {/* 분석 패널 - 오른쪽 절반 */}
+          <div className="border-t lg:border-t-0 lg:border-l border-zinc-800 bg-zinc-900/50">
+            <div className="p-5 border-b border-zinc-800">
+              <h3 className="text-lg font-bold text-zinc-100">AI 스킬 분석</h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                학습 패턴을 기반으로 한 맞춤 분석
+              </p>
+            </div>
+            <SkillAnalysisPanel
+              strengths={report.strengths}
+              weaknesses={report.weaknesses}
+              recommendations={report.recommendations}
+            />
+          </div>
         </div>
       </motion.div>
 
-      {/* Row 5: RecommendationsSection */}
+      {/* Row 3: AI Coaching Section (with error analysis) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25 }}
-        className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
+        transition={{ delay: 0.12 }}
       >
-        <RecommendationsSection
+        <AICoachingSection
+          summaryText={report.summaryText || ""}
+          strengths={report.strengths}
+          weaknesses={report.weaknesses}
           recommendations={report.recommendations}
           studyPlan={report.studyPlan}
+          detailedFeedback={report.detailedFeedback}
+          breakthroughMoments={report.breakthroughMoments}
+          commonErrorPatterns={report.commonErrorPatterns}
+          errorAnalysis={report.errorAnalysis}
         />
       </motion.div>
 
-      {/* Row 6: RecommendedProblems */}
+      {/* Row 4: RecommendedProblems */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
+        transition={{ delay: 0.16 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
       >
         <RecommendedProblems problems={report.recommendedProblems} />

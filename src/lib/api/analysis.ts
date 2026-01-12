@@ -4,7 +4,7 @@
  * API functions for AI-based learning analysis.
  */
 
-import { api } from './client';
+import { api, apiClient } from './client';
 
 // =====================================================
 // Types
@@ -48,6 +48,60 @@ export interface LearningStyle {
   pace?: string; // "slow" | "medium" | "fast"
 }
 
+// =====================================================
+// Learning Analytics Framework Types
+// =====================================================
+
+/**
+ * BKT (Bayesian Knowledge Tracing) - 토픽별 마스터리 확률
+ */
+export interface BKTTopicMastery {
+  mastery: number;       // 마스터리 확률 (0.0~1.0)
+  is_mastered: boolean;  // 80% 이상이면 true
+  attempt_count: number; // 총 시도 횟수
+  correct_count: number; // 정답 횟수
+}
+
+export interface BKTMastery {
+  [topic: string]: BKTTopicMastery;
+}
+
+/**
+ * Bloom's Taxonomy - 인지 단계별 성취도
+ */
+export interface BloomMetrics {
+  apply_rate: number;    // easy 정답률 (Apply 단계)
+  analyze_rate: number;  // medium 정답률 (Analyze 단계)
+  create_rate: number;   // hard 정답률 (Create 단계)
+  current_level: string; // "Remember" | "Apply" | "Analyze" | "Create"
+  next_level: string;    // 다음 목표 레벨
+  gap_analysis: string;  // 격차 분석 설명
+}
+
+/**
+ * SRK Error Pattern - 오류 유형별 분석
+ */
+export interface ErrorPatternDetail {
+  count: number;
+  rate: number;
+  examples: Array<{
+    user: string;
+    correct: string;
+    reason: string;
+  }>;
+}
+
+export interface ErrorAnalysis {
+  dominant_type: "skill" | "rule" | "knowledge" | null;
+  summary: string;
+  total_errors?: number;
+  patterns: {
+    skill?: ErrorPatternDetail;
+    rule?: ErrorPatternDetail;
+    knowledge?: ErrorPatternDetail;
+  };
+}
+
 export interface AnalysisReport {
   id?: string;
   summaryText: string;
@@ -69,6 +123,12 @@ export interface AnalysisReport {
   moodDistribution: Record<string, number>;
   breakthroughMoments: string[];
   teachingNotes: string[];
+  // AI 코칭 피드백 (마크다운 형식의 상세 피드백)
+  detailedFeedback?: string;
+  // 학습 분석 프레임워크 메트릭
+  bktMastery?: BKTMastery;
+  bloomMetrics?: BloomMetrics;
+  errorAnalysis?: ErrorAnalysis;
 }
 
 export interface AnalysisReportResponse {
@@ -89,9 +149,15 @@ export async function getReport() {
 
 /**
  * Generate new AI analysis
+ * 타임아웃을 120초로 설정 (LLM 호출 때문에 시간이 오래 걸릴 수 있음)
  */
 export async function generateAnalysis() {
-  return api.post<AnalysisReport>('/analysis/generate', {}, true);
+  return apiClient.request<AnalysisReport>('/analysis/generate', {
+    method: 'POST',
+    body: {},
+    requireAuth: true,
+    timeout: 120000, // 2분 타임아웃
+  });
 }
 
 // Export as namespace

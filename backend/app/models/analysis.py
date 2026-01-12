@@ -45,6 +45,43 @@ class RecommendedProblem(BaseModel):
     reason: str
 
 
+# ============================================================
+# Learning Analytics Framework Types
+# ============================================================
+
+class BKTTopicMastery(BaseModel):
+    """BKT 토픽별 마스터리."""
+    mastery: float = 0.0  # 마스터리 확률 (0.0~1.0)
+    is_mastered: bool = False  # 80% 이상이면 True
+    attempt_count: int = 0
+    correct_count: int = 0
+
+
+class BloomMetrics(BaseModel):
+    """Bloom's Taxonomy 메트릭."""
+    apply_rate: float = 0.0  # easy 정답률
+    analyze_rate: float = 0.0  # medium 정답률
+    create_rate: float = 0.0  # hard 정답률
+    current_level: str = "Apply"
+    next_level: str = "Analyze"
+    gap_analysis: Optional[str] = None
+
+
+class ErrorPatternDetail(BaseModel):
+    """에러 패턴 상세."""
+    count: int = 0
+    rate: float = 0.0
+    examples: List[Dict] = []
+
+
+class ErrorAnalysis(BaseModel):
+    """SRK 에러 패턴 분석."""
+    dominant_type: Optional[str] = None  # "skill" | "rule" | "knowledge"
+    summary: str = ""
+    total_errors: int = 0
+    patterns: Dict[str, ErrorPatternDetail] = {}
+
+
 class AnalysisReport(BaseModel):
     """AI 분석 리포트."""
     id: Optional[str] = None
@@ -68,6 +105,14 @@ class AnalysisReport(BaseModel):
     moodDistribution: Dict[str, int] = {}
     breakthroughMoments: List[str] = []
     teachingNotes: List[str] = []
+
+    # AI 코칭 피드백 (마크다운 형식의 상세 피드백)
+    detailedFeedback: Optional[str] = None
+
+    # Learning Analytics Framework 메트릭
+    bktMastery: Optional[Dict[str, BKTTopicMastery]] = None
+    bloomMetrics: Optional[BloomMetrics] = None
+    errorAnalysis: Optional[ErrorAnalysis] = None
 
 
 class AnalysisReportResponse(BaseModel):
