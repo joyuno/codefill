@@ -192,7 +192,7 @@ export function WeaknessBubbles({
               </span>
             </div>
             <Link
-              href={`/practice?topic=${encodeURIComponent(selectedData.topic)}`}
+              href={`/problems?topic=${encodeURIComponent(selectedData.topic)}`}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-colors"
             >
               연습하기

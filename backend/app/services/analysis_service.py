@@ -4,7 +4,7 @@ import json
 import logging
 from uuid import UUID
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Set
 
 from ..config import get_settings, get_logger
 from ..services.openrouter import openrouter_service
@@ -12,6 +12,46 @@ from ..prompts.analysis_agent import ANALYSIS_SYSTEM_PROMPT
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+# 토픽 매핑 (한국어 → 영어 확장) - RAG 서비스와 동일
+TOPIC_MAPPING = {
+    "DP": ["Dynamic programming", "DP", "Memoization"],
+    "동적 프로그래밍": ["Dynamic programming", "DP", "Memoization"],
+    "이진 탐색": ["Binary search", "Divide and conquer", "Sorting"],
+    "그래프": ["Graph algorithms", "Graph traversal", "BFS", "DFS"],
+    "정렬": ["Sorting", "Implementation"],
+    "문자열": ["String algorithms", "String"],
+    "수학": ["Mathematics", "Number theory", "Math"],
+    "그리디": ["Greedy algorithms", "Greedy"],
+    "완전 탐색": ["Complete search", "Brute force", "Implementation"],
+    "스택": ["Data structures", "Stack"],
+    "큐": ["Data structures", "Queue"],
+    "해시": ["Data structures", "Hash"],
+    "트리": ["Tree algorithms", "Data structures"],
+    "재귀": ["Recursion", "Divide and conquer"],
+    "미로 탐색": ["BFS", "DFS", "Graph algorithms", "Graph traversal", "Maze"],
+    "미로": ["BFS", "DFS", "Graph algorithms", "Graph traversal", "Maze"],
+    "bfs": ["BFS", "Graph algorithms", "Graph traversal", "Breadth-first search"],
+    "dfs": ["DFS", "Graph algorithms", "Graph traversal", "Depth-first search"],
+    "너비 우선 탐색": ["BFS", "Graph algorithms", "Graph traversal", "Breadth-first search"],
+    "깊이 우선 탐색": ["DFS", "Graph algorithms", "Graph traversal", "Depth-first search"],
+    "최단 경로": ["BFS", "Shortest path", "Graph algorithms", "Dijkstra"],
+    "다익스트라": ["Dijkstra", "Shortest path", "Graph algorithms"],
+    "플로이드": ["Floyd-Warshall", "Shortest path", "Graph algorithms"],
+    "백트래킹": ["Backtracking", "DFS", "Complete search", "Recursion"],
+    "분할 정복": ["Divide and conquer", "Recursion"],
+    "투 포인터": ["Two pointers", "Sliding window"],
+    "슬라이딩 윈도우": ["Sliding window", "Two pointers"],
+    "구현": ["Implementation", "Simulation"],
+    "시뮬레이션": ["Simulation", "Implementation"],
+    "배열": ["Array", "Implementation"],
+    "연결 리스트": ["Linked list", "Data structures"],
+    "힙": ["Heap", "Priority queue", "Data structures"],
+    "우선순위 큐": ["Priority queue", "Heap", "Data structures"],
+    "유니온 파인드": ["Union-Find", "Disjoint set", "Graph algorithms"],
+    "세그먼트 트리": ["Segment tree", "Data structures", "Range query"],
+    "비트마스킹": ["Bitmask", "Bit manipulation"],
+}
 
 
 class InsufficientDataError(Exception):
@@ -47,6 +87,15 @@ class AnalysisService:
             "difficultySnapshot": data.get("difficulty_snapshot", {}),
             "recommendedProblems": data.get("recommended_problems", []),
             "createdAt": data.get("created_at"),
+            # 새로 추가된 필드들
+            "conceptsStruggling": data.get("concepts_struggling", []),
+            "conceptsLearned": data.get("concepts_learned", []),
+            "hintUsage": data.get("hint_usage", {}),
+            "learningStyle": data.get("learning_style", {}),
+            "commonErrorPatterns": data.get("common_error_patterns", {}),
+            "moodDistribution": data.get("mood_distribution", {}),
+            "breakthroughMoments": data.get("breakthrough_moments", []),
+            "teachingNotes": data.get("teaching_notes", []),
         }
 
     async def generate_analysis(self, user_id: UUID) -> Dict[str, Any]:
@@ -83,17 +132,15 @@ class AnalysisService:
             },
             "difficulty_snapshot": user_data.get("difficulty_stats", {}),
             "recommended_problems": recommended,
-            # 새로운 분석 필드
-            "learning_style": analysis.get("learning_style"),
-            "common_error_patterns": analysis.get("common_error_patterns"),
-            # user_memories 기반 데이터
-            "concepts_learned": user_data.get("concepts_learned", []),
+            # 새로 추가된 필드들
             "concepts_struggling": user_data.get("concepts_struggling", []),
-            "teaching_notes": user_data.get("teaching_notes", []),
-            "breakthrough_moments": user_data.get("breakthrough_moments", []),
-            "mood_distribution": user_data.get("mood_distribution", {}),
+            "concepts_learned": user_data.get("concepts_learned", []),
             "hint_usage": user_data.get("hint_usage", {}),
-            "updated_at": "now()",
+            "learning_style": analysis.get("learning_style") if analysis.get("learning_style") is not None else user_data.get("learning_style", {}),
+            "common_error_patterns": analysis.get("common_error_patterns") if analysis.get("common_error_patterns") is not None else user_data.get("common_error_patterns", {}),
+            "mood_distribution": user_data.get("mood_distribution", {}),
+            "breakthrough_moments": user_data.get("breakthrough_moments", []),
+            "teaching_notes": user_data.get("teaching_notes", []),
         }
 
         # Upsert (insert or update)
@@ -114,6 +161,15 @@ class AnalysisService:
             "difficultySnapshot": user_data.get("difficulty_stats", {}),
             "recommendedProblems": recommended,
             "createdAt": datetime.utcnow().isoformat(),
+            # 새로 추가된 필드들
+            "conceptsStruggling": user_data.get("concepts_struggling", []),
+            "conceptsLearned": user_data.get("concepts_learned", []),
+            "hintUsage": user_data.get("hint_usage", {}),
+            "learningStyle": user_data.get("learning_style", {}),
+            "commonErrorPatterns": user_data.get("common_error_patterns", {}),
+            "moodDistribution": user_data.get("mood_distribution", {}),
+            "breakthroughMoments": user_data.get("breakthrough_moments", []),
+            "teachingNotes": user_data.get("teaching_notes", []),
         }
 
     async def _collect_user_data(self, user_id: UUID) -> Dict[str, Any]:
@@ -131,7 +187,8 @@ class AnalysisService:
             data["problems_solved"] = stats.get("problems_solved", 0)
             data["streak"] = stats.get("current_streak", 0)
 
-        # 2. user_analysis_reports (스킬 프로필) - 모든 새 컬럼 포함
+        # 2. 스킬 데이터 수집 (Option A: user_analysis_reports 우선, 폴백으로 attempts 직접 계산)
+        # 먼저 user_analysis_reports에서 feedback_service가 계산한 ELO 데이터 조회
         skill_result = self.db.table("user_analysis_reports").select(
             "skill_by_topic, weak_topics, strong_topics, success_rate_by_difficulty, "
             "stats_by_problem_type, total_problems_solved, total_problems_attempted, "
@@ -140,13 +197,20 @@ class AnalysisService:
             "learning_style, common_error_patterns"
         ).eq("user_id", str(user_id)).execute()
 
-        if skill_result.data and len(skill_result.data) > 0:
+        use_cached_skill = (
+            skill_result.data and
+            len(skill_result.data) > 0 and
+            skill_result.data[0].get("skill_by_topic")  # 스킬 데이터가 실제로 있는지 확인
+        )
+
+        if use_cached_skill:
+            # ✅ HEAD 방식: user_analysis_reports에서 ELO 기반 스킬 데이터 사용
             skill = skill_result.data[0]
             data["skill_by_topic"] = skill.get("skill_by_topic", {})
             data["weak_topics"] = skill.get("weak_topics", [])
             data["strong_topics"] = skill.get("strong_topics", [])
 
-            # 새로 추가된 필드들
+            # 추가 필드들
             data["stats_by_problem_type"] = skill.get("stats_by_problem_type", {})
             data["total_problems_solved"] = skill.get("total_problems_solved", 0)
             data["total_problems_attempted"] = skill.get("total_problems_attempted", 0)
@@ -161,7 +225,7 @@ class AnalysisService:
             data["existing_learning_style"] = skill.get("learning_style")
             data["existing_error_patterns"] = skill.get("common_error_patterns")
 
-            # Process difficulty stats
+            # difficulty_stats 변환
             diff_raw = skill.get("success_rate_by_difficulty", {})
             difficulty_stats = {}
             for diff, stats in (diff_raw or {}).items():
@@ -172,15 +236,81 @@ class AnalysisService:
                 else:
                     difficulty_stats[diff] = float(stats) if stats else 0
             data["difficulty_stats"] = difficulty_stats
+            data["learning_style"] = skill.get("learning_style") or {}
+            data["common_error_patterns"] = skill.get("common_error_patterns") or {}
 
-        # 3. Overall accuracy from attempts
-        attempts_result = self.db.table("attempts").select(
-            "is_correct"
+        else:
+            # ✅ ehw 폴백: user_analysis_reports가 없으면 attempts에서 직접 계산
+            data["existing_learning_style"] = None
+            data["existing_error_patterns"] = None
+
+        # 3. attempts 테이블에서 정확도 및 폴백용 스킬 데이터 계산
+        attempts_for_skill = self.db.table("attempts").select(
+            "topics, difficulty, is_correct"
         ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").execute()
 
-        if attempts_result.data:
-            total = len(attempts_result.data)
-            correct = sum(1 for a in attempts_result.data if a.get("is_correct"))
+        # 폴백 계산 (use_cached_skill이 False일 때만 skill_by_topic 덮어쓰기)
+        if not use_cached_skill:
+            topic_stats = {}  # {topic: {"success": 0, "total": 0}}
+            difficulty_raw = {}  # {difficulty: {"success": 0, "total": 0}}
+
+            if attempts_for_skill.data:
+                for attempt in attempts_for_skill.data:
+                    is_correct = attempt.get("is_correct", False)
+                    topics = attempt.get("topics") or []
+                    difficulty = attempt.get("difficulty")
+
+                    # 토픽별 집계
+                    for topic in topics:
+                        if topic not in topic_stats:
+                            topic_stats[topic] = {"success": 0, "total": 0}
+                        topic_stats[topic]["total"] += 1
+                        if is_correct:
+                            topic_stats[topic]["success"] += 1
+
+                    # 난이도별 집계
+                    if difficulty:
+                        if difficulty not in difficulty_raw:
+                            difficulty_raw[difficulty] = {"success": 0, "total": 0}
+                        difficulty_raw[difficulty]["total"] += 1
+                        if is_correct:
+                            difficulty_raw[difficulty]["success"] += 1
+
+            # skill_by_topic 계산 (성공률 0.0~1.0)
+            skill_by_topic = {}
+            weak_topics = []
+            strong_topics = []
+
+            for topic, stats in topic_stats.items():
+                if stats["total"] > 0:
+                    rate = round(stats["success"] / stats["total"], 2)
+                    skill_by_topic[topic] = rate
+                    if rate < 0.4:
+                        weak_topics.append(topic)
+                    elif rate > 0.7:
+                        strong_topics.append(topic)
+
+            data["skill_by_topic"] = skill_by_topic
+            data["weak_topics"] = weak_topics
+            data["strong_topics"] = strong_topics
+
+            # difficulty_stats 계산
+            difficulty_stats = {}
+            for diff, stats in difficulty_raw.items():
+                if stats["total"] > 0:
+                    difficulty_stats[diff] = round(stats["success"] / stats["total"], 2)
+                else:
+                    difficulty_stats[diff] = 0
+            data["difficulty_stats"] = difficulty_stats
+
+            # learning_style, common_error_patterns 기본값
+            data["learning_style"] = {}
+            data["common_error_patterns"] = {}
+
+        # 4. Overall accuracy (attempts 데이터 활용)
+        if attempts_for_skill.data:
+            total = len(attempts_for_skill.data)
+            correct = sum(1 for a in attempts_for_skill.data if a.get("is_correct"))
             data["accuracy"] = round(correct / total, 2) if total > 0 else 0
         else:
             data["accuracy"] = 0
@@ -189,7 +319,7 @@ class AnalysisService:
         memories_result = self.db.table("user_memories").select(
             "summary, key_topics, concepts_learned, concepts_struggling, "
             "teaching_notes, breakthrough_moments, student_mood, "
-            "problem_name, was_successful, hints_needed, created_at"
+            "problem_name, was_successful, hints_needed, created_at, learning_insights"
         ).eq("user_id", str(user_id)).order(
             "created_at", desc=True
         ).limit(10).execute()
@@ -202,6 +332,7 @@ class AnalysisService:
             all_breakthroughs = []
             mood_counts = {}
             session_summaries = []
+            learning_insights_list = []
 
             for mem in memories_result.data:
                 # 어려워한 개념
@@ -234,12 +365,28 @@ class AnalysisService:
                         "hints_needed": mem.get("hints_needed"),
                     })
 
+                # learning_insights 수집
+                insights = mem.get("learning_insights")
+                if insights and isinstance(insights, dict):
+                    learning_insights_list.append(insights)
+
             data["concepts_struggling"] = list(set(all_struggling))[:10]
             data["concepts_learned"] = list(set(all_learned))[:10]
             data["teaching_notes"] = all_teaching_notes[:5]
             data["breakthrough_moments"] = all_breakthroughs[:5]
             data["mood_distribution"] = mood_counts
             data["recent_sessions"] = session_summaries[:5]
+
+            # learning_style 추출 (가장 최근 learning_insights에서)
+            if learning_insights_list:
+                latest_insights = learning_insights_list[0]
+                data["learning_style"] = {
+                    "prefers_examples": latest_insights.get("prefers_examples", False),
+                    "prefers_analogies": latest_insights.get("prefers_analogies", False),
+                    "hint_sensitivity": latest_insights.get("hint_sensitivity", "medium"),
+                    "pace": latest_insights.get("pace", "medium"),
+                }
+                data["common_error_patterns"] = latest_insights.get("common_errors", {})
 
         # 5. attempt_details - 힌트 사용 패턴 및 오류 분석
         # 최근 시도들의 ID 조회
@@ -400,13 +547,21 @@ class AnalysisService:
         strengths = []
         for topic in (strong_topics or [])[:5]:
             score = skill_by_topic.get(topic, 0.7)
-            strengths.append({"topic": topic, "score": round(score, 2)})
+            strengths.append({
+                "topic": topic,
+                "score": round(score, 2),
+                "insight": f"{topic} 영역에서 높은 성취도를 보이고 있습니다."
+            })
 
         # Weaknesses
         weaknesses = []
         for topic in (weak_topics or [])[:5]:
             score = skill_by_topic.get(topic, 0.3)
-            weaknesses.append({"topic": topic, "score": round(score, 2)})
+            weaknesses.append({
+                "topic": topic,
+                "score": round(score, 2),
+                "insight": f"{topic} 기초 개념부터 다시 학습하면 빠르게 향상될 수 있습니다."
+            })
 
         # Summary text
         if weaknesses:
@@ -457,19 +612,135 @@ class AnalysisService:
             "common_error_patterns": error_patterns,
         }
 
+    def _expand_topics(self, topics: List[str]) -> List[str]:
+        """토픽을 영어 동의어로 확장."""
+        expanded = set()
+        for topic in topics:
+            expanded.add(topic)
+            topic_lower = topic.lower()
+
+            # 직접 매핑 확인
+            if topic in TOPIC_MAPPING:
+                expanded.update(TOPIC_MAPPING[topic])
+
+            # 소문자 매핑 확인
+            for key, values in TOPIC_MAPPING.items():
+                if key.lower() == topic_lower:
+                    expanded.update(values)
+
+        return list(expanded)
+
+    def _get_recommended_difficulty(self, user_data: Dict[str, Any]) -> List[str]:
+        """사용자 레벨에 맞는 추천 난이도 반환."""
+        accuracy = user_data.get("accuracy", 0.5)
+        difficulty_stats = user_data.get("difficulty_stats", {})
+
+        # 정답률 기반 추천
+        if accuracy < 0.4:
+            return ["easy"]
+        elif accuracy < 0.6:
+            return ["easy", "medium"]
+        elif accuracy < 0.8:
+            return ["medium"]
+        else:
+            return ["medium", "hard"]
+
+    async def _get_problem_success_rates(
+        self, problem_ids: List[str]
+    ) -> Dict[str, float]:
+        """문제별 전체 사용자 정답률 조회."""
+        if not problem_ids:
+            return {}
+
+        result = self.db.table("attempts").select(
+            "base_problem_id, is_correct"
+        ).in_("base_problem_id", problem_ids).execute()
+
+        # 문제별 정답률 계산
+        stats: Dict[str, Dict[str, int]] = {}
+        for attempt in (result.data or []):
+            pid = str(attempt.get("base_problem_id"))
+            if pid not in stats:
+                stats[pid] = {"correct": 0, "total": 0}
+            stats[pid]["total"] += 1
+            if attempt.get("is_correct"):
+                stats[pid]["correct"] += 1
+
+        # 정답률 계산
+        rates = {}
+        for pid in problem_ids:
+            if pid in stats and stats[pid]["total"] > 0:
+                rates[pid] = stats[pid]["correct"] / stats[pid]["total"]
+            else:
+                rates[pid] = 0.5  # 데이터 없으면 기본값
+
+        return rates
+
     async def _get_recommended_problems(
         self, user_id: UUID, user_data: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """약점 기반 추천 문제 조회."""
+        """
+        개선된 약점 기반 추천 문제 조회.
 
+        개선점:
+        1. 토픽 매핑 (한국어 → 영어 확장)
+        2. 난이도 필터링 (사용자 레벨 기반)
+        3. 이미 푼 문제 제외
+        4. 역사적 성공률 고려 (50~70% 정답률 우선)
+        5. 다양성 확보 (토픽별 최대 2개)
+        """
         weak_topics = user_data.get("weak_topics", [])
         skill_by_topic = user_data.get("skill_by_topic", {})
 
-        if not weak_topics:
-            # 약점 없으면 랜덤 문제
+        # 1. 이미 푼 문제 ID 조회
+        solved_result = self.db.table("attempts").select(
+            "base_problem_id"
+        ).eq("user_id", str(user_id)).execute()
+
+        solved_ids: Set[str] = set(
+            str(a.get("base_problem_id")) for a in (solved_result.data or [])
+            if a.get("base_problem_id")
+        )
+
+        # 2. 추천 난이도 결정
+        recommended_difficulties = self._get_recommended_difficulty(user_data)
+
+        # 3. 토픽 확장 (한국어 → 영어)
+        if weak_topics:
+            expanded_topics = self._expand_topics(weak_topics[:3])
+        else:
+            # 약점 없으면 일반적인 토픽으로
+            expanded_topics = ["Implementation", "Array", "String"]
+
+        # 4. 문제 검색 (overlaps 사용)
+        try:
             result = self.db.table("base_problems").select(
                 "id, original_id, name, difficulty, tags"
-            ).limit(5).execute()
+            ).overlaps("tags", expanded_topics).in_(
+                "difficulty", recommended_difficulties
+            ).limit(30).execute()
+        except Exception as e:
+            # overlaps 실패 시 단순 조회로 폴백
+            logger.warning(f"overlaps query failed, falling back: {e}")
+            result = self.db.table("base_problems").select(
+                "id, original_id, name, difficulty, tags"
+            ).in_("difficulty", recommended_difficulties).limit(30).execute()
+
+        # 5. 이미 푼 문제 제외
+        candidates = [
+            p for p in (result.data or [])
+            if str(p.get("id")) not in solved_ids
+        ]
+
+        if not candidates:
+            # 후보가 없으면 난이도 제한 없이 재검색
+            result = self.db.table("base_problems").select(
+                "id, original_id, name, difficulty, tags"
+            ).limit(10).execute()
+            candidates = [
+                p for p in (result.data or [])
+                if str(p.get("id")) not in solved_ids
+            ][:5]
 
             return [
                 {
@@ -480,37 +751,91 @@ class AnalysisService:
                     "topic": (p.get("tags") or ["general"])[0],
                     "reason": "실력 향상을 위한 추천 문제",
                 }
-                for p in (result.data or [])
+                for p in candidates
             ]
 
-        # 이미 푼 문제 ID 조회
-        solved_result = self.db.table("attempts").select(
-            "base_problem_id"
-        ).eq("user_id", str(user_id)).eq("is_correct", True).execute()
+        # 6. 역사적 성공률 조회
+        problem_ids = [str(p["id"]) for p in candidates]
+        success_rates = await self._get_problem_success_rates(problem_ids)
 
-        solved_ids = set(
-            a.get("base_problem_id") for a in (solved_result.data or [])
-            if a.get("base_problem_id")
-        )
+        # 7. 점수 계산 및 정렬
+        scored = []
+        for p in candidates:
+            pid = str(p["id"])
+            success_rate = success_rates.get(pid, 0.5)
 
-        # 약점 토픽 기반 문제 조회
+            # 50~70% 정답률 선호 (너무 쉽거나 어려우면 감점)
+            ideal_rate = 0.6
+            rate_score = 1 - abs(success_rate - ideal_rate) * 2
+            rate_score = max(0, rate_score)
+
+            # 약점 토픽 매칭 점수
+            topic_score = 0
+            problem_tags = [t.lower() for t in (p.get("tags") or [])]
+            for weak_topic in weak_topics:
+                weak_lower = weak_topic.lower()
+                # 직접 매칭 또는 확장된 토픽 매칭
+                if weak_lower in problem_tags:
+                    topic_score = 1
+                    break
+                expanded = self._expand_topics([weak_topic])
+                for exp in expanded:
+                    if exp.lower() in problem_tags:
+                        topic_score = 0.8
+                        break
+
+            total_score = rate_score * 0.5 + topic_score * 0.5
+            scored.append((p, total_score, success_rate))
+
+        # 점수 순 정렬
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        # 8. 다양성 확보 (토픽별 최대 2개)
+        topic_counts: Dict[str, int] = {}
         recommendations = []
-        for topic in weak_topics[:3]:
-            result = self.db.table("base_problems").select(
-                "id, original_id, name, difficulty, tags"
-            ).contains("tags", [topic]).limit(5).execute()
 
-            for p in (result.data or []):
-                pid = str(p.get("id"))
-                if pid not in solved_ids and len(recommendations) < 5:
-                    score = skill_by_topic.get(topic, 0.5)
-                    recommendations.append({
-                        "id": pid,
-                        "originalId": p.get("original_id"),
-                        "name": p.get("name", "Unknown"),
-                        "difficulty": p.get("difficulty", "medium"),
-                        "topic": topic,
-                        "reason": f"{topic} 실력 향상을 위한 추천 (현재 {int(score*100)}%)",
-                    })
+        for p, score, success_rate in scored:
+            if len(recommendations) >= 5:
+                break
 
-        return recommendations[:5]
+            main_topic = (p.get("tags") or ["general"])[0]
+            if topic_counts.get(main_topic, 0) >= 2:
+                continue
+
+            topic_counts[main_topic] = topic_counts.get(main_topic, 0) + 1
+
+            # reason에 성공률 정보 추가
+            rate_percent = int(success_rate * 100)
+            if weak_topics:
+                # 약점 토픽 중 매칭되는 것 찾기
+                matched_weak = None
+                for wt in weak_topics:
+                    if wt.lower() in [t.lower() for t in (p.get("tags") or [])]:
+                        matched_weak = wt
+                        break
+                    expanded = self._expand_topics([wt])
+                    for exp in expanded:
+                        if exp.lower() in [t.lower() for t in (p.get("tags") or [])]:
+                            matched_weak = wt
+                            break
+                    if matched_weak:
+                        break
+
+                if matched_weak:
+                    user_skill = skill_by_topic.get(matched_weak, 0.5)
+                    reason = f"{matched_weak} 실력 향상 추천 (현재 {int(user_skill*100)}%, 정답률 {rate_percent}%)"
+                else:
+                    reason = f"실력 향상 추천 (정답률 {rate_percent}%)"
+            else:
+                reason = f"실력 향상 추천 (정답률 {rate_percent}%)"
+
+            recommendations.append({
+                "id": str(p.get("id")),
+                "originalId": p.get("original_id"),
+                "name": p.get("name", "Unknown"),
+                "difficulty": p.get("difficulty", "medium"),
+                "topic": main_topic,
+                "reason": reason,
+            })
+
+        return recommendations
