@@ -82,6 +82,21 @@ export interface BaseProblemFilters {
   limit?: number;
 }
 
+// 문제 통계 응답
+export interface ProblemStatsResponse {
+  base_problem_id: string;
+  view_count: number;
+  like_count: number;
+  is_liked: boolean;
+}
+
+// 좋아요 토글 응답
+export interface ProblemLikeResponse {
+  success: boolean;
+  is_liked: boolean;
+  like_count: number;
+}
+
 export const problemsApi = {
   /**
    * Get list of problems with filters
@@ -154,6 +169,43 @@ export const problemsApi = {
    */
   async getBase(originalId: string): Promise<BaseProblemDetail> {
     const response = await api.get<BaseProblemDetail>(`/problems/base/${originalId}`, false);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * 문제 조회수 증가 (로그인 불필요)
+   */
+  async incrementView(baseProblemId: string): Promise<{ success: boolean }> {
+    const response = await api.post<{ success: boolean }>('/practice/problems/view', {
+      base_problem_id: baseProblemId,
+    }, false);
+    if (response.error) {
+      console.warn('Failed to increment view count:', response.error.message);
+      return { success: false };
+    }
+    return response.data!;
+  },
+
+  /**
+   * 문제 좋아요 토글 (로그인 필요)
+   */
+  async toggleLike(baseProblemId: string): Promise<ProblemLikeResponse> {
+    const response = await api.post<ProblemLikeResponse>('/practice/problems/like', {
+      base_problem_id: baseProblemId,
+    }, true);
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * 문제 통계 조회 (조회수, 좋아요 수, 현재 사용자 좋아요 여부)
+   */
+  async getStats(baseProblemId: string): Promise<ProblemStatsResponse> {
+    const response = await api.get<ProblemStatsResponse>(
+      `/practice/problems/${baseProblemId}/stats`,
+      false  // 비로그인도 조회 가능
+    );
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

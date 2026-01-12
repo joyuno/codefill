@@ -10,9 +10,11 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   solutionsApi,
+  problemsApi,
   type ProblemDiscussionResponse,
   type SolutionListItem,
 } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
 import { SolutionList } from '@/components/solutions/SolutionList';
 import { SolutionForm } from '@/components/solutions/SolutionForm';
 import { OfficialSolutions } from '@/components/solutions/OfficialSolutions';
@@ -27,6 +29,8 @@ import {
   Globe,
   FileText,
   TestTube,
+  Heart,
+  Eye,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { translateText, type LanguageCode } from '@/lib/api/translate';
@@ -48,6 +52,7 @@ export default function ProblemDiscussionPage() {
   const params = useParams();
   const router = useRouter();
   const originalId = params.originalId as string;
+  const { isAuthenticated } = useAuth();
 
   const [data, setData] = useState<ProblemDiscussionResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,6 +68,12 @@ export default function ProblemDiscussionPage() {
   const [translatedQuestion, setTranslatedQuestion] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [showTranslated, setShowTranslated] = useState(false);
+
+  // 조회수/좋아요 상태
+  const [viewCount, setViewCount] = useState(0);
+  const [likeCount, setLikeCount] = useState(0);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!originalId) return;
@@ -87,6 +98,47 @@ export default function ProblemDiscussionPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // 조회수 증가 및 통계 조회
+  useEffect(() => {
+    if (!data?.problem?.id) return;
+
+    const baseProblemId = data.problem.id;
+
+    // 조회수 증가 (한 번만)
+    problemsApi.incrementView(baseProblemId);
+
+    // 통계 조회
+    problemsApi.getStats(baseProblemId)
+      .then((stats) => {
+        setViewCount(stats.view_count);
+        setLikeCount(stats.like_count);
+        setIsLiked(stats.is_liked);
+      })
+      .catch((err) => {
+        console.warn('Failed to load stats:', err);
+      });
+  }, [data?.problem?.id]);
+
+  // 좋아요 토글
+  const handleLike = async () => {
+    if (!data?.problem?.id) return;
+    if (!isAuthenticated) {
+      alert('로그인이 필요합니다.');
+      return;
+    }
+
+    setIsLiking(true);
+    try {
+      const result = await problemsApi.toggleLike(data.problem.id);
+      setIsLiked(result.is_liked);
+      setLikeCount(result.like_count);
+    } catch (err) {
+      console.error('Failed to toggle like:', err);
+    } finally {
+      setIsLiking(false);
+    }
+  };
 
   const handleSolutionCreated = () => {
     setShowForm(false);
@@ -254,9 +306,29 @@ export default function ProblemDiscussionPage() {
                         +{problem.tags.length - 3}
                       </span>
                     )}
+                    {/* 조회수 */}
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
+                      <Eye className="h-3 w-3" />
+                      {viewCount}
+                    </span>
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0">
+                  {/* 좋아요 버튼 */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleLike}
+                    disabled={isLiking}
+                    className={cn(isLiked && 'text-red-500')}
+                  >
+                    {isLiking ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Heart className={cn('h-4 w-4', isLiked && 'fill-current')} />
+                    )}
+                    <span className="ml-1 text-xs">{likeCount}</span>
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"

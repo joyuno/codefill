@@ -152,8 +152,11 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
   const displayQuestion = showTranslated && translatedQuestion ? translatedQuestion : problem?.question;
 
   return (
+    <>
     <AnimatePresence>
+      {originalId && (
       <motion.div
+        key="preview-modal-overlay"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -249,11 +252,13 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                 {/* Tags */}
                 {problem.tags.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {problem.tags.map((tag) => (
-                      <Badge key={tag} variant="outline" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
+                    {problem.tags
+                      .filter((tag) => tag && tag.trim() !== '')
+                      .map((tag, idx) => (
+                        <Badge key={`${tag}-${idx}`} variant="outline" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
                   </div>
                 )}
 
@@ -362,31 +367,33 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
           )}
         </motion.div>
       </motion.div>
-
-      {/* Login Required Dialog */}
-      <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <LogIn className="h-5 w-5" />
-              로그인이 필요합니다
-            </DialogTitle>
-            <DialogDescription>
-              문제를 풀려면 로그인이 필요합니다.<br />
-              로그인하면 XP 획득과 잔디 기록이 저장됩니다.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex gap-2 sm:justify-end">
-            <Button variant="outline" onClick={() => setShowLoginDialog(false)}>
-              취소
-            </Button>
-            <Button onClick={() => router.push('/login')}>
-              <LogIn className="mr-2 h-4 w-4" />
-              로그인하기
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      )}
     </AnimatePresence>
+
+    {/* Login Required Dialog */}
+    <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <LogIn className="h-5 w-5" />
+            로그인이 필요합니다
+          </DialogTitle>
+          <DialogDescription>
+            문제를 풀려면 로그인이 필요합니다.<br />
+            로그인하면 XP 획득과 잔디 기록이 저장됩니다.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="flex gap-2 sm:justify-end">
+          <Button variant="outline" onClick={() => setShowLoginDialog(false)}>
+            취소
+          </Button>
+          <Button onClick={() => router.push('/login')}>
+            <LogIn className="mr-2 h-4 w-4" />
+            로그인하기
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
