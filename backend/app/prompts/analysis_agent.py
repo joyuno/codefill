@@ -128,13 +128,13 @@ ANALYSIS_SYSTEM_PROMPT = """
   }},
 
   "common_error_patterns": [
-    "concepts_struggling의 각 항목을 구체적인 오류 패턴으로 변환하세요",
-    "형식: '[개념명]에서 [구체적 실수] → [발생하는 문제]'",
-    "예: '상태 정의에서 dp[i]가 무엇을 의미하는지 정의하지 않음 → 점화식 도출 실패'",
-    "예: '방문 체크에서 큐에 넣은 후가 아닌 꺼낸 후에 visited 처리 → 중복 방문 발생'"
+    "반드시 concepts_struggling 데이터를 분석하여 생성. 각 항목을 '원인 → 결과' 형식으로 작성",
+    "예시 (concepts_struggling에 '점화식 도출'이 있는 경우): 'dp[i]의 정의를 명확히 하지 않고 코드 작성 → 점화식 오류 발생'",
+    "예시 (concepts_struggling에 '방문 체크'가 있는 경우): 'visited 체크를 재귀 호출 후에 수행 → 무한 루프 발생'",
+    "concepts_struggling이 비어있으면 빈 배열 [] 반환"
   ],
 
-  "detailed_feedback": "**약점 토픽 원인 분석**\\n\\n**DP (mastery 11%)**\\n- 10회 시도 중 2회 정답, 최근 6회 연속 오답\\n- 어려워한 개념: 점화식 도출, 상태 정의, 2차원 DP\\n- 개선 방법: 코드 작성 전 dp[i]의 의미를 문장으로 정의하고, n=1,2,3 케이스를 손으로 먼저 계산\\n\\n**Graph (mastery 11%)**\\n- 8회 시도 중 1회 정답\\n- 어려워한 개념: 방문 체크, 재귀 종료 조건\\n- 개선 방법: DFS는 함수 진입 시점에, BFS는 큐 삽입 시점에 visited 처리하는 패턴 암기"
+  "detailed_feedback": "## 학습 분석 리포트\\n\\n### 토픽별 Mastery 현황\\n| 토픽 | Mastery | 시도 | 정답 | 상태 |\\n|------|---------|------|------|------|\\n| Array | 92% | 8 | 8 | 숙달 |\\n| DP | 11% | 10 | 2 | 미숙 |\\n\\n### 약점 원인 분석\\nDP mastery가 11%인 원인:\\n- 10회 시도 중 2회만 정답 (정답률 20%)\\n- 최근 6회 연속 오답으로 mastery 급락\\n- concepts_struggling: 점화식 도출, 상태 정의, 2차원 DP\\n- 오류 유형: rule 60% (경계값 오류)\\n\\n### 개선 방안\\n1. DP 문제 접근법 변경\\n   - 코드 작성 전 dp[i]가 의미하는 바를 문장으로 정의\\n   - n=1,2,3 케이스를 손으로 계산하여 패턴 파악\\n2. 경계값 검증 습관화\\n   - 반복문 조건 작성 후 i=0, i=n-1, i=n 대입 테스트"
 }}
 ```
 
@@ -162,10 +162,10 @@ ANALYSIS_SYSTEM_PROMPT = """
 
 ### detailed_feedback 작성법
 
-**테이블 사용 금지.** 리스트와 굵은 글씨로 구조화:
-- **토픽명 (mastery %)** 형태로 섹션 구분
-- 각 약점 토픽에 대해: 시도/정답 수, 어려워한 개념, 개선 방법
-- 개선 방법은 구체적 액션 (무엇을, 어떻게, 언제)
+마크다운 테이블과 구조화된 형식 사용:
+- 토픽별 현황을 테이블로 정리
+- 약점 원인을 데이터 기반으로 분석
+- 개선 방안을 구체적 액션으로 제시
 
 ---
 
@@ -177,7 +177,6 @@ ANALYSIS_SYSTEM_PROMPT = """
 4. **추상적 표현 금지** - "잘하고 있다", "더 노력해야 한다" 등 사용 금지
 5. **원인 분석 필수** - 약점의 경우 왜 약한지 concepts_struggling 데이터와 연결
 6. **실행 가능한 조언** - 구체적으로 무엇을 어떻게 해야 하는지 명시
-7. **common_error_patterns 필수** - concepts_struggling의 각 항목을 '[개념]에서 [실수] → [문제]' 형식으로 변환
-8. **learning_style 필수** - type, description, strategy 모두 채워야 함
-9. **테이블 사용 금지** - detailed_feedback에서 마크다운 테이블(|---|) 사용하지 말 것, 리스트와 굵은 글씨 사용
+7. **common_error_patterns 필수 생성** - concepts_struggling이 비어있지 않으면 반드시 패턴 분석
+8. **learning_style 필수 생성** - type, description, strategy 모두 채워야 함
 """
