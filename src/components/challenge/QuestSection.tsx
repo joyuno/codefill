@@ -13,6 +13,7 @@ interface QuestSectionProps {
   isLoading?: boolean;
   onClaim: (questId: string) => Promise<void>;
   remainingTime?: string;
+  className?: string;
 }
 
 export function QuestSection({
@@ -22,6 +23,7 @@ export function QuestSection({
   isLoading,
   onClaim,
   remainingTime,
+  className,
 }: QuestSectionProps) {
   const completedCount = quests.filter(
     (q) => q.status === 'completed' || q.status === 'claimed'
@@ -38,8 +40,8 @@ export function QuestSection({
     <motion.section
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: variant === 'daily' ? 0.2 : 0.4 }}
-      className="mb-8"
+      transition={{ delay: variant === 'daily' ? 0.1 : 0.2 }}
+      className={cn('', className)}
     >
       {/* 섹션 헤더 */}
       <div className="flex items-center justify-between mb-4">

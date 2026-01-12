@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Swords, Coins, Star, Calendar, Sprout, Trophy, Clock } from 'lucide-react';
+import { Swords, Coins, Star, Calendar, Sprout, Trophy } from 'lucide-react';
 import {
   StatsSummary,
-  QuestCard,
+  QuestSection,
   LeaderboardSection,
 } from '@/components/challenge';
 import {
@@ -267,123 +267,24 @@ export default function ChallengePage() {
 
                 {/* 2컬럼 그리드: 일일 미션 / 주간 챌린지 */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* 일일 미션 */}
-                  <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                  >
-                    {/* 섹션 헤더 */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                          <Sprout className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="font-semibold text-primary">Today&apos;s Quests</h2>
-                            {dailyClaimable > 0 && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-primary text-primary-foreground">
-                                {dailyClaimable}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  {/* 일일 미션 - QuestSection 컴포넌트 활용 */}
+                  <QuestSection
+                    title="Today's Quests"
+                    variant="daily"
+                    quests={dailyMissions}
+                    isLoading={isMissionsLoading}
+                    onClaim={handleClaim}
+                  />
 
-                    {/* 일일 미션 목록 */}
-                    {isMissionsLoading ? (
-                      <div className="space-y-2">
-                        {[0, 1, 2].map((i) => (
-                          <div
-                            key={i}
-                            className="h-16 rounded-xl bg-card/50 animate-pulse"
-                          />
-                        ))}
-                      </div>
-                    ) : dailyMissions.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center quest-card rounded-xl">
-                        <Sprout className="w-10 h-10 text-muted-foreground/30 mb-3" />
-                        <p className="text-muted-foreground text-sm">
-                          오늘의 퀘스트가 아직 없습니다
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {dailyMissions.map((quest, index) => (
-                          <QuestCard
-                            key={quest.id}
-                            quest={quest}
-                            variant="daily"
-                            onClaim={handleClaim}
-                            index={index}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </motion.section>
-
-                  {/* 주간 챌린지 */}
-                  <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    {/* 섹션 헤더 */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center">
-                          <Trophy className="w-4 h-4 text-yellow-400" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="font-semibold text-yellow-400">Weekly Challenge</h2>
-                            {weeklyClaimable > 0 && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-yellow-500 text-black">
-                                {weeklyClaimable}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{remainingTime}</span>
-                      </div>
-                    </div>
-
-                    {/* 주간 챌린지 목록 */}
-                    {isMissionsLoading ? (
-                      <div className="space-y-3">
-                        {[0, 1].map((i) => (
-                          <div
-                            key={i}
-                            className="h-32 rounded-xl bg-card/50 animate-pulse"
-                          />
-                        ))}
-                      </div>
-                    ) : weeklyMissions.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center quest-card rounded-xl">
-                        <Trophy className="w-10 h-10 text-muted-foreground/30 mb-3" />
-                        <p className="text-muted-foreground text-sm">
-                          이번 주 챌린지가 아직 없습니다
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {weeklyMissions.map((quest, index) => (
-                          <QuestCard
-                            key={quest.id}
-                            quest={quest}
-                            variant="weekly"
-                            onClaim={handleClaim}
-                            index={index}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </motion.section>
+                  {/* 주간 챌린지 - QuestSection 컴포넌트 활용 */}
+                  <QuestSection
+                    title="Weekly Challenge"
+                    variant="weekly"
+                    quests={weeklyMissions}
+                    isLoading={isMissionsLoading}
+                    onClaim={handleClaim}
+                    remainingTime={remainingTime}
+                  />
                 </div>
               </motion.div>
             )}

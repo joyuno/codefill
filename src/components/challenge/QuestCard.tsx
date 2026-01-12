@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Swords, Shield, Target, Sparkles, Gift, Check, Loader2, Coins, Star, Sprout } from 'lucide-react';
+import { Swords, Target, Sparkles, Gift, Check, Loader2, Coins, Star, Sprout, Code2, Flame, TrendingUp, Puzzle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QuestProgress } from './QuestProgress';
-import type { Mission } from '@/lib/api/missions';
+import type { Mission, MissionConditionType } from '@/lib/api/missions';
 
 interface QuestCardProps {
   quest: Mission;
@@ -14,14 +14,15 @@ interface QuestCardProps {
   index?: number;
 }
 
-// 조건 타입별 아이콘
-const conditionIcons: Record<string, typeof Swords> = {
-  problems: Swords,
-  blank: Target,
-  puzzle: Sparkles,
-  output: Target,
-  bug: Shield,
-  refactor: Sparkles,
+// 조건 타입별 아이콘 및 색상
+const conditionConfig: Record<MissionConditionType, { icon: typeof Swords; color: string; label: string }> = {
+  problems: { icon: Swords, color: 'text-primary', label: '문제 풀이' },
+  blank: { icon: Target, color: 'text-blue-400', label: '빈칸 채우기' },
+  puzzle: { icon: Puzzle, color: 'text-purple-400', label: '퍼즐' },
+  guided: { icon: Sparkles, color: 'text-cyan-400', label: '가이디드' },
+  implementation: { icon: Code2, color: 'text-orange-400', label: '구현' },
+  streak: { icon: Flame, color: 'text-red-400', label: '연속 풀이' },
+  xp: { icon: TrendingUp, color: 'text-emerald-400', label: 'XP 획득' },
 };
 
 // 난이도별 스타일
@@ -36,7 +37,10 @@ export function QuestCard({ quest, variant = 'daily', onClaim, index = 0 }: Ques
 
   const isCompleted = quest.status === 'completed';
   const isClaimed = quest.status === 'claimed';
-  const Icon = conditionIcons[quest.conditionType] || Swords;
+
+  // 조건 타입 설정 가져오기
+  const config = conditionConfig[quest.conditionType] || conditionConfig.problems;
+  const Icon = config.icon;
 
   const handleClaim = async () => {
     if (!isCompleted || isClaiming) return;

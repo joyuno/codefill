@@ -34,8 +34,10 @@ export interface RecommendedProblem {
 
 export interface HintUsage {
   total_requested: number;
+  by_level?: Record<string, number>; // 레벨별 힌트 사용 횟수 {"1": 5, "2": 3}
   helpful_count: number;
   helpful_rate: number;
+  avg_per_problem?: number; // 문제당 평균 힌트 수
   avg_hint_level: number;
 }
 
@@ -63,7 +65,7 @@ export interface AnalysisReport {
   conceptsLearned: string[];
   hintUsage?: HintUsage;
   learningStyle?: LearningStyle;
-  commonErrorPatterns: Record<string, number>;
+  commonErrorPatterns: string[];
   moodDistribution: Record<string, number>;
   breakthroughMoments: string[];
   teachingNotes: string[];

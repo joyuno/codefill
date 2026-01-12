@@ -64,7 +64,7 @@ class AnalysisReport(BaseModel):
     conceptsLearned: List[str] = []
     hintUsage: Optional[HintUsage] = None
     learningStyle: Optional[LearningStyle] = None
-    commonErrorPatterns: Dict[str, int] = {}
+    commonErrorPatterns: List[str] = []
     moodDistribution: Dict[str, int] = {}
     breakthroughMoments: List[str] = []
     teachingNotes: List[str] = []

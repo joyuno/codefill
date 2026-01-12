@@ -388,16 +388,20 @@ class AnalysisService:
                 }
                 data["common_error_patterns"] = latest_insights.get("common_errors", {})
 
-        # 5. attempt_details - 힌트 사용 패턴 및 오류 분석
+        # 5. attempt_details + hint_logs - 힌트 사용 패턴 및 오류 분석
         # 최근 시도들의 ID 조회
         recent_attempts = self.db.table("attempts").select(
-            "id"
+            "id, base_problem_id"
         ).eq("user_id", str(user_id)).order(
             "created_at", desc=True
         ).limit(50).execute()
 
         if recent_attempts.data and len(recent_attempts.data) > 0:
             attempt_ids = [a["id"] for a in recent_attempts.data]
+            problem_ids = list(set(
+                str(a.get("base_problem_id")) for a in recent_attempts.data
+                if a.get("base_problem_id")
+            ))
 
             # attempt_details 조회
             details_result = self.db.table("attempt_details").select(
@@ -405,13 +409,21 @@ class AnalysisService:
                 "hint_was_requested, hint_was_helpful"
             ).in_("attempt_id", attempt_ids).execute()
 
-            if details_result.data and len(details_result.data) > 0:
-                total_hints_requested = 0
-                helpful_hints = 0
-                hint_levels = []
-                blank_correct_count = 0
-                blank_total_count = 0
+            # hint_logs 조회 (추가)
+            hint_logs_result = self.db.table("hint_logs").select(
+                "hint_level, xp_cost, problem_id"
+            ).eq("user_id", str(user_id)).order(
+                "created_at", desc=True
+            ).limit(100).execute()
 
+            # attempt_details 분석
+            total_hints_requested = 0
+            helpful_hints = 0
+            hint_levels_from_details = []
+            blank_correct_count = 0
+            blank_total_count = 0
+
+            if details_result.data and len(details_result.data) > 0:
                 for detail in details_result.data:
                     # 힌트 요청 횟수
                     if detail.get("hint_was_requested"):
@@ -422,7 +434,7 @@ class AnalysisService:
                     # 힌트 레벨 분포
                     hint_level = detail.get("blank_hint_level")
                     if hint_level is not None:
-                        hint_levels.append(hint_level)
+                        hint_levels_from_details.append(hint_level)
 
                     # 빈칸 정답률
                     if detail.get("blank_is_correct") is not None:
@@ -430,15 +442,39 @@ class AnalysisService:
                         if detail.get("blank_is_correct"):
                             blank_correct_count += 1
 
-                data["hint_usage"] = {
-                    "total_requested": total_hints_requested,
-                    "helpful_count": helpful_hints,
-                    "helpful_rate": round(helpful_hints / total_hints_requested, 2) if total_hints_requested > 0 else 0,
-                    "avg_hint_level": round(sum(hint_levels) / len(hint_levels), 2) if hint_levels else 0,
-                }
-                data["blank_accuracy"] = round(
-                    blank_correct_count / blank_total_count, 2
-                ) if blank_total_count > 0 else None
+            # hint_logs 분석 (레벨별 힌트 사용 횟수)
+            by_level: Dict[str, int] = {}
+            total_from_logs = 0
+            problems_with_hints: Set[str] = set()
+
+            if hint_logs_result.data and len(hint_logs_result.data) > 0:
+                for log in hint_logs_result.data:
+                    hint_level = log.get("hint_level")
+                    if hint_level is not None:
+                        level_key = str(hint_level)
+                        by_level[level_key] = by_level.get(level_key, 0) + 1
+                        total_from_logs += 1
+
+                    problem_id = log.get("problem_id")
+                    if problem_id:
+                        problems_with_hints.add(str(problem_id))
+
+            # 힌트 사용 통계 집계
+            total_hints = max(total_hints_requested, total_from_logs)
+            num_problems = len(problem_ids) if problem_ids else 1
+            avg_per_problem = round(total_hints / num_problems, 2) if num_problems > 0 else 0
+
+            data["hint_usage"] = {
+                "total_requested": total_hints,
+                "by_level": by_level,
+                "helpful_count": helpful_hints,
+                "helpful_rate": round(helpful_hints / total_hints_requested, 2) if total_hints_requested > 0 else 0,
+                "avg_per_problem": avg_per_problem,
+                "avg_hint_level": round(sum(hint_levels_from_details) / len(hint_levels_from_details), 2) if hint_levels_from_details else 0,
+            }
+            data["blank_accuracy"] = round(
+                blank_correct_count / blank_total_count, 2
+            ) if blank_total_count > 0 else None
 
         return data
 
