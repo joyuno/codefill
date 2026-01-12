@@ -4,8 +4,6 @@ import { motion } from 'framer-motion';
 import {
   Bot,
   TrendingUp,
-  Target,
-  Lightbulb,
   Flame,
   AlertTriangle,
   ChevronRight,
@@ -18,17 +16,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ErrorAnalysis } from '@/lib/api/analysis';
 
-interface TopicScore {
-  topic: string;
-  score: number;
-  insight?: string;
-}
-
 interface AICoachingSectionProps {
   summaryText: string;
-  strengths: TopicScore[];
-  weaknesses: TopicScore[];
-  recommendations: string[];
   studyPlan?: string;
   detailedFeedback?: string;
   breakthroughMoments?: string[];
@@ -66,17 +55,12 @@ const ERROR_TYPE_CONFIG = {
 
 export function AICoachingSection({
   summaryText,
-  strengths,
-  weaknesses,
-  recommendations,
   studyPlan,
   detailedFeedback,
   breakthroughMoments = [],
   commonErrorPatterns = [],
   errorAnalysis,
 }: AICoachingSectionProps) {
-  const topStrength = strengths.length > 0 ? strengths[0] : null;
-  const topWeakness = weaknesses.length > 0 ? weaknesses[0] : null;
   const hasErrorAnalysis = errorAnalysis && errorAnalysis.dominant_type && Object.keys(errorAnalysis.patterns).length > 0;
 
   return (
@@ -107,77 +91,6 @@ export function AICoachingSection({
             </p>
           </motion.div>
         )}
-
-        {/* Strength & Weakness Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Top Strength */}
-          {topStrength && (
-            <motion.div
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 }}
-              className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 hover:border-emerald-500/40 transition-colors"
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-emerald-400 uppercase tracking-wide">
-                      Top Strength
-                    </span>
-                    <span className="text-xs text-emerald-400/70 font-mono">
-                      {Math.round(topStrength.score * 100)}%
-                    </span>
-                  </div>
-                  <h3 className="font-medium text-zinc-100 mb-1">
-                    {topStrength.topic}
-                  </h3>
-                  {topStrength.insight && (
-                    <p className="text-sm text-zinc-400 leading-relaxed line-clamp-2">
-                      {topStrength.insight}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Top Weakness */}
-          {topWeakness && (
-            <motion.div
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.15 }}
-              className="p-4 rounded-xl bg-rose-500/5 border border-rose-500/20 hover:border-rose-500/40 transition-colors"
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center flex-shrink-0">
-                  <Target className="w-4 h-4 text-rose-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-rose-400 uppercase tracking-wide">
-                      Focus Area
-                    </span>
-                    <span className="text-xs text-rose-400/70 font-mono">
-                      {Math.round(topWeakness.score * 100)}%
-                    </span>
-                  </div>
-                  <h3 className="font-medium text-zinc-100 mb-1">
-                    {topWeakness.topic}
-                  </h3>
-                  {topWeakness.insight && (
-                    <p className="text-sm text-zinc-400 leading-relaxed line-clamp-2">
-                      {topWeakness.insight}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </div>
 
         {/* Detailed Feedback - Markdown */}
         {detailedFeedback && (
@@ -369,41 +282,6 @@ export function AICoachingSection({
                   </motion.div>
                 );
               })}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Action Items */}
-        {recommendations.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-            className="space-y-3"
-          >
-            <div className="flex items-center gap-2">
-              <Lightbulb className="w-4 h-4 text-amber-400" />
-              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
-                Action Items
-              </h3>
-            </div>
-            <div className="space-y-2">
-              {recommendations.map((rec, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -5 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.4 + index * 0.05 }}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/30 hover:border-amber-500/20 transition-colors"
-                >
-                  <div className="w-6 h-6 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-medium text-amber-400">
-                      {index + 1}
-                    </span>
-                  </div>
-                  <p className="text-sm text-zinc-300 leading-relaxed">{rec}</p>
-                </motion.div>
-              ))}
             </div>
           </motion.div>
         )}

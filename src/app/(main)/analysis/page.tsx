@@ -283,9 +283,6 @@ export default function AnalysisPage() {
       >
         <AICoachingSection
           summaryText={report.summaryText || ""}
-          strengths={report.strengths}
-          weaknesses={report.weaknesses}
-          recommendations={report.recommendations}
           studyPlan={report.studyPlan}
           detailedFeedback={report.detailedFeedback}
           breakthroughMoments={report.breakthroughMoments}
