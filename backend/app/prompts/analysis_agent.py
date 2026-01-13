@@ -87,11 +87,7 @@ ANALYSIS_SYSTEM_PROMPT = """
 - `helpful_rate`: 힌트가 도움이 된 비율
 
 ### 6. 오류 패턴
-- `concepts_struggling`을 기반으로 분석
-- `error_analysis`: SRK 분류 (데이터 있을 경우)
-  - skill: 타이핑/부주의 실수
-  - rule: 경계값 오류
-  - knowledge: 개념 이해 부족
+- `concepts_struggling`을 기반으로 분석 (AI 튜터가 세션 중 기록한 어려워한 개념들)
 
 ---
 
@@ -187,9 +183,30 @@ ANALYSIS_SYSTEM_PROMPT = """
 2. **한국어 사용** - 존댓말 사용
 3. **데이터 근거 필수** - 모든 판단에 수치 포함 (mastery %, 시도 횟수, 정답 수)
 4. **추상적 표현 금지** - "잘하고 있다", "더 노력해야 한다" 등 사용 금지
-5. **detailed_feedback은 약점 중심** - 강점/Bloom/통계는 생략, 약점 토픽별 분석에 집중
-6. **common_error_patterns 필수** - concepts_struggling 기반으로 생성
-7. **learning_style 필수** - hint_usage, mood_distribution 기반으로 type/description/strategy 결정
+5. **detailed_feedback은 약점 중심** - 이 필드만 약점에 집중, 다른 필드는 정상 생성
+
+---
+
+## 반드시 생성해야 하는 필드 (빈 값 금지)
+
+**아래 필드들은 절대로 빈 값으로 두지 마세요:**
+
+1. **learning_style** (필수)
+   - type: hint_usage, mood_distribution 기반으로 결정
+   - description: 데이터 기반 판단 근거 작성
+   - strategy: 해당 스타일에 맞는 학습 전략 작성
+   - 빈 객체 {{}} 금지
+
+2. **common_error_patterns** (필수)
+   - concepts_struggling의 각 항목을 '원인 → 결과' 형식으로 변환
+   - 최소 2-3개 이상의 패턴 작성
+   - 빈 배열 [] 금지
+
+3. **strengths** (필수) - bkt_mastery >= 0.7인 토픽
+4. **weaknesses** (필수) - bkt_mastery < 0.5인 토픽
+5. **recommendations** (필수) - 구체적 액션 아이템 3개 이상
+6. **study_plan** (필수) - 단계별 학습 경로
+7. **detailed_feedback** (필수) - 약점 중심 분석
 
 ### learning_style type 결정 기준
 - **independent**: 문제당 힌트 < 1, confident 비율 높음

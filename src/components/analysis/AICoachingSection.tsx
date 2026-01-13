@@ -8,16 +8,13 @@ import {
   AlertTriangle,
   ChevronRight,
   BookOpen,
-  Keyboard,
-  GitBranch,
-  Brain,
   Zap,
   Target,
   Lightbulb,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ErrorAnalysis, BKTMastery, TopicScore } from '@/lib/api/analysis';
+import type { BKTMastery, TopicScore } from '@/lib/api/analysis';
 
 interface AICoachingSectionProps {
   summaryText: string;
@@ -25,41 +22,12 @@ interface AICoachingSectionProps {
   detailedFeedback?: string;
   breakthroughMoments?: string[];
   commonErrorPatterns?: string[];
-  errorAnalysis?: ErrorAnalysis;
-  // BKT 기반 분석 (새로 추가)
+  // BKT 기반 분석
   strengths?: TopicScore[];
   weaknesses?: TopicScore[];
   recommendations?: string[];
   bktMastery?: BKTMastery;
 }
-
-// SRK 에러 타입별 설정
-const ERROR_TYPE_CONFIG = {
-  skill: {
-    label: 'Skill (실수)',
-    icon: Keyboard,
-    color: '#f59e0b',
-    bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-500/20',
-    description: '타이핑 실수, 부주의 오류',
-  },
-  rule: {
-    label: 'Rule (규칙)',
-    icon: GitBranch,
-    color: '#3b82f6',
-    bgColor: 'bg-blue-500/10',
-    borderColor: 'border-blue-500/20',
-    description: '경계값, 연산자 오류',
-  },
-  knowledge: {
-    label: 'Knowledge (개념)',
-    icon: Brain,
-    color: '#ef4444',
-    bgColor: 'bg-red-500/10',
-    borderColor: 'border-red-500/20',
-    description: '개념 이해 부족',
-  },
-};
 
 export function AICoachingSection({
   summaryText,
@@ -67,13 +35,11 @@ export function AICoachingSection({
   detailedFeedback,
   breakthroughMoments = [],
   commonErrorPatterns = [],
-  errorAnalysis,
   strengths = [],
   weaknesses = [],
   recommendations = [],
   bktMastery,
 }: AICoachingSectionProps) {
-  const hasErrorAnalysis = errorAnalysis && errorAnalysis.dominant_type && Object.keys(errorAnalysis.patterns).length > 0;
   const hasStrengthsWeaknesses = strengths.length > 0 || weaknesses.length > 0;
 
   return (
@@ -269,8 +235,8 @@ export function AICoachingSection({
           </motion.div>
         )}
 
-        {/* Common Error Patterns (legacy) */}
-        {commonErrorPatterns.length > 0 && !hasErrorAnalysis && (
+        {/* Common Error Patterns */}
+        {commonErrorPatterns.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -296,108 +262,6 @@ export function AICoachingSection({
                   <p className="text-sm text-zinc-400">{pattern}</p>
                 </motion.div>
               ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* SRK Error Analysis (새로운 프레임워크 기반) */}
-        {hasErrorAnalysis && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
-                  Error Pattern Analysis
-                </h3>
-              </div>
-              {errorAnalysis.total_errors && (
-                <span className="text-xs text-zinc-500">
-                  총 {errorAnalysis.total_errors}개 오류 분석
-                </span>
-              )}
-            </div>
-
-            {/* Dominant Type Badge */}
-            {errorAnalysis.dominant_type && ERROR_TYPE_CONFIG[errorAnalysis.dominant_type] && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.35 }}
-                className={`p-4 rounded-xl ${ERROR_TYPE_CONFIG[errorAnalysis.dominant_type].bgColor} border ${ERROR_TYPE_CONFIG[errorAnalysis.dominant_type].borderColor}`}
-              >
-                <div className="flex items-start gap-3">
-                  {(() => {
-                    const config = ERROR_TYPE_CONFIG[errorAnalysis.dominant_type!];
-                    const IconComponent = config.icon;
-                    return (
-                      <>
-                        <div
-                          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{ backgroundColor: `${config.color}20` }}
-                        >
-                          <IconComponent className="w-4 h-4" style={{ color: config.color }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span
-                              className="text-sm font-semibold"
-                              style={{ color: config.color }}
-                            >
-                              주요 오류: {config.label}
-                            </span>
-                          </div>
-                          <p className="text-sm text-zinc-400 leading-relaxed">
-                            {errorAnalysis.summary}
-                          </p>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              </motion.div>
-            )}
-
-            {/* Error Type Distribution */}
-            <div className="grid grid-cols-3 gap-2">
-              {Object.entries(errorAnalysis.patterns).map(([type, data], index) => {
-                const config = ERROR_TYPE_CONFIG[type as keyof typeof ERROR_TYPE_CONFIG];
-                if (!config || !data) return null;
-
-                const IconComponent = config.icon;
-                const percentage = Math.round(data.rate * 100);
-
-                return (
-                  <motion.div
-                    key={type}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 + index * 0.05 }}
-                    className={`p-3 rounded-lg ${config.bgColor} border ${config.borderColor} text-center`}
-                  >
-                    <IconComponent
-                      className="w-4 h-4 mx-auto mb-1"
-                      style={{ color: config.color }}
-                    />
-                    <div
-                      className="text-lg font-bold"
-                      style={{ color: config.color }}
-                    >
-                      {percentage}%
-                    </div>
-                    <div className="text-[10px] text-zinc-500 uppercase tracking-wide">
-                      {type}
-                    </div>
-                    <div className="text-xs text-zinc-600 mt-0.5">
-                      ({data.count}건)
-                    </div>
-                  </motion.div>
-                );
-              })}
             </div>
           </motion.div>
         )}

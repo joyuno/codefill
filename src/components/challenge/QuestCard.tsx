@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Swords, Target, Sparkles, Gift, Check, Loader2, Coins, Star, Sprout, Code2, Flame, TrendingUp, Puzzle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Swords, Target, Sparkles, Gift, Check, Loader2, Coins, Star, Code2, Puzzle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QuestProgress } from './QuestProgress';
 import type { Mission, MissionConditionType } from '@/lib/api/missions';
+import { CROPS, CROP_ASSET_PATH } from '@/components/farm/config/cropConfig';
 
 interface QuestCardProps {
   quest: Mission;
@@ -14,16 +15,15 @@ interface QuestCardProps {
   index?: number;
 }
 
-// 조건 타입별 아이콘 및 색상
+// 조건 타입별 아이콘 및 색상 (실제 ProblemType과 일치)
 const conditionConfig: Record<MissionConditionType, { icon: typeof Swords; color: string; label: string }> = {
   problems: { icon: Swords, color: 'text-primary', label: '문제 풀이' },
   blank: { icon: Target, color: 'text-blue-400', label: '빈칸 채우기' },
   puzzle: { icon: Puzzle, color: 'text-purple-400', label: '퍼즐' },
   guided: { icon: Sparkles, color: 'text-cyan-400', label: '가이디드' },
   implementation: { icon: Code2, color: 'text-orange-400', label: '구현' },
-  streak: { icon: Flame, color: 'text-red-400', label: '연속 풀이' },
-  xp: { icon: TrendingUp, color: 'text-emerald-400', label: 'XP 획득' },
 };
+
 
 // 난이도별 스타일
 const difficultyStyles: Record<string, { label: string; color: string }> = {
@@ -31,6 +31,17 @@ const difficultyStyles: Record<string, { label: string; color: string }> = {
   medium: { label: '보통', color: 'text-yellow-400 border-yellow-400/30' },
   hard: { label: '어려움', color: 'text-red-400 border-red-400/30' },
 };
+
+// 씨앗 코드에서 작물 정보 가져오기 (seed_carrot -> carrot)
+function getSeedInfo(seedCode: string): { name: string; image: string } | null {
+  const cropCode = seedCode.replace('seed_', '');
+  const crop = CROPS[cropCode];
+  if (!crop) return null;
+  return {
+    name: crop.nameKo,
+    image: `${CROP_ASSET_PATH}${crop.seedSprite}`,
+  };
+}
 
 export function QuestCard({ quest, variant = 'daily', onClaim, index = 0 }: QuestCardProps) {
   const [isClaiming, setIsClaiming] = useState(false);
@@ -82,7 +93,14 @@ export function QuestCard({ quest, variant = 'daily', onClaim, index = 0 }: Ques
             </div>
 
             <div className="flex-1 min-w-0">
-              <h3 className="font-medium text-sm text-white truncate">{quest.name}</h3>
+              <div className="flex items-center gap-1.5">
+                <h3 className="font-medium text-sm text-white truncate">{quest.name}</h3>
+                {quest.requireAllTypes && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                    All
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* 보상 */}
@@ -99,6 +117,16 @@ export function QuestCard({ quest, variant = 'daily', onClaim, index = 0 }: Ques
                   {quest.rewardXp}
                 </span>
               )}
+              {quest.rewardSeeds && Object.entries(quest.rewardSeeds).map(([seedCode, amount]) => {
+                const seedInfo = getSeedInfo(seedCode);
+                if (!seedInfo) return null;
+                return (
+                  <span key={seedCode} className="flex items-center gap-0.5 text-emerald-400" title={`${seedInfo.name} 씨앗`}>
+                    <img src={seedInfo.image} alt={seedInfo.name} className="w-4 h-4" style={{ imageRendering: 'pixelated' }} />
+                    {amount}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -183,7 +211,7 @@ export function QuestCard({ quest, variant = 'daily', onClaim, index = 0 }: Ques
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h3 className="font-semibold text-lg text-white">{quest.name}</h3>
               {quest.difficulty && (
                 <span
@@ -193,6 +221,11 @@ export function QuestCard({ quest, variant = 'daily', onClaim, index = 0 }: Ques
                   )}
                 >
                   {difficultyStyles[quest.difficulty]?.label}
+                </span>
+              )}
+              {quest.requireAllTypes && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  모든 유형
                 </span>
               )}
             </div>
@@ -229,14 +262,16 @@ export function QuestCard({ quest, variant = 'daily', onClaim, index = 0 }: Ques
                 <span className="font-semibold">{quest.rewardXp}</span>
               </div>
             )}
-            {quest.rewardSeeds && Object.keys(quest.rewardSeeds).length > 0 && (
-              <div className="flex items-center gap-1.5 text-emerald-400">
-                <Sprout className="w-5 h-5" />
-                <span className="font-semibold">
-                  {Object.values(quest.rewardSeeds).reduce((a, b) => a + b, 0)}
-                </span>
-              </div>
-            )}
+            {quest.rewardSeeds && Object.entries(quest.rewardSeeds).map(([seedCode, amount]) => {
+              const seedInfo = getSeedInfo(seedCode);
+              if (!seedInfo) return null;
+              return (
+                <div key={seedCode} className="flex items-center gap-1.5 text-emerald-400" title={`${seedInfo.name} 씨앗`}>
+                  <img src={seedInfo.image} alt={seedInfo.name} className="w-5 h-5" style={{ imageRendering: 'pixelated' }} />
+                  <span className="font-semibold">{amount}</span>
+                </div>
+              );
+            })}
           </div>
 
           {/* 버튼 */}

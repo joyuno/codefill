@@ -103,7 +103,6 @@ class AnalysisService:
             # 학습 분석 프레임워크 메트릭
             "bktMastery": data.get("bkt_mastery", {}),
             "bloomMetrics": data.get("bloom_metrics", {}),
-            "errorAnalysis": data.get("error_analysis", {}),
         }
 
     async def generate_analysis(self, user_id: UUID) -> Dict[str, Any]:
@@ -151,7 +150,6 @@ class AnalysisService:
             # 학습 분석 프레임워크 메트릭
             "bkt_mastery": user_data.get("bkt_mastery", {}),
             "bloom_metrics": user_data.get("bloom_metrics", {}),
-            "error_analysis": user_data.get("error_analysis", {}),
             # BKT 기반 강점/약점 토픽
             "weak_topics": user_data.get("weak_topics", []),
             "strong_topics": user_data.get("strong_topics", []),
@@ -179,8 +177,9 @@ class AnalysisService:
             "conceptsStruggling": user_data.get("concepts_struggling", []),
             "conceptsLearned": user_data.get("concepts_learned", []),
             "hintUsage": user_data.get("hint_usage", {}),
-            "learningStyle": user_data.get("learning_style", {}),
-            "commonErrorPatterns": user_data.get("common_error_patterns", {}),
+            # LLM이 생성한 결과 사용, 없으면 user_data 폴백
+            "learningStyle": analysis.get("learning_style") or user_data.get("learning_style", {}),
+            "commonErrorPatterns": analysis.get("common_error_patterns") or user_data.get("common_error_patterns", []),
             "moodDistribution": user_data.get("mood_distribution", {}),
             "breakthroughMoments": user_data.get("breakthrough_moments", []),
             "teachingNotes": user_data.get("teaching_notes", []),
@@ -189,7 +188,6 @@ class AnalysisService:
             # 학습 분석 프레임워크 메트릭
             "bktMastery": user_data.get("bkt_mastery", {}),
             "bloomMetrics": user_data.get("bloom_metrics", {}),
-            "errorAnalysis": user_data.get("error_analysis", {}),
         }
 
     async def recommend_problems(self, user_id: UUID) -> List[Dict[str, Any]]:
@@ -534,7 +532,6 @@ class AnalysisService:
             hint_levels_from_details = []
             blank_correct_count = 0
             blank_total_count = 0
-            error_patterns_list = []  # SRK 에러 패턴 수집
 
             if details_result.data and len(details_result.data) > 0:
                 for detail in details_result.data:
@@ -554,20 +551,6 @@ class AnalysisService:
                         blank_total_count += 1
                         if detail.get("blank_is_correct"):
                             blank_correct_count += 1
-
-                    # 에러 패턴 분류 (오답인 경우만)
-                    if detail.get("blank_is_correct") is False:
-                        user_answer = detail.get("blank_user_answer", "")
-                        correct_answer = detail.get("blank_correct_answer", "")
-                        hints_used = detail.get("blank_hint_level") or 0
-
-                        if user_answer or correct_answer:  # 데이터가 있는 경우만
-                            error_pattern = self.metrics.classify_error_pattern(
-                                user_answer=user_answer,
-                                correct_answer=correct_answer,
-                                hints_used=hints_used
-                            )
-                            error_patterns_list.append(error_pattern)
 
             # hint_logs 분석 (레벨별 힌트 사용 횟수)
             by_level: Dict[str, int] = {}
@@ -602,9 +585,6 @@ class AnalysisService:
             data["blank_accuracy"] = round(
                 blank_correct_count / blank_total_count, 2
             ) if blank_total_count > 0 else None
-
-            # 4-3. SRK 에러 패턴 집계
-            data["error_analysis"] = self.metrics.aggregate_error_patterns(error_patterns_list)
 
         return data
 

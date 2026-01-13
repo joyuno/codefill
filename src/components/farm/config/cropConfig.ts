@@ -64,8 +64,7 @@ export const CROPS: Record<string, CropConfig> = {
     code: 'strawberry',
     name: 'Strawberry',
     nameKo: '딸기',
-    // 원본 Strawberry_Growth_Stages가 3프레임밖에 없어서 Pepper로 대체 (빨간 열매)
-    spritesheet: 'Pepper_Growth_Stages_32x32.png',
+    spritesheet: 'Strawberry_Growth_Stages_32x32.png',
     seedSprite: 'Seed_strawberry_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,

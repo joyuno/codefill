@@ -112,7 +112,7 @@ export function RankingModal({ open, onOpenChange, currentUserId }: RankingModal
               </SheetTitle>
               <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                 <Users className="w-3 h-3" />
-                총 {total.toLocaleString()}명의 모험가
+                총 {total.toLocaleString()}명
               </p>
             </div>
           </div>

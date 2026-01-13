@@ -249,7 +249,6 @@ export default function AnalysisPage() {
           detailedFeedback={report.detailedFeedback}
           breakthroughMoments={report.breakthroughMoments}
           commonErrorPatterns={report.commonErrorPatterns}
-          errorAnalysis={report.errorAnalysis}
           strengths={report.strengths}
           weaknesses={report.weaknesses}
           recommendations={report.recommendations}
@@ -264,39 +263,39 @@ export default function AnalysisPage() {
         transition={{ delay: 0.12 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
       >
-        <div className="p-5 border-b border-zinc-800">
-          <h3 className="text-lg font-bold text-zinc-100">토픽별 정답률</h3>
-          <p className="text-xs text-zinc-500 mt-1">
+        <div className="px-4 py-3 border-b border-zinc-800">
+          <h3 className="text-base font-bold text-zinc-100">토픽별 정답률</h3>
+          <p className="text-[11px] text-zinc-500 mt-0.5">
             문제 풀이 결과 기반 통계
           </p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2">
           {/* 레이더 차트 */}
-          <div className="relative p-6 lg:p-8 flex flex-col items-center justify-center min-h-[380px] bg-gradient-to-br from-zinc-900 to-zinc-950">
+          <div className="relative p-4 flex flex-col items-center justify-center min-h-[280px] bg-gradient-to-br from-zinc-900 to-zinc-950">
             <div className="absolute inset-0 opacity-30">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-primary/5 blur-3xl" />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[280px] rounded-full bg-primary/5 blur-3xl" />
             </div>
-            <div className="relative z-10 w-full max-w-[320px]">
+            <div className="relative z-10 w-full max-w-[240px]">
               <SkillRadar
                 skills={Object.entries(report.skillSnapshot || {}).map(([topic, score]) => ({
                   topic,
                   score: score as number,
                 }))}
-                size={300}
+                size={220}
               />
             </div>
           </div>
 
           {/* 토픽별 정답률 텍스트 */}
-          <div className="border-t lg:border-t-0 lg:border-l border-zinc-800 p-6">
-            <div className="space-y-2">
+          <div className="border-t lg:border-t-0 lg:border-l border-zinc-800 p-4">
+            <div className="space-y-1.5">
               {Object.entries(report.skillSnapshot || {})
                 .sort(([, a], [, b]) => (b as number) - (a as number))
                 .map(([topic, score]) => (
                   <div key={topic} className="flex items-center justify-between">
-                    <span className="text-sm text-zinc-400">{topic}</span>
+                    <span className="text-xs text-zinc-400">{topic}</span>
                     <div className="flex items-center gap-2">
-                      <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div className="w-20 h-1 bg-zinc-800 rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full"
                           style={{
@@ -305,7 +304,7 @@ export default function AnalysisPage() {
                           }}
                         />
                       </div>
-                      <span className="text-sm font-medium text-zinc-300 w-12 text-right">
+                      <span className="text-xs font-medium text-zinc-300 w-10 text-right">
                         {Math.round((score as number) * 100)}%
                       </span>
                     </div>

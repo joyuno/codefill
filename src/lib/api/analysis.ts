@@ -77,30 +77,6 @@ export interface BloomMetrics {
   gap_analysis: string;  // 격차 분석 설명
 }
 
-/**
- * SRK Error Pattern - 오류 유형별 분석
- */
-export interface ErrorPatternDetail {
-  count: number;
-  rate: number;
-  examples: Array<{
-    user: string;
-    correct: string;
-    reason: string;
-  }>;
-}
-
-export interface ErrorAnalysis {
-  dominant_type: "skill" | "rule" | "knowledge" | null;
-  summary: string;
-  total_errors?: number;
-  patterns: {
-    skill?: ErrorPatternDetail;
-    rule?: ErrorPatternDetail;
-    knowledge?: ErrorPatternDetail;
-  };
-}
-
 export interface AnalysisReport {
   id?: string;
   summaryText: string;
@@ -127,7 +103,6 @@ export interface AnalysisReport {
   // 학습 분석 프레임워크 메트릭
   bktMastery?: BKTMastery;
   bloomMetrics?: BloomMetrics;
-  errorAnalysis?: ErrorAnalysis;
 }
 
 export interface AnalysisReportResponse {

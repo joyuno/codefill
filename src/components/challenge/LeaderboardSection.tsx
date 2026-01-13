@@ -101,7 +101,7 @@ export function LeaderboardSection({ currentUserId }: LeaderboardSectionProps) {
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
               <Users className="w-3 h-3" />
-              총 <span className="text-white font-medium">{total.toLocaleString()}</span>명의 모험가
+              총 <span className="text-white font-medium">{total.toLocaleString()}</span>명
             </p>
           </div>
         </div>

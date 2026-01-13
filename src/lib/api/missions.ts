@@ -16,17 +16,15 @@ import { api } from './client';
  * - puzzle: 퍼즐 문제
  * - guided: 가이디드 문제
  * - implementation: 구현 문제
- * - streak: 연속 풀이 일수
- * - xp: XP 획득량
+ *
+ * 실제 ProblemType과 일치: 'blank' | 'puzzle' | 'guided' | 'implementation'
  */
 export type MissionConditionType =
-  | 'problems'      // 문제 풀이 (타입 무관)
-  | 'blank'         // 빈칸 채우기
-  | 'puzzle'        // 퍼즐
-  | 'guided'        // 가이디드
-  | 'implementation'// 구현
-  | 'streak'        // 연속 풀이
-  | 'xp';           // XP 획득
+  | 'problems'       // 문제 풀이 (타입 무관)
+  | 'blank'          // 빈칸 채우기
+  | 'puzzle'         // 퍼즐
+  | 'guided'         // 가이디드
+  | 'implementation';// 구현
 
 /**
  * 미션 난이도
@@ -53,6 +51,9 @@ export interface Mission {
   rewardGold: number;
   rewardXp: number;
   rewardSeeds: Record<string, number> | null;
+  // 확장 조건
+  category: string | null;           // 알고리즘 카테고리
+  requireAllTypes: boolean;          // 모든 유형 풀기 미션
 }
 
 export interface DailyMissionsResponse {
@@ -97,7 +98,7 @@ export interface AllMissionsResponse {
 // ============================================================
 
 function transformMission(data: Record<string, unknown>): Mission {
-  // conditionType 변환 (백엔드 legacy 값 호환)
+  // conditionType 변환
   const rawConditionType = data.condition_type as string;
   const conditionTypeMap: Record<string, MissionConditionType> = {
     'problems': 'problems',
@@ -105,11 +106,6 @@ function transformMission(data: Record<string, unknown>): Mission {
     'puzzle': 'puzzle',
     'guided': 'guided',
     'implementation': 'implementation',
-    'output': 'implementation',  // legacy 호환
-    'bug': 'implementation',     // legacy 호환
-    'refactor': 'implementation',// legacy 호환
-    'streak': 'streak',
-    'xp': 'xp',
   };
   const conditionType: MissionConditionType = conditionTypeMap[rawConditionType] || 'problems';
 
@@ -128,6 +124,9 @@ function transformMission(data: Record<string, unknown>): Mission {
     rewardGold: data.reward_gold as number,
     rewardXp: data.reward_xp as number,
     rewardSeeds: data.reward_seeds as Record<string, number> | null,
+    // 확장 조건
+    category: data.category as string | null,
+    requireAllTypes: (data.require_all_types as boolean) || false,
   };
 }
 
