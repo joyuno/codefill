@@ -21,39 +21,39 @@ ALTER TABLE missions ADD COLUMN IF NOT EXISTS require_all_types BOOLEAN DEFAULT 
 INSERT INTO missions (code, name, description, mission_type, condition_type, condition_value, difficulty, reward_gold, reward_xp, reward_seeds)
 VALUES
     -- ========== 전체 문제 풀이 (6개) ==========
-    ('daily_solve_1', '워밍업', '오늘 문제 1개 풀기', 'daily', 'problems', 1, NULL, 20, 15, NULL),
-    ('daily_solve_3', '꾸준한 학습', '오늘 문제 3개 풀기', 'daily', 'problems', 3, NULL, 50, 30, '{"seed_radish": 1}'),
-    ('daily_solve_5', '열공 모드', '오늘 문제 5개 풀기', 'daily', 'problems', 5, NULL, 100, 50, '{"seed_carrot": 1, "seed_wheat": 1}'),
-    ('daily_solve_7', '학습의 달인', '오늘 문제 7개 풀기', 'daily', 'problems', 7, NULL, 150, 80, '{"seed_potato": 2, "seed_radish": 1}'),
-    ('daily_solve_10', '하루 10문제', '오늘 문제 10개 풀기', 'daily', 'problems', 10, NULL, 200, 100, '{"seed_onion": 1, "seed_carrot": 2}'),
-    ('daily_solve_15', '문제 폭풍', '오늘 문제 15개 풀기', 'daily', 'problems', 15, NULL, 300, 150, '{"seed_tomato": 1, "seed_cabbage": 1, "seed_carrot": 1}'),
+    ('daily_solve_1', 'Warm Up', '오늘 문제 1개 풀기', 'daily', 'problems', 1, NULL, 20, 15, NULL),
+    ('daily_solve_3', 'Daily Grind', '오늘 문제 3개 풀기', 'daily', 'problems', 3, NULL, 50, 30, '{"seed_radish": 1}'),
+    ('daily_solve_5', 'Code Sprint', '오늘 문제 5개 풀기', 'daily', 'problems', 5, NULL, 100, 50, '{"seed_carrot": 1, "seed_wheat": 1}'),
+    ('daily_solve_7', 'Power Hour', '오늘 문제 7개 풀기', 'daily', 'problems', 7, NULL, 150, 80, '{"seed_potato": 2, "seed_radish": 1}'),
+    ('daily_solve_10', 'Ten Down', '오늘 문제 10개 풀기', 'daily', 'problems', 10, NULL, 200, 100, '{"seed_onion": 1, "seed_carrot": 2}'),
+    ('daily_solve_15', 'Code Storm', '오늘 문제 15개 풀기', 'daily', 'problems', 15, NULL, 300, 150, '{"seed_tomato": 1, "seed_cabbage": 1, "seed_carrot": 1}'),
 
     -- ========== 빈칸 채우기 (5개) ==========
-    ('daily_blank_1', '빈칸 입문', '빈칸 채우기 1개 풀기', 'daily', 'blank', 1, NULL, 25, 20, NULL),
-    ('daily_blank_2', '빈칸 연습', '빈칸 채우기 2개 풀기', 'daily', 'blank', 2, NULL, 40, 25, '{"seed_wheat": 1}'),
-    ('daily_blank_3', '빈칸 도전', '빈칸 채우기 3개 풀기', 'daily', 'blank', 3, NULL, 60, 35, '{"seed_carrot": 1, "seed_radish": 1}'),
-    ('daily_blank_5', '빈칸 마스터', '빈칸 채우기 5개 풀기', 'daily', 'blank', 5, NULL, 100, 60, '{"seed_onion": 1, "seed_potato": 1}'),
-    ('daily_blank_7', '빈칸 정복자', '빈칸 채우기 7개 풀기', 'daily', 'blank', 7, NULL, 150, 90, '{"seed_tomato": 1, "seed_carrot": 2}'),
+    ('daily_blank_1', 'Fill Starter', '빈칸 채우기 1개 풀기', 'daily', 'blank', 1, NULL, 25, 20, NULL),
+    ('daily_blank_2', 'Fill Practice', '빈칸 채우기 2개 풀기', 'daily', 'blank', 2, NULL, 40, 25, '{"seed_wheat": 1}'),
+    ('daily_blank_3', 'Fill Challenge', '빈칸 채우기 3개 풀기', 'daily', 'blank', 3, NULL, 60, 35, '{"seed_carrot": 1, "seed_radish": 1}'),
+    ('daily_blank_5', 'Fill Expert', '빈칸 채우기 5개 풀기', 'daily', 'blank', 5, NULL, 100, 60, '{"seed_onion": 1, "seed_potato": 1}'),
+    ('daily_blank_7', 'Fill Master', '빈칸 채우기 7개 풀기', 'daily', 'blank', 7, NULL, 150, 90, '{"seed_tomato": 1, "seed_carrot": 2}'),
 
     -- ========== 퍼즐 (5개) ==========
-    ('daily_puzzle_1', '퍼즐 입문', '코드 퍼즐 1개 풀기', 'daily', 'puzzle', 1, NULL, 30, 20, NULL),
-    ('daily_puzzle_2', '퍼즐 연습', '코드 퍼즐 2개 풀기', 'daily', 'puzzle', 2, NULL, 50, 30, '{"seed_potato": 1}'),
-    ('daily_puzzle_3', '퍼즐 도전', '코드 퍼즐 3개 풀기', 'daily', 'puzzle', 3, NULL, 80, 50, '{"seed_wheat": 1, "seed_radish": 1}'),
-    ('daily_puzzle_5', '퍼즐 마스터', '코드 퍼즐 5개 풀기', 'daily', 'puzzle', 5, NULL, 120, 70, '{"seed_cabbage": 1, "seed_carrot": 1}'),
-    ('daily_puzzle_7', '퍼즐 천재', '코드 퍼즐 7개 풀기', 'daily', 'puzzle', 7, NULL, 180, 100, '{"seed_corn": 1, "seed_onion": 1}'),
+    ('daily_puzzle_1', 'Puzzle Starter', '코드 퍼즐 1개 풀기', 'daily', 'puzzle', 1, NULL, 30, 20, NULL),
+    ('daily_puzzle_2', 'Puzzle Practice', '코드 퍼즐 2개 풀기', 'daily', 'puzzle', 2, NULL, 50, 30, '{"seed_potato": 1}'),
+    ('daily_puzzle_3', 'Puzzle Challenge', '코드 퍼즐 3개 풀기', 'daily', 'puzzle', 3, NULL, 80, 50, '{"seed_wheat": 1, "seed_radish": 1}'),
+    ('daily_puzzle_5', 'Puzzle Expert', '코드 퍼즐 5개 풀기', 'daily', 'puzzle', 5, NULL, 120, 70, '{"seed_cabbage": 1, "seed_carrot": 1}'),
+    ('daily_puzzle_7', 'Puzzle Master', '코드 퍼즐 7개 풀기', 'daily', 'puzzle', 7, NULL, 180, 100, '{"seed_corn": 1, "seed_onion": 1}'),
 
     -- ========== 가이디드 (4개) ==========
-    ('daily_guided_1', '가이디드 학습', '가이디드 문제 1개 풀기', 'daily', 'guided', 1, NULL, 40, 30, '{"seed_radish": 1}'),
-    ('daily_guided_2', '가이디드 연습', '가이디드 문제 2개 풀기', 'daily', 'guided', 2, NULL, 80, 50, '{"seed_carrot": 1, "seed_potato": 1}'),
-    ('daily_guided_3', '가이디드 도전', '가이디드 문제 3개 풀기', 'daily', 'guided', 3, NULL, 120, 80, '{"seed_tomato": 1, "seed_wheat": 1}'),
-    ('daily_guided_5', '가이디드 마스터', '가이디드 문제 5개 풀기', 'daily', 'guided', 5, NULL, 200, 120, '{"seed_strawberry": 1, "seed_onion": 1}'),
+    ('daily_guided_1', 'Guided Starter', '가이디드 문제 1개 풀기', 'daily', 'guided', 1, NULL, 40, 30, '{"seed_radish": 1}'),
+    ('daily_guided_2', 'Guided Practice', '가이디드 문제 2개 풀기', 'daily', 'guided', 2, NULL, 80, 50, '{"seed_carrot": 1, "seed_potato": 1}'),
+    ('daily_guided_3', 'Guided Challenge', '가이디드 문제 3개 풀기', 'daily', 'guided', 3, NULL, 120, 80, '{"seed_tomato": 1, "seed_wheat": 1}'),
+    ('daily_guided_5', 'Guided Master', '가이디드 문제 5개 풀기', 'daily', 'guided', 5, NULL, 200, 120, '{"seed_strawberry": 1, "seed_onion": 1}'),
 
     -- ========== 구현 (5개) ==========
-    ('daily_impl_1', '구현 입문', '구현 문제 1개 풀기', 'daily', 'implementation', 1, NULL, 50, 35, '{"seed_wheat": 1}'),
-    ('daily_impl_2', '구현 연습', '구현 문제 2개 풀기', 'daily', 'implementation', 2, NULL, 100, 60, '{"seed_potato": 1, "seed_radish": 1}'),
-    ('daily_impl_3', '구현 도전', '구현 문제 3개 풀기', 'daily', 'implementation', 3, NULL, 150, 90, '{"seed_cabbage": 1, "seed_carrot": 1}'),
-    ('daily_impl_5', '구현 마스터', '구현 문제 5개 풀기', 'daily', 'implementation', 5, NULL, 250, 150, '{"seed_corn": 1, "seed_tomato": 1}'),
-    ('daily_impl_7', '구현의 달인', '구현 문제 7개 풀기', 'daily', 'implementation', 7, NULL, 350, 200, '{"seed_strawberry": 1, "seed_cabbage": 1, "seed_onion": 1}');
+    ('daily_impl_1', 'Build Starter', '구현 문제 1개 풀기', 'daily', 'implementation', 1, NULL, 50, 35, '{"seed_wheat": 1}'),
+    ('daily_impl_2', 'Build Practice', '구현 문제 2개 풀기', 'daily', 'implementation', 2, NULL, 100, 60, '{"seed_potato": 1, "seed_radish": 1}'),
+    ('daily_impl_3', 'Build Challenge', '구현 문제 3개 풀기', 'daily', 'implementation', 3, NULL, 150, 90, '{"seed_cabbage": 1, "seed_carrot": 1}'),
+    ('daily_impl_5', 'Build Expert', '구현 문제 5개 풀기', 'daily', 'implementation', 5, NULL, 250, 150, '{"seed_corn": 1, "seed_tomato": 1}'),
+    ('daily_impl_7', 'Build Master', '구현 문제 7개 풀기', 'daily', 'implementation', 7, NULL, 350, 200, '{"seed_strawberry": 1, "seed_cabbage": 1, "seed_onion": 1}');
 
 -- =====================================================
 -- 3. 주간 챌린지 (20개) - 매주 5개 랜덤 선택
@@ -61,34 +61,34 @@ VALUES
 INSERT INTO missions (code, name, description, mission_type, condition_type, condition_value, difficulty, reward_gold, reward_xp, reward_seeds)
 VALUES
     -- ========== 전체 문제 풀이 (5개) ==========
-    ('weekly_solve_10', '주간 스타터', '이번 주 문제 10개 풀기', 'weekly', 'problems', 10, NULL, 150, 100, '{"seed_carrot": 2, "seed_radish": 2}'),
-    ('weekly_solve_20', '주간 워리어', '이번 주 문제 20개 풀기', 'weekly', 'problems', 20, NULL, 300, 200, '{"seed_potato": 2, "seed_wheat": 2, "seed_onion": 1}'),
-    ('weekly_solve_35', '주간 챔피언', '이번 주 문제 35개 풀기', 'weekly', 'problems', 35, NULL, 500, 350, '{"seed_tomato": 2, "seed_cabbage": 2, "seed_corn": 1}'),
-    ('weekly_solve_50', '주간 레전드', '이번 주 문제 50개 풀기', 'weekly', 'problems', 50, NULL, 800, 500, '{"seed_strawberry": 2, "seed_corn": 2, "seed_tomato": 1}'),
-    ('weekly_solve_70', '주간 마스터', '이번 주 문제 70개 풀기', 'weekly', 'problems', 70, NULL, 1200, 750, '{"seed_pumpkin": 1, "seed_strawberry": 2, "seed_corn": 2}'),
+    ('weekly_solve_10', 'Weekly Starter', '이번 주 문제 10개 풀기', 'weekly', 'problems', 10, NULL, 150, 100, '{"seed_carrot": 2, "seed_radish": 2}'),
+    ('weekly_solve_20', 'Weekly Warrior', '이번 주 문제 20개 풀기', 'weekly', 'problems', 20, NULL, 300, 200, '{"seed_potato": 2, "seed_wheat": 2, "seed_onion": 1}'),
+    ('weekly_solve_35', 'Weekly Champion', '이번 주 문제 35개 풀기', 'weekly', 'problems', 35, NULL, 500, 350, '{"seed_tomato": 2, "seed_cabbage": 2, "seed_corn": 1}'),
+    ('weekly_solve_50', 'Weekly Legend', '이번 주 문제 50개 풀기', 'weekly', 'problems', 50, NULL, 800, 500, '{"seed_strawberry": 2, "seed_corn": 2, "seed_tomato": 1}'),
+    ('weekly_solve_70', 'Weekly Elite', '이번 주 문제 70개 풀기', 'weekly', 'problems', 70, NULL, 1200, 750, '{"seed_pumpkin": 1, "seed_strawberry": 2, "seed_corn": 2}'),
 
     -- ========== 빈칸 채우기 (4개) ==========
-    ('weekly_blank_5', '빈칸 위클리', '이번 주 빈칸 5개 풀기', 'weekly', 'blank', 5, NULL, 150, 100, '{"seed_carrot": 2, "seed_wheat": 2}'),
-    ('weekly_blank_10', '빈칸 주간 도전', '이번 주 빈칸 10개 풀기', 'weekly', 'blank', 10, NULL, 250, 150, '{"seed_onion": 2, "seed_potato": 2}'),
-    ('weekly_blank_20', '빈칸 주간 마스터', '이번 주 빈칸 20개 풀기', 'weekly', 'blank', 20, NULL, 450, 300, '{"seed_corn": 2, "seed_cabbage": 2}'),
-    ('weekly_blank_30', '빈칸 정복왕', '이번 주 빈칸 30개 풀기', 'weekly', 'blank', 30, NULL, 700, 450, '{"seed_pumpkin": 1, "seed_strawberry": 2}'),
+    ('weekly_blank_5', 'Fill Weekly', '이번 주 빈칸 5개 풀기', 'weekly', 'blank', 5, NULL, 150, 100, '{"seed_carrot": 2, "seed_wheat": 2}'),
+    ('weekly_blank_10', 'Fill Challenger', '이번 주 빈칸 10개 풀기', 'weekly', 'blank', 10, NULL, 250, 150, '{"seed_onion": 2, "seed_potato": 2}'),
+    ('weekly_blank_20', 'Fill Champion', '이번 주 빈칸 20개 풀기', 'weekly', 'blank', 20, NULL, 450, 300, '{"seed_corn": 2, "seed_cabbage": 2}'),
+    ('weekly_blank_30', 'Fill Elite', '이번 주 빈칸 30개 풀기', 'weekly', 'blank', 30, NULL, 700, 450, '{"seed_pumpkin": 1, "seed_strawberry": 2}'),
 
     -- ========== 퍼즐 (4개) ==========
-    ('weekly_puzzle_5', '퍼즐 위클리', '이번 주 퍼즐 5개 풀기', 'weekly', 'puzzle', 5, NULL, 180, 120, '{"seed_radish": 2, "seed_potato": 2}'),
-    ('weekly_puzzle_10', '퍼즐 주간 도전', '이번 주 퍼즐 10개 풀기', 'weekly', 'puzzle', 10, NULL, 300, 200, '{"seed_tomato": 2, "seed_onion": 2}'),
-    ('weekly_puzzle_20', '퍼즐 주간 마스터', '이번 주 퍼즐 20개 풀기', 'weekly', 'puzzle', 20, NULL, 500, 350, '{"seed_strawberry": 2, "seed_cabbage": 2}'),
-    ('weekly_puzzle_30', '퍼즐 천재왕', '이번 주 퍼즐 30개 풀기', 'weekly', 'puzzle', 30, NULL, 750, 500, '{"seed_pumpkin": 1, "seed_corn": 2}'),
+    ('weekly_puzzle_5', 'Puzzle Weekly', '이번 주 퍼즐 5개 풀기', 'weekly', 'puzzle', 5, NULL, 180, 120, '{"seed_radish": 2, "seed_potato": 2}'),
+    ('weekly_puzzle_10', 'Puzzle Challenger', '이번 주 퍼즐 10개 풀기', 'weekly', 'puzzle', 10, NULL, 300, 200, '{"seed_tomato": 2, "seed_onion": 2}'),
+    ('weekly_puzzle_20', 'Puzzle Champion', '이번 주 퍼즐 20개 풀기', 'weekly', 'puzzle', 20, NULL, 500, 350, '{"seed_strawberry": 2, "seed_cabbage": 2}'),
+    ('weekly_puzzle_30', 'Puzzle Elite', '이번 주 퍼즐 30개 풀기', 'weekly', 'puzzle', 30, NULL, 750, 500, '{"seed_pumpkin": 1, "seed_corn": 2}'),
 
     -- ========== 가이디드 (3개) ==========
-    ('weekly_guided_3', '가이디드 위클리', '이번 주 가이디드 3개 풀기', 'weekly', 'guided', 3, NULL, 200, 130, '{"seed_carrot": 2, "seed_radish": 2}'),
-    ('weekly_guided_7', '가이디드 주간 도전', '이번 주 가이디드 7개 풀기', 'weekly', 'guided', 7, NULL, 400, 280, '{"seed_cabbage": 2, "seed_tomato": 2}'),
-    ('weekly_guided_15', '가이디드 주간 마스터', '이번 주 가이디드 15개 풀기', 'weekly', 'guided', 15, NULL, 700, 500, '{"seed_strawberry": 2, "seed_corn": 2, "seed_onion": 1}'),
+    ('weekly_guided_3', 'Guided Weekly', '이번 주 가이디드 3개 풀기', 'weekly', 'guided', 3, NULL, 200, 130, '{"seed_carrot": 2, "seed_radish": 2}'),
+    ('weekly_guided_7', 'Guided Challenger', '이번 주 가이디드 7개 풀기', 'weekly', 'guided', 7, NULL, 400, 280, '{"seed_cabbage": 2, "seed_tomato": 2}'),
+    ('weekly_guided_15', 'Guided Champion', '이번 주 가이디드 15개 풀기', 'weekly', 'guided', 15, NULL, 700, 500, '{"seed_strawberry": 2, "seed_corn": 2, "seed_onion": 1}'),
 
     -- ========== 구현 (4개) ==========
-    ('weekly_impl_3', '구현 위클리', '이번 주 구현 3개 풀기', 'weekly', 'implementation', 3, NULL, 220, 150, '{"seed_wheat": 2, "seed_potato": 2}'),
-    ('weekly_impl_7', '구현 주간 도전', '이번 주 구현 7개 풀기', 'weekly', 'implementation', 7, NULL, 450, 300, '{"seed_onion": 2, "seed_tomato": 2}'),
-    ('weekly_impl_15', '구현 주간 마스터', '이번 주 구현 15개 풀기', 'weekly', 'implementation', 15, NULL, 750, 500, '{"seed_corn": 2, "seed_strawberry": 2}'),
-    ('weekly_impl_25', '구현의 신', '이번 주 구현 25개 풀기', 'weekly', 'implementation', 25, NULL, 1000, 700, '{"seed_pumpkin": 1, "seed_strawberry": 2, "seed_corn": 1}');
+    ('weekly_impl_3', 'Build Weekly', '이번 주 구현 3개 풀기', 'weekly', 'implementation', 3, NULL, 220, 150, '{"seed_wheat": 2, "seed_potato": 2}'),
+    ('weekly_impl_7', 'Build Challenger', '이번 주 구현 7개 풀기', 'weekly', 'implementation', 7, NULL, 450, 300, '{"seed_onion": 2, "seed_tomato": 2}'),
+    ('weekly_impl_15', 'Build Champion', '이번 주 구현 15개 풀기', 'weekly', 'implementation', 15, NULL, 750, 500, '{"seed_corn": 2, "seed_strawberry": 2}'),
+    ('weekly_impl_25', 'Build Elite', '이번 주 구현 25개 풀기', 'weekly', 'implementation', 25, NULL, 1000, 700, '{"seed_pumpkin": 1, "seed_strawberry": 2, "seed_corn": 1}');
 
 -- =====================================================
 -- 3-2. 추가 일일 미션 - 난이도/복합 조건 (8개 추가 → 총 33개)
@@ -96,16 +96,16 @@ VALUES
 INSERT INTO missions (code, name, description, mission_type, condition_type, condition_value, difficulty, reward_gold, reward_xp, reward_seeds, category, require_all_types)
 VALUES
     -- ========== 난이도별 미션 (6개) ==========
-    ('daily_easy_3', '쉬운 문제 정복', '쉬운 난이도 3문제 풀기', 'daily', 'problems', 3, 'easy', 40, 25, '{"seed_carrot": 2}', NULL, FALSE),
-    ('daily_easy_5', '입문자의 길', '쉬운 난이도 5문제 풀기', 'daily', 'problems', 5, 'easy', 70, 40, '{"seed_radish": 2, "seed_wheat": 1}', NULL, FALSE),
-    ('daily_medium_3', '중급 도전', '보통 난이도 3문제 풀기', 'daily', 'problems', 3, 'medium', 80, 50, '{"seed_potato": 1, "seed_onion": 1}', NULL, FALSE),
-    ('daily_medium_5', '중급 마스터', '보통 난이도 5문제 풀기', 'daily', 'problems', 5, 'medium', 130, 80, '{"seed_tomato": 1, "seed_cabbage": 1}', NULL, FALSE),
-    ('daily_hard_2', '어려운 도전', '어려운 난이도 2문제 풀기', 'daily', 'problems', 2, 'hard', 120, 70, '{"seed_corn": 1, "seed_onion": 1}', NULL, FALSE),
-    ('daily_hard_3', '하드 코어', '어려운 난이도 3문제 풀기', 'daily', 'problems', 3, 'hard', 180, 100, '{"seed_strawberry": 1, "seed_tomato": 1}', NULL, FALSE),
+    ('daily_easy_3', 'Easy Mode', '쉬운 난이도 3문제 풀기', 'daily', 'problems', 3, 'easy', 40, 25, '{"seed_carrot": 2}', NULL, FALSE),
+    ('daily_easy_5', 'Easy Streak', '쉬운 난이도 5문제 풀기', 'daily', 'problems', 5, 'easy', 70, 40, '{"seed_radish": 2, "seed_wheat": 1}', NULL, FALSE),
+    ('daily_medium_3', 'Medium Mode', '보통 난이도 3문제 풀기', 'daily', 'problems', 3, 'medium', 80, 50, '{"seed_potato": 1, "seed_onion": 1}', NULL, FALSE),
+    ('daily_medium_5', 'Medium Streak', '보통 난이도 5문제 풀기', 'daily', 'problems', 5, 'medium', 130, 80, '{"seed_tomato": 1, "seed_cabbage": 1}', NULL, FALSE),
+    ('daily_hard_2', 'Hard Mode', '어려운 난이도 2문제 풀기', 'daily', 'problems', 2, 'hard', 120, 70, '{"seed_corn": 1, "seed_onion": 1}', NULL, FALSE),
+    ('daily_hard_3', 'Hardcore', '어려운 난이도 3문제 풀기', 'daily', 'problems', 3, 'hard', 180, 100, '{"seed_strawberry": 1, "seed_tomato": 1}', NULL, FALSE),
 
     -- ========== 복합 조건 미션 (2개) ==========
-    ('daily_all_types', '올라운더', '모든 유형 각각 1문제씩 풀기', 'daily', 'problems', 4, NULL, 200, 120, '{"seed_corn": 1, "seed_strawberry": 1}', NULL, TRUE),
-    ('daily_variety_2', '다양한 학습', '3가지 이상 유형 문제 풀기', 'daily', 'problems', 3, NULL, 100, 60, '{"seed_tomato": 1, "seed_cabbage": 1}', NULL, FALSE);
+    ('daily_all_types', 'All Rounder', '모든 유형 각각 1문제씩 풀기', 'daily', 'problems', 4, NULL, 200, 120, '{"seed_corn": 1, "seed_strawberry": 1}', NULL, TRUE),
+    ('daily_variety_2', 'Variety Pack', '3가지 이상 유형 문제 풀기', 'daily', 'problems', 3, NULL, 100, 60, '{"seed_tomato": 1, "seed_cabbage": 1}', NULL, FALSE);
 
 -- =====================================================
 -- 3-3. 추가 주간 미션 - 난이도/복합 조건 (8개 추가 → 총 28개)
@@ -113,16 +113,16 @@ VALUES
 INSERT INTO missions (code, name, description, mission_type, condition_type, condition_value, difficulty, reward_gold, reward_xp, reward_seeds, category, require_all_types)
 VALUES
     -- ========== 난이도별 주간 미션 (5개) ==========
-    ('weekly_easy_20', '쉬운 문제 마스터', '쉬운 난이도 20문제 풀기', 'weekly', 'problems', 20, 'easy', 300, 200, '{"seed_carrot": 3, "seed_radish": 3, "seed_wheat": 2}', NULL, FALSE),
-    ('weekly_medium_15', '중급 정복자', '보통 난이도 15문제 풀기', 'weekly', 'problems', 15, 'medium', 400, 280, '{"seed_tomato": 2, "seed_onion": 2, "seed_cabbage": 2}', NULL, FALSE),
-    ('weekly_medium_25', '중급 레전드', '보통 난이도 25문제 풀기', 'weekly', 'problems', 25, 'medium', 650, 450, '{"seed_corn": 2, "seed_strawberry": 2, "seed_tomato": 2}', NULL, FALSE),
-    ('weekly_hard_10', '하드 챌린저', '어려운 난이도 10문제 풀기', 'weekly', 'problems', 10, 'hard', 600, 400, '{"seed_strawberry": 2, "seed_corn": 2, "seed_pumpkin": 1}', NULL, FALSE),
-    ('weekly_hard_20', '하드 정복왕', '어려운 난이도 20문제 풀기', 'weekly', 'problems', 20, 'hard', 1000, 700, '{"seed_pumpkin": 2, "seed_strawberry": 3, "seed_corn": 2}', NULL, FALSE),
+    ('weekly_easy_20', 'Easy Expert', '쉬운 난이도 20문제 풀기', 'weekly', 'problems', 20, 'easy', 300, 200, '{"seed_carrot": 3, "seed_radish": 3, "seed_wheat": 2}', NULL, FALSE),
+    ('weekly_medium_15', 'Medium Expert', '보통 난이도 15문제 풀기', 'weekly', 'problems', 15, 'medium', 400, 280, '{"seed_tomato": 2, "seed_onion": 2, "seed_cabbage": 2}', NULL, FALSE),
+    ('weekly_medium_25', 'Medium Legend', '보통 난이도 25문제 풀기', 'weekly', 'problems', 25, 'medium', 650, 450, '{"seed_corn": 2, "seed_strawberry": 2, "seed_tomato": 2}', NULL, FALSE),
+    ('weekly_hard_10', 'Hard Challenger', '어려운 난이도 10문제 풀기', 'weekly', 'problems', 10, 'hard', 600, 400, '{"seed_strawberry": 2, "seed_corn": 2, "seed_pumpkin": 1}', NULL, FALSE),
+    ('weekly_hard_20', 'Hard Legend', '어려운 난이도 20문제 풀기', 'weekly', 'problems', 20, 'hard', 1000, 700, '{"seed_pumpkin": 2, "seed_strawberry": 3, "seed_corn": 2}', NULL, FALSE),
 
     -- ========== 복합 조건 주간 미션 (3개) ==========
-    ('weekly_all_types', '전방위 학습', '모든 유형 각각 5문제씩 풀기', 'weekly', 'problems', 20, NULL, 800, 500, '{"seed_pumpkin": 1, "seed_strawberry": 2, "seed_corn": 2}', NULL, TRUE),
-    ('weekly_variety', '다재다능', '모든 유형 각각 3문제씩 풀기', 'weekly', 'problems', 12, NULL, 450, 300, '{"seed_corn": 2, "seed_strawberry": 2, "seed_tomato": 2}', NULL, TRUE),
-    ('weekly_balanced', '균형잡힌 학습', '각 난이도별로 5문제씩 풀기', 'weekly', 'problems', 15, NULL, 500, 320, '{"seed_corn": 2, "seed_tomato": 2, "seed_onion": 2}', NULL, FALSE);
+    ('weekly_all_types', 'All Rounder Pro', '모든 유형 각각 5문제씩 풀기', 'weekly', 'problems', 20, NULL, 800, 500, '{"seed_pumpkin": 1, "seed_strawberry": 2, "seed_corn": 2}', NULL, TRUE),
+    ('weekly_variety', 'Versatile', '모든 유형 각각 3문제씩 풀기', 'weekly', 'problems', 12, NULL, 450, 300, '{"seed_corn": 2, "seed_strawberry": 2, "seed_tomato": 2}', NULL, TRUE),
+    ('weekly_balanced', 'Balanced', '각 난이도별로 5문제씩 풀기', 'weekly', 'problems', 15, NULL, 500, 320, '{"seed_corn": 2, "seed_tomato": 2, "seed_onion": 2}', NULL, FALSE);
 
 -- =====================================================
 -- 4. 미션 선택 개수 변경을 위한 함수 업데이트

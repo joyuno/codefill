@@ -29,9 +29,15 @@ function getLevelInfo(level: number): LevelInfo {
   return { title: '초보 모험가', color: 'text-gray-400', bgColor: 'from-gray-600 to-gray-700' };
 }
 
-// 다음 레벨까지 필요한 XP 계산
-function getXpForLevel(level: number): number {
-  return level * 500 + (level - 1) * 100;
+// 해당 레벨 시작에 필요한 누적 XP 계산
+// 백엔드 공식: level * 100 + (level - 1) * 50 (각 레벨당 필요 XP)
+// Level 1: 0, Level 2: 100, Level 3: 350, Level 4: 750, Level 5: 1300, Level 6: 2000
+function getCumulativeXpForLevel(level: number): number {
+  let total = 0;
+  for (let i = 1; i < level; i++) {
+    total += i * 100 + (i - 1) * 50;
+  }
+  return total;
 }
 
 export function StatsSummary({
@@ -72,7 +78,7 @@ export function StatsSummary({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-      {/* 랭크 카드 - 개선된 UI */}
+      {/* 랭크 카드 - 연두색 테마 */}
       <motion.button
         onClick={onViewRanking}
         initial={{ opacity: 0, y: 20 }}
@@ -82,8 +88,8 @@ export function StatsSummary({
         whileTap={{ scale: 0.98 }}
         className="relative overflow-hidden rounded-xl p-5 text-left transition-all group"
         style={{
-          background: 'linear-gradient(135deg, hsl(142 50% 8%), hsl(0 0% 7%))',
-          border: '1px solid hsl(142 50% 25% / 0.4)',
+          background: 'linear-gradient(135deg, hsl(142 40% 12%), hsl(0 0% 10%))',
+          border: '1px solid hsl(142 50% 30% / 0.5)',
         }}
       >
         {/* 배경 장식 */}
@@ -107,11 +113,9 @@ export function StatsSummary({
               </div>
             </div>
 
-            {/* 칭호 + 순위 */}
+            {/* 순위 정보 */}
             <div className="mb-3">
-              <h3 className={`text-lg font-bold ${getLevelInfo(ranking.my_level).color}`}>
-                {getLevelInfo(ranking.my_level).title}
-              </h3>
+              <h3 className="text-lg font-bold text-white">내 랭킹</h3>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Trophy className="w-3.5 h-3.5 text-yellow-400" />
                 <span>전체 <span className="text-white font-semibold">#{ranking.global_xp_rank.toLocaleString()}</span>위</span>
@@ -120,8 +124,8 @@ export function StatsSummary({
 
             {/* XP 프로그레스 바 */}
             {(() => {
-              const currentLevelXp = getXpForLevel(ranking.my_level);
-              const nextLevelXp = getXpForLevel(ranking.my_level + 1);
+              const currentLevelXp = getCumulativeXpForLevel(ranking.my_level);
+              const nextLevelXp = getCumulativeXpForLevel(ranking.my_level + 1);
               const xpProgress = Math.min(100, ((ranking.my_total_xp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100);
               return (
                 <div className="space-y-1">
@@ -162,15 +166,15 @@ export function StatsSummary({
         </div>
       </motion.button>
 
-      {/* 일일 미션 진행률 */}
+      {/* 일일 미션 진행률 - 연두색 테마 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
         className="relative overflow-hidden rounded-xl p-5"
         style={{
-          background: 'linear-gradient(135deg, hsl(142 50% 8%), hsl(0 0% 7%))',
-          border: '1px solid hsl(142 50% 25% / 0.4)',
+          background: 'linear-gradient(135deg, hsl(142 40% 12%), hsl(0 0% 10%))',
+          border: '1px solid hsl(142 50% 30% / 0.5)',
         }}
       >
         <div className="flex items-start justify-between mb-3">
@@ -199,22 +203,22 @@ export function StatsSummary({
         </div>
       </motion.div>
 
-      {/* 주간 챌린지 진행률 */}
+      {/* 주간 챌린지 진행률 - 연두색 테마 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
         className="relative overflow-hidden rounded-xl p-5"
         style={{
-          background: 'linear-gradient(135deg, hsl(45 50% 8%), hsl(0 0% 7%))',
-          border: '1px solid hsl(45 50% 25% / 0.4)',
+          background: 'linear-gradient(135deg, hsl(142 40% 12%), hsl(0 0% 10%))',
+          border: '1px solid hsl(142 50% 30% / 0.5)',
         }}
       >
         <div className="flex items-start justify-between mb-3">
-          <div className="w-10 h-10 rounded-lg bg-yellow-500/20 flex items-center justify-center">
-            <Flame className="w-5 h-5 text-yellow-400" />
+          <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+            <Flame className="w-5 h-5 text-primary" />
           </div>
-          <span className="text-xs text-yellow-400/80 font-medium">이번 주</span>
+          <span className="text-xs text-primary/80 font-medium">이번 주</span>
         </div>
 
         <div className="flex items-baseline gap-2 mb-1">

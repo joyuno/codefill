@@ -15,7 +15,7 @@ interface ExpandModalProps {
   isOpen: boolean;
   onClose: () => void;
   gold: number;
-  currentSize: number; // DB farm_size (4, 9, 16, 25, 36)
+  currentSize: number; // 밭 슬롯 개수 (1, 4, 9, 16, 25)
   onExpand: (targetSize: number) => Promise<void>;
 }
 
@@ -202,7 +202,7 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
         {/* 안내 문구 */}
         <div className="p-4 pt-0">
           <p className="text-xs text-amber-300/70 text-center">
-            농장을 확장하면 더 많은 작물을 심을 수 있습니다
+            밭을 확장하면 더 많은 슬롯에 작물을 심을 수 있습니다
           </p>
         </div>
       </motion.div>

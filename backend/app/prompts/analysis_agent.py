@@ -124,9 +124,9 @@ ANALYSIS_SYSTEM_PROMPT = """
   "study_plan": "단계별 학습 경로. 예: '1단계: 1차원 DP 기초 문제 5개 연속 정답 달성 → 2단계: 2차원 DP로 확장 → 3단계: Graph에서 visited 패턴 학습'",
 
   "learning_style": {{
-    "type": "methodical | exploratory | hint-dependent | independent 중 선택",
-    "description": "데이터 기반 판단. 예: '힌트 사용률 15%, 평균 풀이 시간 안정적 → independent 유형'",
-    "strategy": "해당 스타일에 맞는 학습 전략"
+    "type": "학습 스타일 유형. methodical | exploratory | hint-dependent | independent 중 하나",
+    "description": "학습 스타일에 대한 설명. 예: '체계적으로 단계별 접근을 선호하며, 힌트를 적절히 활용합니다.'",
+    "strategy": "이 스타일에 맞는 학습 전략. 예: '기초 개념을 먼저 정리한 후 문제에 접근하세요.'"
   }},
 
   "common_error_patterns": [
@@ -148,7 +148,7 @@ ANALYSIS_SYSTEM_PROMPT = """
 2. **weaknesses**: bkt_mastery에서 mastery < 0.5인 토픽
 3. **score**: 반드시 bkt_mastery의 mastery 값 사용
 4. **common_error_patterns**: 반드시 concepts_struggling 데이터를 분석하여 생성
-5. **learning_style**: hint_usage, learning_style 입력 데이터, mood_distribution을 종합하여 type 결정
+5. **learning_style**: hint_usage, mood_distribution 데이터를 분석하여 type, description, strategy 생성
 
 ### insight 작성법
 
@@ -192,9 +192,9 @@ ANALYSIS_SYSTEM_PROMPT = """
 **아래 필드들은 절대로 빈 값으로 두지 마세요:**
 
 1. **learning_style** (필수)
-   - type: hint_usage, mood_distribution 기반으로 결정
-   - description: 데이터 기반 판단 근거 작성
-   - strategy: 해당 스타일에 맞는 학습 전략 작성
+   - type: methodical | exploratory | hint-dependent | independent 중 하나
+   - description: 학습 스타일에 대한 설명
+   - strategy: 이 스타일에 맞는 학습 전략
    - 빈 객체 {{}} 금지
 
 2. **common_error_patterns** (필수)
@@ -208,9 +208,9 @@ ANALYSIS_SYSTEM_PROMPT = """
 6. **study_plan** (필수) - 단계별 학습 경로
 7. **detailed_feedback** (필수) - 약점 중심 분석
 
-### learning_style type 결정 기준
-- **independent**: 문제당 힌트 < 1, confident 비율 높음
-- **hint-dependent**: 문제당 힌트 >= 2, 레벨 3 힌트 자주 사용
-- **methodical**: 풀이 시간 안정적, frustrated 낮음
-- **exploratory**: 다양한 토픽 시도, curious 높음
+### learning_style type 판단 기준
+- **methodical**: 체계적 접근, 힌트 사용 적음, 꾸준한 학습 패턴
+- **exploratory**: 다양한 시도, 실험적 접근, 호기심 많음
+- **hint-dependent**: 힌트 의존도 높음 (avg_per_problem >= 2)
+- **independent**: 힌트 거의 사용 안 함, 스스로 해결
 """

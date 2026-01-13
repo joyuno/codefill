@@ -27,8 +27,9 @@ export interface UserFarm {
   farmUnlocked: boolean;
   farmLevel: number;
   gold: number;
-  farmSize: number;  // 배치 가능 영역 크기
+  farmSize: number;  // 밭 슬롯 개수 (1, 4, 9, 16, 25)
   houseLevel: number;
+  farmSlots: FarmSlot[];  // 밭 그리드 슬롯 데이터
   createdAt: string;
   updatedAt: string;
 }
@@ -87,6 +88,7 @@ export interface ExpandResponse {
   message: string;
   farmSize: number;
   gold: number;
+  farmSlots: FarmSlot[];
 }
 
 // =====================================================
@@ -140,6 +142,54 @@ export interface FarmPlotData {
   stage?: number;
 }
 
+// =====================================================
+// Slot-based Farm System Types (신규)
+// =====================================================
+
+export interface FarmSlot {
+  slot: number;
+  cropCode: string | null;
+  plantedAt: string | null;
+  growTimeSeconds: number | null;
+  stage: number;
+}
+
+// Backend response types (snake_case)
+interface BackendPlantSlotResponse {
+  success: boolean;
+  message: string;
+  slot: FarmSlot;
+  farm_slots: FarmSlot[];
+  inventory: Record<string, number>;
+}
+
+interface BackendHarvestSlotResponse {
+  success: boolean;
+  message: string;
+  slot: FarmSlot;
+  farm_slots: FarmSlot[];
+  rewards: { gold: number; xp: number };
+  gold: number;
+}
+
+// Frontend types (camelCase)
+export interface PlantSlotResponse {
+  success: boolean;
+  message: string;
+  slot: FarmSlot;
+  farmSlots: FarmSlot[];
+  inventory: Record<string, number>;
+}
+
+export interface HarvestSlotResponse {
+  success: boolean;
+  message: string;
+  slot: FarmSlot;
+  farmSlots: FarmSlot[];
+  rewards: { gold: number; xp: number };
+  gold: number;
+}
+
 export interface UnifiedShopResponse {
   success: boolean;
   items: UnifiedShopItem[];
@@ -191,6 +241,14 @@ export interface HarvestCropResponse {
 // Backend Response Types (for transformation)
 // =====================================================
 
+interface BackendFarmSlot {
+  slot: number;
+  cropCode: string | null;
+  plantedAt: string | null;
+  growTimeSeconds: number | null;
+  stage: number;
+}
+
 interface BackendUserFarm {
   id: string;
   user_id: string;
@@ -209,6 +267,7 @@ interface BackendUserFarm {
   gold: number;
   farm_size: number;
   house_level: number;
+  farm_slots: BackendFarmSlot[];
   created_at: string;
   updated_at: string;
 }
@@ -259,6 +318,7 @@ interface BackendExpandResponse {
   message: string;
   farm_size: number;
   gold: number;
+  farm_slots: BackendFarmSlot[];
 }
 
 // =====================================================
@@ -286,6 +346,13 @@ function transformUserFarm(data: BackendUserFarm): UserFarm {
     gold: data.gold,
     farmSize: data.farm_size,
     houseLevel: data.house_level,
+    farmSlots: (data.farm_slots || []).map(slot => ({
+      slot: slot.slot,
+      cropCode: slot.cropCode,
+      plantedAt: slot.plantedAt,
+      growTimeSeconds: slot.growTimeSeconds,
+      stage: slot.stage,
+    })),
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };
@@ -446,6 +513,13 @@ export const farmApi = {
       message: data.message,
       farmSize: data.farm_size,
       gold: data.gold,
+      farmSlots: (data.farm_slots || []).map(slot => ({
+        slot: slot.slot,
+        cropCode: slot.cropCode,
+        plantedAt: slot.plantedAt,
+        growTimeSeconds: slot.growTimeSeconds,
+        stage: slot.stage,
+      })),
     };
   },
 
@@ -521,8 +595,54 @@ export const farmApi = {
     return response.data!;
   },
 
+  // =====================================================
+  // Slot-based Farm System API (신규)
+  // =====================================================
+
   /**
-   * Plant a crop on a farm plot
+   * Plant a crop on a farm slot
+   */
+  async plantOnSlot(slot: number, cropCode: string): Promise<PlantSlotResponse> {
+    const response = await api.post<BackendPlantSlotResponse>(`/farm/slots/${slot}/plant`, {
+      crop_code: cropCode,
+    });
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    // Transform snake_case to camelCase
+    return {
+      success: data.success,
+      message: data.message,
+      slot: data.slot,
+      farmSlots: data.farm_slots,
+      inventory: data.inventory,
+    };
+  },
+
+  /**
+   * Harvest a crop from a farm slot
+   */
+  async harvestFromSlot(slot: number): Promise<HarvestSlotResponse> {
+    const response = await api.post<BackendHarvestSlotResponse>(`/farm/slots/${slot}/harvest`, {});
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    // Transform snake_case to camelCase
+    return {
+      success: data.success,
+      message: data.message,
+      slot: data.slot,
+      farmSlots: data.farm_slots,
+      rewards: data.rewards,
+      gold: data.gold,
+    };
+  },
+
+  // =====================================================
+  // Legacy Placement-based Farm API (deprecated)
+  // Use slot-based API instead
+  // =====================================================
+
+  /**
+   * @deprecated Use plantOnSlot instead
    */
   async plantOnPlot(plotId: string, cropCode: string): Promise<PlantCropResponse> {
     const response = await api.post<PlantCropResponse>(`/placement/items/${plotId}/plant`, {
@@ -533,7 +653,7 @@ export const farmApi = {
   },
 
   /**
-   * Harvest a crop from a farm plot
+   * @deprecated Use harvestFromSlot instead
    */
   async harvestFromPlot(plotId: string): Promise<HarvestCropResponse> {
     const response = await api.post<HarvestCropResponse>(`/placement/items/${plotId}/harvest`, {});

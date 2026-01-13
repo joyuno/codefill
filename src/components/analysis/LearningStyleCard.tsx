@@ -6,8 +6,6 @@ import {
   Zap,
   Search,
   Shield,
-  Rocket,
-  Brain,
   Sparkles,
 } from 'lucide-react';
 import type { LearningStyle } from '@/lib/api/analysis';
@@ -38,20 +36,9 @@ const STYLE_CONFIG: Record<string, { icon: typeof Compass; color: string; label:
     color: '#10b981', // emerald
     label: '독립적 학습자',
   },
-  'fast-learner': {
-    icon: Rocket,
-    color: '#ec4899', // pink
-    label: '빠른 학습자',
-  },
-  'careful-thinker': {
-    icon: Brain,
-    color: '#06b6d4', // cyan
-    label: '신중한 사고형',
-  },
 };
 
 function getStyleConfig(type: string) {
-  // 여러 스타일이 있을 수 있으므로 첫 번째 매칭된 것 사용
   const normalizedType = type.toLowerCase().trim();
 
   for (const [key, config] of Object.entries(STYLE_CONFIG)) {
@@ -121,9 +108,6 @@ export function LearningStyleCard({ learningStyle }: LearningStyleCardProps) {
               style={{ color: config.color }}
             >
               {config.label}
-            </div>
-            <div className="text-xs text-zinc-500">
-              {learningStyle.type}
             </div>
           </div>
         </motion.div>

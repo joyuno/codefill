@@ -279,9 +279,9 @@ export default function ChallengePage() {
                   onViewRanking={() => setActiveTab('leaderboard')}
                 />
 
-                {/* 2컬럼 그리드: 일일 미션 / 주간 챌린지 */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* 일일 미션 - QuestSection 컴포넌트 활용 */}
+                {/* 세로 배치: 일일 미션 → 주간 챌린지 */}
+                <div className="space-y-8">
+                  {/* 일일 미션 */}
                   <QuestSection
                     title="Today's Quests"
                     variant="daily"
@@ -290,7 +290,7 @@ export default function ChallengePage() {
                     onClaim={handleClaim}
                   />
 
-                  {/* 주간 챌린지 - QuestSection 컴포넌트 활용 */}
+                  {/* 주간 챌린지 */}
                   <QuestSection
                     title="Weekly Challenge"
                     variant="weekly"

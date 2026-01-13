@@ -12,6 +12,7 @@ export interface CropConfig {
   nameKo: string;                  // 한글 이름
   spritesheet: string;             // Growth Stages 스프라이트시트 파일명
   seedSprite: string;              // 씨앗 스프라이트 파일명
+  ripeSprite: string;              // 성숙한 작물 스프라이트 파일명
   stageFrames: number[];           // 각 성장 단계별 프레임 인덱스
   harvestFrame: number;            // 수확 가능 프레임
   frameWidth: number;              // 프레임 너비
@@ -30,6 +31,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '당근',
     spritesheet: 'Carrot_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Carrot_32x32.png',
+    ripeSprite: 'Crop_Carrot_Ripe_1_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -42,6 +44,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '토마토',
     spritesheet: 'Tomato_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Tomato_32x32.png',
+    ripeSprite: 'Crop_Tomato_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -54,6 +57,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '옥수수',
     spritesheet: 'Corn_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Corn_32x32.png',
+    ripeSprite: 'Crop_Corn_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -66,6 +70,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '딸기',
     spritesheet: 'Strawberry_Growth_Stages_32x32.png',
     seedSprite: 'Seed_strawberry_32x32.png',
+    ripeSprite: 'Crop_Strawberry_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -78,6 +83,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '호박',
     spritesheet: 'Pumpkin_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Pumpkin_32x32.png',
+    ripeSprite: 'Crop_Pumpkin_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -90,6 +96,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '양배추',
     spritesheet: 'Cabbage_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Cabbage_32x32.png',
+    ripeSprite: 'Crop_Cabbage_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -102,6 +109,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '무',
     spritesheet: 'Radish_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Radish_32x32.png',
+    ripeSprite: 'Crop_Radish_Ripe_1_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -114,6 +122,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '양파',
     spritesheet: 'Onion_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Onion_32x32.png',
+    ripeSprite: 'Crop_Onion_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -127,6 +136,7 @@ export const CROPS: Record<string, CropConfig> = {
     // 감자 스프라이트가 없어서 Turnip(순무)으로 대체 (비슷한 뿌리채소)
     spritesheet: 'Turnip_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Turnip_32x32.png',
+    ripeSprite: 'Crop_Turnip_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,
@@ -139,6 +149,7 @@ export const CROPS: Record<string, CropConfig> = {
     nameKo: '밀',
     spritesheet: 'Wheat_Growth_Stages_32x32.png',
     seedSprite: 'Seed_Grain_32x32.png',
+    ripeSprite: 'Crop_Grain_Ripe_32x32.png',
     stageFrames: DEFAULT_STAGE_FRAMES,
     harvestFrame: 4,
     frameWidth: TILE_SIZE,

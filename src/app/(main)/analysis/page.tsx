@@ -7,6 +7,7 @@ import { Brain, RefreshCw, Loader2, Sparkles, FileCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScoreOverview } from '@/components/analysis/ScoreOverview';
 import { SkillRadar } from '@/components/analysis/SkillRadar';
+import { TopicMasteryChart } from '@/components/analysis/TopicMasteryChart';
 import { HintUsageCard } from '@/components/analysis/HintUsageCard';
 import { LearningStyleCard } from '@/components/analysis/LearningStyleCard';
 import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
@@ -231,35 +232,55 @@ export default function AnalysisPage() {
           <HintUsageCard hintUsage={report.hintUsage} />
         </div>
 
-        {/* 학습 스타일 */}
+        {/* 학습 습관 */}
         <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
           <LearningStyleCard learningStyle={report.learningStyle} />
         </div>
       </motion.div>
 
-      {/* Row 2: AI Coach (모든 AI 분석 통합) */}
+      {/* Row 2: BKT Mastery + AI Coach 통합 */}
+      {report.bktMastery && Object.keys(report.bktMastery).length >= 3 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.06 }}
+          className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
+        >
+          <div className="px-4 py-3 border-b border-zinc-800">
+            <h3 className="text-sm font-bold text-zinc-100">토픽별 숙련도 & AI 분석</h3>
+            <p className="text-[10px] text-zinc-500 mt-0.5">
+              BKT 기반 실력 분석 · 토픽을 클릭하면 상세 피드백을 볼 수 있습니다
+            </p>
+          </div>
+          <TopicMasteryChart
+            bktMastery={report.bktMastery}
+            strengths={report.strengths}
+            weaknesses={report.weaknesses}
+            summaryText={report.summaryText}
+          />
+        </motion.div>
+      )}
+
+      {/* Row 3: AI Coach (모든 AI 분석 통합) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.08 }}
+        transition={{ delay: 0.10 }}
       >
         <AICoachingSection
           summaryText={report.summaryText || ""}
           studyPlan={report.studyPlan}
           detailedFeedback={report.detailedFeedback}
           commonErrorPatterns={report.commonErrorPatterns}
-          strengths={report.strengths}
-          weaknesses={report.weaknesses}
           recommendations={report.recommendations}
-          bktMastery={report.bktMastery}
         />
       </motion.div>
 
-      {/* Row 3: 레이더 차트 (순수 정답률 데이터) */}
+      {/* Row 4: 레이더 차트 (순수 정답률 데이터) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.12 }}
+        transition={{ delay: 0.14 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
       >
         <div className="px-4 py-3 border-b border-zinc-800">
@@ -314,11 +335,11 @@ export default function AnalysisPage() {
         </div>
       </motion.div>
 
-      {/* Row 4: RecommendedProblems */}
+      {/* Row 5: RecommendedProblems */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.16 }}
+        transition={{ delay: 0.18 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
       >
         <RecommendedProblems initialProblems={report.recommendedProblems} />

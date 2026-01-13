@@ -45,17 +45,42 @@ function getScoreColor(score: number): string {
 }
 
 export function SkillRadar({ skills, previousSkills, size = 280 }: SkillRadarProps) {
-  // 데이터 변환 (recharts 형식)
-  const chartData = skills.map((skill) => {
-    const prev = previousSkills?.find((p) => p.topic === skill.topic);
-    return {
-      topic: shortenTopic(skill.topic),
-      fullTopic: skill.topic,
-      current: Math.round(skill.score * 100),
-      previous: prev ? Math.round(prev.score * 100) : undefined,
-      fullMark: 100,
-    };
-  });
+  // 데이터 변환 (recharts 형식) - 중복 토픽 병합
+  const chartData = (() => {
+    const dataMap = new Map<string, { fullTopic: string; scores: number[]; previous?: number }>();
+
+    skills.forEach((skill) => {
+      const shortTopic = shortenTopic(skill.topic);
+      const prev = previousSkills?.find((p) => p.topic === skill.topic);
+      const existing = dataMap.get(shortTopic);
+
+      if (existing) {
+        // 중복 토픽: 점수 누적 (나중에 평균 계산)
+        existing.scores.push(skill.score);
+        if (prev && existing.previous === undefined) {
+          existing.previous = prev.score;
+        }
+      } else {
+        dataMap.set(shortTopic, {
+          fullTopic: skill.topic,
+          scores: [skill.score],
+          previous: prev?.score,
+        });
+      }
+    });
+
+    // Map을 배열로 변환하면서 평균 계산
+    return Array.from(dataMap.entries()).map(([topic, data]) => {
+      const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+      return {
+        topic,
+        fullTopic: data.fullTopic,
+        current: Math.round(avgScore * 100),
+        previous: data.previous !== undefined ? Math.round(data.previous * 100) : undefined,
+        fullMark: 100,
+      };
+    });
+  })();
 
   // 평균 점수 계산
   const avgScore = skills.length > 0

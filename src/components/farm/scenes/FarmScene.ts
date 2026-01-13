@@ -2,12 +2,13 @@
  * FarmScene - Phaser 메인 농장 씬
  * 스타듀밸리 스타일 2D 농장 게임
  *
- * 통합 배치 시스템 리팩토링 - 레거시 매니저 제거됨
+ * 리팩토링: 그리드 기반 밭 시스템
  *
  * 매니저 구성:
  * - MapManager: 바닥, 격자선
  * - PlayerController: 캐릭터 이동/애니메이션
- * - UnifiedPlacementManager: 모든 배치 아이템 (건물, 밭, 나무, 장식, 울타리, 작물)
+ * - FarmGridManager: 밭 그리드 및 작물
+ * - UnifiedPlacementManager: 건물, 나무, 장식, 울타리
  * - InteractionSystem: 하이라이트, 액션
  */
 
@@ -17,6 +18,7 @@ import { MapManager } from './MapManager';
 import { PlayerController } from './PlayerController';
 import { InteractionSystem } from './InteractionSystem';
 import { UnifiedPlacementManager } from './UnifiedPlacementManager';
+import { FarmGridManager, FarmSlot } from './FarmGridManager';
 import type { PlacedItem } from '@/lib/api/farm';
 
 // 인벤토리 아이템 타입
@@ -37,8 +39,10 @@ interface FarmSceneData {
   onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => string | null;
   onMoveItem: (itemId: string, tileX: number, tileY: number) => Promise<void>;
   onRemoveItem: (itemId: string) => Promise<void>;
-  onPlantOnPlot: (plotId: string, cropCode: string) => Promise<void>;
-  onHarvestFromPlot: (plotId: string) => Promise<{ gold: number; xp: number } | null>;
+  // 슬롯 기반 밭 시스템
+  farmSlots: FarmSlot[];
+  onPlantOnSlot: (slot: number, cropCode: string) => Promise<FarmSlot | null>;
+  onHarvestFromSlot: (slot: number) => Promise<{ gold: number; xp: number; slot: FarmSlot } | null>;
   selectedPlacementItem?: string | null;
   placementMode?: boolean;
   deleteMode?: boolean;
@@ -50,11 +54,14 @@ export class FarmScene extends Phaser.Scene {
   private playerController!: PlayerController;
   private interactionSystem!: InteractionSystem;
   private unifiedPlacementManager!: UnifiedPlacementManager;
+  private farmGridManager!: FarmGridManager;
 
   // 데이터
   private farmData!: FarmSceneData;
   private selectedSeed: string = '';
   private inventory: InventoryItem[] = [];
+  private farmSlots: FarmSlot[] = [];
+  private farmSize: number = 1;
 
   // 배치 시스템 상태
   private placementMode: boolean = false;
@@ -72,6 +79,8 @@ export class FarmScene extends Phaser.Scene {
     this.farmData = data;
     this.selectedSeed = data.selectedSeed || '';
     this.inventory = data.inventory || [];
+    this.farmSlots = data.farmSlots || [];
+    this.farmSize = data.farmSize || 1;
     this.placementMode = data.placementMode || false;
     this.selectedPlacementItem = data.selectedPlacementItem || null;
     this.deleteMode = data.deleteMode || false;
@@ -86,12 +95,14 @@ export class FarmScene extends Phaser.Scene {
     return item?.quantity || 0;
   }
 
-  // ====== 공통 농작업 메서드 ======
+  // ====== 슬롯 기반 농작업 메서드 ======
 
   /**
-   * 작물 심기 (공통 로직)
+   * 작물 심기 (슬롯 기반)
    */
-  private async plantCrop(plotId: string, cropCode: string): Promise<boolean> {
+  private async plantCrop(slot: number, cropCode: string): Promise<boolean> {
+    console.log('[FarmScene] plantCrop called:', { slot, cropCode });
+
     // 씨앗 보유량 체크
     const seedCount = this.getSeedCount(cropCode);
     if (seedCount <= 0) {
@@ -101,24 +112,48 @@ export class FarmScene extends Phaser.Scene {
 
     try {
       await this.playerController.playHarvestAnimation();
-      await this.farmData.onPlantOnPlot(plotId, cropCode);
-      this.unifiedPlacementManager.updateCrop(plotId, cropCode, 1);
-      return true;
-    } catch {
+      console.log('[FarmScene] Calling onPlantOnSlot...');
+      const result = await this.farmData.onPlantOnSlot(slot, cropCode);
+      console.log('[FarmScene] onPlantOnSlot result:', result);
+
+      if (result) {
+        // 슬롯 데이터 업데이트
+        const slotIndex = this.farmSlots.findIndex(s => s.slot === slot);
+        console.log('[FarmScene] Updating local farmSlots, slotIndex:', slotIndex);
+        if (slotIndex >= 0) {
+          this.farmSlots[slotIndex] = result;
+        } else {
+          this.farmSlots.push(result);
+        }
+        console.log('[FarmScene] Calling farmGridManager.updateSlot...');
+        this.farmGridManager.updateSlot(slot, result);
+        this.interactionSystem.updateFarmSlots(this.farmSlots);
+        console.log('[FarmScene] plantCrop completed successfully');
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[FarmScene] plantCrop error:', err);
       this.farmData.onNotify('심기에 실패했습니다', 'error');
       return false;
     }
   }
 
   /**
-   * 작물 수확 (공통 로직)
+   * 작물 수확 (슬롯 기반)
    */
-  private async harvestCrop(plotId: string): Promise<boolean> {
+  private async harvestCrop(slot: number): Promise<boolean> {
     try {
       await this.playerController.playHarvestAnimation();
-      const result = await this.farmData.onHarvestFromPlot(plotId);
+      const result = await this.farmData.onHarvestFromSlot(slot);
       if (result) {
-        this.unifiedPlacementManager.updateCrop(plotId, '', 0);
+        // 슬롯 데이터 업데이트
+        const slotIndex = this.farmSlots.findIndex(s => s.slot === slot);
+        if (slotIndex >= 0) {
+          this.farmSlots[slotIndex] = result.slot;
+        }
+        this.farmGridManager.updateSlot(slot, result.slot);
+        this.interactionSystem.updateFarmSlots(this.farmSlots);
         this.farmData.onNotify(`+${result.gold}G, +${result.xp}XP`, 'success');
         return true;
       }
@@ -137,11 +172,13 @@ export class FarmScene extends Phaser.Scene {
     this.mapManager = new MapManager(this);
     this.playerController = new PlayerController(this);
     this.unifiedPlacementManager = new UnifiedPlacementManager(this);
+    this.farmGridManager = new FarmGridManager(this);
 
     // 각 매니저 에셋 로드
     this.mapManager.preload();
     this.playerController.preload();
     this.unifiedPlacementManager.preload();
+    this.farmGridManager.preload();
   }
 
   /**
@@ -155,18 +192,19 @@ export class FarmScene extends Phaser.Scene {
     // 순서대로 매니저 생성 (depth 순서 고려)
     this.mapManager.create();
 
-    // 통합 배치 시스템 초기화
+    // 밭 그리드 렌더링
+    this.farmGridManager.renderGrid(this.farmSize, this.farmSlots);
+
+    // 통합 배치 시스템 초기화 (건물, 나무, 장식)
     this.unifiedPlacementManager.create();
     if (this.farmData.placedItems) {
       this.unifiedPlacementManager.loadItems(this.farmData.placedItems);
     }
 
-    // 콜백 설정
+    // 콜백 설정 (farm_plot 관련 콜백 제거)
     this.unifiedPlacementManager.setCallbacks({
       onMoveItem: this.farmData.onMoveItem,
       onRemoveItem: this.farmData.onRemoveItem,
-      onPlantOnPlot: this.farmData.onPlantOnPlot,
-      onHarvestFromPlot: this.farmData.onHarvestFromPlot,
     });
 
     this.playerController.create();
@@ -176,8 +214,9 @@ export class FarmScene extends Phaser.Scene {
       this,
       this.playerController
     );
-    // UnifiedPlacementManager 참조 전달
-    this.interactionSystem.setUnifiedPlacementManager(this.unifiedPlacementManager);
+    // FarmGridManager 참조 전달
+    this.interactionSystem.setFarmGridManager(this.farmGridManager);
+    this.interactionSystem.updateFarmSlots(this.farmSlots);
 
     // 초기 배치 모드 적용
     if (this.placementMode) {
@@ -215,7 +254,7 @@ export class FarmScene extends Phaser.Scene {
         }
       } else {
         // 씨앗 모드: 좌클릭으로 밭에 심기/수확 (마우스 조작)
-        this.handleMouseAction(tileX, tileY);
+        this.handleMouseAction(pointer.worldX, pointer.worldY);
       }
     });
 
@@ -248,22 +287,22 @@ export class FarmScene extends Phaser.Scene {
   /**
    * 마우스 클릭으로 밭 액션 처리 (씨앗 모드)
    */
-  private async handleMouseAction(tileX: number, tileY: number): Promise<void> {
-    // 해당 위치에 밭이 있는지 확인
-    const plot = this.unifiedPlacementManager.getFarmPlotAt(tileX, tileY);
-    if (!plot) return;
+  private async handleMouseAction(worldX: number, worldY: number): Promise<void> {
+    // 해당 위치에 밭 슬롯이 있는지 확인
+    const slot = this.farmGridManager.getSlotAt(worldX, worldY);
+    if (slot === null) return;
 
     // 플레이어가 액션 중이면 무시
     if (this.playerController.isPerformingAction()) return;
 
-    const plotData = plot.data as { cropCode?: string; stage?: number } | undefined;
+    const slotData = this.farmSlots.find(s => s.slot === slot);
 
-    if (plotData?.cropCode && plotData?.stage === 4) {
+    if (slotData?.cropCode && slotData.stage >= 4) {
       // 수확 가능한 작물이 있으면 수확
-      await this.harvestCrop(plot.id);
-    } else if (!plotData?.cropCode && this.selectedSeed) {
+      await this.harvestCrop(slot);
+    } else if (!slotData?.cropCode && this.selectedSeed) {
       // 빈 밭이고 씨앗이 선택되어 있으면 심기
-      await this.plantCrop(plot.id, this.selectedSeed);
+      await this.plantCrop(slot, this.selectedSeed);
     }
   }
 
@@ -276,7 +315,9 @@ export class FarmScene extends Phaser.Scene {
       this.playerController.update();
       this.interactionSystem.update(this.selectedSeed);
     }
-    // 작물 타이머 업데이트는 UnifiedPlacementManager에서 처리
+    // 작물 타이머 업데이트
+    this.farmGridManager.updateTimers(this.farmSlots);
+    // 배치 시스템 업데이트 (호환성 유지)
     this.unifiedPlacementManager.update();
   }
 
@@ -290,24 +331,23 @@ export class FarmScene extends Phaser.Scene {
     if (this.playerController.isPerformingAction()) return;
 
     const interaction = this.interactionSystem.getCurrentInteraction();
-    const currentPlot = this.interactionSystem.getCurrentPlot();
+    const currentSlot = this.interactionSystem.getCurrentSlot();
 
-    if (!currentPlot) return;
+    if (currentSlot === null) return;
 
     if (interaction === 'plant' && this.selectedSeed) {
-      await this.plantCrop(currentPlot.id, this.selectedSeed);
+      await this.plantCrop(currentSlot, this.selectedSeed);
     } else if (interaction === 'harvest') {
-      // 수확 가능 여부 체크
-      const plotData = currentPlot.data as { cropCode?: string; stage?: number } | undefined;
-      if (!plotData?.cropCode) {
+      const slotData = this.farmSlots.find(s => s.slot === currentSlot);
+      if (!slotData?.cropCode) {
         this.farmData.onNotify('수확할 작물이 없습니다!', 'error');
         return;
       }
-      if ((plotData.stage || 0) < 4) {
+      if (slotData.stage < 4) {
         this.farmData.onNotify('아직 다 자라지 않았습니다!', 'error');
         return;
       }
-      await this.harvestCrop(currentPlot.id);
+      await this.harvestCrop(currentSlot);
     }
   }
 
@@ -323,11 +363,32 @@ export class FarmScene extends Phaser.Scene {
   }
 
   /**
+   * farm_slots 데이터 업데이트 (React → Phaser)
+   */
+  updateFarmSlots(farmSize: number, farmSlots: FarmSlot[]): void {
+    this.farmSize = farmSize;
+    this.farmSlots = farmSlots;
+
+    // 씬 초기화 전에 호출되면 무시
+    if (!this.farmGridManager || !this.interactionSystem) {
+      return;
+    }
+
+    // FarmGridManager 재렌더링
+    this.farmGridManager.renderGrid(farmSize, farmSlots);
+
+    // InteractionSystem 업데이트
+    this.interactionSystem.updateFarmSlots(farmSlots);
+  }
+
+  /**
    * 배치 모드 업데이트 (React → Phaser)
    */
   updatePlacementMode(enabled: boolean, deleteMode: boolean): void {
     this.placementMode = enabled;
     this.deleteMode = deleteMode;
+
+    if (!this.unifiedPlacementManager) return;
 
     if (enabled) {
       this.unifiedPlacementManager.enableDragMode();
@@ -342,6 +403,8 @@ export class FarmScene extends Phaser.Scene {
    * 배치된 아이템 업데이트 (React → Phaser)
    */
   updatePlacedItems(items: PlacedItem[]): void {
+    if (!this.unifiedPlacementManager) return;
+
     // 드래그 중이면 스킵 (드래그 완료 후 자동 동기화됨)
     if (this.unifiedPlacementManager.isDragging()) {
       return;
@@ -366,6 +429,7 @@ export class FarmScene extends Phaser.Scene {
    * 아이템 추가
    */
   addPlacedItem(item: PlacedItem): void {
+    if (!this.unifiedPlacementManager) return;
     this.unifiedPlacementManager.addItem(item);
   }
 
@@ -373,20 +437,15 @@ export class FarmScene extends Phaser.Scene {
    * 아이템 제거
    */
   removePlacedItem(itemId: string): void {
+    if (!this.unifiedPlacementManager) return;
     this.unifiedPlacementManager.removeItem(itemId);
-  }
-
-  /**
-   * 작물 업데이트
-   */
-  updateCropOnPlot(plotId: string, cropCode: string | null, stage: number): void {
-    this.unifiedPlacementManager.updateCrop(plotId, cropCode, stage);
   }
 
   /**
    * 배치 가능 여부 확인
    */
   canPlaceAt(tileX: number, tileY: number, width: number, height: number): boolean {
+    if (!this.unifiedPlacementManager) return false;
     return this.unifiedPlacementManager.canPlaceAt(tileX, tileY, width, height);
   }
 
@@ -394,6 +453,7 @@ export class FarmScene extends Phaser.Scene {
    * 아이템 로컬 배치 (API 호출 없음)
    */
   placeItemLocally(itemCode: string, tileX: number, tileY: number, metadata: PlacedItem['metadata']): string | null {
+    if (!this.unifiedPlacementManager) return null;
     return this.unifiedPlacementManager.placeItemLocally(itemCode, tileX, tileY, metadata);
   }
 
@@ -403,6 +463,7 @@ export class FarmScene extends Phaser.Scene {
    * 배치 변경 사항이 있는지 확인
    */
   hasPlacementChanges(): boolean {
+    if (!this.unifiedPlacementManager) return false;
     return this.unifiedPlacementManager.hasChanges();
   }
 
@@ -410,6 +471,7 @@ export class FarmScene extends Phaser.Scene {
    * 배치 변경 사항 가져오기
    */
   getPlacementChanges() {
+    if (!this.unifiedPlacementManager) return { moved: [], deleted: [], created: [] };
     return this.unifiedPlacementManager.getChanges();
   }
 
@@ -417,6 +479,7 @@ export class FarmScene extends Phaser.Scene {
    * 배치 변경 사항 취소 (원래 상태로 복원)
    */
   revertPlacementChanges(): void {
+    if (!this.unifiedPlacementManager) return;
     this.unifiedPlacementManager.revertChanges();
   }
 
@@ -424,6 +487,7 @@ export class FarmScene extends Phaser.Scene {
    * 배치 변경 사항 확정 (저장 성공 후 호출)
    */
   confirmPlacementChanges(): void {
+    if (!this.unifiedPlacementManager) return;
     this.unifiedPlacementManager.clearChanges();
   }
 
@@ -435,5 +499,6 @@ export class FarmScene extends Phaser.Scene {
     this.playerController?.destroy();
     this.interactionSystem?.destroy();
     this.unifiedPlacementManager?.destroy();
+    this.farmGridManager?.destroy();
   }
 }

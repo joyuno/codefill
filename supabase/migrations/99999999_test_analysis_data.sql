@@ -29,92 +29,176 @@ ON CONFLICT (user_id) DO UPDATE SET
     easy_solved = 20, medium_solved = 20, hard_solved = 7;
 
 -- =====================================================
--- 2. attempts 삽입
+-- 2. attempts 삽입 (ID 명시)
 -- =====================================================
 
 -- Array (강함: 12개 중 11개 정답)
-INSERT INTO attempts (user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 순회 기초', true, 0, 120, NOW() - INTERVAL '30 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 합계 구하기', true, 0, 90, NOW() - INTERVAL '29 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 최대값 찾기', true, 0, 100, NOW() - INTERVAL '28 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Two Pointers'], 'medium', 'blank', 'Array 투 포인터', true, 0, 180, NOW() - INTERVAL '27 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Sorting'], 'medium', 'blank', 'Array 정렬하기', true, 0, 150, NOW() - INTERVAL '26 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 뒤집기', false, 1, 200, NOW() - INTERVAL '25 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'medium', 'blank', 'Array 중복 제거', true, 0, 140, NOW() - INTERVAL '24 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Sliding Window'], 'medium', 'blank', 'Array 슬라이딩 윈도우', true, 0, 200, NOW() - INTERVAL '23 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 회전', true, 0, 130, NOW() - INTERVAL '22 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'medium', 'blank', 'Array 구간 합', true, 0, 160, NOW() - INTERVAL '21 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 필터링', true, 0, 110, NOW() - INTERVAL '20 days'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'medium', 'blank', 'Array 병합', true, 0, 170, NOW() - INTERVAL '19 days');
+INSERT INTO attempts (id, user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
+('a0000001-0000-0000-0000-000000000001', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 순회 기초', true, 0, 120, NOW() - INTERVAL '30 days'),
+('a0000001-0000-0000-0000-000000000002', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 합계 구하기', true, 0, 90, NOW() - INTERVAL '29 days'),
+('a0000001-0000-0000-0000-000000000003', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 최대값 찾기', true, 0, 100, NOW() - INTERVAL '28 days'),
+('a0000001-0000-0000-0000-000000000004', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Two Pointers'], 'medium', 'blank', 'Array 투 포인터', true, 0, 180, NOW() - INTERVAL '27 days'),
+('a0000001-0000-0000-0000-000000000005', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Sorting'], 'medium', 'blank', 'Array 정렬하기', true, 0, 150, NOW() - INTERVAL '26 days'),
+('a0000001-0000-0000-0000-000000000006', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 뒤집기', false, 1, 200, NOW() - INTERVAL '25 days'),
+('a0000001-0000-0000-0000-000000000007', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'medium', 'blank', 'Array 중복 제거', true, 0, 140, NOW() - INTERVAL '24 days'),
+('a0000001-0000-0000-0000-000000000008', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Sliding Window'], 'medium', 'blank', 'Array 슬라이딩 윈도우', true, 0, 200, NOW() - INTERVAL '23 days'),
+('a0000001-0000-0000-0000-000000000009', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 회전', true, 0, 130, NOW() - INTERVAL '22 days'),
+('a0000001-0000-0000-0000-000000000010', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'medium', 'blank', 'Array 구간 합', true, 0, 160, NOW() - INTERVAL '21 days'),
+('a0000001-0000-0000-0000-000000000011', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'easy', 'blank', 'Array 필터링', true, 0, 110, NOW() - INTERVAL '20 days'),
+('a0000001-0000-0000-0000-000000000012', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Array', 'Implementation'], 'medium', 'blank', 'Array 병합', true, 0, 170, NOW() - INTERVAL '19 days');
 
 -- String (강함: 10개 중 9개 정답)
-INSERT INTO attempts (user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 뒤집기', true, 0, 80, NOW() - INTERVAL '29 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 길이 세기', true, 0, 60, NOW() - INTERVAL '28 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 대소문자 변환', true, 0, 90, NOW() - INTERVAL '27 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 팰린드롬', false, 1, 250, NOW() - INTERVAL '26 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 공백 제거', true, 0, 70, NOW() - INTERVAL '25 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 압축', true, 0, 200, NOW() - INTERVAL '24 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 단어 세기', true, 0, 100, NOW() - INTERVAL '23 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 아나그램', true, 0, 180, NOW() - INTERVAL '22 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 치환', true, 0, 90, NOW() - INTERVAL '21 days' + INTERVAL '2 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 부분 문자열', true, 0, 150, NOW() - INTERVAL '20 days' + INTERVAL '2 hours');
+INSERT INTO attempts (id, user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
+('a0000002-0000-0000-0000-000000000001', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 뒤집기', true, 0, 80, NOW() - INTERVAL '29 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000002', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 길이 세기', true, 0, 60, NOW() - INTERVAL '28 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000003', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 대소문자 변환', true, 0, 90, NOW() - INTERVAL '27 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000004', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 팰린드롬', false, 1, 250, NOW() - INTERVAL '26 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000005', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 공백 제거', true, 0, 70, NOW() - INTERVAL '25 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000006', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 압축', true, 0, 200, NOW() - INTERVAL '24 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000007', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 단어 세기', true, 0, 100, NOW() - INTERVAL '23 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000008', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 아나그램', true, 0, 180, NOW() - INTERVAL '22 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000009', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'easy', 'blank', 'String 치환', true, 0, 90, NOW() - INTERVAL '21 days' + INTERVAL '2 hours'),
+('a0000002-0000-0000-0000-000000000010', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['String', 'Implementation'], 'medium', 'blank', 'String 부분 문자열', true, 0, 150, NOW() - INTERVAL '20 days' + INTERVAL '2 hours');
 
 -- DP (약함: 15개 중 3개만 정답)
-INSERT INTO attempts (user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 피보나치', false, 2, 400, NOW() - INTERVAL '28 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 계단 오르기', false, 3, 500, NOW() - INTERVAL '27 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'guided', 'DP 동전 교환', true, 2, 600, NOW() - INTERVAL '26 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 최대 부분합', false, 3, 450, NOW() - INTERVAL '25 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP LIS', false, 3, 550, NOW() - INTERVAL '24 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP 배낭 문제', false, 3, 700, NOW() - INTERVAL '23 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'guided', 'DP 격자 경로', false, 3, 480, NOW() - INTERVAL '22 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 타일링', true, 1, 350, NOW() - INTERVAL '21 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP LCS', false, 3, 650, NOW() - INTERVAL '20 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 구간 합', false, 2, 400, NOW() - INTERVAL '19 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'guided', 'DP 편집 거리', false, 3, 800, NOW() - INTERVAL '18 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 점프 게임', false, 3, 420, NOW() - INTERVAL '17 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP 행렬 곱셈', true, 2, 550, NOW() - INTERVAL '16 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 동전 개수', false, 3, 380, NOW() - INTERVAL '15 days' + INTERVAL '4 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP 부분집합 합', false, 3, 720, NOW() - INTERVAL '14 days' + INTERVAL '4 hours');
+INSERT INTO attempts (id, user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
+('a0000003-0000-0000-0000-000000000001', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 피보나치', false, 2, 400, NOW() - INTERVAL '28 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000002', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 계단 오르기', false, 3, 500, NOW() - INTERVAL '27 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000003', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'guided', 'DP 동전 교환', true, 2, 600, NOW() - INTERVAL '26 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000004', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 최대 부분합', false, 3, 450, NOW() - INTERVAL '25 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000005', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP LIS', false, 3, 550, NOW() - INTERVAL '24 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000006', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP 배낭 문제', false, 3, 700, NOW() - INTERVAL '23 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000007', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'guided', 'DP 격자 경로', false, 3, 480, NOW() - INTERVAL '22 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000008', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 타일링', true, 1, 350, NOW() - INTERVAL '21 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000009', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP LCS', false, 3, 650, NOW() - INTERVAL '20 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000010', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 구간 합', false, 2, 400, NOW() - INTERVAL '19 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000011', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'guided', 'DP 편집 거리', false, 3, 800, NOW() - INTERVAL '18 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000012', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 점프 게임', false, 3, 420, NOW() - INTERVAL '17 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000013', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP 행렬 곱셈', true, 2, 550, NOW() - INTERVAL '16 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000014', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'medium', 'blank', 'DP 동전 개수', false, 3, 380, NOW() - INTERVAL '15 days' + INTERVAL '4 hours'),
+('a0000003-0000-0000-0000-000000000015', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['DP', 'Dynamic Programming'], 'hard', 'blank', 'DP 부분집합 합', false, 3, 720, NOW() - INTERVAL '14 days' + INTERVAL '4 hours');
 
 -- Graph (약함: 12개 중 2개만 정답)
-INSERT INTO attempts (user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'blank', 'Graph BFS 기초', false, 3, 500, NOW() - INTERVAL '27 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'medium', 'blank', 'Graph DFS 기초', false, 3, 480, NOW() - INTERVAL '26 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'guided', 'Graph 미로 탐색', false, 3, 600, NOW() - INTERVAL '25 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'medium', 'blank', 'Graph 섬 개수', false, 3, 550, NOW() - INTERVAL '24 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'blank', 'Graph 최단 거리', true, 2, 400, NOW() - INTERVAL '23 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'hard', 'blank', 'Graph 연결 요소', false, 3, 650, NOW() - INTERVAL '22 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'Dijkstra'], 'hard', 'guided', 'Graph 다익스트라', false, 3, 800, NOW() - INTERVAL '21 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'blank', 'Graph 레벨 순회', false, 3, 520, NOW() - INTERVAL '20 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'medium', 'blank', 'Graph 사이클 탐지', false, 3, 580, NOW() - INTERVAL '19 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'Dijkstra'], 'hard', 'blank', 'Graph 최단 경로', true, 2, 450, NOW() - INTERVAL '18 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'hard', 'blank', 'Graph 이분 그래프', false, 3, 700, NOW() - INTERVAL '17 days' + INTERVAL '6 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'hard', 'blank', 'Graph 위상 정렬', false, 3, 750, NOW() - INTERVAL '16 days' + INTERVAL '6 hours');
+INSERT INTO attempts (id, user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
+('a0000004-0000-0000-0000-000000000001', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'blank', 'Graph BFS 기초', false, 3, 500, NOW() - INTERVAL '27 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000002', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'medium', 'blank', 'Graph DFS 기초', false, 3, 480, NOW() - INTERVAL '26 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000003', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'guided', 'Graph 미로 탐색', false, 3, 600, NOW() - INTERVAL '25 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000004', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'medium', 'blank', 'Graph 섬 개수', false, 3, 550, NOW() - INTERVAL '24 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000005', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'blank', 'Graph 최단 거리', true, 2, 400, NOW() - INTERVAL '23 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000006', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'hard', 'blank', 'Graph 연결 요소', false, 3, 650, NOW() - INTERVAL '22 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000007', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'Dijkstra'], 'hard', 'guided', 'Graph 다익스트라', false, 3, 800, NOW() - INTERVAL '21 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000008', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'medium', 'blank', 'Graph 레벨 순회', false, 3, 520, NOW() - INTERVAL '20 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000009', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'medium', 'blank', 'Graph 사이클 탐지', false, 3, 580, NOW() - INTERVAL '19 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000010', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'Dijkstra'], 'hard', 'blank', 'Graph 최단 경로', true, 2, 450, NOW() - INTERVAL '18 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000011', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'BFS'], 'hard', 'blank', 'Graph 이분 그래프', false, 3, 700, NOW() - INTERVAL '17 days' + INTERVAL '6 hours'),
+('a0000004-0000-0000-0000-000000000012', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Graph', 'DFS'], 'hard', 'blank', 'Graph 위상 정렬', false, 3, 750, NOW() - INTERVAL '16 days' + INTERVAL '6 hours');
 
 -- Binary Search (중간: 8개 중 5개 정답)
-INSERT INTO attempts (user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 기본', true, 0, 200, NOW() - INTERVAL '26 days' + INTERVAL '8 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 범위', false, 1, 300, NOW() - INTERVAL '25 days' + INTERVAL '8 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search Lower Bound', true, 0, 250, NOW() - INTERVAL '24 days' + INTERVAL '8 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search Upper Bound', true, 0, 260, NOW() - INTERVAL '23 days' + INTERVAL '8 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'hard', 'blank', 'Binary Search 회전 배열', false, 2, 400, NOW() - INTERVAL '22 days' + INTERVAL '8 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 파라메트릭', true, 1, 350, NOW() - INTERVAL '21 days' + INTERVAL '8 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'hard', 'blank', 'Binary Search 2D', false, 2, 450, NOW() - INTERVAL '20 days' + INTERVAL '8 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 삽입 위치', true, 0, 220, NOW() - INTERVAL '19 days' + INTERVAL '8 hours');
+INSERT INTO attempts (id, user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
+('a0000005-0000-0000-0000-000000000001', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 기본', true, 0, 200, NOW() - INTERVAL '26 days' + INTERVAL '8 hours'),
+('a0000005-0000-0000-0000-000000000002', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 범위', false, 1, 300, NOW() - INTERVAL '25 days' + INTERVAL '8 hours'),
+('a0000005-0000-0000-0000-000000000003', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search Lower Bound', true, 0, 250, NOW() - INTERVAL '24 days' + INTERVAL '8 hours'),
+('a0000005-0000-0000-0000-000000000004', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search Upper Bound', true, 0, 260, NOW() - INTERVAL '23 days' + INTERVAL '8 hours'),
+('a0000005-0000-0000-0000-000000000005', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'hard', 'blank', 'Binary Search 회전 배열', false, 2, 400, NOW() - INTERVAL '22 days' + INTERVAL '8 hours'),
+('a0000005-0000-0000-0000-000000000006', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 파라메트릭', true, 1, 350, NOW() - INTERVAL '21 days' + INTERVAL '8 hours'),
+('a0000005-0000-0000-0000-000000000007', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'hard', 'blank', 'Binary Search 2D', false, 2, 450, NOW() - INTERVAL '20 days' + INTERVAL '8 hours'),
+('a0000005-0000-0000-0000-000000000008', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Binary Search'], 'medium', 'blank', 'Binary Search 삽입 위치', true, 0, 220, NOW() - INTERVAL '19 days' + INTERVAL '8 hours');
 
 -- Stack (중상: 6개 중 5개 정답)
-INSERT INTO attempts (user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'easy', 'blank', 'Stack 기본 연산', true, 0, 100, NOW() - INTERVAL '25 days' + INTERVAL '10 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'easy', 'blank', 'Stack 괄호 검사', true, 0, 120, NOW() - INTERVAL '24 days' + INTERVAL '10 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'medium', 'blank', 'Stack 후위 표기', false, 1, 250, NOW() - INTERVAL '23 days' + INTERVAL '10 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'easy', 'blank', 'Stack 역순 출력', true, 0, 80, NOW() - INTERVAL '22 days' + INTERVAL '10 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'medium', 'blank', 'Stack 히스토그램', true, 0, 200, NOW() - INTERVAL '21 days' + INTERVAL '10 hours'),
-('0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'medium', 'blank', 'Stack 단조 스택', true, 0, 180, NOW() - INTERVAL '20 days' + INTERVAL '10 hours');
+INSERT INTO attempts (id, user_id, topics, difficulty, problem_type, problem_name, is_correct, hints_used, time_spent, created_at) VALUES
+('a0000006-0000-0000-0000-000000000001', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'easy', 'blank', 'Stack 기본 연산', true, 0, 100, NOW() - INTERVAL '25 days' + INTERVAL '10 hours'),
+('a0000006-0000-0000-0000-000000000002', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'easy', 'blank', 'Stack 괄호 검사', true, 0, 120, NOW() - INTERVAL '24 days' + INTERVAL '10 hours'),
+('a0000006-0000-0000-0000-000000000003', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'medium', 'blank', 'Stack 후위 표기', false, 1, 250, NOW() - INTERVAL '23 days' + INTERVAL '10 hours'),
+('a0000006-0000-0000-0000-000000000004', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'easy', 'blank', 'Stack 역순 출력', true, 0, 80, NOW() - INTERVAL '22 days' + INTERVAL '10 hours'),
+('a0000006-0000-0000-0000-000000000005', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'medium', 'blank', 'Stack 히스토그램', true, 0, 200, NOW() - INTERVAL '21 days' + INTERVAL '10 hours'),
+('a0000006-0000-0000-0000-000000000006', '0c3d30cb-c560-4046-bbd2-b910e4575181', ARRAY['Stack', 'Data Structures'], 'medium', 'blank', 'Stack 단조 스택', true, 0, 180, NOW() - INTERVAL '20 days' + INTERVAL '10 hours');
 
 -- =====================================================
--- 3. user_memories 삽입
+-- 3. attempt_details 삽입 (힌트 사용 기록)
+-- =====================================================
+
+-- Array 뒤집기 (hints_used: 1, 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000001-0000-0000-0000-000000000006', 'hint', true, true, 1, false);
+
+-- String 팰린드롬 (hints_used: 1, 도움 안됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000002-0000-0000-0000-000000000004', 'hint', true, false, 1, false);
+
+-- DP 피보나치 (hints_used: 2, 1개 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000003-0000-0000-0000-000000000001', 'hint', true, true, 1, false),
+('a0000003-0000-0000-0000-000000000001', 'hint', true, false, 2, false);
+
+-- DP 계단 오르기 (hints_used: 3, 1개 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000003-0000-0000-0000-000000000002', 'hint', true, false, 1, false),
+('a0000003-0000-0000-0000-000000000002', 'hint', true, true, 2, false),
+('a0000003-0000-0000-0000-000000000002', 'hint', true, false, 3, false);
+
+-- DP 동전 교환 (hints_used: 2, 2개 도움됨 - 성공 케이스)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000003-0000-0000-0000-000000000003', 'hint', true, true, 1, false),
+('a0000003-0000-0000-0000-000000000003', 'hint', true, true, 2, true);
+
+-- DP 최대 부분합 (hints_used: 3, 0개 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000003-0000-0000-0000-000000000004', 'hint', true, false, 1, false),
+('a0000003-0000-0000-0000-000000000004', 'hint', true, false, 2, false),
+('a0000003-0000-0000-0000-000000000004', 'hint', true, false, 3, false);
+
+-- DP LIS (hints_used: 3, 1개 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000003-0000-0000-0000-000000000005', 'hint', true, false, 1, false),
+('a0000003-0000-0000-0000-000000000005', 'hint', true, true, 2, false),
+('a0000003-0000-0000-0000-000000000005', 'hint', true, false, 3, false);
+
+-- DP 배낭 문제 (hints_used: 3, 0개 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000003-0000-0000-0000-000000000006', 'hint', true, false, 1, false),
+('a0000003-0000-0000-0000-000000000006', 'hint', true, false, 2, false),
+('a0000003-0000-0000-0000-000000000006', 'hint', true, false, 3, false);
+
+-- DP 타일링 (hints_used: 1, 1개 도움됨 - 성공 케이스)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000003-0000-0000-0000-000000000008', 'hint', true, true, 1, true);
+
+-- Graph BFS 기초 (hints_used: 3, 0개 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000004-0000-0000-0000-000000000001', 'hint', true, false, 1, false),
+('a0000004-0000-0000-0000-000000000001', 'hint', true, false, 2, false),
+('a0000004-0000-0000-0000-000000000001', 'hint', true, false, 3, false);
+
+-- Graph DFS 기초 (hints_used: 3, 1개 도움됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000004-0000-0000-0000-000000000002', 'hint', true, false, 1, false),
+('a0000004-0000-0000-0000-000000000002', 'hint', true, true, 2, false),
+('a0000004-0000-0000-0000-000000000002', 'hint', true, false, 3, false);
+
+-- Graph 최단 거리 (hints_used: 2, 2개 도움됨 - 성공 케이스)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000004-0000-0000-0000-000000000005', 'hint', true, true, 1, false),
+('a0000004-0000-0000-0000-000000000005', 'hint', true, true, 2, true);
+
+-- Graph 최단 경로 (hints_used: 2, 1개 도움됨 - 성공 케이스)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000004-0000-0000-0000-000000000010', 'hint', true, true, 1, false),
+('a0000004-0000-0000-0000-000000000010', 'hint', true, false, 2, true);
+
+-- Binary Search 범위 (hints_used: 1, 도움 안됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000005-0000-0000-0000-000000000002', 'hint', true, false, 1, false);
+
+-- Binary Search 파라메트릭 (hints_used: 1, 도움됨 - 성공 케이스)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000005-0000-0000-0000-000000000006', 'hint', true, true, 1, true);
+
+-- Stack 후위 표기 (hints_used: 1, 도움 안됨)
+INSERT INTO attempt_details (attempt_id, action_type, hint_was_requested, hint_was_helpful, blank_hint_level, blank_is_correct) VALUES
+('a0000006-0000-0000-0000-000000000003', 'hint', true, false, 1, false);
+
+-- =====================================================
+-- 4. user_memories 삽입
 -- =====================================================
 INSERT INTO user_memories (user_id, session_id, summary, key_topics, concepts_learned, concepts_struggling,
                            teaching_notes, breakthrough_moments, student_mood, problem_name,
@@ -226,7 +310,7 @@ INSERT INTO user_memories (user_id, session_id, summary, key_topics, concepts_le
  '{"common_errors": ["경계값 처리"]}'::jsonb);
 
 -- =====================================================
--- 4. hint_logs 삽입
+-- 5. hint_logs 삽입
 -- =====================================================
 
 -- DP 힌트 (많이 사용)
@@ -282,4 +366,5 @@ BEGIN
     RAISE NOTICE 'Test data inserted successfully!';
     RAISE NOTICE 'User: 0c3d30cb-c560-4046-bbd2-b910e4575181';
     RAISE NOTICE 'Expected: DP/Graph weak, Array/String strong';
+    RAISE NOTICE 'Hint stats: 33 total, ~13 helpful';
 END $$;

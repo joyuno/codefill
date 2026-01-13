@@ -42,7 +42,7 @@ export interface HintUsage {
 }
 
 export interface LearningStyle {
-  type?: string; // "methodical | exploratory | hint-dependent | independent | fast-learner | careful-thinker"
+  type?: string; // "methodical | exploratory | hint-dependent | independent"
   description?: string; // 학습 스타일에 대한 설명
   strategy?: string; // 이 스타일에 맞는 학습 전략
 }

@@ -14,6 +14,96 @@ from ..services.metrics_calculator import MetricsCalculator, BKTParams
 logger = get_logger(__name__)
 settings = get_settings()
 
+# 토픽 정규화 맵 (중복 토픽명 → 표준 토픽명)
+# 같은 토픽이 다른 이름으로 저장되는 것을 방지
+TOPIC_NORMALIZE_MAP = {
+    # DP 관련
+    "dynamic programming": "DP",
+    "Dynamic Programming": "DP",
+    "Dynamic programming": "DP",
+    "동적 프로그래밍": "DP",
+    "Memoization": "DP",
+    # BFS 관련
+    "Breadth First Search": "BFS",
+    "Breadth-first search": "BFS",
+    "breadth first search": "BFS",
+    "너비 우선 탐색": "BFS",
+    # DFS 관련
+    "Depth First Search": "DFS",
+    "Depth-first search": "DFS",
+    "depth first search": "DFS",
+    "깊이 우선 탐색": "DFS",
+    # Binary Search 관련
+    "Binary Search": "Binary Search",
+    "binary search": "Binary Search",
+    "이진 탐색": "Binary Search",
+    # Two Pointers 관련
+    "Two Pointers": "Two Pointers",
+    "Two pointers": "Two Pointers",
+    "two pointers": "Two Pointers",
+    "투 포인터": "Two Pointers",
+    # Sliding Window 관련
+    "Sliding Window": "Sliding Window",
+    "Sliding window": "Sliding Window",
+    "sliding window": "Sliding Window",
+    "슬라이딩 윈도우": "Sliding Window",
+    # Graph 관련
+    "Graph algorithms": "Graph",
+    "Graph traversal": "Graph",
+    "graph algorithms": "Graph",
+    "그래프": "Graph",
+    # Data Structures 관련
+    "Data structures": "Data Structures",
+    "data structures": "Data Structures",
+    "자료구조": "Data Structures",
+    # Implementation 관련
+    "implementation": "Implementation",
+    "구현": "Implementation",
+    # String 관련
+    "String algorithms": "String",
+    "string algorithms": "String",
+    "문자열": "String",
+    # Sorting 관련
+    "sorting": "Sorting",
+    "정렬": "Sorting",
+    # Greedy 관련
+    "Greedy algorithms": "Greedy",
+    "greedy algorithms": "Greedy",
+    "그리디": "Greedy",
+}
+
+
+def normalize_topic(topic: str) -> str:
+    """토픽명을 표준 형태로 정규화."""
+    return TOPIC_NORMALIZE_MAP.get(topic, topic)
+
+
+def merge_topic_stats(stats: Dict[str, Any], is_bkt: bool = False) -> Dict[str, Any]:
+    """중복 토픽을 병합하여 정규화된 통계 반환."""
+    merged: Dict[str, Any] = {}
+
+    for topic, value in stats.items():
+        normalized = normalize_topic(topic)
+
+        if normalized not in merged:
+            merged[normalized] = value
+        else:
+            # 중복 토픽 병합
+            if is_bkt:
+                # BKT: attempt_count, correct_count 합산, mastery 재계산
+                existing = merged[normalized]
+                existing["attempt_count"] += value["attempt_count"]
+                existing["correct_count"] += value["correct_count"]
+                # mastery는 더 높은 값 사용 (또는 평균)
+                existing["mastery"] = max(existing["mastery"], value["mastery"])
+                existing["is_mastered"] = existing["mastery"] >= 0.8
+            else:
+                # skill_by_topic: 평균값 사용
+                merged[normalized] = (merged[normalized] + value) / 2
+
+    return merged
+
+
 # 토픽 매핑 (한국어 → 영어 확장) - RAG 서비스와 동일
 TOPIC_MAPPING = {
     "DP": ["Dynamic programming", "DP", "Memoization"],
@@ -110,6 +200,14 @@ class AnalysisService:
 
         # 1. 사용자 데이터 수집
         user_data = await self._collect_user_data(user_id)
+
+        # ============ DEBUG: user_data 콘솔 출력 (나중에 삭제할 것) ============
+        print("\n" + "=" * 80)
+        print("🔍 [DEBUG] user_data for analysis:")
+        print("=" * 80)
+        print(json.dumps(user_data, indent=2, ensure_ascii=False, default=str))
+        print("=" * 80 + "\n")
+        # ============ DEBUG END ============
 
         # 2. 데이터 충분한지 확인 (BKT 신뢰도를 위해 최소 10문제 필요)
         problems_solved = user_data.get("problems_solved", 0)
@@ -244,7 +342,9 @@ class AnalysisService:
         if use_cached_skill:
             # ✅ HEAD 방식: user_analysis_reports에서 ELO 기반 스킬 데이터 사용
             skill = skill_result.data[0]
-            data["skill_by_topic"] = skill.get("skill_by_topic", {})
+            raw_skill = skill.get("skill_by_topic", {})
+            # 중복 토픽 정규화 (예: DP와 Dynamic Programming 병합)
+            data["skill_by_topic"] = merge_topic_stats(raw_skill, is_bkt=False)
             data["weak_topics"] = skill.get("weak_topics", [])
             data["strong_topics"] = skill.get("strong_topics", [])
 
@@ -318,18 +418,24 @@ class AnalysisService:
                             difficulty_raw[difficulty]["success"] += 1
 
             # skill_by_topic 계산 (성공률 0.0~1.0)
-            skill_by_topic = {}
+            raw_skill_by_topic = {}
             weak_topics = []
             strong_topics = []
 
             for topic, stats in topic_stats.items():
                 if stats["total"] > 0:
                     rate = round(stats["success"] / stats["total"], 2)
-                    skill_by_topic[topic] = rate
-                    if rate < 0.4:
-                        weak_topics.append(topic)
-                    elif rate > 0.7:
-                        strong_topics.append(topic)
+                    raw_skill_by_topic[topic] = rate
+
+            # 중복 토픽 정규화 (예: DP와 Dynamic Programming 병합)
+            skill_by_topic = merge_topic_stats(raw_skill_by_topic, is_bkt=False)
+
+            # 정규화된 데이터로 weak/strong 판정
+            for topic, rate in skill_by_topic.items():
+                if rate < 0.4:
+                    weak_topics.append(topic)
+                elif rate > 0.7:
+                    strong_topics.append(topic)
 
             data["skill_by_topic"] = skill_by_topic
             data["weak_topics"] = weak_topics
@@ -374,7 +480,7 @@ class AnalysisService:
 
         # BKT 마스터리 계산
         bkt_results = self.metrics.calculate_all_topics_bkt(topic_sequences)
-        data["bkt_mastery"] = {
+        raw_bkt = {
             topic: {
                 "mastery": result.mastery,
                 "is_mastered": result.is_mastered,
@@ -383,6 +489,8 @@ class AnalysisService:
             }
             for topic, result in bkt_results.items()
         }
+        # 중복 토픽 정규화 (예: DP와 Dynamic Programming 병합)
+        data["bkt_mastery"] = merge_topic_stats(raw_bkt, is_bkt=True)
 
         # 4-1-1. BKT 기반으로 weak_topics, strong_topics 재계산
         # (기존 단순 정답률 대신 BKT mastery 사용)
@@ -487,15 +595,10 @@ class AnalysisService:
             data["mood_distribution"] = mood_counts
             data["recent_sessions"] = session_summaries[:5]
 
-            # learning_style 추출 (가장 최근 learning_insights에서)
+            # learning_style는 LLM이 생성 (hint_usage 기반)
+            # common_error_patterns은 learning_insights에서 추출
             if learning_insights_list:
                 latest_insights = learning_insights_list[0]
-                data["learning_style"] = {
-                    "prefers_examples": latest_insights.get("prefers_examples", False),
-                    "prefers_analogies": latest_insights.get("prefers_analogies", False),
-                    "hint_sensitivity": latest_insights.get("hint_sensitivity", "medium"),
-                    "pace": latest_insights.get("pace", "medium"),
-                }
                 data["common_error_patterns"] = latest_insights.get("common_errors", {})
 
         # 5. attempt_details + hint_logs - 힌트 사용 패턴 및 오류 분석
@@ -653,15 +756,22 @@ class AnalysisService:
                 "description": learning_style.get("description", ""),
                 "strategy": learning_style.get("strategy", ""),
             }
-        elif learning_style and isinstance(learning_style, str):
-            learning_style = {"type": learning_style, "description": "", "strategy": ""}
         else:
-            # 기존 데이터 유지 또는 기본값
-            learning_style = user_data.get("existing_learning_style") or {
-                "type": "independent",
-                "description": "아직 학습 스타일 분석 중입니다.",
-                "strategy": "다양한 문제를 풀어보며 자신만의 학습 패턴을 찾아보세요."
-            }
+            # hint_usage 기반 기본 스타일 결정
+            hint_usage = user_data.get("hint_usage", {})
+            avg_hints = hint_usage.get("avg_per_problem", 0)
+            if avg_hints >= 2:
+                learning_style = {
+                    "type": "hint-dependent",
+                    "description": "힌트를 적극적으로 활용하여 문제를 해결하는 스타일입니다.",
+                    "strategy": "힌트를 보기 전에 5분간 스스로 고민해보세요."
+                }
+            else:
+                learning_style = {
+                    "type": "independent",
+                    "description": "스스로 문제를 해결하는 독립적인 학습 스타일입니다.",
+                    "strategy": "현재 페이스를 유지하며 더 어려운 문제에 도전해보세요."
+                }
 
         # common_error_patterns 정규화
         error_patterns = result.get("common_error_patterns", [])
@@ -739,12 +849,21 @@ class AnalysisService:
         else:
             study_plan = "다양한 유형의 문제에 도전해보세요!"
 
-        # Learning style (기존 데이터 유지 또는 기본값)
-        learning_style = user_data.get("existing_learning_style") or {
-            "type": "independent",
-            "description": "아직 학습 스타일 분석 중입니다.",
-            "strategy": "다양한 문제를 풀어보며 자신만의 학습 패턴을 찾아보세요."
-        }
+        # Learning style (hint_usage 기반 기본값)
+        hint_usage = user_data.get("hint_usage", {})
+        avg_hints = hint_usage.get("avg_per_problem", 0)
+        if avg_hints >= 2:
+            learning_style = {
+                "type": "hint-dependent",
+                "description": "힌트를 적극적으로 활용하여 문제를 해결하는 스타일입니다.",
+                "strategy": "힌트를 보기 전에 5분간 스스로 고민해보세요."
+            }
+        else:
+            learning_style = {
+                "type": "independent",
+                "description": "스스로 문제를 해결하는 독립적인 학습 스타일입니다.",
+                "strategy": "현재 페이스를 유지하며 더 어려운 문제에 도전해보세요."
+            }
 
         # Common error patterns (기존 데이터 유지 또는 빈 배열)
         error_patterns = user_data.get("existing_error_patterns", [])

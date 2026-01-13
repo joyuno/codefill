@@ -99,6 +99,10 @@ export {
   type ExpansionOption,
   type ExpansionCostsResponse,
   type ExpandResponse,
+  // Slot-based Farm System Types (신규)
+  type FarmSlot,
+  type PlantSlotResponse,
+  type HarvestSlotResponse,
   // 통합 배치 시스템 (Unified Placement System)
   type UnifiedShopItem,
   type PlacedItem,
