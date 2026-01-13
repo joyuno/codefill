@@ -238,18 +238,18 @@ export const apiClient = new ApiClient(API_BASE_URL);
 
 // Export convenience methods
 export const api = {
-  get: <T>(endpoint: string, requireAuth = true) =>
-    apiClient.request<T>(endpoint, { method: 'GET', requireAuth }),
+  get: <T>(endpoint: string, requireAuth = true, timeout?: number) =>
+    apiClient.request<T>(endpoint, { method: 'GET', requireAuth, timeout }),
 
-  post: <T>(endpoint: string, body?: unknown, requireAuth = true) =>
-    apiClient.request<T>(endpoint, { method: 'POST', body, requireAuth }),
+  post: <T>(endpoint: string, body?: unknown, requireAuth = true, timeout?: number) =>
+    apiClient.request<T>(endpoint, { method: 'POST', body, requireAuth, timeout }),
 
-  put: <T>(endpoint: string, body?: unknown, requireAuth = true) =>
-    apiClient.request<T>(endpoint, { method: 'PUT', body, requireAuth }),
+  put: <T>(endpoint: string, body?: unknown, requireAuth = true, timeout?: number) =>
+    apiClient.request<T>(endpoint, { method: 'PUT', body, requireAuth, timeout }),
 
-  patch: <T>(endpoint: string, body?: unknown, requireAuth = true) =>
-    apiClient.request<T>(endpoint, { method: 'PATCH', body, requireAuth }),
+  patch: <T>(endpoint: string, body?: unknown, requireAuth = true, timeout?: number) =>
+    apiClient.request<T>(endpoint, { method: 'PATCH', body, requireAuth, timeout }),
 
-  delete: <T>(endpoint: string, body?: unknown, requireAuth = true) =>
-    apiClient.request<T>(endpoint, { method: 'DELETE', body, requireAuth }),
+  delete: <T>(endpoint: string, body?: unknown, requireAuth = true, timeout?: number) =>
+    apiClient.request<T>(endpoint, { method: 'DELETE', body, requireAuth, timeout }),
 };

@@ -213,6 +213,7 @@ class RecordResponse(BaseModel):
     message: str
     new_badges: Optional[List[NewBadge]] = None
     feedback: Optional[FeedbackData] = None  # 피드백 데이터 (정답 시)
+    solve_count: Optional[int] = None  # 문제 풀이 수 (첫 정답 시에만 증가)
 
 
 class HintCheckResponse(BaseModel):

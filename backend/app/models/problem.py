@@ -141,7 +141,7 @@ class BaseProblemListItem(BaseModel):
     tags: List[str] = []
     source: Optional[str] = None
     input_output: Optional[dict] = None
-    view_count: int = 0  # 조회수
+    solve_count: int = 0  # 풀이 수 (유저당 1회만)
     like_count: int = 0  # 좋아요 수
 
     @field_validator('input_output', mode='before')

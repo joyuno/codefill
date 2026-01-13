@@ -27,14 +27,23 @@ from .nodes import (
     assess_understanding_node,
     decide_action_node,
     generate_response_node,
+    generate_initial_guide_node,
     should_retrieve,
     route_after_grade,
+    is_first_message,
 )
 
 
 def create_guided_tutor_graph(checkpointer=None) -> StateGraph:
     """
     Guided Tutor 그래프 생성
+
+    플로우:
+        START → route_entry (첫 메시지 분기)
+                 ├─ 첫 메시지 → generate_initial_guide → END
+                 └─ 이후 메시지 → retrieve_context → grade_context
+                                       → assess_understanding → decide_action
+                                       → generate_response → END
 
     Args:
         checkpointer: LangGraph Checkpointer (상태 영속화용)
@@ -45,16 +54,32 @@ def create_guided_tutor_graph(checkpointer=None) -> StateGraph:
     workflow = StateGraph(AgenticRAGState)
 
     # 노드 추가
+    workflow.add_node("generate_initial_guide", generate_initial_guide_node)
     workflow.add_node("retrieve_context", retrieve_context_node)
     workflow.add_node("grade_context", grade_context_node)
     workflow.add_node("assess_understanding", assess_understanding_node)
     workflow.add_node("decide_action", decide_action_node)
     workflow.add_node("generate_response", generate_response_node)
 
-    # 시작점
-    workflow.set_entry_point("retrieve_context")
+    # 시작점: 첫 메시지인지에 따라 분기
+    def route_entry(state: AgenticRAGState) -> str:
+        """첫 메시지면 초기 가이드, 아니면 일반 플로우"""
+        if is_first_message(state):
+            return "generate_initial_guide"
+        return "retrieve_context"
 
-    # 엣지 정의
+    workflow.set_conditional_entry_point(
+        route_entry,
+        {
+            "generate_initial_guide": "generate_initial_guide",
+            "retrieve_context": "retrieve_context",
+        }
+    )
+
+    # 초기 가이드 후 종료
+    workflow.add_edge("generate_initial_guide", END)
+
+    # 일반 플로우
     workflow.add_edge("retrieve_context", "grade_context")
 
     # grade_context 후 분기 (현재는 항상 assess로)

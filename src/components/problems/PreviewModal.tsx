@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { X, Globe, ExternalLink, Loader2, Copy, Check, MessageSquare, LogIn } from 'lucide-react';
+import { X, Globe, ExternalLink, Loader2, Copy, Check, MessageSquare, LogIn, Users, Heart } from 'lucide-react';
 import Link from 'next/link';
 import { problemsApi, type BaseProblemDetail } from '@/lib/api';
 import { apiClient } from '@/lib/api/client';
@@ -79,6 +79,12 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
   const [isTranslating, setIsTranslating] = useState(false);
   const [showTranslated, setShowTranslated] = useState(false);
 
+  // Solve/Like state (풀이수는 피드백 완료 시 백엔드에서 증가)
+  const [solveCount, setSolveCount] = useState(0);
+  const [likeCount, setLikeCount] = useState(0);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+
   const handleStartPractice = () => {
     if (!problem) return;
 
@@ -101,6 +107,10 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
       setProblem(null);
       setTranslatedQuestion(null);
       setShowTranslated(false);
+      // 풀이수/좋아요 상태 초기화
+      setSolveCount(0);
+      setLikeCount(0);
+      setIsLiked(false);
 
       try {
         const data = await problemsApi.getBase(originalId);
@@ -114,6 +124,44 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
 
     fetchProblem();
   }, [originalId]);
+
+  // 통계 조회 (풀이수는 피드백 완료 시 백엔드에서 증가)
+  useEffect(() => {
+    if (!problem?.id) return;
+
+    const baseProblemId = problem.id;
+
+    // 통계 조회
+    problemsApi.getStats(baseProblemId)
+      .then((stats) => {
+        setSolveCount(stats.solve_count);
+        setLikeCount(stats.like_count);
+        setIsLiked(stats.is_liked);
+      })
+      .catch((err) => {
+        console.warn('Failed to load stats:', err);
+      });
+  }, [problem?.id]);
+
+  // 좋아요 토글
+  const handleLike = async () => {
+    if (!problem?.id) return;
+    if (!apiClient.isAuthenticated()) {
+      setShowLoginDialog(true);
+      return;
+    }
+
+    setIsLiking(true);
+    try {
+      const result = await problemsApi.toggleLike(problem.id);
+      setIsLiked(result.is_liked);
+      setLikeCount(result.like_count);
+    } catch (err) {
+      console.error('Failed to toggle like:', err);
+    } finally {
+      setIsLiking(false);
+    }
+  };
 
   const handleTranslate = async () => {
     if (!problem?.question) return;
@@ -190,10 +238,36 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                       {problem.source}
                     </Badge>
                   )}
+                  {/* 풀이수/좋아요 표시 */}
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground ml-2" title="풀이 수">
+                    <Users className="h-3 w-3" />
+                    {solveCount}
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground" title="좋아요">
+                    <Heart className="h-3 w-3" />
+                    {likeCount}
+                  </span>
                 </>
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/* 좋아요 버튼 */}
+              {problem && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleLike}
+                  disabled={isLiking}
+                  className={cn(isLiked && 'text-red-500')}
+                >
+                  {isLiking ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Heart className={cn('h-4 w-4', isLiked && 'fill-current')} />
+                  )}
+                  <span className="ml-1">{likeCount}</span>
+                </Button>
+              )}
               {/* Translate button */}
               {problem?.question && (
                 <Button

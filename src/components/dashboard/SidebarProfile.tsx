@@ -483,7 +483,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
           )}>
             <p className="text-sm text-red-700 mb-3 text-center">{farmError}</p>
             <Button
-              onClick={loadFarmData}
+              onClick={() => loadFarmData(true)}
               size="sm"
               variant="outline"
               className="w-full border-red-400 text-red-700 hover:bg-red-50"

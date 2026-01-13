@@ -44,7 +44,7 @@ export interface BaseProblemListItem {
     inputs?: string[];
     outputs?: string[];
   } | null;
-  view_count: number;  // 조회수
+  solve_count: number;  // 풀이 수 (유저당 1회만)
   like_count: number;  // 좋아요 수
 }
 
@@ -85,7 +85,7 @@ export interface BaseProblemFilters {
 // 문제 통계 응답
 export interface ProblemStatsResponse {
   base_problem_id: string;
-  view_count: number;
+  solve_count: number;  // 풀이 수 (유저당 1회만)
   like_count: number;
   is_liked: boolean;
 }
@@ -173,19 +173,8 @@ export const problemsApi = {
     return response.data!;
   },
 
-  /**
-   * 문제 조회수 증가 (로그인 불필요)
-   */
-  async incrementView(baseProblemId: string): Promise<{ success: boolean }> {
-    const response = await api.post<{ success: boolean }>('/practice/problems/view', {
-      base_problem_id: baseProblemId,
-    }, false);
-    if (response.error) {
-      console.warn('Failed to increment view count:', response.error.message);
-      return { success: false };
-    }
-    return response.data!;
-  },
+  // incrementView 제거됨 - 조회수 대신 풀이수(solve_count) 사용
+  // solve_count는 피드백 완료 시점에 백엔드에서 자동 증가
 
   /**
    * 문제 좋아요 토글 (로그인 필요)

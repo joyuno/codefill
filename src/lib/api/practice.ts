@@ -74,6 +74,7 @@ export interface RecordResult {
   xpEarned: number;
   message: string;
   newBadges?: NewBadge[];
+  solveCount?: number;  // 문제 풀이 수 (첫 정답 시에만 증가)
 }
 
 export interface HintCheckResult {
@@ -131,6 +132,64 @@ export interface GuidedHintResult {
   stepIndex: number;
   hintContent: string;
   fromCache: boolean;
+}
+
+// ============================================================
+// Guided Tutor Chat (1대1 대화형 튜터)
+// ============================================================
+
+export interface GuidedTutorStartRequest {
+  problemId: string;
+  sessionId?: string;
+}
+
+export interface GuidedTutorChatRequest {
+  problemId: string;
+  message: string;
+  userCode?: string;
+  sessionId?: string;
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
+
+export interface InitialGuideData {
+  introduction: string;
+  conceptsExplanation: Array<{
+    concept: string;
+    explanation: string;
+    whyNeeded: string;
+  }>;
+  variablesGuide: {
+    totalCount: number;
+    variables: Array<{
+      role: string;
+      type: string;
+      initialValue: string;
+      suggestedName: string;
+      explanation: string;
+    }>;
+  };
+  flowOverview: string[];
+  firstStep: {
+    stepName: string;
+    instruction: string;
+    starterQuestion: string;
+  };
+}
+
+export interface GuidedTutorChatResponse {
+  response: string;
+  isInitialGuide: boolean;
+  isComplete: boolean;
+  studentProgress?: {
+    understandingScore: number;
+    conceptsMastered: string[];
+    conceptsStruggling: string[];
+    currentFocus: string;
+    hintsReceived: number;
+    attempts: number;
+  };
+  initialGuide?: InitialGuideData;
+  suggestedNextStep?: string;
 }
 
 // ============================================================
@@ -344,6 +403,7 @@ export const practiceApi = {
       xp_earned: number;
       message: string;
       new_badges?: Array<{ code: string; name: string; icon_url?: string; rarity: string }>;
+      solve_count?: number;  // 문제 풀이 수
     }>('/practice/submit/record', {
       problem_id: submission.problemId,
       base_problem_id: submission.baseProblemId,
@@ -379,6 +439,7 @@ export const practiceApi = {
         iconUrl: b.icon_url,
         rarity: b.rarity,
       })),
+      solveCount: data.solve_count,  // 문제 풀이 수
     };
   },
 
@@ -483,6 +544,139 @@ export const practiceApi = {
       stepIndex: response.data!.step_index,
       hintContent: response.data!.hint_content,
       fromCache: response.data!.from_cache,
+    };
+  },
+
+  // ============================================================
+  // Guided Tutor Chat (1대1 대화형 튜터)
+  // ============================================================
+
+  /**
+   * Start guided tutor session (첫 메시지 - 초기 가이드 생성)
+   */
+  async startGuidedTutor(request: GuidedTutorStartRequest): Promise<GuidedTutorChatResponse> {
+    const response = await api.post<{
+      response: string;
+      is_initial_guide: boolean;
+      is_complete: boolean;
+      student_progress?: {
+        understanding_score: number;
+        concepts_mastered: string[];
+        concepts_struggling: string[];
+        current_focus: string;
+        hints_received: number;
+        attempts: number;
+      };
+      initial_guide?: {
+        introduction: string;
+        concepts_explanation: Array<{
+          concept: string;
+          explanation: string;
+          why_needed: string;
+        }>;
+        variables_guide: {
+          total_count: number;
+          variables: Array<{
+            role: string;
+            type: string;
+            initial_value: string;
+            suggested_name: string;
+            explanation: string;
+          }>;
+        };
+        flow_overview: string[];
+        first_step: {
+          step_name: string;
+          instruction: string;
+          starter_question: string;
+        };
+      };
+      suggested_next_step?: string;
+    }>('/practice/guided/start', {
+      problem_id: request.problemId,
+      session_id: request.sessionId,
+    }, true, 30000);  // 30초 타임아웃
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    return {
+      response: data.response,
+      isInitialGuide: data.is_initial_guide,
+      isComplete: data.is_complete,
+      studentProgress: data.student_progress ? {
+        understandingScore: data.student_progress.understanding_score,
+        conceptsMastered: data.student_progress.concepts_mastered,
+        conceptsStruggling: data.student_progress.concepts_struggling,
+        currentFocus: data.student_progress.current_focus,
+        hintsReceived: data.student_progress.hints_received,
+        attempts: data.student_progress.attempts,
+      } : undefined,
+      initialGuide: data.initial_guide ? {
+        introduction: data.initial_guide.introduction,
+        conceptsExplanation: data.initial_guide.concepts_explanation.map(c => ({
+          concept: c.concept,
+          explanation: c.explanation,
+          whyNeeded: c.why_needed,
+        })),
+        variablesGuide: {
+          totalCount: data.initial_guide.variables_guide.total_count,
+          variables: data.initial_guide.variables_guide.variables.map(v => ({
+            role: v.role,
+            type: v.type,
+            initialValue: v.initial_value,
+            suggestedName: v.suggested_name,
+            explanation: v.explanation,
+          })),
+        },
+        flowOverview: data.initial_guide.flow_overview,
+        firstStep: {
+          stepName: data.initial_guide.first_step.step_name,
+          instruction: data.initial_guide.first_step.instruction,
+          starterQuestion: data.initial_guide.first_step.starter_question,
+        },
+      } : undefined,
+      suggestedNextStep: data.suggested_next_step,
+    };
+  },
+
+  /**
+   * Send chat message to guided tutor (진행 중 대화)
+   */
+  async chatGuidedTutor(request: GuidedTutorChatRequest): Promise<GuidedTutorChatResponse> {
+    const response = await api.post<{
+      response: string;
+      is_initial_guide: boolean;
+      is_complete: boolean;
+      student_progress?: {
+        understanding_score: number;
+        concepts_mastered: string[];
+        concepts_struggling: string[];
+        current_focus: string;
+        hints_received: number;
+        attempts: number;
+      };
+      suggested_next_step?: string;
+    }>('/practice/guided/chat', {
+      problem_id: request.problemId,
+      message: request.message,
+      user_code: request.userCode,
+      session_id: request.sessionId,
+      conversation_history: request.conversationHistory,
+    }, true, 30000);  // 30초 타임아웃
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    return {
+      response: data.response,
+      isInitialGuide: data.is_initial_guide,
+      isComplete: data.is_complete,
+      studentProgress: data.student_progress ? {
+        understandingScore: data.student_progress.understanding_score,
+        conceptsMastered: data.student_progress.concepts_mastered,
+        conceptsStruggling: data.student_progress.concepts_struggling,
+        currentFocus: data.student_progress.current_focus,
+        hintsReceived: data.student_progress.hints_received,
+        attempts: data.student_progress.attempts,
+      } : undefined,
+      suggestedNextStep: data.suggested_next_step,
     };
   },
 };

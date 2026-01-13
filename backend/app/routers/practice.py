@@ -226,23 +226,17 @@ async def resolve_base_problem_id(db, problem_id: str) -> Optional[str]:
                     if bp_result.data:
                         return bp_result.data[0]["id"]
 
-            # 1-4. problems_guided에서 찾기
+            # 1-4. problems_guided에서 찾기 (base_problem_id 사용)
             guided_result = db.table("problems_guided")\
-                .select("original_id")\
+                .select("base_problem_id")\
                 .eq("id", uuid_str)\
                 .limit(1)\
                 .execute()
 
             if guided_result.data and len(guided_result.data) > 0:
-                original_id = guided_result.data[0].get("original_id")
-                if original_id:
-                    bp_result = db.table("base_problems")\
-                        .select("id")\
-                        .eq("original_id", original_id)\
-                        .limit(1)\
-                        .execute()
-                    if bp_result.data:
-                        return bp_result.data[0]["id"]
+                base_problem_id = guided_result.data[0].get("base_problem_id")
+                if base_problem_id:
+                    return base_problem_id  # 이미 base_problems.id임
 
         except ValueError:
             pass  # UUID 형식이 아님
@@ -1280,6 +1274,7 @@ async def record_solve(
         # 피드백 생성 및 feedback_history 저장
         # ============================================================
         feedback_data = None
+        new_solve_count = None  # 응답에 포함할 solve_count (블록 밖에서 초기화)
         print(f"[RecordSolve] Feedback check: is_correct={submission.is_correct}, attempt_id_used={attempt_id_used}")
         if submission.is_correct:
             try:
@@ -1356,6 +1351,22 @@ async def record_solve(
             except Exception as fb_err:
                 print(f"[RecordSolve] Feedback generation error (non-blocking): {fb_err}")
 
+            # ============================================================
+            # 풀이 수(solve_count) 증가 - 첫 정답일 때만
+            # ============================================================
+            if base_problem_id:
+                try:
+                    solve_result = db.rpc("increment_problem_solve", {
+                        "p_user_id": str(user_id),
+                        "p_base_problem_id": base_problem_id
+                    }).execute()
+                    if solve_result.data:
+                        incremented = solve_result.data.get("incremented", False)
+                        new_solve_count = solve_result.data.get("solve_count", 0)
+                        print(f"[RecordSolve] solve_count update: incremented={incremented}, new_count={new_solve_count}")
+                except Exception as solve_err:
+                    print(f"[RecordSolve] solve_count increment error (non-blocking): {solve_err}")
+
         # ============================================================
         # 마일스톤 체크: 특정 문제 수 도달 시 전체 스킬 프로필 재계산
         # 10, 25, 50, 100, 200, 500 문제 정답 시 LLM 분석 포함 재계산
@@ -1395,6 +1406,7 @@ async def record_solve(
             message=message,
             new_badges=new_badges,
             feedback=feedback_data,
+            solve_count=new_solve_count,  # 문제 풀이 수 (프론트엔드 즉시 업데이트용)
         )
 
     except Exception as e:
@@ -2307,25 +2319,13 @@ class ProblemLikeResponse(BaseModel):
 class ProblemStatsResponse(BaseModel):
     """문제 통계 응답"""
     base_problem_id: str
-    view_count: int
+    solve_count: int  # 풀이 수 (유저당 1회만)
     like_count: int
     is_liked: bool  # 현재 사용자의 좋아요 여부
 
 
-@router.post("/problems/view")
-async def increment_view_count(
-    request: ProblemViewRequest,
-    db=Depends(get_db),
-):
-    """
-    문제 조회수 증가 (문제 유형 생성 시 호출)
-    """
-    try:
-        db.rpc("increment_problem_view", {"p_base_problem_id": request.base_problem_id}).execute()
-        return {"success": True}
-    except Exception as e:
-        print(f"[IncrementView] Error: {e}")
-        return {"success": False, "error": str(e)}
+# /problems/view 엔드포인트 제거됨 - 조회수(view_count) 대신 풀이수(solve_count) 사용
+# solve_count는 피드백 완료 시점에 increment_problem_solve RPC로 증가
 
 
 @router.post("/problems/like", response_model=ProblemLikeResponse)
@@ -2361,19 +2361,19 @@ async def get_problem_stats(
     user_id: UUID = Depends(get_user_id_from_token_optional),
 ):
     """
-    문제 통계 조회 (조회수, 좋아요 수, 현재 사용자 좋아요 여부)
+    문제 통계 조회 (풀이 수, 좋아요 수, 현재 사용자 좋아요 여부)
     """
     try:
         # 문제 통계 조회
         problem = db.table("base_problems")\
-            .select("view_count, like_count")\
+            .select("solve_count, like_count")\
             .eq("id", base_problem_id)\
             .single()\
             .execute()
-        
+
         if not problem.data:
             raise HTTPException(status_code=404, detail="Problem not found")
-        
+
         # 현재 사용자 좋아요 여부
         is_liked = False
         if user_id:
@@ -2383,10 +2383,10 @@ async def get_problem_stats(
                 .eq("base_problem_id", base_problem_id)\
                 .execute()
             is_liked = bool(like_check.data)
-        
+
         return ProblemStatsResponse(
             base_problem_id=base_problem_id,
-            view_count=problem.data.get("view_count", 0),
+            solve_count=problem.data.get("solve_count", 0),
             like_count=problem.data.get("like_count", 0),
             is_liked=is_liked
         )
@@ -2395,3 +2395,156 @@ async def get_problem_stats(
     except Exception as e:
         print(f"[GetStats] Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# 1대1 대화형 튜터 API (Guided Tutor)
+# ============================================================
+
+class GuidedTutorChatRequest(BaseModel):
+    """1대1 대화형 채팅 요청"""
+    problem_id: str
+    message: str
+    user_code: Optional[str] = None
+    session_id: Optional[str] = None
+    conversation_history: Optional[List[dict]] = None
+
+
+class GuidedTutorStartRequest(BaseModel):
+    """1대1 대화형 시작 요청 (message 불필요)"""
+    problem_id: str
+    session_id: Optional[str] = None
+
+
+class GuidedTutorChatResponse(BaseModel):
+    """1대1 대화형 채팅 응답"""
+    response: str
+    is_initial_guide: bool = False
+    is_complete: bool = False
+    student_progress: Optional[dict] = None
+    initial_guide: Optional[dict] = None
+    suggested_next_step: Optional[str] = None
+
+
+@router.post("/guided/chat", response_model=GuidedTutorChatResponse)
+async def guided_tutor_chat(
+    request: GuidedTutorChatRequest,
+    user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+    db=Depends(get_db)
+):
+    """
+    1대1 대화형 튜터 채팅
+
+    특징:
+    - 힌트 버튼 없음 (채팅 자체가 학습)
+    - 빈칸/퍼즐보다 더 구체적인 가이드 제공
+    - 첫 메시지 시 초기 가이드 자동 제공 (개념 + 변수 설계)
+    """
+    from ..graphs.guided_tutor import GuidedTutorGraph
+
+    try:
+        # 1. problems_guided에서 학습 구조 가져오기 (base_problem_id 사용)
+        guided_result = db.table("problems_guided")\
+            .select("id, base_problem_id, language, concepts, flow, checkpoints")\
+            .eq("id", request.problem_id)\
+            .limit(1)\
+            .execute()
+
+        # UUID로 못 찾으면 base_problem_id로 시도
+        if not guided_result.data:
+            guided_result = db.table("problems_guided")\
+                .select("id, base_problem_id, language, concepts, flow, checkpoints")\
+                .eq("base_problem_id", request.problem_id)\
+                .limit(1)\
+                .execute()
+
+        guided_data = guided_result.data[0] if guided_result.data else {}
+
+        # 2. base_problems에서 문제 정보 가져오기 (base_problem_id로 직접 조회)
+        base_problem_id = guided_data.get("base_problem_id", request.problem_id)
+        bp_result = db.table("base_problems")\
+            .select("id, original_id, name, question, difficulty, tags, solutions")\
+            .eq("id", base_problem_id)\
+            .limit(1)\
+            .execute()
+
+        base_problem = bp_result.data[0] if bp_result.data else {}
+
+        # 3. 정답 코드 추출
+        solutions = base_problem.get("solutions", [])
+        language = guided_data.get("language", "python")
+        solution_code = ""
+        for sol in solutions:
+            if sol.get("language") == language:
+                solution_code = sol.get("code", "")
+                break
+        if not solution_code and solutions:
+            solution_code = solutions[0].get("code", "")
+
+        # 4. 문제 컨텍스트 구성
+        problem_context = {
+            "id": str(guided_data.get("id", request.problem_id)),
+            "title": base_problem.get("name", ""),
+            "description": base_problem.get("question", ""),
+            "difficulty": base_problem.get("difficulty", "medium"),
+            "language": language,
+            "topics": base_problem.get("tags", []),
+            # problems_guided 학습 구조
+            "concepts": guided_data.get("concepts", []),
+            "flow": guided_data.get("flow", []),
+            "checkpoints": guided_data.get("checkpoints", []),
+        }
+
+        # 5. 튜터 그래프 실행
+        tutor = GuidedTutorGraph()
+        result = await tutor.invoke(
+            message=request.message,
+            problem_context=problem_context,
+            solution_code=solution_code,
+            key_concepts=guided_data.get("concepts", []),
+            conversation_history=request.conversation_history or [],
+            session_id=request.session_id,
+        )
+
+        # 6. attempt_details에 대화 기록 (선택)
+        # TODO: attempt_id가 있으면 기록
+
+        return GuidedTutorChatResponse(
+            response=result.get("response", ""),
+            is_initial_guide=result.get("is_initial_guide", False),
+            is_complete=result.get("is_complete", False),
+            student_progress=result.get("student_progress"),
+            initial_guide=result.get("initial_guide"),
+            suggested_next_step=result.get("suggested_next_step"),
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[GuidedTutorChat] Error: {e}")
+        return GuidedTutorChatResponse(
+            response=f"죄송해요, 오류가 발생했어요: {str(e)}",
+            is_initial_guide=False,
+            is_complete=False,
+        )
+
+
+@router.post("/guided/start", response_model=GuidedTutorChatResponse)
+async def guided_tutor_start(
+    request: GuidedTutorStartRequest,
+    user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+    db=Depends(get_db)
+):
+    """
+    1대1 대화형 문제 시작 - 초기 가이드 요청
+
+    문제 시작 시 자동으로 개념 정의 + 변수 설계 가이드를 제공합니다.
+    """
+    # GuidedTutorChatRequest로 변환하여 chat 엔드포인트 재사용
+    chat_request = GuidedTutorChatRequest(
+        problem_id=request.problem_id,
+        message="문제를 시작합니다.",
+        session_id=request.session_id,
+        conversation_history=[],
+    )
+    return await guided_tutor_chat(chat_request, user_id, db)

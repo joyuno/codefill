@@ -124,6 +124,9 @@ function ChatPageContent() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Guided 모드 튜터에게 전달할 현재 코드 상태
+  const [currentCode, setCurrentCode] = useState<string>('');
+
   // Start heartbeat when session starts
   useEffect(() => {
     if (!sessionId) return;
@@ -898,6 +901,7 @@ function ChatPageContent() {
         onHintRequest={(level) => handleHintRequest(level)}
         onGiveUp={handleGiveUp}  // 포기하기
         attemptId={attemptId || undefined}  // attempt tracking
+        onCodeChange={setCurrentCode}  // guided 모드 튜터에게 현재 코드 전달
       />
     );
   };
@@ -1049,6 +1053,8 @@ function ChatPageContent() {
                       initialBaseProblem={initialBaseProblem}
                       sessionId={chatSessionId}
                       onSessionIdChange={setChatSessionId}
+                      problemType={problem?.problemType}
+                      currentCode={currentCode}
                     />
                   )}
                 </div>

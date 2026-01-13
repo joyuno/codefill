@@ -175,18 +175,51 @@ class PuzzleProblemResponse(BaseModel):
     solution_code: Optional[str] = None  # 조합된 정답 코드 (indentation 적용)
 
 
-# --- Guided Problem (data/examples/problems_guided.json 형식) ---
+# --- Guided Problem (새 스키마: 개념 정의, 변수 가이드, 접근법, 맛보기 코드) ---
+
+class VariableGuide(BaseModel):
+    """변수 가이드 항목"""
+    name: str                 # 변수명
+    role: str                 # 역할
+    type: str                 # 자료형
+    initial_value: str        # 초기값
+    why_needed: str           # 왜 필요한지
+
+
+class VariablesGuideResponse(BaseModel):
+    """변수 가이드 전체"""
+    total_count: int
+    variables: List[VariableGuide]
+
 
 class GuidedProblemResponse(BaseModel):
     """
-    Generated guided (1:1) problem.
-    형식: {original_id, language, concepts[], flow[], checkpoints[]}
+    Generated guided (1:1) problem - 새 스키마.
+
+    필드:
+    - concept_explanation: 핵심 알고리즘/자료구조 설명 (2-4문장)
+    - variables_guide: 변수 정의 (역할, 타입, 초기값)
+    - approach_guide: 접근법 가이드 (2-3문장)
+    - starter_code: 맛보기 코드 (함수 정의 제외 앞 2줄)
     """
-    original_id: str
+    # 문제 식별
+    base_problem_id: Optional[str] = None  # UUID
     language: str
-    concepts: List[str]     # 핵심 개념 목록
-    flow: List[str]         # 학습 흐름 단계
-    checkpoints: List[str]  # 체크포인트/확인 사항
+
+    # 초기 가이드 (LLM 생성)
+    concept_explanation: str              # 개념 설명
+    variables_guide: VariablesGuideResponse  # 변수 가이드
+    approach_guide: str                   # 접근법 가이드
+    starter_code: str                     # 맛보기 코드
+
+    # 선택적 필드 (DB 저장 후)
+    guided_problem_id: Optional[str] = None  # problems_guided.id
+
+    # 레거시 호환 (점진적 마이그레이션용)
+    original_id: Optional[str] = None
+    concepts: Optional[List[str]] = None
+    flow: Optional[List[str]] = None
+    checkpoints: Optional[List[str]] = None
 
 
 # --- Guided Starter Code (에디터 기반 1대1 대화형) ---

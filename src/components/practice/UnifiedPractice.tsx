@@ -60,6 +60,8 @@ const CodeEditor = dynamic(
     ),
   }
 );
+
+// GuidedTutorChat 제거됨 - 1대1 대화형은 기존 PracticeChatPanel에서 처리
 import { translateText, LANGUAGE_LABELS, type LanguageCode } from '@/lib/api/translate';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -174,6 +176,7 @@ interface UnifiedPracticeProps {
   onHintRequest: (level: number) => void;
   onGiveUp?: () => void;  // 포기하기
   attemptId?: string;  // attempt tracking for hint recording
+  onCodeChange?: (code: string) => void;  // 코드 변경 콜백 (guided 모드 튜터에게 전달용)
 }
 
 export function UnifiedPractice({
@@ -184,6 +187,7 @@ export function UnifiedPractice({
   onHintRequest,
   onGiveUp,
   attemptId,
+  onCodeChange,
 }: UnifiedPracticeProps) {
   // 공통 상태
   const [code, setCode] = useState('');
@@ -210,6 +214,15 @@ export function UnifiedPractice({
       return Math.min(Math.max(prev + delta, minWidth), maxWidth);
     });
   }, []);
+
+  // 코드 변경 시 콜백 호출 (guided 모드 튜터에게 현재 코드 전달용)
+  useEffect(() => {
+    if (onCodeChange && code) {
+      onCodeChange(code);
+    }
+  }, [code, onCodeChange]);
+
+  // Guided 모드: 별도 채팅 패널 제거됨 - PracticeChatPanel에서 통합 처리
 
   // Blank 모드 상태
   const [blankAnswers, setBlankAnswers] = useState<Record<string, string>>({});
@@ -1614,8 +1627,20 @@ export function UnifiedPractice({
           </div>
         )}
 
-        {/* Implementation/Guided 모드: 코드 에디터 */}
-        {(problemType === 'implementation' || problemType === 'guided') && (
+        {/* Implementation 모드: 코드 에디터만 */}
+        {problemType === 'implementation' && (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <CodeEditor
+              initialCode={code}
+              language="python"
+              onChange={setCode}
+              readOnly={isSubmitted}
+            />
+          </div>
+        )}
+
+        {/* Guided 모드: 코드 에디터만 (가이드 채팅은 오른쪽 AI 코딩 튜터에서 처리) */}
+        {problemType === 'guided' && (
           <div className="flex-1 min-h-0 overflow-hidden">
             <CodeEditor
               initialCode={code}

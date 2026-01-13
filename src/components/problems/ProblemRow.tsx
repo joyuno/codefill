@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Eye, Play, Check, MessageSquare, LogIn, Heart } from 'lucide-react';
+import { Eye, Play, Check, MessageSquare, LogIn, Heart, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -143,12 +143,12 @@ export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
         })()}
       </td>
 
-      {/* 조회수/좋아요 */}
+      {/* 풀이수/좋아요 */}
       <td className="w-24 py-3 px-2 hidden md:table-cell">
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1" title="조회수">
-            <Eye className="h-3.5 w-3.5" />
-            {problem.view_count ?? 0}
+          <span className="flex items-center gap-1" title="풀이 수">
+            <Users className="h-3.5 w-3.5" />
+            {problem.solve_count ?? 0}
           </span>
           <span className="flex items-center gap-1" title="좋아요">
             <Heart className="h-3.5 w-3.5" />

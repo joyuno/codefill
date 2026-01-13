@@ -17,6 +17,12 @@ from .state import (
     TUTOR_ACTION_PROMPTS,
     UNDERSTANDING_TO_ACTION,
 )
+from ...prompts import (
+    GUIDED_INITIAL_PROMPT,
+    GUIDED_TUTOR_SYSTEM_PROMPT,
+    STUDENT_STATUS,
+    GUIDANCE_LEVEL,
+)
 
 
 async def retrieve_context_node(state: AgenticRAGState) -> Dict[str, Any]:
@@ -262,11 +268,12 @@ async def decide_action_node(state: AgenticRAGState) -> Dict[str, Any]:
 
 async def generate_response_node(state: AgenticRAGState) -> Dict[str, Any]:
     """
-    튜터 응답 생성 (2줄 이내)
+    튜터 응답 생성
 
-    소크라테스식 질문법:
-    - 직접 정답을 알려주지 않음
-    - 학생이 스스로 발견하도록 유도
+    1대1 대화형 튜터링:
+    - 빈칸/퍼즐보다 더 구체적인 가이드 제공
+    - 코드 일부 제공 가능 (전체 정답은 X)
+    - 변수명/함수명 직접 추천
     """
     from ...services.openrouter import openrouter_service
 
@@ -277,41 +284,59 @@ async def generate_response_node(state: AgenticRAGState) -> Dict[str, Any]:
     current_focus = student_progress.get("current_focus", "")
     retrieved_docs = state.get("retrieved_docs", [])
     messages = state.get("messages", [])
+    current_student_code = state.get("current_student_code", "")
 
     # 최근 대화
     recent_messages = messages[-6:] if len(messages) > 6 else messages
 
+    # 대화 히스토리 포맷
+    conversation_history = "\n".join([
+        f"{'학생' if m.get('role') in ['user', 'human'] else '튜터'}: {m.get('content', '')}"
+        for m in recent_messages
+    ])
+
     # 관련 문서 내용
     docs_context = "\n".join([d.get("content", "")[:150] for d in retrieved_docs[:2]])
 
-    action_instruction = TUTOR_ACTION_PROMPTS.get(tutor_action, "도움을 주세요.")
+    # 학습 구조 정보 (problems_guided 테이블에서)
+    concepts = problem_context.get("concepts", [])
+    flow = problem_context.get("flow", [])
+    checkpoints = problem_context.get("checkpoints", [])
 
-    system_prompt = f"""
-당신은 소크라테스식 코딩 튜터입니다.
+    # 현재 단계 (checkpoint 기반)
+    completed_checkpoints = student_progress.get("concepts_mastered", [])
+    current_step = len(completed_checkpoints) + 1
+    total_steps = len(checkpoints) if checkpoints else len(flow) if flow else 3
 
-=== 핵심 원칙 ===
-1. 절대 정답 코드를 직접 보여주지 마세요
-2. 학생이 스스로 발견하도록 질문으로 유도하세요
-3. 응답은 반드시 2줄 이내로 해주세요
-4. 한국어로 친근하게 대화하세요
+    # 학생 상태 판단
+    understanding = student_progress.get("understanding_score", 0.5)
+    if understanding < 0.3:
+        student_status = "starting"
+    elif understanding < 0.5:
+        student_status = "coding"
+    elif understanding < 0.7:
+        student_status = "stuck"
+    elif understanding < 0.9:
+        student_status = "almost_done"
+    else:
+        student_status = "completed"
 
-=== 문제 정보 ===
-제목: {problem_context.get('title', '')}
-설명: {problem_context.get('description', '')[:200]}
-핵심 개념: {', '.join(problem_context.get('topics', []))}
-
-=== 정답 코드 (학생에게 보여주지 마세요!) ===
-{solution_code[:300]}
-
-=== 현재 집중 개념 ===
-{current_focus}
-
-=== 관련 참고 자료 ===
-{docs_context}
-
-=== 행동 지시 ===
-{action_instruction}
-"""
+    # GUIDED_TUTOR_SYSTEM_PROMPT 사용
+    system_prompt = GUIDED_TUTOR_SYSTEM_PROMPT.format(
+        title=problem_context.get('title', ''),
+        description=problem_context.get('description', '')[:500],
+        difficulty=problem_context.get('difficulty', 'medium'),
+        language=problem_context.get('language', 'python'),
+        topics=', '.join(problem_context.get('topics', [])),
+        concepts=json.dumps(concepts, ensure_ascii=False, indent=2) if concepts else "[]",
+        flow=json.dumps(flow, ensure_ascii=False, indent=2) if flow else "[]",
+        checkpoints=json.dumps(checkpoints, ensure_ascii=False, indent=2) if checkpoints else "[]",
+        solution_code=solution_code[:800],
+        current_step=current_step,
+        total_steps=total_steps,
+        user_code=current_student_code or "# 아직 작성된 코드 없음",
+        conversation_history=conversation_history or "대화 시작",
+    )
 
     try:
         # 대화 히스토리 구성
@@ -368,3 +393,99 @@ def route_after_grade(state: AgenticRAGState) -> str:
     else:
         # 관련 없어도 이해도 평가는 진행
         return "assess_understanding"
+
+
+# ============================================================
+# Initial Guide Node (문제 시작 시 개념 + 변수 설계 안내)
+# ============================================================
+
+async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
+    """
+    초기 가이드 생성 (문제 시작 시)
+
+    1대1 대화형의 핵심 기능:
+    - 개념 정의 설명
+    - 변수 설계 가이드 (개수, 타입, 초기값, 역할)
+    - 학습 흐름 안내
+    - 첫 번째 단계 유도
+    """
+    from ...services.openrouter import openrouter_service
+
+    problem_context = state.get("problem_context", {})
+    solution_code = state.get("solution_code", "")
+
+    # 학습 구조 정보 (problems_guided 테이블에서)
+    concepts = problem_context.get("concepts", [])
+    flow = problem_context.get("flow", [])
+    checkpoints = problem_context.get("checkpoints", [])
+
+    # GUIDED_INITIAL_PROMPT 사용
+    system_prompt = GUIDED_INITIAL_PROMPT.format(
+        title=problem_context.get('title', ''),
+        description=problem_context.get('description', '')[:500],
+        difficulty=problem_context.get('difficulty', 'medium'),
+        language=problem_context.get('language', 'python'),
+        topics=', '.join(problem_context.get('topics', [])),
+        concepts=json.dumps(concepts, ensure_ascii=False, indent=2) if concepts else "[]",
+        flow=json.dumps(flow, ensure_ascii=False, indent=2) if flow else "[]",
+        checkpoints=json.dumps(checkpoints, ensure_ascii=False, indent=2) if checkpoints else "[]",
+        solution_code=solution_code[:800],
+    )
+
+    try:
+        response = await openrouter_service.chat_completion(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "문제를 시작합니다. 초기 가이드를 제공해주세요."},
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"},
+        )
+
+        content = openrouter_service.get_content(response)
+
+        # JSON 파싱
+        try:
+            result = json.loads(content)
+            message = result.get("message", content)
+        except json.JSONDecodeError:
+            message = content
+
+        return {
+            "response": message,
+            "initial_guide": result if isinstance(result, dict) else {"message": content},
+            "is_initial_guide": True,
+            "student_progress": {
+                "understanding_score": 0.1,  # 시작
+                "concepts_mastered": [],
+                "concepts_struggling": [],
+                "current_focus": flow[0] if flow else (concepts[0] if concepts else ""),
+                "hints_received": 0,
+                "attempts": 0,
+            },
+        }
+
+    except Exception as e:
+        print(f"[GuidedTutor:InitialGuide] Error: {e}")
+        # 에러 시 기본 안내
+        return {
+            "response": f"안녕하세요! **{problem_context.get('title', '문제')}**를 함께 풀어볼게요.\n\n"
+                       f"이 문제에서는 {', '.join(problem_context.get('topics', ['프로그래밍']))} 개념을 사용해요.\n\n"
+                       "준비되셨나요? 먼저 무엇부터 해야 할지 생각해볼까요?",
+            "is_initial_guide": True,
+            "student_progress": {
+                "understanding_score": 0.1,
+                "concepts_mastered": [],
+                "concepts_struggling": [],
+                "current_focus": "",
+                "hints_received": 0,
+                "attempts": 0,
+            },
+        }
+
+
+def is_first_message(state: AgenticRAGState) -> bool:
+    """첫 번째 메시지인지 판단 (초기 가이드 필요 여부)"""
+    messages = state.get("messages", [])
+    return len(messages) <= 1

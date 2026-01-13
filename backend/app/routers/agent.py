@@ -1518,78 +1518,86 @@ async def generate_guided_problem(
     """
     Generate a guided (1:1 conversational) problem from base problem.
 
+    새 스키마:
+    - concept_explanation: 핵심 알고리즘/자료구조 설명
+    - variables_guide: 변수 정의 (역할, 타입, 초기값)
+    - approach_guide: 접근법 가이드
+    - starter_code: 맛보기 코드 (함수 정의 제외 앞 2줄)
+
     Uses GPT-4o-mini via OpenRouter.
-    Cache-First: DB에 있으면 복사, 없으면 LLM 생성 후 저장
+    로그인 필수: creator_id가 필요함
     """
     try:
+        # 로그인 체크
+        if not current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="1대1 대화형 문제는 로그인이 필요합니다."
+            )
+
         bp = request.base_problem
         language = request.language.value
-        # original_id 우선 사용 (프론트엔드에서 전달), 없으면 id, name 순으로 fallback
         original_id = bp.original_id or bp.id or bp.name
+        creator_id = str(current_user_id)
 
-        # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
-        creator_id = str(current_user_id) if current_user_id else None
-
-        print(f"[Guided Gen] original_id: {original_id}, creator_id: {creator_id}")
+        print(f"[Guided Gen] original_id: {original_id}, creator_id: {creator_id[:8]}...")
 
         # ============================================================
-        # Cache-First 로직
+        # base_problem_id 조회
         # ============================================================
         problem_save_service = get_problem_save_service()
         base_problem_id = problem_save_service.get_base_problem_id(original_id)
-        print(f"[Guided Gen] base_problem_id from DB: {base_problem_id}")
 
-        # 🚀 조회수 증가 (문제 유형 생성 시)
-        if base_problem_id:
-            try:
-                db.rpc("increment_problem_view", {"p_base_problem_id": base_problem_id}).execute()
-                print(f"[Guided Gen] Incremented view count for: {base_problem_id}")
-            except Exception as view_err:
-                print(f"[Guided Gen] View count increment error (non-blocking): {view_err}")
+        if not base_problem_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="원본 문제를 찾을 수 없습니다."
+            )
 
-        if base_problem_id:
-            if creator_id:
-                user_existing = problem_save_service.check_user_has_problem(
-                    problem_type="guided",
-                    base_problem_id=base_problem_id,
-                    language=language,
-                    creator_id=creator_id,
-                )
-                if user_existing:
-                    print(f"[Guided Gen] User already has problem: {original_id}")
-                    return GuidedProblemResponse(
-                        original_id=user_existing.get("original_id", original_id),
-                        language=user_existing.get("language", language),
-                        concepts=user_existing.get("concepts", []),
-                        flow=user_existing.get("flow", []),
-                        checkpoints=user_existing.get("checkpoints", []),
-                    )
+        print(f"[Guided Gen] base_problem_id: {base_problem_id}")
 
-            existing = problem_save_service.find_existing_problem(
-                problem_type="guided",
+        # 🚀 조회수 증가
+        try:
+            db.rpc("increment_problem_view", {"p_base_problem_id": base_problem_id}).execute()
+        except Exception as view_err:
+            print(f"[Guided Gen] View count error (non-blocking): {view_err}")
+
+        # ============================================================
+        # 기존 guided 문제 확인 (같은 사용자, 같은 문제, 같은 언어)
+        # ============================================================
+        existing_result = db.table("problems_guided") \
+            .select("*") \
+            .eq("base_problem_id", base_problem_id) \
+            .eq("creator_id", creator_id) \
+            .eq("language", language) \
+            .limit(1) \
+            .execute()
+
+        if existing_result.data and len(existing_result.data) > 0:
+            existing = existing_result.data[0]
+            print(f"[Guided Gen] Found existing guided problem: {existing['id']}")
+
+            # 기존 데이터 반환
+            variables_guide = existing.get("variables_guide", {})
+            if isinstance(variables_guide, str):
+                import json as json_module
+                variables_guide = json_module.loads(variables_guide)
+
+            return GuidedProblemResponse(
                 base_problem_id=base_problem_id,
                 language=language,
+                concept_explanation=existing.get("concept_explanation", ""),
+                variables_guide=variables_guide,
+                approach_guide=existing.get("approach_guide", ""),
+                starter_code=existing.get("starter_code", ""),
+                guided_problem_id=existing["id"],
+                original_id=original_id,
             )
-            if existing:
-                print(f"[Guided Gen] Cache hit! Copying for user: {original_id}")
-                if creator_id:
-                    await problem_save_service.copy_problem_for_user(
-                        problem_type="guided",
-                        source_problem=existing,
-                        creator_id=creator_id,
-                    )
-                return GuidedProblemResponse(
-                    original_id=existing.get("original_id", original_id),
-                    language=existing.get("language", language),
-                    concepts=existing.get("concepts", []),
-                    flow=existing.get("flow", []),
-                    checkpoints=existing.get("checkpoints", []),
-                )
 
         # ============================================================
-        # Cache Miss: LLM으로 생성
+        # LLM으로 생성
         # ============================================================
-        print(f"[Guided Gen] Cache miss. Generating: {original_id}")
+        print(f"[Guided Gen] Generating new guided problem...")
 
         title = bp.get_title()
         description = bp.get_description()
@@ -1616,11 +1624,11 @@ async def generate_guided_problem(
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "위 문제를 1대1 대화형 문제로 변환해주세요."},
+            {"role": "user", "content": "위 문제의 초기 가이드를 생성해주세요."},
         ]
 
         # ============================================================
-        # LLM 호출 + 재시도 로직 (최대 3회 시도)
+        # LLM 호출 + 재시도 로직
         # ============================================================
         MAX_RETRIES = 3
         result = None
@@ -1635,67 +1643,92 @@ async def generate_guided_problem(
                 )
 
                 content = openrouter_service.get_content(response)
-                print(f"[Guided Gen] Attempt {attempt + 1}: LLM response length: {len(content)}")
+                print(f"[Guided Gen] Attempt {attempt + 1}: response length: {len(content)}")
 
                 result = openrouter_service.parse_json_response(content)
-                print(f"[Guided Gen] Parsed result keys: {result.keys()}")
+                print(f"[Guided Gen] Parsed keys: {result.keys()}")
 
-                # 필수 필드 확인
-                concepts = result.get("concepts", [])
-                flow = result.get("flow", [])
-                if len(concepts) > 0 or len(flow) > 0:
+                # 필수 필드 확인 (새 스키마)
+                if (result.get("concept_explanation") and
+                    result.get("variables_guide") and
+                    result.get("approach_guide") and
+                    result.get("starter_code")):
                     print(f"[Guided Gen] ✓ Valid output on attempt {attempt + 1}")
                     break
                 else:
-                    print(f"[Guided Gen] ⚠️ Attempt {attempt + 1}: Empty concepts/flow")
+                    missing = []
+                    if not result.get("concept_explanation"):
+                        missing.append("concept_explanation")
+                    if not result.get("variables_guide"):
+                        missing.append("variables_guide")
+                    if not result.get("approach_guide"):
+                        missing.append("approach_guide")
+                    if not result.get("starter_code"):
+                        missing.append("starter_code")
+                    print(f"[Guided Gen] ⚠️ Missing fields: {missing}")
+
                     if attempt < MAX_RETRIES - 1:
                         messages.append({"role": "assistant", "content": content})
                         messages.append({
                             "role": "user",
-                            "content": "concepts와 flow 배열이 비어있습니다. 핵심 개념과 학습 흐름을 채워주세요."
+                            "content": f"다음 필드가 누락되었습니다: {missing}. 모든 필드를 채워주세요."
                         })
 
             except ValueError as e:
                 print(f"[Guided Gen] ⚠️ Attempt {attempt + 1} parse error: {e}")
-                if attempt < MAX_RETRIES - 1:
-                    print(f"[Guided Gen] Retrying... ({attempt + 2}/{MAX_RETRIES})")
-                else:
-                    print(f"[Guided Gen] ❌ All {MAX_RETRIES} attempts failed")
+                if attempt >= MAX_RETRIES - 1:
                     raise
 
         if result is None:
             raise ValueError("Failed to generate guided problem after all retries")
 
-        if not result.get("original_id"):
-            result["original_id"] = original_id
-        if not result.get("language"):
-            result["language"] = language
-
         # ============================================================
-        # DB에 저장
+        # DB에 저장 (새 스키마)
         # ============================================================
-        # Note: base_problems에 저장하는 로직 제거
-        # - base_problems는 원본 문제 저장소 (Baekjoon, TACO 등)
-        # - 유형별 테이블만 저장 (problems_blank, problems_puzzle, problems_guided)
-        # - CodeGen 문제는 LangGraph의 code_gen 노드에서만 base_problems에 저장
+        variables_guide = result.get("variables_guide", {"total_count": 0, "variables": []})
+        if isinstance(variables_guide, str):
+            variables_guide = json.loads(variables_guide)
 
-        if base_problem_id and creator_id:
-            try:
-                save_result = await problem_save_service.save_generated_problem(
-                    problem_type="guided",
-                    generated_data=result,
-                    base_problem_id=base_problem_id,
-                    creator_id=creator_id,
-                )
-                if save_result.get("success"):
-                    print(f"[Guided Gen] Saved to DB: {original_id} (user: {creator_id[:8]}...)")
-                else:
-                    print(f"[Guided Gen] DB save failed: {save_result.get('error')}")
-            except Exception as save_err:
-                print(f"[Guided Gen] DB save error (non-blocking): {save_err}")
+        insert_data = {
+            "base_problem_id": base_problem_id,
+            "creator_id": creator_id,
+            "language": language,
+            "concept_explanation": result.get("concept_explanation", ""),
+            "variables_guide": variables_guide,
+            "approach_guide": result.get("approach_guide", ""),
+            "starter_code": result.get("starter_code", ""),
+            "conversation_history": [],
+            "check_points": [],
+            "status": "in_progress",
+            "attempts_count": 0,
+            "hints_given": 0,
+        }
 
-        return GuidedProblemResponse(**result)
+        try:
+            insert_result = db.table("problems_guided").insert(insert_data).execute()
+            if insert_result.data:
+                guided_problem_id = insert_result.data[0]["id"]
+                print(f"[Guided Gen] Saved to DB: {guided_problem_id}")
+            else:
+                guided_problem_id = None
+                print(f"[Guided Gen] DB insert returned no data")
+        except Exception as save_err:
+            print(f"[Guided Gen] DB save error: {save_err}")
+            guided_problem_id = None
 
+        return GuidedProblemResponse(
+            base_problem_id=base_problem_id,
+            language=language,
+            concept_explanation=result.get("concept_explanation", ""),
+            variables_guide=variables_guide,
+            approach_guide=result.get("approach_guide", ""),
+            starter_code=result.get("starter_code", ""),
+            guided_problem_id=guided_problem_id,
+            original_id=original_id,
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         print(f"[Guided Gen] Error: {e}")
@@ -1855,6 +1888,171 @@ async def generate_code(request: CodeGenerationRequest, db=Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Code generation error: {str(e)}"
         )
+
+
+# ============================================================
+# Code Generation Streaming (SSE)
+# ============================================================
+
+class CodeGenStreamRequest(BaseModel):
+    """스트리밍 코드 생성 요청"""
+    collected_info: Dict[str, Any]  # topics, difficulty, language
+    similar_problems: List[Dict[str, Any]] = []
+    user_context: Optional[Dict[str, Any]] = None
+
+
+@router.post("/generate/codegen/stream")
+async def generate_codegen_stream(
+    request: CodeGenStreamRequest,
+    db=Depends(get_db)
+):
+    """
+    SSE 스트리밍으로 새 문제를 생성합니다.
+
+    프론트엔드에서 실시간으로 생성 과정을 확인할 수 있습니다.
+
+    이벤트 타입:
+    - status: 진행 상태 업데이트
+    - chunk: LLM 응답 청크
+    - result: 최종 결과 (JSON)
+    - error: 에러 발생
+    """
+    import asyncio
+
+    async def generate():
+        accumulated_content = ""
+
+        try:
+            # 1. 시작 상태 전송
+            yield f"data: {json.dumps({'type': 'status', 'status': 'starting', 'message': '문제 생성을 시작합니다...'}, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.1)
+
+            # 2. 유사 문제 분석 상태
+            yield f"data: {json.dumps({'type': 'status', 'status': 'analyzing', 'message': '유사 문제를 분석하고 있습니다...'}, ensure_ascii=False)}\n\n"
+
+            # 3. 프롬프트 준비
+            collected_info = request.collected_info
+            similar_problems = request.similar_problems
+            user_context = request.user_context or {}
+
+            # 유사 문제 컨텍스트 포맷팅
+            similar_context = []
+            preferred_lang = collected_info.get("language", "python")
+
+            for p in similar_problems[:3]:
+                solutions = p.get("solutions", [])
+                solution_code = None
+
+                for sol in solutions:
+                    if sol.get("language") == preferred_lang:
+                        solution_code = sol.get("code", "")[:2000]
+                        break
+
+                if not solution_code and solutions:
+                    solution_code = solutions[0].get("code", "")[:2000]
+
+                similar_context.append({
+                    "title": p.get("name", ""),
+                    "question": p.get("question", ""),
+                    "tags": p.get("tags", []),
+                    "difficulty": p.get("difficulty", ""),
+                    "solution_code": solution_code,
+                })
+
+            user_request = {
+                "topics": collected_info.get("topics", ["기초"]),
+                "difficulty": collected_info.get("difficulty", "easy"),
+                "language": preferred_lang,
+                "specific_needs": collected_info.get("specific_needs", ""),
+            }
+
+            system_prompt = CODE_GEN_SYSTEM_PROMPT.format(
+                user_request=json.dumps(user_request, ensure_ascii=False),
+                similar_problems=json.dumps(similar_context, ensure_ascii=False),
+                user_status=user_context.get("status", "unknown"),
+                user_goal=user_context.get("goal", "unknown"),
+                user_level=user_context.get("level", "intermediate"),
+                strong_algorithms=", ".join(user_context.get("strong_algorithms", [])) or "없음",
+            )
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "사용자 요청에 맞는 교육용 코드를 생성해주세요."},
+            ]
+
+            # 4. LLM 스트리밍 시작
+            yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제를 생성하고 있습니다...'}, ensure_ascii=False)}\n\n"
+
+            chunk_count = 0
+            async for chunk in openrouter_service.chat_completion_stream(
+                model=settings.llm_model_code_gen,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=8192,
+            ):
+                accumulated_content += chunk
+                chunk_count += 1
+
+                # 50청크마다 또는 특정 키워드 발견 시 상태 업데이트
+                if chunk_count % 50 == 0:
+                    # 진행 상태 추정
+                    if '"title"' in accumulated_content and '"description"' not in accumulated_content:
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제 제목 생성 완료...'}, ensure_ascii=False)}\n\n"
+                    elif '"description"' in accumulated_content and '"code"' not in accumulated_content:
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제 설명 작성 중...'}, ensure_ascii=False)}\n\n"
+                    elif '"code"' in accumulated_content:
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'coding', 'message': '솔루션 코드 작성 중...'}, ensure_ascii=False)}\n\n"
+
+                # 청크 전송 (너무 자주 보내지 않도록 조절)
+                if chunk_count % 10 == 0:
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
+
+            # 5. 결과 파싱
+            yield f"data: {json.dumps({'type': 'status', 'status': 'finalizing', 'message': '결과를 정리하고 있습니다...'}, ensure_ascii=False)}\n\n"
+
+            result = openrouter_service.parse_json_response(accumulated_content)
+
+            # 6. DB에 저장
+            problem_save_service = get_problem_save_service()
+            saved_base_id = await problem_save_service.save_codegen_to_base_problems(
+                generated_problem=result,
+                collected_info=collected_info,
+            )
+
+            if saved_base_id:
+                result["id"] = saved_base_id
+                # original_id 조회
+                try:
+                    db_result = problem_save_service.supabase.table("base_problems") \
+                        .select("original_id") \
+                        .eq("id", saved_base_id) \
+                        .limit(1) \
+                        .execute()
+                    if db_result.data:
+                        result["original_id"] = db_result.data[0].get("original_id")
+                except Exception:
+                    pass
+
+            # 7. 최종 결과 전송
+            yield f"data: {json.dumps({'type': 'result', 'status': 'complete', 'data': result}, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'status': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 # ============================================================

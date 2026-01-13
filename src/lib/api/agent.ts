@@ -106,13 +106,41 @@ export interface PuzzleProblemResponse {
   blocks: PuzzleBlock[]; // id 순서가 정답
 }
 
-// Guided Problem Response (matches data/examples/problems_guided.json)
+// 변수 가이드 항목
+export interface VariableGuide {
+  name: string;          // 변수명
+  role: string;          // 역할
+  type: string;          // 자료형
+  initial_value: string; // 초기값
+  why_needed: string;    // 왜 필요한지
+}
+
+// 변수 가이드 전체
+export interface VariablesGuideResponse {
+  total_count: number;
+  variables: VariableGuide[];
+}
+
+// Guided Problem Response (새 스키마)
 export interface GuidedProblemResponse {
-  original_id: string;
+  // 문제 식별
+  base_problem_id?: string;  // UUID
   language: string;
-  concepts: string[];     // 핵심 개념 목록
-  flow: string[];         // 학습 흐름 단계
-  checkpoints: string[];  // 체크포인트/확인 사항
+
+  // 초기 가이드 (LLM 생성)
+  concept_explanation: string;         // 핵심 알고리즘/자료구조 설명
+  variables_guide: VariablesGuideResponse;  // 변수 정의
+  approach_guide: string;              // 접근법 가이드
+  starter_code: string;                // 맛보기 코드 (함수 정의 제외 앞 2줄)
+
+  // DB 저장 후
+  guided_problem_id?: string;          // problems_guided.id
+
+  // 레거시 호환 (점진적 마이그레이션용)
+  original_id?: string;
+  concepts?: string[];
+  flow?: string[];
+  checkpoints?: string[];
 }
 
 // Guided Starter Code (에디터 기반 1대1 대화형)
@@ -406,16 +434,28 @@ export interface GeneratedPuzzleData {
 
 export interface GeneratedGuidedData {
   problem_type: 'guided';
-  original_id: string;
+  original_id?: string;
   language: string;
-  concepts: string[];
-  flow: string[];
-  checkpoints: string[];
-  final_code: string;
-  title: string;
-  description: string;
-  difficulty: string;
-  topics: string[];
+
+  // 새 스키마 필드
+  base_problem_id?: string;
+  guided_problem_id?: string;
+  concept_explanation: string;        // 개념 설명
+  variables_guide: VariablesGuideResponse;  // 변수 가이드
+  approach_guide: string;             // 접근법 가이드
+  starter_code: string;               // 맛보기 코드
+
+  // 레거시 호환
+  concepts?: string[];
+  flow?: string[];
+  checkpoints?: string[];
+  final_code?: string;
+
+  // 공통 필드
+  title?: string;
+  description?: string;
+  difficulty?: string;
+  topics?: string[];
   input_output?: {
     inputs: string[];
     outputs: string[];
@@ -487,9 +527,10 @@ export const agentApi = {
   /**
    * Chat Agent - 정식 LangGraph 기반 채팅
    * 3단계 그래프: Intent → Discovery → Solving
+   * 타임아웃: 20초
    */
   async chatMain(request: ChatV2Request): Promise<ChatV2Response> {
-    const response = await api.post<ChatV2Response>('/agent/chat', request, false);
+    const response = await api.post<ChatV2Response>('/agent/chat', request, false, 20000);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -507,28 +548,28 @@ export const agentApi = {
   },
 
   /**
-   * Generate Blank Problem
+   * Generate Blank Problem (타임아웃: 60초)
    */
   async generateBlank(request: ProblemGenerationRequest): Promise<BlankProblemResponse> {
-    const response = await api.post<BlankProblemResponse>('/agent/generate/blank', request, true);
+    const response = await api.post<BlankProblemResponse>('/agent/generate/blank', request, true, 60000);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
 
   /**
-   * Generate Puzzle Problem
+   * Generate Puzzle Problem (타임아웃: 60초)
    */
   async generatePuzzle(request: ProblemGenerationRequest): Promise<PuzzleProblemResponse> {
-    const response = await api.post<PuzzleProblemResponse>('/agent/generate/puzzle', request, true);
+    const response = await api.post<PuzzleProblemResponse>('/agent/generate/puzzle', request, true, 60000);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
 
   /**
-   * Generate Guided Problem
+   * Generate Guided Problem (타임아웃: 60초)
    */
   async generateGuided(request: ProblemGenerationRequest): Promise<GuidedProblemResponse> {
-    const response = await api.post<GuidedProblemResponse>('/agent/generate/guided', request, true);
+    const response = await api.post<GuidedProblemResponse>('/agent/generate/guided', request, true, 60000);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -546,19 +587,19 @@ export const agentApi = {
   },
 
   /**
-   * Generate Code (RAG Fallback)
+   * Generate Code (RAG Fallback, 타임아웃: 2분)
    */
   async generateCode(request: CodeGenerationRequest): Promise<CodeGenerationResponse> {
-    const response = await api.post<CodeGenerationResponse>('/agent/generate/code', request, false);
+    const response = await api.post<CodeGenerationResponse>('/agent/generate/code', request, false, 120000);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
 
   /**
-   * Get AI Hint
+   * Get AI Hint (타임아웃: 60초)
    */
   async getHint(request: HintAgentRequest): Promise<HintAgentResponse> {
-    const response = await api.post<HintAgentResponse>('/agent/hint', request, false);
+    const response = await api.post<HintAgentResponse>('/agent/hint', request, false, 60000);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },
@@ -596,5 +637,106 @@ export const agentApi = {
     const response = await api.post<FeedbackResponse>('/agent/feedback', request, false);
     if (response.error) throw new Error(response.error.message);
     return response.data!;
+  },
+
+  /**
+   * Generate Code (Streaming) - SSE 스트리밍으로 새 문제 생성
+   *
+   * @param request - 생성 요청 (collected_info, similar_problems, user_context)
+   * @param onStatus - 상태 업데이트 콜백 (status, message)
+   * @param onChunk - LLM 청크 콜백 (content)
+   * @param onResult - 최종 결과 콜백 (generated problem)
+   * @param onError - 에러 콜백 (error message)
+   */
+  async generateCodeStream(
+    request: {
+      collectedInfo: CollectedInfo;
+      similarProblems?: BaseProblemInfo[];
+      userContext?: Record<string, unknown>;
+    },
+    callbacks: {
+      onStatus?: (status: string, message: string) => void;
+      onChunk?: (content: string) => void;
+      onResult?: (result: BaseProblemInfo) => void;
+      onError?: (error: string) => void;
+      onDone?: () => void;
+    }
+  ): Promise<void> {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+    try {
+      const response = await fetch(`${API_URL}/agent/generate/codegen/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          collected_info: request.collectedInfo,
+          similar_problems: request.similarProblems || [],
+          user_context: request.userContext,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          callbacks.onDone?.();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE 이벤트 파싱
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 불완전한 마지막 줄은 버퍼에 보관
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+
+            if (data === '[DONE]') {
+              callbacks.onDone?.();
+              return;
+            }
+
+            try {
+              const event = JSON.parse(data);
+
+              switch (event.type) {
+                case 'status':
+                  callbacks.onStatus?.(event.status, event.message);
+                  break;
+                case 'chunk':
+                  callbacks.onChunk?.(event.content);
+                  break;
+                case 'result':
+                  callbacks.onResult?.(event.data);
+                  break;
+                case 'error':
+                  callbacks.onError?.(event.message);
+                  break;
+              }
+            } catch {
+              // JSON 파싱 실패 무시
+            }
+          }
+        }
+      }
+    } catch (error) {
+      callbacks.onError?.(error instanceof Error ? error.message : 'Unknown error');
+    }
   },
 };

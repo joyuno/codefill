@@ -30,6 +30,9 @@ FEEDBACK_SYSTEM_PROMPT = """
 - 힌트 사용: {hints_used}회 (XP 비용: -{hint_xp_cost})
 - 획득 XP: +{xp_earned}
 
+## 문제 유형별 추가 통계
+{problem_type_stats}
+
 ## 힌트 사용 내역
 {hint_history}
 
@@ -358,3 +361,191 @@ def calculate_xp(
     xp = max(base_xp // 2, base_xp - hint_reduction - attempt_reduction + perfect_bonus)
 
     return xp
+
+
+# ============================================================
+# 문제 유형별 측정 기준 (4가지 유형 통합)
+# ============================================================
+
+PROBLEM_TYPE_METRICS = {
+    "blank": {
+        "name": "빈칸 채우기",
+        "metrics": [
+            "blank_accuracy",      # 빈칸 정답률 (맞은 빈칸 / 전체 빈칸)
+            "hints_used",          # 힌트 사용 횟수
+            "attempt_count",       # 제출 시도 횟수
+            "solve_time",          # 풀이 시간
+        ],
+        "grade_weights": {
+            "blank_accuracy": 0.4,
+            "hints_used": 0.25,
+            "attempt_count": 0.2,
+            "solve_time": 0.15,
+        },
+        "stats_template": """
+- 빈칸 정답률: {blank_correct}/{blank_total} ({blank_accuracy}%)
+- 첫 시도 정답률: {first_try_accuracy}%
+""",
+    },
+    "puzzle": {
+        "name": "퍼즐 (코드 정렬)",
+        "metrics": [
+            "block_accuracy",      # 블록 위치 정확도
+            "hints_used",          # 힌트 사용 횟수
+            "attempt_count",       # 제출 시도 횟수
+            "solve_time",          # 풀이 시간
+        ],
+        "grade_weights": {
+            "block_accuracy": 0.4,
+            "hints_used": 0.25,
+            "attempt_count": 0.2,
+            "solve_time": 0.15,
+        },
+        "stats_template": """
+- 블록 정렬 정확도: {blocks_correct}/{blocks_total} ({block_accuracy}%)
+- 잘못된 위치: {wrong_positions}개
+""",
+    },
+    "guided": {
+        "name": "1대1 대화형",
+        "metrics": [
+            "conversation_count",  # 총 대화 횟수
+            "help_requests",       # 도움 요청 횟수 (막힘 표현)
+            "checkpoint_progress", # 체크포인트 달성률
+            "solve_time",          # 풀이 시간
+        ],
+        "grade_weights": {
+            "conversation_count": 0.2,   # 대화 많아도 괜찮음 (학습이니까)
+            "help_requests": 0.3,        # 스스로 해결한 정도
+            "checkpoint_progress": 0.35, # 단계별 진행
+            "solve_time": 0.15,
+        },
+        "stats_template": """
+- 총 대화 횟수: {conversation_count}회
+- 도움 요청: {help_requests}회
+- 체크포인트 달성: {checkpoints_completed}/{checkpoints_total}
+- 스스로 해결한 단계: {self_solved_steps}개
+""",
+        "special_rules": {
+            "no_hint_button": True,      # 힌트 버튼 없음
+            "conversation_is_learning": True,  # 대화 자체가 학습
+        },
+    },
+    "implementation": {
+        "name": "구현 (코드 작성)",
+        "metrics": [
+            "test_pass_rate",      # 테스트 케이스 통과율
+            "hints_used",          # 힌트 사용 횟수
+            "submission_count",    # 제출 횟수
+            "solve_time",          # 풀이 시간
+            "code_quality",        # 코드 품질 (선택)
+        ],
+        "grade_weights": {
+            "test_pass_rate": 0.4,
+            "hints_used": 0.2,
+            "submission_count": 0.2,
+            "solve_time": 0.1,
+            "code_quality": 0.1,
+        },
+        "stats_template": """
+- 테스트 통과율: {tests_passed}/{tests_total} ({test_pass_rate}%)
+- 제출 횟수: {submission_count}회
+- 코드 라인 수: {code_lines}줄
+""",
+    },
+}
+
+
+def get_problem_type_stats(
+    problem_type: str,
+    stats_data: dict
+) -> str:
+    """
+    문제 유형별 통계 문자열 생성
+
+    Args:
+        problem_type: blank|puzzle|guided|implementation
+        stats_data: 해당 유형의 통계 데이터
+
+    Returns:
+        포맷된 통계 문자열
+    """
+    config = PROBLEM_TYPE_METRICS.get(problem_type, PROBLEM_TYPE_METRICS["blank"])
+    template = config.get("stats_template", "")
+
+    try:
+        return template.format(**stats_data)
+    except KeyError:
+        return f"[{config['name']}] 통계 데이터 없음"
+
+
+def calculate_type_specific_grade(
+    problem_type: str,
+    metrics: dict
+) -> dict:
+    """
+    문제 유형별 등급 계산
+
+    Args:
+        problem_type: 문제 유형
+        metrics: 측정 지표들
+
+    Returns:
+        {score, grade, factors} 딕셔너리
+    """
+    config = PROBLEM_TYPE_METRICS.get(problem_type, PROBLEM_TYPE_METRICS["blank"])
+    weights = config.get("grade_weights", {})
+
+    total_score = 0
+    factors = {}
+
+    for metric, weight in weights.items():
+        value = metrics.get(metric, 0)
+
+        # 각 지표를 0-100 점수로 정규화
+        if metric in ["blank_accuracy", "block_accuracy", "test_pass_rate", "checkpoint_progress"]:
+            # 이미 퍼센트면 그대로 사용
+            normalized = min(100, max(0, value))
+        elif metric in ["hints_used", "help_requests"]:
+            # 적을수록 좋음 (0개=100점, 4개 이상=0점)
+            normalized = max(0, 100 - value * 25)
+        elif metric in ["attempt_count", "submission_count"]:
+            # 적을수록 좋음 (1회=100점, 5회 이상=20점)
+            normalized = max(20, 100 - (value - 1) * 20)
+        elif metric == "conversation_count":
+            # 1대1 대화형: 대화 많아도 OK (10회까지 만점, 그 이상은 약간 감점)
+            normalized = max(70, 100 - max(0, value - 10) * 3)
+        elif metric == "solve_time":
+            # 시간은 별도 계산 필요 (평균 대비)
+            normalized = metrics.get("time_score", 70)
+        else:
+            normalized = 70  # 기본값
+
+        factors[metric] = {
+            "raw": value,
+            "normalized": normalized,
+            "weight": weight,
+            "contribution": normalized * weight,
+        }
+        total_score += normalized * weight
+
+    return {
+        "score": round(total_score, 1),
+        "factors": factors,
+    }
+
+
+# 1대1 대화형 특별 규칙
+GUIDED_SPECIAL_FEEDBACK = {
+    "low_conversation": {
+        "threshold": 5,  # 대화 5회 이하
+        "message": "짧은 대화로 문제를 해결했어요! 개념을 잘 이해하고 계시네요.",
+    },
+    "high_self_solve": {
+        "threshold": 0.7,  # 70% 이상 스스로 해결
+        "message": "대부분의 단계를 스스로 해결했어요! 독립적인 문제 해결 능력이 뛰어나요.",
+    },
+    "good_learning_pace": {
+        "message": "대화를 통해 차근차근 배워나가는 모습이 좋아요! 이게 바로 학습이에요.",
+    },
+}

@@ -61,9 +61,9 @@ async def list_base_problems(
         count_result = count_query.execute()
         total = count_result.count if count_result.count else 0
 
-        # 실제 데이터 조회 (view_count, like_count 포함)
+        # 실제 데이터 조회 (solve_count, like_count 포함)
         query = db.table("base_problems")\
-            .select("id, original_id, name, difficulty, tags, source, input_output, view_count, like_count")\
+            .select("id, original_id, name, difficulty, tags, source, input_output, solve_count, like_count")\
             .order("original_id")
 
         if difficulty:
@@ -92,7 +92,7 @@ async def list_base_problems(
                 tags=item.get("tags") or [],
                 source=item.get("source"),
                 input_output=item.get("input_output"),
-                view_count=item.get("view_count", 0),
+                solve_count=item.get("solve_count", 0),
                 like_count=item.get("like_count", 0),
             ))
 

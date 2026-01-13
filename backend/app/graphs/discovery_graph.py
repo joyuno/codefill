@@ -284,133 +284,44 @@ async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
 
 async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     """
-    CodeGen을 통해 새 문제를 생성합니다.
-    RAG 검색 결과가 없을 때 fallback으로 호출됩니다.
+    CodeGen Fallback 신호를 반환합니다.
 
-    생성된 문제는 base_problems 테이블에 저장되어 이후 문제 유형 생성 시 참조됩니다.
+    RAG 검색 결과가 없을 때 호출되며, 실제 문제 생성은 하지 않고
+    프론트엔드에 "needs_codegen" 신호를 보내 스트리밍 엔드포인트를 호출하도록 합니다.
+
+    이렇게 하면 chatMain의 20초 타임아웃에 걸리지 않고,
+    프론트엔드에서 스트리밍으로 실시간 진행 상황을 표시할 수 있습니다.
     """
-    from ..services.rag import rag_service
-    from ..services.problem_save import get_problem_save_service
-    from ..config import get_settings
-    import json
-
-    settings = get_settings()
     collected_info = state.get("collected_info", {})
-    search_results = state.get("search_results", [])  # RAG에서 찾은 유사 문제 (fallback용 참고)
-
-    user_request = {
-        "topics": collected_info.get("topics", ["기초"]),
-        "difficulty": collected_info.get("difficulty", "easy"),
-        "language": collected_info.get("language", "python"),
-        "specific_needs": collected_info.get("specific_needs", ""),
-    }
+    search_results = state.get("search_results", [])  # RAG에서 찾은 유사 문제 (프론트엔드에서 참고용)
 
     # Fallback 알림 메시지
     topics_str = ", ".join(collected_info.get("topics", ["기초"]))
-    fallback_message = f"'{topics_str}' 관련 문제를 찾지 못했어요. 유사한 새로운 문제를 생성하고 있어요..."
 
-    print(f"[DiscoveryGraph:CodeGen] Fallback triggered - {fallback_message}")
-    print(f"[DiscoveryGraph:CodeGen] Starting generation with RAG context...")
+    print(f"[DiscoveryGraph:CodeGen] Fallback triggered - returning needs_codegen signal")
+    print(f"[DiscoveryGraph:CodeGen] Topics: {topics_str}, Difficulty: {collected_info.get('difficulty', 'easy')}")
 
-    try:
-        # RAG 서비스를 통해 문제 생성 (유사 문제 참고)
-        user_context = state.get("user_context", {})
-        generated_result = await rag_service.generate_problem_with_rag(
-            user_request=user_request,
-            similar_problems=search_results,  # 유사도가 낮더라도 참고용으로 전달
-            user_context=user_context,
-        )
+    # 실제 생성은 하지 않고, 프론트엔드에 신호만 반환
+    response_message = (
+        f"'{topics_str}' 관련 문제를 DB에서 찾지 못했어요.\n\n"
+        f"새로운 문제를 생성할게요! 잠시만 기다려주세요..."
+    )
 
-        # ============================================================
-        # CodeGen 문제를 base_problems에 저장 (Feature 1)
-        # - title 필드가 name 컬럼으로 저장됨
-        # - 이후 문제 유형 생성 시 base_problem_id로 참조
-        # ============================================================
-        problem_save_service = get_problem_save_service()
-        saved_base_id = await problem_save_service.save_codegen_to_base_problems(
-            generated_problem=generated_result,
-            collected_info=collected_info,
-        )
-
-        if saved_base_id:
-            print(f"[DiscoveryGraph:CodeGen] Saved to base_problems: {saved_base_id}")
-            # saved_base_id (UUID)를 id로 설정
-            problem_id = saved_base_id
-            # original_id 조회
-            original_id = None
-            try:
-                result = problem_save_service.supabase.table("base_problems") \
-                    .select("original_id") \
-                    .eq("id", saved_base_id) \
-                    .limit(1) \
-                    .execute()
-                if result.data:
-                    original_id = result.data[0].get("original_id")
-            except Exception:
-                pass
-        else:
-            print(f"[DiscoveryGraph:CodeGen] Warning: Failed to save to base_problems")
-            problem_id = None
-            original_id = None
-
-        generated_problem: ProblemInfo = {
-            "id": problem_id,
-            "original_id": original_id,
-            "title": generated_result.get("title", "새 문제"),
-            "name": generated_result.get("title", "새 문제"),  # name도 title과 동일하게
-            "title_en": generated_result.get("title_en"),
-            "description": generated_result.get("description", ""),
-            "question": generated_result.get("description", ""),  # question도 추가
-            "difficulty": generated_result.get("difficulty", collected_info.get("difficulty", "easy")),
-            "topics": generated_result.get("topics", collected_info.get("topics", [])),
-            "tags": generated_result.get("topics", collected_info.get("topics", [])),  # tags도 동일
-            "code": generated_result.get("code", {}),
-            "solutions": [],  # solutions 형식으로 변환
-            "input_format": generated_result.get("input_format"),
-            "output_format": generated_result.get("output_format"),
-            "examples": generated_result.get("examples", []),
-            "constraints": generated_result.get("constraints", []),
-            "key_concepts": generated_result.get("key_concepts", []),
-        }
-
-        # solutions 형식으로 code 변환
-        code_data = generated_result.get("code", {})
-        if isinstance(code_data, dict):
-            for lang, code in code_data.items():
-                if code:
-                    generated_problem["solutions"].append({"language": lang, "code": code})
-
-        response_message = (
-            f"요청하신 조건에 맞는 문제를 DB에서 찾지 못해서, 새로운 문제를 생성했어요!\n\n"
-            f"**{generated_problem['title']}** ({generated_problem['difficulty']})\n\n"
-            f"이 문제를 풀어볼까요?"
-        )
-        action_data = {
-            "status": "generated",
-            "generated_problem": generated_problem,
-            "is_fallback": True,
-            "fallback_message": fallback_message,
-        }
-        action_trigger = "problem_generated"
-
-    except Exception as e:
-        print(f"[DiscoveryGraph:CodeGen] Error: {e}")
-        import traceback
-        traceback.print_exc()
-        generated_problem = None
-        response_message = "문제 생성 중 오류가 발생했어요. 다른 조건으로 다시 시도해볼까요?"
-        action_data = {"status": "error", "error": str(e), "is_fallback": True}
-        action_trigger = None
+    action_data = {
+        "status": "needs_codegen",
+        "is_fallback": True,
+        # 프론트엔드에서 스트리밍 호출 시 필요한 정보
+        "collected_info": collected_info,
+        "similar_problems": search_results,
+    }
 
     return {
-        "generated_problem": generated_problem,
+        "generated_problem": None,
         "response_message": response_message,
         "action_data": action_data,
-        "action_trigger": action_trigger,
+        "action_trigger": "needs_codegen",  # 프론트엔드에서 이 신호를 감지
         "is_fallback": True,
-        "fallback_message": fallback_message,
-        "awaiting_selection": True,  # 선택 대기 상태
-        "next_node": "handle_selection",
+        "next_node": "respond",
     }
 
 

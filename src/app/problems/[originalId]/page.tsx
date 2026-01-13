@@ -30,7 +30,7 @@ import {
   FileText,
   TestTube,
   Heart,
-  Eye,
+  Users,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { translateText, type LanguageCode } from '@/lib/api/translate';
@@ -69,8 +69,8 @@ export default function ProblemDiscussionPage() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [showTranslated, setShowTranslated] = useState(false);
 
-  // 조회수/좋아요 상태
-  const [viewCount, setViewCount] = useState(0);
+  // 풀이수/좋아요 상태 (풀이수는 피드백 완료 시 백엔드에서 증가)
+  const [solveCount, setSolveCount] = useState(0);
   const [likeCount, setLikeCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
@@ -99,19 +99,16 @@ export default function ProblemDiscussionPage() {
     fetchData();
   }, [fetchData]);
 
-  // 조회수 증가 및 통계 조회
+  // 통계 조회 (풀이수는 피드백 완료 시 백엔드에서 증가)
   useEffect(() => {
     if (!data?.problem?.id) return;
 
     const baseProblemId = data.problem.id;
 
-    // 조회수 증가 (한 번만)
-    problemsApi.incrementView(baseProblemId);
-
     // 통계 조회
     problemsApi.getStats(baseProblemId)
       .then((stats) => {
-        setViewCount(stats.view_count);
+        setSolveCount(stats.solve_count);
         setLikeCount(stats.like_count);
         setIsLiked(stats.is_liked);
       })
@@ -306,10 +303,10 @@ export default function ProblemDiscussionPage() {
                         +{problem.tags.length - 3}
                       </span>
                     )}
-                    {/* 조회수 */}
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
-                      <Eye className="h-3 w-3" />
-                      {viewCount}
+                    {/* 풀이수 */}
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground ml-2" title="풀이 수">
+                      <Users className="h-3 w-3" />
+                      {solveCount}
                     </span>
                   </div>
                 </div>

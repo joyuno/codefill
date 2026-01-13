@@ -150,7 +150,23 @@ export interface ConvertedProblem {
   fixedStart?: string;
   fixedEnd?: string;
 
-  // Guided 문제용 (새 형식: string[], 레거시 형식: 복잡한 객체 배열)
+  // Guided 문제용 - 새 스키마 (2026-01-12)
+  guidedProblemId?: string;           // problems_guided.id
+  conceptExplanation?: string;        // 핵심 알고리즘/자료구조 설명
+  variablesGuide?: {                  // 변수 정의
+    total_count: number;
+    variables: Array<{
+      name: string;
+      role: string;
+      type: string;
+      initial_value: string;
+      why_needed: string;
+    }>;
+  };
+  approachGuide?: string;             // 접근법 가이드
+  starterCode?: string;               // 맛보기 코드 (함수 정의 제외 앞 2줄)
+
+  // Guided 문제용 - 레거시 (점진적 마이그레이션)
   concepts?: string[] | GuidedConcept[];
   flow?: string[] | GuidedFlowStep[];
   checkpoints?: string[] | GuidedCheckpoint[];

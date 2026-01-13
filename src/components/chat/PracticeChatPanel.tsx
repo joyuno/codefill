@@ -4,8 +4,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble } from './MessageBubble';
 import { ChatComposer } from './ChatComposer';
-import { agentApi } from '@/lib/api';
+import { agentApi, practiceApi } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import type { GuidedTutorChatResponse } from '@/lib/api/practice';
 import type {
   ChatAgentMessage,
   CollectedInfo,
@@ -40,6 +41,15 @@ interface PracticeChatPanelProps {
    */
   sessionId?: string | null;
   onSessionIdChange?: (sessionId: string) => void;
+  /**
+   * 현재 문제 유형 (guided일 때 1대1 대화형 튜터 모드)
+   * guided 모드에서는 일반 chatMain 대신 guided 튜터 API 사용
+   */
+  problemType?: 'blank' | 'puzzle' | 'guided' | 'implementation' | null;
+  /**
+   * 현재 코드 (guided 모드에서 튜터에게 전달)
+   */
+  currentCode?: string;
 }
 
 // Session state interface for LangGraph
@@ -146,12 +156,12 @@ function convertGeneratedDataToProblem(
       testCases: convertInputOutputToTestCases(puzzleData.input_output),
     };
   } else {
-    // guided
+    // guided - 새 스키마 (2026-01-12)
     const guidedData = data as GeneratedGuidedData;
     return {
-      id: guidedData.original_id || `generated-${Date.now()}`,
-      originalId: guidedData.original_id,  // 잔디 클릭 시 문제 정보 표시용
-      baseProblemId,  // base_problems UUID (recordSolve에서 사용)
+      id: guidedData.guided_problem_id || guidedData.original_id || `generated-${Date.now()}`,
+      originalId: guidedData.original_id,
+      baseProblemId: guidedData.base_problem_id || baseProblemId,
       title,
       description,
       problemType: 'guided',
@@ -159,6 +169,13 @@ function convertGeneratedDataToProblem(
       topics,
       keyConcepts: topics,
       framework: guidedData.language as 'python' | 'java' | 'cpp' | 'javascript',
+      // 새 스키마 필드
+      guidedProblemId: guidedData.guided_problem_id,
+      conceptExplanation: guidedData.concept_explanation,
+      variablesGuide: guidedData.variables_guide,
+      approachGuide: guidedData.approach_guide,
+      starterCode: guidedData.starter_code,
+      // 레거시 호환
       concepts: guidedData.concepts,
       flow: guidedData.flow,
       checkpoints: guidedData.checkpoints,
@@ -190,6 +207,8 @@ export function PracticeChatPanel({
   initialBaseProblem,
   sessionId: propSessionId,
   onSessionIdChange,
+  problemType,
+  currentCode,
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile } = useAuth();
@@ -270,6 +289,11 @@ export function PracticeChatPanel({
   const [guidedCheckpointIndex, setGuidedCheckpointIndex] = useState(0);
   const [guidedProblem, setGuidedProblem] = useState<ConvertedProblem | null>(null);
 
+  // Guided 튜터 대화 기록 (문제 풀이 세션 동안 유지)
+  const [guidedTutorHistory, setGuidedTutorHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [guidedTutorSessionId, setGuidedTutorSessionId] = useState<string | null>(null);
+  const [isGuidedSessionInitialized, setIsGuidedSessionInitialized] = useState(false);
+
   // Reset hint level when problem changes
   useEffect(() => {
     if (problem) {
@@ -302,10 +326,68 @@ export function PracticeChatPanel({
       setGuidedProblem(null);
       setGuidedFlowStep(0);
       setGuidedCheckpointIndex(0);
+      // Guided 튜터 상태 초기화
+      setGuidedTutorHistory([]);
+      setGuidedTutorSessionId(null);
+      setIsGuidedSessionInitialized(false);
       // ref도 초기화 (새 세션에서 다시 initialBaseProblem 처리 가능하도록)
       initialProblemHandledRef.current = false;
     }
   }, [problem, initialBaseProblem]);
+
+  // Guided 모드 세션 초기화 (problemType이 'guided'로 변경될 때)
+  useEffect(() => {
+    if (problemType === 'guided' && problem && !isGuidedSessionInitialized) {
+      console.log('[PracticeChatPanel] Initializing guided tutor session');
+      setIsGuidedSessionInitialized(true);
+      setFlowState('guided_learning');
+
+      // 새 스키마 기반 환영 메시지 생성 (2026-01-12)
+      let welcomeContent = `안녕하세요! "${problem.title}" 문제를 함께 풀어볼게요.\n\n`;
+
+      if (problem.conceptExplanation) {
+        // 새 스키마: concept_explanation, variables_guide, approach_guide
+        welcomeContent += `[핵심 개념]\n\n${problem.conceptExplanation}\n\n`;
+
+        // 변수 가이드 표시
+        if (problem.variablesGuide?.variables?.length) {
+          welcomeContent += `---\n\n[필요한 변수들] (총 ${problem.variablesGuide.total_count}개)\n\n`;
+          problem.variablesGuide.variables.forEach((v, idx) => {
+            welcomeContent += `${idx + 1}. \`${v.name}\` (${v.type})\n`;
+            welcomeContent += `   - 역할: ${v.role}\n`;
+            welcomeContent += `   - 초기값: \`${v.initial_value}\`\n`;
+            welcomeContent += `   - 왜 필요한가?: ${v.why_needed}\n\n`;
+          });
+        }
+
+        // 접근법 가이드 표시
+        if (problem.approachGuide) {
+          welcomeContent += `---\n\n[접근법]\n\n${problem.approachGuide}\n\n`;
+        }
+
+        // 시작 코드 안내
+        if (problem.starterCode) {
+          welcomeContent += `---\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
+        }
+      } else {
+        // 레거시 또는 새 스키마 없이 진입한 경우
+        welcomeContent += '어떤 부분이 어려우신가요? 코드를 작성하다가 막히면 언제든 질문해주세요! 힌트도 드리고, 개념 설명도 해드릴게요.';
+      }
+
+      const guidedWelcomeMessage: Message = {
+        id: `guided-welcome-${Date.now()}`,
+        role: 'assistant',
+        content: welcomeContent,
+        timestamp: new Date().toISOString(),
+        chips: [
+          { label: '질문이 있어요', value: 'guided-question', category: 'action' as const },
+          { label: '힌트 주세요', value: 'guided-hint', category: 'action' as const },
+          { label: '시작할게요!', value: 'guided-start-coding', category: 'action' as const },
+        ],
+      };
+      setMessages(prev => [...prev, guidedWelcomeMessage]);
+    }
+  }, [problemType, problem, isGuidedSessionInitialized]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -492,7 +574,7 @@ export function PracticeChatPanel({
     const nextMsg: Message = {
       id: `guided-step-${nextStepIndex}-${Date.now()}`,
       role: 'assistant',
-      content: `**Step ${nextStepIndex + 1}**\n\n${nextStepContent}`,
+      content: `Step ${nextStepIndex + 1}\n\n${nextStepContent}`,
       timestamp: new Date().toISOString(),
       chips: [
         { label: '이해했어요', value: 'guided-understood', category: 'action' },
@@ -577,6 +659,141 @@ export function PracticeChatPanel({
     setMessages(prev => [...prev, userMsg, assistantMsg]);
   }, []);
 
+  // 스트리밍으로 새 문제 생성 (generate-new 칩 클릭 시) - handleChipClick 전에 정의
+  const handleGenerateNewProblem = useCallback(async () => {
+    const currentCollectedInfo = collectedInfoRef.current;
+    const currentProblems = recommendedProblemsRef.current;
+
+    // 사용자 메시지 추가
+    const userMessage: Message = {
+      id: `user-generate-${Date.now()}`,
+      role: 'user',
+      content: '새로운 유사 문제를 생성해줘',
+      timestamp: new Date().toISOString(),
+    };
+
+    // 초기 로딩 메시지
+    const loadingMessageId = `loading-generate-${Date.now()}`;
+    const loadingMessage: Message = {
+      id: loadingMessageId,
+      role: 'assistant',
+      content: '🚀 새로운 문제를 생성하고 있어요...',
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, userMessage, loadingMessage]);
+    setIsLoading(true);
+
+    // 상태 메시지 업데이트 (스트리밍 중 변경)
+    let currentStatusMessage = '🚀 새로운 문제를 생성하고 있어요...';
+    let accumulatedContent = '';
+
+    try {
+      await agentApi.generateCodeStream(
+        {
+          collectedInfo: currentCollectedInfo,
+          similarProblems: currentProblems,
+          userContext: getUserContext(),
+        },
+        {
+          onStatus: (status: string, message: string) => {
+            // 상태 업데이트에 따른 메시지 변경
+            const statusEmojis: Record<string, string> = {
+              starting: '🚀',
+              analyzing: '🔍',
+              generating: '✨',
+              coding: '💻',
+              finalizing: '📝',
+            };
+            const emoji = statusEmojis[status] || '⏳';
+            currentStatusMessage = `${emoji} ${message}`;
+
+            setMessages(prev => {
+              const updated = [...prev];
+              const loadingIdx = updated.findIndex(m => m.id === loadingMessageId);
+              if (loadingIdx !== -1) {
+                updated[loadingIdx] = {
+                  ...updated[loadingIdx],
+                  content: currentStatusMessage + (accumulatedContent ? `\n\n---\n${accumulatedContent}` : ''),
+                };
+              }
+              return updated;
+            });
+          },
+          onChunk: (content: string) => {
+            accumulatedContent += content;
+            // 청크가 들어올 때마다 메시지 업데이트
+            setMessages(prev => {
+              const updated = [...prev];
+              const loadingIdx = updated.findIndex(m => m.id === loadingMessageId);
+              if (loadingIdx !== -1) {
+                updated[loadingIdx] = {
+                  ...updated[loadingIdx],
+                  content: currentStatusMessage + `\n\n---\n\`\`\`\n${accumulatedContent}\n\`\`\``,
+                };
+              }
+              return updated;
+            });
+          },
+          onResult: (result: BaseProblemInfo) => {
+            // 생성 완료 - 문제 선택 UI로 전환
+            setRecommendedProblems([result]);
+            setFlowState('type_selection');
+
+            // 로딩 메시지를 결과 메시지로 교체
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== loadingMessageId);
+              return [...filtered, {
+                id: `generated-result-${Date.now()}`,
+                role: 'assistant' as const,
+                content: `✅ 새로운 문제가 생성되었어요!\n\n**${result.title || result.name}** (${result.difficulty})\n\n${result.description || result.question || ''}`,
+                timestamp: new Date().toISOString(),
+                chips: [{
+                  label: `${result.title || result.name} (${result.difficulty})`,
+                  value: 'problem-0',
+                  category: 'action' as const,
+                }],
+              }];
+            });
+          },
+          onError: (error: string) => {
+            // 에러 발생
+            setMessages(prev => {
+              const filtered = prev.filter(m => m.id !== loadingMessageId);
+              return [...filtered, {
+                id: `error-${Date.now()}`,
+                role: 'assistant' as const,
+                content: `❌ 문제 생성 중 오류가 발생했어요.\n\n${error}\n\n다시 시도해주세요.`,
+                timestamp: new Date().toISOString(),
+                chips: [
+                  { label: '✨ 다시 시도', value: 'generate-new', category: 'action' as const },
+                ],
+              }];
+            });
+          },
+          onDone: () => {
+            setIsLoading(false);
+          },
+        }
+      );
+    } catch (error) {
+      console.error('Generate stream error:', error);
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.id !== loadingMessageId);
+        return [...filtered, {
+          id: `error-${Date.now()}`,
+          role: 'assistant' as const,
+          content: `❌ 문제 생성 중 오류가 발생했어요.\n\n${error instanceof Error ? error.message : '알 수 없는 오류'}\n\n다시 시도해주세요.`,
+          timestamp: new Date().toISOString(),
+          chips: [
+            { label: '✨ 다시 시도', value: 'generate-new', category: 'action' as const },
+          ],
+        }];
+      });
+      setIsLoading(false);
+    }
+  }, [getUserContext]);
+
   // Handle chip click
   const handleChipClick = useCallback((chip: QuickChip) => {
     if (chip.value === 'hint') {
@@ -644,6 +861,34 @@ export function PracticeChatPanel({
         setFlowState('type_selection');
         showProblemTypeSelection(selectedBaseProblem);
       }
+    } else if (chip.value === 'guided-question') {
+      // Guided 모드: 질문하기 (튜터에게 자유 질문)
+      const assistantMsg: Message = {
+        id: `guided-question-prompt-${Date.now()}`,
+        role: 'assistant',
+        content: '어떤 부분이 궁금하신가요? 자유롭게 질문해주세요!',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, assistantMsg]);
+    } else if (chip.value === 'guided-start-coding') {
+      // Guided 모드: 시작하기 (코딩 시작 격려)
+      const userMsg: Message = {
+        id: `user-start-coding-${Date.now()}`,
+        role: 'user',
+        content: '시작할게요!',
+        timestamp: new Date().toISOString(),
+      };
+      const assistantMsg: Message = {
+        id: `guided-start-encouragement-${Date.now()}`,
+        role: 'assistant',
+        content: '좋아요! 왼쪽 에디터에서 코드를 작성해보세요. 막히면 언제든 질문하거나 힌트를 요청해주세요!',
+        timestamp: new Date().toISOString(),
+        chips: [
+          { label: '힌트 주세요', value: 'guided-hint', category: 'action' as const },
+          { label: '질문이 있어요', value: 'guided-question', category: 'action' as const },
+        ],
+      };
+      setMessages(prev => [...prev, userMsg, assistantMsg]);
     } else if (chip.value === 'yes') {
       // 네/아니오 칩: "네" - 추천값 수락
       // handleSendMessage가 메시지 추가 + API 호출을 모두 처리함
@@ -655,8 +900,8 @@ export function PracticeChatPanel({
       // 더 찾아보기: 다음 5개 문제 검색
       handleSendMessage('비슷한 문제 더 찾아줘');
     } else if (chip.value === 'generate-new') {
-      // 새 문제 생성: CodeGen으로 유사 문제 생성
-      handleSendMessage('새로운 유사 문제를 생성해줘');
+      // 새 문제 생성: SSE 스트리밍으로 실시간 진행 상태 표시
+      handleGenerateNewProblem();
     } else if (chip.value.startsWith('problem-')) {
       // Problem selection
       const problemIndex = parseInt(chip.value.replace('problem-', ''), 10);
@@ -675,7 +920,7 @@ export function PracticeChatPanel({
       // Send as regular message
       handleSendMessage(chip.label);
     }
-  }, [recommendedProblems, selectedBaseProblem, handleGuidedProgress, showGuidedFinalCode, resetToNewProblem, showProblemTypeSelection]);
+  }, [recommendedProblems, selectedBaseProblem, handleGuidedProgress, showGuidedFinalCode, resetToNewProblem, showProblemTypeSelection, handleGenerateNewProblem]);
 
   // Handle problem type selection and generate problem
   const handleProblemTypeSelect = useCallback(async (type: 'blank' | 'puzzle' | 'guided' | 'implementation') => {
@@ -819,17 +1064,10 @@ export function PracticeChatPanel({
           testCases: testCases || [],
         };
       } else {
-        // Guided: LLM 생성 + starter_code 가져오기 (병렬 호출)
-        const [guidedResult, starterResult] = await Promise.all([
-          agentApi.generateGuided(request),
-          agentApi.getGuidedStarter({
-            original_id: selectedBaseProblem.original_id || selectedBaseProblem.id || '',
-            language: targetLanguage,
-          }),
-        ]);
+        // Guided: 새 스키마 API 호출 (concept_explanation, variables_guide, approach_guide, starter_code)
+        const guidedResult = await agentApi.generateGuided(request);
 
-        // 새 형식: original_id, language, concepts[], flow[], checkpoints[]
-        // 코드 추출 (code가 객체일 수 있음)
+        // 코드 추출 (정답 코드, code가 객체일 수 있음)
         const extractedCode = typeof selectedBaseProblem.code === 'string'
           ? selectedBaseProblem.code
           : (selectedBaseProblem.code as Record<string, string>)?.[targetLanguage]
@@ -837,9 +1075,10 @@ export function PracticeChatPanel({
             || '';
 
         generatedProblem = {
-          id: guidedResult.original_id || `generated-${Date.now()}`,
+          id: guidedResult.guided_problem_id || guidedResult.original_id || `generated-${Date.now()}`,
           originalId: guidedResult.original_id,  // 잔디 클릭 시 문제 정보 표시용
-          baseProblemId: selectedBaseProblem.id,  // base_problems UUID
+          baseProblemId: guidedResult.base_problem_id || selectedBaseProblem.id,  // base_problems UUID
+          guidedProblemId: guidedResult.guided_problem_id,  // problems_guided.id
           title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
           description: selectedBaseProblem.description || selectedBaseProblem.question || '',
           problemType: 'guided',
@@ -847,11 +1086,17 @@ export function PracticeChatPanel({
           topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
           keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],  // tags 우선
           framework: targetLanguage,
-          concepts: guidedResult.concepts,  // string[]
-          flow: guidedResult.flow,          // string[]
-          checkpoints: guidedResult.checkpoints,  // string[]
+          // 새 스키마 필드 (2026-01-12)
+          conceptExplanation: guidedResult.concept_explanation,
+          variablesGuide: guidedResult.variables_guide,
+          approachGuide: guidedResult.approach_guide,
+          starterCode: guidedResult.starter_code,
+          // 레거시 호환
+          concepts: guidedResult.concepts,
+          flow: guidedResult.flow,
+          checkpoints: guidedResult.checkpoints,
           finalCodeReveal: extractedCode,  // 원본 코드를 최종 코드로 사용
-          codeSnippet: starterResult.starter_code,  // 에디터에 표시할 starter_code
+          codeSnippet: guidedResult.starter_code,  // 에디터에 표시할 starter_code
           testCases: testCases || [],  // undefined 대신 빈 배열
         };
       }
@@ -868,34 +1113,70 @@ export function PracticeChatPanel({
       });
 
       // Guided 문제인 경우: 채팅 UI에서 계속 진행
-      if (type === 'guided' && generatedProblem.flow && generatedProblem.flow.length > 0) {
+      // 새 스키마: conceptExplanation, variablesGuide, approachGuide, starterCode
+      if (type === 'guided' && (generatedProblem.conceptExplanation || generatedProblem.flow?.length)) {
         setGuidedProblem(generatedProblem);
         setGuidedFlowStep(0);
         setGuidedCheckpointIndex(0);
 
-        // 첫 번째 개념 설명과 flow step 시작 (새 형식: string[] 배열)
-        const concepts = generatedProblem.concepts || [];
-        const conceptIntro = concepts.length > 0
-          ? `먼저 핵심 개념을 알아볼까요?\n\n${concepts.map((c, idx) =>
-              typeof c === 'string' ? `${idx + 1}. **${c}**` : `**${c.name}**: ${c.explanation}`
-            ).join('\n')}\n\n---\n\n`
-          : '';
+        // 새 스키마 기반 초기 메시지 생성 (2026-01-12)
+        let welcomeContent = '';
 
-        // flow는 이제 string[] 형식
-        const firstStepContent = typeof generatedProblem.flow[0] === 'string'
-          ? generatedProblem.flow[0] as string
-          : (generatedProblem.flow[0] as { tutor_message?: string })?.tutor_message || '';
+        if (generatedProblem.conceptExplanation) {
+          // 새 스키마: concept_explanation, variables_guide, approach_guide
+          welcomeContent += `[핵심 개념]\n\n${generatedProblem.conceptExplanation}\n\n`;
+
+          // 변수 가이드 표시
+          if (generatedProblem.variablesGuide?.variables?.length) {
+            welcomeContent += `---\n\n[필요한 변수들] (총 ${generatedProblem.variablesGuide.total_count}개)\n\n`;
+            generatedProblem.variablesGuide.variables.forEach((v, idx) => {
+              welcomeContent += `${idx + 1}. \`${v.name}\` (${v.type})\n`;
+              welcomeContent += `   - 역할: ${v.role}\n`;
+              welcomeContent += `   - 초기값: \`${v.initial_value}\`\n`;
+              welcomeContent += `   - 왜 필요한가?: ${v.why_needed}\n\n`;
+            });
+          }
+
+          // 접근법 가이드 표시
+          if (generatedProblem.approachGuide) {
+            welcomeContent += `---\n\n[접근법]\n\n${generatedProblem.approachGuide}\n\n`;
+          }
+
+          // 시작 코드 안내
+          if (generatedProblem.starterCode) {
+            welcomeContent += `---\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
+          }
+        } else if (generatedProblem.concepts?.length || generatedProblem.flow?.length) {
+          // 레거시 스키마 지원 (concepts[], flow[], checkpoints[])
+          const concepts = generatedProblem.concepts || [];
+          const conceptIntro = concepts.length > 0
+            ? `먼저 핵심 개념을 알아볼까요?\n\n${concepts.map((c, idx) =>
+                typeof c === 'string' ? `${idx + 1}. ${c}` : `${c.name}: ${c.explanation}`
+              ).join('\n')}\n\n---\n\n`
+            : '';
+
+          const firstStepContent = generatedProblem.flow?.length
+            ? (typeof generatedProblem.flow[0] === 'string'
+                ? generatedProblem.flow[0] as string
+                : (generatedProblem.flow[0] as { tutor_message?: string })?.tutor_message || '')
+            : '이제 코드를 작성해볼까요?';
+
+          welcomeContent = `${conceptIntro}Step 1\n\n${firstStepContent}`;
+        } else {
+          welcomeContent = '이제 코드를 작성해볼까요? 막히면 언제든 질문해주세요!';
+        }
 
         setMessages(prev => {
           const filtered = prev.filter(m => !m.id.startsWith('loading-'));
           return [...filtered, {
             id: `guided-start-${Date.now()}`,
             role: 'assistant' as const,
-            content: `${conceptIntro}**Step 1**\n\n${firstStepContent}`,
+            content: welcomeContent,
             timestamp: new Date().toISOString(),
             chips: [
-              { label: '이해했어요', value: 'guided-understood', category: 'action' },
-              { label: '잘 모르겠어요', value: 'guided-stuck', category: 'action' },
+              { label: '질문이 있어요', value: 'guided-question', category: 'action' },
+              { label: '힌트 주세요', value: 'guided-hint', category: 'action' },
+              { label: '시작할게요!', value: 'guided-start-coding', category: 'action' },
             ],
           }];
         });
@@ -1235,6 +1516,56 @@ export function PracticeChatPanel({
     ];
 
     try {
+      // ============================================================
+      // Guided 모드: guided 튜터 API로 라우팅
+      // ============================================================
+      if (problemType === 'guided' && problem) {
+        console.log('[Guided Tutor] Sending message to guided tutor API');
+
+        // Guided 튜터 대화 기록 업데이트
+        const newGuidedHistory = [
+          ...guidedTutorHistory,
+          { role: 'user' as const, content },
+        ];
+
+        const guidedResponse: GuidedTutorChatResponse = await practiceApi.chatGuidedTutor({
+          problemId: problem.id,
+          message: content,
+          userCode: currentCode,
+          sessionId: guidedTutorSessionId || undefined,
+          conversationHistory: newGuidedHistory,
+        });
+
+        console.log('[Guided Tutor] Response:', {
+          isComplete: guidedResponse.isComplete,
+          suggestedNextStep: guidedResponse.suggestedNextStep,
+        });
+
+        // 대화 기록 업데이트 (메모리 유지)
+        setGuidedTutorHistory([
+          ...newGuidedHistory,
+          { role: 'assistant', content: guidedResponse.response },
+        ]);
+
+        // 어시스턴트 응답 메시지 생성
+        const assistantMessage: Message = {
+          id: `assistant-guided-${Date.now()}`,
+          role: 'assistant',
+          content: guidedResponse.response,
+          timestamp: new Date().toISOString(),
+          chips: guidedResponse.isComplete
+            ? [{ label: '다음 문제 풀기', value: 'guided-next-problem', category: 'action' as const }]
+            : undefined,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsLoading(false);
+        return;
+      }
+
+      // ============================================================
+      // 일반 모드: LangGraph chatMain API 호출
+      // ============================================================
+
       // 디버깅: 요청 전 상태 확인 (ref에서 최신값 읽기)
       const currentCollectedInfo = collectedInfoRef.current;
       const currentSessionState = sessionStateRef.current;
@@ -1332,6 +1663,40 @@ export function PracticeChatPanel({
 
       // Create assistant message with chips based on state
       let chips: QuickChip[] | undefined;
+
+      // ============================================================
+      // needs_codegen: 자동 Fallback 시 스트리밍으로 문제 생성
+      // 백엔드에서 RAG 검색 결과가 없을 때 이 신호를 보냄
+      // ============================================================
+      if (chatResponse.action_trigger === 'needs_codegen') {
+        console.log('[Chat] needs_codegen detected - triggering streaming generation');
+
+        // 백엔드에서 전달한 정보 사용
+        const fallbackCollectedInfo = backendActionData?.collected_info as CollectedInfo || responseCollectedInfo;
+        const fallbackSimilarProblems = backendActionData?.similar_problems as BaseProblemInfo[] || [];
+
+        // 메시지 표시 후 스트리밍 호출
+        const assistantMessage: Message = {
+          id: `assistant-fallback-${Date.now()}`,
+          role: 'assistant',
+          content: responseMessage,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsLoading(false);  // 일단 로딩 해제
+
+        // 스트리밍으로 문제 생성 시작 (별도 비동기 호출)
+        // collectedInfo를 백엔드에서 받은 것으로 업데이트 후 호출
+        collectedInfoRef.current = fallbackCollectedInfo;
+        recommendedProblemsRef.current = fallbackSimilarProblems;
+
+        // 약간의 딜레이 후 스트리밍 시작 (UI 업데이트 후)
+        setTimeout(() => {
+          handleGenerateNewProblem();
+        }, 100);
+
+        return;  // 여기서 리턴하여 나머지 처리 스킵
+      }
 
       // "새 문제 생성" 버튼: generated_problem 우선 처리 (search_results보다 먼저!)
       if (actionData?.action_trigger === 'problem_generated' && actionData?.generated_problem) {
@@ -1439,7 +1804,7 @@ export function PracticeChatPanel({
           const concepts = convertedProblem.concepts || [];
           const conceptIntro = concepts.length > 0
             ? `먼저 핵심 개념을 알아볼까요?\n\n${concepts.map((c, idx) =>
-                typeof c === 'string' ? `${idx + 1}. **${c}**` : `**${(c as {name: string}).name}**: ${(c as {explanation: string}).explanation}`
+                typeof c === 'string' ? `${idx + 1}. ${c}` : `${(c as {name: string}).name}: ${(c as {explanation: string}).explanation}`
               ).join('\n')}\n\n---\n\n`
             : '';
 
@@ -1450,7 +1815,7 @@ export function PracticeChatPanel({
           const assistantMessage: Message = {
             id: `guided-start-${Date.now()}`,
             role: 'assistant',
-            content: `${conceptIntro}**Step 1**\n\n${firstStepContent}`,
+            content: `${conceptIntro}Step 1\n\n${firstStepContent}`,
             timestamp: new Date().toISOString(),
             chips: [
               { label: '이해했어요', value: 'guided-understood', category: 'action' },
@@ -1577,7 +1942,7 @@ export function PracticeChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, conversationHistory, getUserContext]);  // refs don't need to be in deps (stable references)
+  }, [isLoading, conversationHistory, getUserContext, handleGenerateNewProblem, problemType, problem, guidedTutorHistory, guidedTutorSessionId, currentCode]);  // refs don't need to be in deps (stable references)
 
   // 🚀 Handle suggested action click (Agentic 동적 선택지)
   const handleSuggestedActionClick = useCallback((action: SuggestedAction) => {
