@@ -5,15 +5,13 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Brain, RefreshCw, Loader2, Sparkles, FileCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ScoreRing } from '@/components/analysis/ScoreRing';
+import { ScoreOverview } from '@/components/analysis/ScoreOverview';
 import { SkillRadar } from '@/components/analysis/SkillRadar';
-import { WeaknessBubbles } from '@/components/analysis/WeaknessBubbles';
+import { TopicMasteryChart } from '@/components/analysis/TopicMasteryChart';
 import { HintUsageCard } from '@/components/analysis/HintUsageCard';
-import { ConceptsPanel } from '@/components/analysis/ConceptsPanel';
-import { LearningInsights } from '@/components/analysis/LearningInsights';
-import { StrengthCards } from '@/components/analysis/StrengthCards';
-import { RecommendationsSection } from '@/components/analysis/RecommendationsSection';
+import { LearningStyleCard } from '@/components/analysis/LearningStyleCard';
 import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
+import { AICoachingSection } from '@/components/analysis/AICoachingSection';
 import { analysisApi, type AnalysisReport } from '@/lib/api';
 
 // 종합 점수 계산 (0-100)
@@ -97,14 +95,6 @@ export default function AnalysisPage() {
   const overallScore = useMemo(() =>
     report ? calculateOverallScore(report) : 0
   , [report]);
-
-  const skillData = useMemo(() => {
-    if (!report?.skillSnapshot) return [];
-    return Object.entries(report.skillSnapshot).map(([topic, score]) => ({
-      topic,
-      score,
-    }));
-  }, [report]);
 
   // ===== 로딩 =====
   if (isLoading) {
@@ -222,103 +212,137 @@ export default function AnalysisPage() {
         </motion.div>
       )}
 
-      {/* Row 1: ScoreRing | SkillRadar | HintUsageCard */}
+      {/* Row 1: ScoreRing + HintUsage + LearningStyle */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
       >
-        {/* 종합 점수 */}
-        <div className="md:col-span-1 lg:col-span-3 rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 flex items-center justify-center min-h-[280px]">
-          <ScoreRing
+        {/* 종합 점수 + 스탯 + 난이도별 정답률 */}
+        <div className="min-h-[280px]">
+          <ScoreOverview
             score={overallScore}
             stats={report.statsSnapshot}
-            size={160}
+            difficultySnapshot={report.difficultySnapshot}
           />
-        </div>
-
-        {/* 스킬 레이더 */}
-        <div className="md:col-span-1 lg:col-span-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 min-h-[280px]">
-          <SkillRadar skills={skillData} size={240} />
         </div>
 
         {/* 힌트 사용 패턴 */}
-        <div className="md:col-span-2 lg:col-span-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
+        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
           <HintUsageCard hintUsage={report.hintUsage} />
         </div>
+
+        {/* 학습 습관 */}
+        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
+          <LearningStyleCard learningStyle={report.learningStyle} />
+        </div>
       </motion.div>
 
-      {/* Row 2: ConceptsPanel */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
-      >
-        <ConceptsPanel
-          conceptsStruggling={report.conceptsStruggling || []}
-          conceptsLearned={report.conceptsLearned || []}
-          breakthroughMoments={report.breakthroughMoments || []}
-        />
-      </motion.div>
-
-      {/* Row 3: LearningInsights */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-        className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
-      >
-        <LearningInsights
-          learningStyle={report.learningStyle}
-          moodDistribution={report.moodDistribution || {}}
-          teachingNotes={report.teachingNotes || []}
-        />
-      </motion.div>
-
-      {/* Row 4: WeaknessBubbles | StrengthCards */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="grid grid-cols-1 lg:grid-cols-2 gap-4"
-      >
-        {/* 약점 버블 맵 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 p-6 min-h-[300px]">
-          <WeaknessBubbles
+      {/* Row 2: BKT Mastery + AI Coach 통합 */}
+      {report.bktMastery && Object.keys(report.bktMastery).length >= 3 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.06 }}
+          className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
+        >
+          <div className="px-4 py-3 border-b border-zinc-800">
+            <h3 className="text-sm font-bold text-zinc-100">토픽별 숙련도 & AI 분석</h3>
+            <p className="text-[10px] text-zinc-500 mt-0.5">
+              BKT 기반 실력 분석 · 토픽을 클릭하면 상세 피드백을 볼 수 있습니다
+            </p>
+          </div>
+          <TopicMasteryChart
+            bktMastery={report.bktMastery}
+            strengths={report.strengths}
             weaknesses={report.weaknesses}
-            allSkills={report.skillSnapshot}
-            maxBubbles={6}
+            summaryText={report.summaryText}
           />
-        </div>
+        </motion.div>
+      )}
 
-        {/* 강점 카드 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800">
-          <StrengthCards strengths={report.strengths} maxCards={6} />
-        </div>
-      </motion.div>
-
-      {/* Row 5: RecommendationsSection */}
+      {/* Row 3: AI Coach (모든 AI 분석 통합) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25 }}
-        className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
+        transition={{ delay: 0.10 }}
       >
-        <RecommendationsSection
-          recommendations={report.recommendations}
+        <AICoachingSection
+          summaryText={report.summaryText || ""}
           studyPlan={report.studyPlan}
+          detailedFeedback={report.detailedFeedback}
+          commonErrorPatterns={report.commonErrorPatterns}
+          recommendations={report.recommendations}
         />
       </motion.div>
 
-      {/* Row 6: RecommendedProblems */}
+      {/* Row 4: 레이더 차트 (순수 정답률 데이터) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
+        transition={{ delay: 0.14 }}
+        className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
+      >
+        <div className="px-4 py-3 border-b border-zinc-800">
+          <h3 className="text-base font-bold text-zinc-100">토픽별 정답률</h3>
+          <p className="text-[11px] text-zinc-500 mt-0.5">
+            문제 풀이 결과 기반 통계
+          </p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          {/* 레이더 차트 */}
+          <div className="relative p-4 flex flex-col items-center justify-center min-h-[280px] bg-gradient-to-br from-zinc-900 to-zinc-950">
+            <div className="absolute inset-0 opacity-30">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[280px] rounded-full bg-primary/5 blur-3xl" />
+            </div>
+            <div className="relative z-10 w-full max-w-[240px]">
+              <SkillRadar
+                skills={Object.entries(report.skillSnapshot || {}).map(([topic, score]) => ({
+                  topic,
+                  score: score as number,
+                }))}
+                size={220}
+              />
+            </div>
+          </div>
+
+          {/* 토픽별 정답률 텍스트 */}
+          <div className="border-t lg:border-t-0 lg:border-l border-zinc-800 p-4">
+            <div className="space-y-1.5">
+              {Object.entries(report.skillSnapshot || {})
+                .sort(([, a], [, b]) => (b as number) - (a as number))
+                .map(([topic, score]) => (
+                  <div key={topic} className="flex items-center justify-between">
+                    <span className="text-xs text-zinc-400">{topic}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${(score as number) * 100}%`,
+                            backgroundColor: (score as number) >= 0.7 ? '#22c55e' : (score as number) >= 0.4 ? '#eab308' : '#ef4444'
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium text-zinc-300 w-10 text-right">
+                        {Math.round((score as number) * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Row 5: RecommendedProblems */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
       >
-        <RecommendedProblems problems={report.recommendedProblems} />
+        <RecommendedProblems initialProblems={report.recommendedProblems} />
       </motion.div>
     </div>
   );

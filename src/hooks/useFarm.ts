@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { farmApi, type UserFarm, type FarmItem, type InventoryItem, type UnifiedShopItem, type PlacedItem } from '@/lib/api';
+import { farmApi, type UserFarm, type FarmItem, type InventoryItem, type UnifiedShopItem, type PlacedItem, type FarmSlot } from '@/lib/api';
 
 interface UseFarmReturn {
   // State
@@ -34,6 +34,10 @@ interface UseFarmReturn {
   expand: (targetSize: number) => Promise<void>;
   refresh: () => Promise<void>;
 
+  // Slot-based Farm Actions (신규)
+  plantOnSlot: (slot: number, cropCode: string) => Promise<FarmSlot | null>;
+  harvestFromSlot: (slot: number) => Promise<{ gold: number; xp: number; slot: FarmSlot } | null>;
+
   // Unified Placement Actions
   loadUnifiedShop: (category?: string) => Promise<void>;
   buyUnifiedItem: (itemCode: string, quantity?: number) => Promise<void>;
@@ -41,7 +45,10 @@ interface UseFarmReturn {
   placeItem: (itemCode: string, tileX: number, tileY: number) => Promise<PlacedItem>;
   moveItem: (itemId: string, tileX: number, tileY: number) => Promise<void>;
   removeItem: (itemId: string) => Promise<void>;
+
+  /** @deprecated Use plantOnSlot instead */
   plantOnPlot: (plotId: string, cropCode: string) => Promise<void>;
+  /** @deprecated Use harvestFromSlot instead */
   harvestFromPlot: (plotId: string) => Promise<{ gold: number; xp: number }>;
 }
 
@@ -142,11 +149,16 @@ export function useFarm(): UseFarmReturn {
     setInventory(result.inventory);
   }, []);
 
-  // Expand farm (배치 영역만 확장)
+  // Expand farm (그리드 확장 + farmSlots 배열 확장)
   // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const expand = useCallback(async (targetSize: number) => {
     const result = await farmApi.expand(targetSize);
-    setFarm(prev => prev ? { ...prev, farmSize: result.farmSize, gold: result.gold } : null);
+    setFarm(prev => prev ? {
+      ...prev,
+      farmSize: result.farmSize,
+      gold: result.gold,
+      farmSlots: result.farmSlots,
+    } : null);
   }, []);
 
   // Refresh all data
@@ -244,6 +256,59 @@ export function useFarm(): UseFarmReturn {
     setInventory(inventoryArray);
   }, []);
 
+  // ====== Slot-based Farm Actions (신규) ======
+
+  // Plant crop on farm slot
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
+  const plantOnSlot = useCallback(async (slot: number, cropCode: string): Promise<FarmSlot | null> => {
+    console.log('[useFarm] plantOnSlot called:', { slot, cropCode });
+    const result = await farmApi.plantOnSlot(slot, cropCode);
+    console.log('[useFarm] plantOnSlot result:', result);
+
+    // Update farmSlots in farm state
+    setFarm(prev => {
+      if (!prev) return null;
+      console.log('[useFarm] Updating farm with farmSlots:', result.farmSlots);
+      return {
+        ...prev,
+        farmSlots: result.farmSlots,
+      };
+    });
+
+    // Update inventory
+    const inventoryArray: InventoryItem[] = Object.entries(result.inventory).map(
+      ([code, qty]) => ({ itemCode: code, quantity: qty })
+    );
+    setInventory(inventoryArray);
+
+    console.log('[useFarm] Returning slot:', result.slot);
+    return result.slot;
+  }, []);
+
+  // Harvest crop from farm slot
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
+  const harvestFromSlot = useCallback(async (slot: number): Promise<{ gold: number; xp: number; slot: FarmSlot } | null> => {
+    const result = await farmApi.harvestFromSlot(slot);
+
+    // Update farmSlots in farm state
+    setFarm(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        gold: result.gold,
+        farmSlots: result.farmSlots,
+      };
+    });
+
+    return {
+      gold: result.rewards.gold,
+      xp: result.rewards.xp,
+      slot: result.slot,
+    };
+  }, []);
+
+  // ====== Legacy Placement-based Farm Actions (deprecated) ======
+
   // Plant crop on farm plot
   // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const plantOnPlot = useCallback(async (plotId: string, cropCode: string) => {
@@ -299,6 +364,10 @@ export function useFarm(): UseFarmReturn {
     expand,
     refresh,
 
+    // Slot-based Farm Actions (신규)
+    plantOnSlot,
+    harvestFromSlot,
+
     // Unified Placement Actions
     loadUnifiedShop,
     buyUnifiedItem,
@@ -306,6 +375,8 @@ export function useFarm(): UseFarmReturn {
     placeItem,
     moveItem,
     removeItem,
+
+    // Legacy (deprecated)
     plantOnPlot,
     harvestFromPlot,
   };

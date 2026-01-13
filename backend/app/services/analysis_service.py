@@ -9,9 +9,100 @@ from typing import Optional, List, Dict, Any, Set
 from ..config import get_settings, get_logger
 from ..services.openrouter import openrouter_service
 from ..prompts.analysis_agent import ANALYSIS_SYSTEM_PROMPT
+from ..services.metrics_calculator import MetricsCalculator, BKTParams
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+# 토픽 정규화 맵 (중복 토픽명 → 표준 토픽명)
+# 같은 토픽이 다른 이름으로 저장되는 것을 방지
+TOPIC_NORMALIZE_MAP = {
+    # DP 관련
+    "dynamic programming": "DP",
+    "Dynamic Programming": "DP",
+    "Dynamic programming": "DP",
+    "동적 프로그래밍": "DP",
+    "Memoization": "DP",
+    # BFS 관련
+    "Breadth First Search": "BFS",
+    "Breadth-first search": "BFS",
+    "breadth first search": "BFS",
+    "너비 우선 탐색": "BFS",
+    # DFS 관련
+    "Depth First Search": "DFS",
+    "Depth-first search": "DFS",
+    "depth first search": "DFS",
+    "깊이 우선 탐색": "DFS",
+    # Binary Search 관련
+    "Binary Search": "Binary Search",
+    "binary search": "Binary Search",
+    "이진 탐색": "Binary Search",
+    # Two Pointers 관련
+    "Two Pointers": "Two Pointers",
+    "Two pointers": "Two Pointers",
+    "two pointers": "Two Pointers",
+    "투 포인터": "Two Pointers",
+    # Sliding Window 관련
+    "Sliding Window": "Sliding Window",
+    "Sliding window": "Sliding Window",
+    "sliding window": "Sliding Window",
+    "슬라이딩 윈도우": "Sliding Window",
+    # Graph 관련
+    "Graph algorithms": "Graph",
+    "Graph traversal": "Graph",
+    "graph algorithms": "Graph",
+    "그래프": "Graph",
+    # Data Structures 관련
+    "Data structures": "Data Structures",
+    "data structures": "Data Structures",
+    "자료구조": "Data Structures",
+    # Implementation 관련
+    "implementation": "Implementation",
+    "구현": "Implementation",
+    # String 관련
+    "String algorithms": "String",
+    "string algorithms": "String",
+    "문자열": "String",
+    # Sorting 관련
+    "sorting": "Sorting",
+    "정렬": "Sorting",
+    # Greedy 관련
+    "Greedy algorithms": "Greedy",
+    "greedy algorithms": "Greedy",
+    "그리디": "Greedy",
+}
+
+
+def normalize_topic(topic: str) -> str:
+    """토픽명을 표준 형태로 정규화."""
+    return TOPIC_NORMALIZE_MAP.get(topic, topic)
+
+
+def merge_topic_stats(stats: Dict[str, Any], is_bkt: bool = False) -> Dict[str, Any]:
+    """중복 토픽을 병합하여 정규화된 통계 반환."""
+    merged: Dict[str, Any] = {}
+
+    for topic, value in stats.items():
+        normalized = normalize_topic(topic)
+
+        if normalized not in merged:
+            merged[normalized] = value
+        else:
+            # 중복 토픽 병합
+            if is_bkt:
+                # BKT: attempt_count, correct_count 합산, mastery 재계산
+                existing = merged[normalized]
+                existing["attempt_count"] += value["attempt_count"]
+                existing["correct_count"] += value["correct_count"]
+                # mastery는 더 높은 값 사용 (또는 평균)
+                existing["mastery"] = max(existing["mastery"], value["mastery"])
+                existing["is_mastered"] = existing["mastery"] >= 0.8
+            else:
+                # skill_by_topic: 평균값 사용
+                merged[normalized] = (merged[normalized] + value) / 2
+
+    return merged
+
 
 # 토픽 매핑 (한국어 → 영어 확장) - RAG 서비스와 동일
 TOPIC_MAPPING = {
@@ -64,6 +155,7 @@ class AnalysisService:
 
     def __init__(self, db):
         self.db = db
+        self.metrics = MetricsCalculator()
 
     async def get_latest_report(self, user_id: UUID) -> Optional[Dict[str, Any]]:
         """최신 분석 리포트 조회."""
@@ -96,6 +188,11 @@ class AnalysisService:
             "moodDistribution": data.get("mood_distribution", {}),
             "breakthroughMoments": data.get("breakthrough_moments", []),
             "teachingNotes": data.get("teaching_notes", []),
+            # AI 코칭 피드백
+            "detailedFeedback": data.get("detailed_feedback"),
+            # 학습 분석 프레임워크 메트릭
+            "bktMastery": data.get("bkt_mastery", {}),
+            "bloomMetrics": data.get("bloom_metrics", {}),
         }
 
     async def generate_analysis(self, user_id: UUID) -> Dict[str, Any]:
@@ -104,18 +201,23 @@ class AnalysisService:
         # 1. 사용자 데이터 수집
         user_data = await self._collect_user_data(user_id)
 
-        # 2. 데이터 충분한지 확인
+        # ============ DEBUG: user_data 콘솔 출력 (나중에 삭제할 것) ============
+        print("\n" + "=" * 80)
+        print("🔍 [DEBUG] user_data for analysis:")
+        print("=" * 80)
+        print(json.dumps(user_data, indent=2, ensure_ascii=False, default=str))
+        print("=" * 80 + "\n")
+        # ============ DEBUG END ============
+
+        # 2. 데이터 충분한지 확인 (BKT 신뢰도를 위해 최소 10문제 필요)
         problems_solved = user_data.get("problems_solved", 0)
-        if problems_solved < 1:
-            raise InsufficientDataError("분석을 위해 최소 1개 이상의 문제를 풀어주세요.")
+        if problems_solved < 10:
+            raise InsufficientDataError(f"분석을 위해 최소 10개 이상의 문제를 풀어주세요. (현재 {problems_solved}개)")
 
         # 3. 분석 생성 (LLM 사용, 실패 시 템플릿 폴백)
         analysis = await self._generate_analysis_with_llm(user_data)
 
-        # 3. 추천 문제 조회
-        recommended = await self._get_recommended_problems(user_id, user_data)
-
-        # 4. DB 저장 (upsert) - 새 필드들 포함
+        # 4. DB 저장 (upsert) - 새 필드들 포함 (문제 추천은 별도 API로 분리)
         report_data = {
             "user_id": str(user_id),
             "summary_text": analysis["summary"],
@@ -131,7 +233,7 @@ class AnalysisService:
                 "streak": user_data.get("streak", 0),
             },
             "difficulty_snapshot": user_data.get("difficulty_stats", {}),
-            "recommended_problems": recommended,
+            "recommended_problems": [],  # 별도 API로 분리됨
             # 새로 추가된 필드들
             "concepts_struggling": user_data.get("concepts_struggling", []),
             "concepts_learned": user_data.get("concepts_learned", []),
@@ -141,6 +243,14 @@ class AnalysisService:
             "mood_distribution": user_data.get("mood_distribution", {}),
             "breakthrough_moments": user_data.get("breakthrough_moments", []),
             "teaching_notes": user_data.get("teaching_notes", []),
+            # AI 코칭 피드백
+            "detailed_feedback": analysis.get("detailed_feedback"),
+            # 학습 분석 프레임워크 메트릭
+            "bkt_mastery": user_data.get("bkt_mastery", {}),
+            "bloom_metrics": user_data.get("bloom_metrics", {}),
+            # BKT 기반 강점/약점 토픽
+            "weak_topics": user_data.get("weak_topics", []),
+            "strong_topics": user_data.get("strong_topics", []),
         }
 
         # Upsert (insert or update)
@@ -159,18 +269,44 @@ class AnalysisService:
             "skillSnapshot": user_data.get("skill_by_topic", {}),
             "statsSnapshot": report_data["stats_snapshot"],
             "difficultySnapshot": user_data.get("difficulty_stats", {}),
-            "recommendedProblems": recommended,
+            "recommendedProblems": [],  # 별도 API로 분리됨
             "createdAt": datetime.utcnow().isoformat(),
             # 새로 추가된 필드들
             "conceptsStruggling": user_data.get("concepts_struggling", []),
             "conceptsLearned": user_data.get("concepts_learned", []),
             "hintUsage": user_data.get("hint_usage", {}),
-            "learningStyle": user_data.get("learning_style", {}),
-            "commonErrorPatterns": user_data.get("common_error_patterns", {}),
+            # LLM이 생성한 결과 사용, 없으면 user_data 폴백
+            "learningStyle": analysis.get("learning_style") or user_data.get("learning_style", {}),
+            "commonErrorPatterns": analysis.get("common_error_patterns") or user_data.get("common_error_patterns", []),
             "moodDistribution": user_data.get("mood_distribution", {}),
             "breakthroughMoments": user_data.get("breakthrough_moments", []),
             "teachingNotes": user_data.get("teaching_notes", []),
+            # AI 코칭 피드백
+            "detailedFeedback": analysis.get("detailed_feedback", ""),
+            # 학습 분석 프레임워크 메트릭
+            "bktMastery": user_data.get("bkt_mastery", {}),
+            "bloomMetrics": user_data.get("bloom_metrics", {}),
         }
+
+    async def recommend_problems(self, user_id: UUID) -> List[Dict[str, Any]]:
+        """
+        추천 문제 조회 (별도 API).
+
+        분석 생성과 분리하여 사용자가 명시적으로 요청할 때만 실행.
+        약점 기반 문제 추천을 수행하고 DB에 저장.
+        """
+        # 1. 사용자 데이터 수집
+        user_data = await self._collect_user_data(user_id)
+
+        # 2. 추천 문제 조회
+        recommended = await self._get_recommended_problems(user_id, user_data)
+
+        # 3. DB에 추천 문제 업데이트
+        self.db.table("user_analysis_reports").update({
+            "recommended_problems": recommended
+        }).eq("user_id", str(user_id)).execute()
+
+        return recommended
 
     async def _collect_user_data(self, user_id: UUID) -> Dict[str, Any]:
         """사용자 학습 데이터 수집."""
@@ -206,7 +342,9 @@ class AnalysisService:
         if use_cached_skill:
             # ✅ HEAD 방식: user_analysis_reports에서 ELO 기반 스킬 데이터 사용
             skill = skill_result.data[0]
-            data["skill_by_topic"] = skill.get("skill_by_topic", {})
+            raw_skill = skill.get("skill_by_topic", {})
+            # 중복 토픽 정규화 (예: DP와 Dynamic Programming 병합)
+            data["skill_by_topic"] = merge_topic_stats(raw_skill, is_bkt=False)
             data["weak_topics"] = skill.get("weak_topics", [])
             data["strong_topics"] = skill.get("strong_topics", [])
 
@@ -245,9 +383,12 @@ class AnalysisService:
             data["existing_error_patterns"] = None
 
         # 3. attempts 테이블에서 정확도 및 폴백용 스킬 데이터 계산
+        # 시간순 정렬하여 BKT 시퀀스 구성에도 활용
         attempts_for_skill = self.db.table("attempts").select(
-            "topics, difficulty, is_correct"
-        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").execute()
+            "topics, difficulty, is_correct, created_at"
+        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").order(
+            "created_at", desc=False
+        ).execute()
 
         # 폴백 계산 (use_cached_skill이 False일 때만 skill_by_topic 덮어쓰기)
         if not use_cached_skill:
@@ -277,18 +418,24 @@ class AnalysisService:
                             difficulty_raw[difficulty]["success"] += 1
 
             # skill_by_topic 계산 (성공률 0.0~1.0)
-            skill_by_topic = {}
+            raw_skill_by_topic = {}
             weak_topics = []
             strong_topics = []
 
             for topic, stats in topic_stats.items():
                 if stats["total"] > 0:
                     rate = round(stats["success"] / stats["total"], 2)
-                    skill_by_topic[topic] = rate
-                    if rate < 0.4:
-                        weak_topics.append(topic)
-                    elif rate > 0.7:
-                        strong_topics.append(topic)
+                    raw_skill_by_topic[topic] = rate
+
+            # 중복 토픽 정규화 (예: DP와 Dynamic Programming 병합)
+            skill_by_topic = merge_topic_stats(raw_skill_by_topic, is_bkt=False)
+
+            # 정규화된 데이터로 weak/strong 판정
+            for topic, rate in skill_by_topic.items():
+                if rate < 0.4:
+                    weak_topics.append(topic)
+                elif rate > 0.7:
+                    strong_topics.append(topic)
 
             data["skill_by_topic"] = skill_by_topic
             data["weak_topics"] = weak_topics
@@ -315,7 +462,78 @@ class AnalysisService:
         else:
             data["accuracy"] = 0
 
-        # 4. user_memories - 최근 학습 세션 기록
+        # ============================================
+        # 학습 분석 프레임워크 메트릭 계산
+        # ============================================
+
+        # 4-1. BKT (Bayesian Knowledge Tracing) 계산
+        # 토픽별 정답/오답 시퀀스 구성 (시간순)
+        topic_sequences: Dict[str, List[bool]] = {}
+        if attempts_for_skill.data:
+            for attempt in attempts_for_skill.data:
+                is_correct = attempt.get("is_correct", False)
+                topics = attempt.get("topics") or []
+                for topic in topics:
+                    if topic not in topic_sequences:
+                        topic_sequences[topic] = []
+                    topic_sequences[topic].append(bool(is_correct))
+
+        # BKT 마스터리 계산
+        bkt_results = self.metrics.calculate_all_topics_bkt(topic_sequences)
+        raw_bkt = {
+            topic: {
+                "mastery": result.mastery,
+                "is_mastered": result.is_mastered,
+                "attempt_count": result.attempt_count,
+                "correct_count": result.correct_count,
+            }
+            for topic, result in bkt_results.items()
+        }
+        # 중복 토픽 정규화 (예: DP와 Dynamic Programming 병합)
+        data["bkt_mastery"] = merge_topic_stats(raw_bkt, is_bkt=True)
+
+        # 4-1-1. BKT 기반으로 weak_topics, strong_topics 재계산
+        # (기존 단순 정답률 대신 BKT mastery 사용)
+        bkt_based_weak = []
+        bkt_based_strong = []
+        for topic, bkt_data in data["bkt_mastery"].items():
+            mastery = bkt_data["mastery"]
+            if mastery < 0.5:
+                bkt_based_weak.append(topic)
+            elif mastery >= 0.8:
+                bkt_based_strong.append(topic)
+
+        data["weak_topics"] = bkt_based_weak
+        data["strong_topics"] = bkt_based_strong
+
+        # 4-2. Bloom's Taxonomy 메트릭 계산
+        # difficulty_stats를 Bloom 형식으로 변환
+        difficulty_for_bloom = data.get("difficulty_stats", {})
+        bloom_input: Dict[str, Dict[str, int]] = {}
+
+        # attempts_for_skill에서 난이도별 성공/전체 집계
+        if attempts_for_skill.data:
+            for attempt in attempts_for_skill.data:
+                difficulty = attempt.get("difficulty")
+                is_correct = attempt.get("is_correct", False)
+                if difficulty:
+                    if difficulty not in bloom_input:
+                        bloom_input[difficulty] = {"success": 0, "total": 0}
+                    bloom_input[difficulty]["total"] += 1
+                    if is_correct:
+                        bloom_input[difficulty]["success"] += 1
+
+        bloom_result = self.metrics.calculate_bloom_metrics(bloom_input)
+        data["bloom_metrics"] = {
+            "apply_rate": bloom_result.apply_rate,
+            "analyze_rate": bloom_result.analyze_rate,
+            "create_rate": bloom_result.create_rate,
+            "current_level": bloom_result.current_level,
+            "next_level": bloom_result.next_level,
+            "gap_analysis": bloom_result.gap_analysis,
+        }
+
+        # 5. user_memories - 최근 학습 세션 기록
         memories_result = self.db.table("user_memories").select(
             "summary, key_topics, concepts_learned, concepts_struggling, "
             "teaching_notes, breakthrough_moments, student_mood, "
@@ -377,41 +595,48 @@ class AnalysisService:
             data["mood_distribution"] = mood_counts
             data["recent_sessions"] = session_summaries[:5]
 
-            # learning_style 추출 (가장 최근 learning_insights에서)
+            # learning_style는 LLM이 생성 (hint_usage 기반)
+            # common_error_patterns은 learning_insights에서 추출
             if learning_insights_list:
                 latest_insights = learning_insights_list[0]
-                data["learning_style"] = {
-                    "prefers_examples": latest_insights.get("prefers_examples", False),
-                    "prefers_analogies": latest_insights.get("prefers_analogies", False),
-                    "hint_sensitivity": latest_insights.get("hint_sensitivity", "medium"),
-                    "pace": latest_insights.get("pace", "medium"),
-                }
                 data["common_error_patterns"] = latest_insights.get("common_errors", {})
 
-        # 5. attempt_details - 힌트 사용 패턴 및 오류 분석
+        # 5. attempt_details + hint_logs - 힌트 사용 패턴 및 오류 분석
         # 최근 시도들의 ID 조회
         recent_attempts = self.db.table("attempts").select(
-            "id"
+            "id, base_problem_id"
         ).eq("user_id", str(user_id)).order(
             "created_at", desc=True
         ).limit(50).execute()
 
         if recent_attempts.data and len(recent_attempts.data) > 0:
             attempt_ids = [a["id"] for a in recent_attempts.data]
+            problem_ids = list(set(
+                str(a.get("base_problem_id")) for a in recent_attempts.data
+                if a.get("base_problem_id")
+            ))
 
-            # attempt_details 조회
+            # attempt_details 조회 (에러 패턴 분석을 위해 blank_user_answer, blank_correct_answer 포함)
             details_result = self.db.table("attempt_details").select(
                 "action_type, blank_hint_level, blank_is_correct, "
-                "hint_was_requested, hint_was_helpful"
+                "hint_was_requested, hint_was_helpful, blank_user_answer, blank_correct_answer"
             ).in_("attempt_id", attempt_ids).execute()
 
-            if details_result.data and len(details_result.data) > 0:
-                total_hints_requested = 0
-                helpful_hints = 0
-                hint_levels = []
-                blank_correct_count = 0
-                blank_total_count = 0
+            # hint_logs 조회 (추가)
+            hint_logs_result = self.db.table("hint_logs").select(
+                "hint_level, xp_cost, problem_id"
+            ).eq("user_id", str(user_id)).order(
+                "created_at", desc=True
+            ).limit(100).execute()
 
+            # attempt_details 분석
+            total_hints_requested = 0
+            helpful_hints = 0
+            hint_levels_from_details = []
+            blank_correct_count = 0
+            blank_total_count = 0
+
+            if details_result.data and len(details_result.data) > 0:
                 for detail in details_result.data:
                     # 힌트 요청 횟수
                     if detail.get("hint_was_requested"):
@@ -422,7 +647,7 @@ class AnalysisService:
                     # 힌트 레벨 분포
                     hint_level = detail.get("blank_hint_level")
                     if hint_level is not None:
-                        hint_levels.append(hint_level)
+                        hint_levels_from_details.append(hint_level)
 
                     # 빈칸 정답률
                     if detail.get("blank_is_correct") is not None:
@@ -430,15 +655,39 @@ class AnalysisService:
                         if detail.get("blank_is_correct"):
                             blank_correct_count += 1
 
-                data["hint_usage"] = {
-                    "total_requested": total_hints_requested,
-                    "helpful_count": helpful_hints,
-                    "helpful_rate": round(helpful_hints / total_hints_requested, 2) if total_hints_requested > 0 else 0,
-                    "avg_hint_level": round(sum(hint_levels) / len(hint_levels), 2) if hint_levels else 0,
-                }
-                data["blank_accuracy"] = round(
-                    blank_correct_count / blank_total_count, 2
-                ) if blank_total_count > 0 else None
+            # hint_logs 분석 (레벨별 힌트 사용 횟수)
+            by_level: Dict[str, int] = {}
+            total_from_logs = 0
+            problems_with_hints: Set[str] = set()
+
+            if hint_logs_result.data and len(hint_logs_result.data) > 0:
+                for log in hint_logs_result.data:
+                    hint_level = log.get("hint_level")
+                    if hint_level is not None:
+                        level_key = str(hint_level)
+                        by_level[level_key] = by_level.get(level_key, 0) + 1
+                        total_from_logs += 1
+
+                    problem_id = log.get("problem_id")
+                    if problem_id:
+                        problems_with_hints.add(str(problem_id))
+
+            # 힌트 사용 통계 집계
+            total_hints = max(total_hints_requested, total_from_logs)
+            num_problems = len(problem_ids) if problem_ids else 1
+            avg_per_problem = round(total_hints / num_problems, 2) if num_problems > 0 else 0
+
+            data["hint_usage"] = {
+                "total_requested": total_hints,
+                "by_level": by_level,
+                "helpful_count": helpful_hints,
+                "helpful_rate": round(helpful_hints / total_hints_requested, 2) if total_hints_requested > 0 else 0,
+                "avg_per_problem": avg_per_problem,
+                "avg_hint_level": round(sum(hint_levels_from_details) / len(hint_levels_from_details), 2) if hint_levels_from_details else 0,
+            }
+            data["blank_accuracy"] = round(
+                blank_correct_count / blank_total_count, 2
+            ) if blank_total_count > 0 else None
 
         return data
 
@@ -459,7 +708,7 @@ class AnalysisService:
                     {"role": "user", "content": "위 데이터를 분석하고 JSON으로 응답하세요."}
                 ],
                 temperature=0.7,
-                max_tokens=1500,
+                max_tokens=3000,
             )
 
             content = openrouter_service.get_content(response)
@@ -507,15 +756,22 @@ class AnalysisService:
                 "description": learning_style.get("description", ""),
                 "strategy": learning_style.get("strategy", ""),
             }
-        elif learning_style and isinstance(learning_style, str):
-            learning_style = {"type": learning_style, "description": "", "strategy": ""}
         else:
-            # 기존 데이터 유지 또는 기본값
-            learning_style = user_data.get("existing_learning_style") or {
-                "type": "independent",
-                "description": "아직 학습 스타일 분석 중입니다.",
-                "strategy": "다양한 문제를 풀어보며 자신만의 학습 패턴을 찾아보세요."
-            }
+            # hint_usage 기반 기본 스타일 결정
+            hint_usage = user_data.get("hint_usage", {})
+            avg_hints = hint_usage.get("avg_per_problem", 0)
+            if avg_hints >= 2:
+                learning_style = {
+                    "type": "hint-dependent",
+                    "description": "힌트를 적극적으로 활용하여 문제를 해결하는 스타일입니다.",
+                    "strategy": "힌트를 보기 전에 5분간 스스로 고민해보세요."
+                }
+            else:
+                learning_style = {
+                    "type": "independent",
+                    "description": "스스로 문제를 해결하는 독립적인 학습 스타일입니다.",
+                    "strategy": "현재 페이스를 유지하며 더 어려운 문제에 도전해보세요."
+                }
 
         # common_error_patterns 정규화
         error_patterns = result.get("common_error_patterns", [])
@@ -530,6 +786,7 @@ class AnalysisService:
             "study_plan": result.get("study_plan", "다양한 유형의 문제에 도전해보세요!"),
             "learning_style": learning_style,
             "common_error_patterns": error_patterns,
+            "detailed_feedback": result.get("detailed_feedback", ""),
         }
 
     def _generate_analysis_content(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -592,15 +849,46 @@ class AnalysisService:
         else:
             study_plan = "다양한 유형의 문제에 도전해보세요!"
 
-        # Learning style (기존 데이터 유지 또는 기본값)
-        learning_style = user_data.get("existing_learning_style") or {
-            "type": "independent",
-            "description": "아직 학습 스타일 분석 중입니다.",
-            "strategy": "다양한 문제를 풀어보며 자신만의 학습 패턴을 찾아보세요."
-        }
+        # Learning style (hint_usage 기반 기본값)
+        hint_usage = user_data.get("hint_usage", {})
+        avg_hints = hint_usage.get("avg_per_problem", 0)
+        if avg_hints >= 2:
+            learning_style = {
+                "type": "hint-dependent",
+                "description": "힌트를 적극적으로 활용하여 문제를 해결하는 스타일입니다.",
+                "strategy": "힌트를 보기 전에 5분간 스스로 고민해보세요."
+            }
+        else:
+            learning_style = {
+                "type": "independent",
+                "description": "스스로 문제를 해결하는 독립적인 학습 스타일입니다.",
+                "strategy": "현재 페이스를 유지하며 더 어려운 문제에 도전해보세요."
+            }
 
         # Common error patterns (기존 데이터 유지 또는 빈 배열)
         error_patterns = user_data.get("existing_error_patterns", [])
+
+        # Generate a basic detailed feedback for template fallback
+        detailed_parts = []
+        detailed_parts.append("## 학습 현황 분석\n")
+        detailed_parts.append(f"현재까지 {problems_solved}개의 문제를 풀었고, 정답률은 {int(accuracy * 100)}%입니다.\n\n")
+
+        if strengths:
+            detailed_parts.append("### 강점\n")
+            for s in strengths[:2]:
+                detailed_parts.append(f"- **{s['topic']}**: {s['insight']}\n")
+            detailed_parts.append("\n")
+
+        if weaknesses:
+            detailed_parts.append("### 개선이 필요한 영역\n")
+            for w in weaknesses[:2]:
+                detailed_parts.append(f"- **{w['topic']}**: {w['insight']}\n")
+            detailed_parts.append("\n")
+
+        detailed_parts.append("### 다음 단계\n")
+        detailed_parts.append(study_plan + "\n")
+
+        detailed_feedback = "".join(detailed_parts)
 
         return {
             "summary": summary,
@@ -610,6 +898,7 @@ class AnalysisService:
             "study_plan": study_plan,
             "learning_style": learning_style,
             "common_error_patterns": error_patterns,
+            "detailed_feedback": detailed_feedback,
         }
 
     def _expand_topics(self, topics: List[str]) -> List[str]:

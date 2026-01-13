@@ -9,21 +9,51 @@ import { api } from './client';
 // Types
 // ============================================================
 
+/**
+ * 미션 조건 타입
+ * - problems: 문제 풀이 (전체)
+ * - blank: 빈칸 채우기 문제
+ * - puzzle: 퍼즐 문제
+ * - guided: 가이디드 문제
+ * - implementation: 구현 문제
+ *
+ * 실제 ProblemType과 일치: 'blank' | 'puzzle' | 'guided' | 'implementation'
+ */
+export type MissionConditionType =
+  | 'problems'       // 문제 풀이 (타입 무관)
+  | 'blank'          // 빈칸 채우기
+  | 'puzzle'         // 퍼즐
+  | 'guided'         // 가이디드
+  | 'implementation';// 구현
+
+/**
+ * 미션 난이도
+ */
+export type MissionDifficulty = 'easy' | 'medium' | 'hard' | null;
+
+/**
+ * 미션 상태
+ */
+export type MissionStatus = 'active' | 'completed' | 'claimed';
+
 export interface Mission {
   id: string;
   missionId: string;
   code: string;
   name: string;
   description: string | null;
-  conditionType: string; // 'problems', 'blank', 'puzzle', 'output', 'bug', 'refactor'
+  conditionType: MissionConditionType;
   conditionValue: number;
-  difficulty: string | null; // 'easy', 'medium', 'hard', null=all
+  difficulty: MissionDifficulty;
   currentProgress: number;
   targetValue: number;
-  status: 'active' | 'completed' | 'claimed';
+  status: MissionStatus;
   rewardGold: number;
   rewardXp: number;
   rewardSeeds: Record<string, number> | null;
+  // 확장 조건
+  category: string | null;           // 알고리즘 카테고리
+  requireAllTypes: boolean;          // 모든 유형 풀기 미션
 }
 
 export interface DailyMissionsResponse {
@@ -68,21 +98,35 @@ export interface AllMissionsResponse {
 // ============================================================
 
 function transformMission(data: Record<string, unknown>): Mission {
+  // conditionType 변환
+  const rawConditionType = data.condition_type as string;
+  const conditionTypeMap: Record<string, MissionConditionType> = {
+    'problems': 'problems',
+    'blank': 'blank',
+    'puzzle': 'puzzle',
+    'guided': 'guided',
+    'implementation': 'implementation',
+  };
+  const conditionType: MissionConditionType = conditionTypeMap[rawConditionType] || 'problems';
+
   return {
     id: data.id as string,
     missionId: data.mission_id as string,
     code: data.code as string,
     name: data.name as string,
     description: data.description as string | null,
-    conditionType: data.condition_type as string,
+    conditionType,
     conditionValue: data.condition_value as number,
-    difficulty: data.difficulty as string | null,
+    difficulty: data.difficulty as MissionDifficulty,
     currentProgress: data.current_progress as number,
     targetValue: data.target_value as number,
-    status: data.status as 'active' | 'completed' | 'claimed',
+    status: data.status as MissionStatus,
     rewardGold: data.reward_gold as number,
     rewardXp: data.reward_xp as number,
     rewardSeeds: data.reward_seeds as Record<string, number> | null,
+    // 확장 조건
+    category: data.category as string | null,
+    requireAllTypes: (data.require_all_types as boolean) || false,
   };
 }
 

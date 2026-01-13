@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Trophy, Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   RankingTable,
@@ -18,11 +18,12 @@ import {
 
 interface LeaderboardSectionProps {
   currentUserId?: string;
+  onTotalChange?: (total: number) => void;
 }
 
 const ITEMS_PER_PAGE = 10;
 
-export function LeaderboardSection({ currentUserId }: LeaderboardSectionProps) {
+export function LeaderboardSection({ currentUserId, onTotalChange }: LeaderboardSectionProps) {
   const [period, setPeriod] = useState<RankingPeriod>('global');
   const [type, setType] = useState<RankingType>('xp');
   const [page, setPage] = useState(1);
@@ -83,28 +84,17 @@ export function LeaderboardSection({ currentUserId }: LeaderboardSectionProps) {
     }
   }, [period, type]);
 
+  // Notify parent of total change
+  useEffect(() => {
+    onTotalChange?.(total);
+  }, [total, onTotalChange]);
+
   return (
     <motion.section
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      {/* 섹션 헤더 */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-purple-500/20 flex items-center justify-center">
-            <Trophy className="w-5 h-5 text-purple-400" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-purple-400">Leaderboard</h2>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Users className="w-3 h-3" />
-              총 {total.toLocaleString()}명
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* 필터 영역 */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 p-4 rounded-xl bg-card/50 border border-border/50">
         <RankingTabs value={period} onChange={setPeriod} />

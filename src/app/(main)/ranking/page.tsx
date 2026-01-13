@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Swords, Coins, Star, Calendar, Sprout, Trophy, Clock } from 'lucide-react';
+import { Coins, Star, Sprout, Trophy, Crown, Users } from 'lucide-react';
 import {
   StatsSummary,
-  QuestCard,
+  QuestSection,
   LeaderboardSection,
 } from '@/components/challenge';
 import {
@@ -58,6 +58,9 @@ export default function ChallengePage() {
   const [dailyData, setDailyData] = useState<DailyMissionsResponse | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyChallengesResponse | null>(null);
   const [isMissionsLoading, setIsMissionsLoading] = useState(true);
+
+  // Leaderboard total
+  const [leaderboardTotal, setLeaderboardTotal] = useState(0);
 
   // Fetch current user ID
   useEffect(() => {
@@ -166,64 +169,73 @@ export default function ChallengePage() {
   const totalClaimable = dailyClaimable + weeklyClaimable;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-950/20 via-background to-background">
-      <div className="container max-w-5xl mx-auto px-4 py-8">
-        {/* 헤더 + 탭 */}
+    <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
+      <div className="container max-w-5xl mx-auto px-4 py-10">
+        {/* 헤더 + 탭 (컴팩트) */}
         <motion.div
-          initial={{ opacity: 0, y: -20 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-6"
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                <Swords className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h1 className="quest-title text-2xl font-bold text-white tracking-wide">
-                  Quest Board
+            {/* 타이틀 - 탭에 따라 동적 */}
+            {activeTab === 'quests' ? (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-600/20 flex items-center justify-center border border-emerald-500/20">
+                  <Sprout className="w-4.5 h-4.5 text-emerald-400" />
+                </div>
+                <h1 className="text-lg font-semibold text-white tracking-wide">
+                  Quests
                 </h1>
-                <p className="text-sm text-muted-foreground">
-                  퀘스트를 완료하고 보상을 획득하세요
-                </p>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-yellow-500/20 to-amber-600/20 flex items-center justify-center border border-yellow-500/20">
+                  <Crown className="w-4.5 h-4.5 text-yellow-400" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-white tracking-wide">
+                    Leaderboard
+                  </h1>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Users className="w-3 h-3" />
+                    총 <span className="text-white font-medium">{leaderboardTotal.toLocaleString()}</span>명
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 탭 */}
             {isAuthenticated && (
-              <div className="flex items-center gap-1 p-1 rounded-xl bg-card/50 border border-border/50">
+              <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/30 border border-border/30">
                 <button
                   onClick={() => setActiveTab('quests')}
                   className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    'px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5',
                     activeTab === 'quests'
                       ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-white hover:bg-muted/50'
+                      : 'text-muted-foreground hover:text-white'
                   )}
                 >
-                  <span className="flex items-center gap-2">
-                    <Sprout className="w-4 h-4" />
-                    퀘스트
-                    {totalClaimable > 0 && (
-                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-white/20">
-                        {totalClaimable}
-                      </span>
-                    )}
-                  </span>
+                  <Sprout className="w-3.5 h-3.5" />
+                  퀘스트
+                  {totalClaimable > 0 && (
+                    <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 font-bold leading-none">
+                      {totalClaimable}
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={() => setActiveTab('leaderboard')}
                   className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    'px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5',
                     activeTab === 'leaderboard'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-white hover:bg-muted/50'
+                      ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-sm'
+                      : 'text-muted-foreground hover:text-white'
                   )}
                 >
-                  <span className="flex items-center gap-2">
-                    <Trophy className="w-4 h-4" />
-                    리더보드
-                  </span>
+                  <Crown className="w-3.5 h-3.5" />
+                  랭킹
                 </button>
               </div>
             )}
@@ -235,14 +247,16 @@ export default function ChallengePage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="quest-card rounded-xl p-12 text-center"
+            className="quest-card rounded-2xl p-16 text-center"
           >
-            <Calendar className="w-16 h-16 mx-auto mb-4 text-primary/30" />
-            <h2 className="text-lg font-semibold text-white mb-2">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
+              <Trophy className="w-10 h-10 text-primary/50" />
+            </div>
+            <h2 className="quest-title text-xl font-semibold text-white mb-3">
               로그인이 필요합니다
             </h2>
-            <p className="text-sm text-muted-foreground">
-              퀘스트를 확인하고 보상을 받으려면 로그인해주세요.
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              랭킹을 확인하고 일일 퀘스트에 도전하려면 로그인해주세요.
             </p>
           </motion.div>
         ) : (
@@ -265,125 +279,26 @@ export default function ChallengePage() {
                   onViewRanking={() => setActiveTab('leaderboard')}
                 />
 
-                {/* 2컬럼 그리드: 일일 미션 / 주간 챌린지 */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 세로 배치: 일일 미션 → 주간 챌린지 */}
+                <div className="space-y-8">
                   {/* 일일 미션 */}
-                  <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                  >
-                    {/* 섹션 헤더 */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                          <Sprout className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="font-semibold text-primary">Today&apos;s Quests</h2>
-                            {dailyClaimable > 0 && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-primary text-primary-foreground">
-                                {dailyClaimable}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 일일 미션 목록 */}
-                    {isMissionsLoading ? (
-                      <div className="space-y-2">
-                        {[0, 1, 2].map((i) => (
-                          <div
-                            key={i}
-                            className="h-16 rounded-xl bg-card/50 animate-pulse"
-                          />
-                        ))}
-                      </div>
-                    ) : dailyMissions.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center quest-card rounded-xl">
-                        <Sprout className="w-10 h-10 text-muted-foreground/30 mb-3" />
-                        <p className="text-muted-foreground text-sm">
-                          오늘의 퀘스트가 아직 없습니다
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {dailyMissions.map((quest, index) => (
-                          <QuestCard
-                            key={quest.id}
-                            quest={quest}
-                            variant="daily"
-                            onClaim={handleClaim}
-                            index={index}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </motion.section>
+                  <QuestSection
+                    title="Today's Quests"
+                    variant="daily"
+                    quests={dailyMissions}
+                    isLoading={isMissionsLoading}
+                    onClaim={handleClaim}
+                  />
 
                   {/* 주간 챌린지 */}
-                  <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    {/* 섹션 헤더 */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center">
-                          <Trophy className="w-4 h-4 text-yellow-400" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="font-semibold text-yellow-400">Weekly Challenge</h2>
-                            {weeklyClaimable > 0 && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-yellow-500 text-black">
-                                {weeklyClaimable}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{remainingTime}</span>
-                      </div>
-                    </div>
-
-                    {/* 주간 챌린지 목록 */}
-                    {isMissionsLoading ? (
-                      <div className="space-y-3">
-                        {[0, 1].map((i) => (
-                          <div
-                            key={i}
-                            className="h-32 rounded-xl bg-card/50 animate-pulse"
-                          />
-                        ))}
-                      </div>
-                    ) : weeklyMissions.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center quest-card rounded-xl">
-                        <Trophy className="w-10 h-10 text-muted-foreground/30 mb-3" />
-                        <p className="text-muted-foreground text-sm">
-                          이번 주 챌린지가 아직 없습니다
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {weeklyMissions.map((quest, index) => (
-                          <QuestCard
-                            key={quest.id}
-                            quest={quest}
-                            variant="weekly"
-                            onClaim={handleClaim}
-                            index={index}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </motion.section>
+                  <QuestSection
+                    title="Weekly Challenge"
+                    variant="weekly"
+                    quests={weeklyMissions}
+                    isLoading={isMissionsLoading}
+                    onClaim={handleClaim}
+                    remainingTime={remainingTime}
+                  />
                 </div>
               </motion.div>
             )}
@@ -397,7 +312,7 @@ export default function ChallengePage() {
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
               >
-                <LeaderboardSection currentUserId={currentUserId} />
+                <LeaderboardSection currentUserId={currentUserId} onTotalChange={setLeaderboardTotal} />
               </motion.div>
             )}
           </>

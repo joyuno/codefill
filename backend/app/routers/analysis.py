@@ -16,10 +16,49 @@ from ..models.analysis import (
     SkillSnapshot,
     SkillSnapshotsResponse,
     SkillProfileResponse,
+    BKTTopicMastery,
+    BloomMetrics,
+    ErrorAnalysis,
+    ErrorPatternDetail,
 )
 from ..services.analysis_service import AnalysisService, InsufficientDataError
 
 router = APIRouter()
+
+
+def _transform_bkt_mastery(bkt_data: dict | None) -> dict | None:
+    """BKT 마스터리 데이터를 모델로 변환."""
+    if not bkt_data:
+        return None
+    return {
+        topic: BKTTopicMastery(
+            mastery=data.get("mastery", 0.0),
+            is_mastered=data.get("is_mastered", False),
+            attempt_count=data.get("attempt_count", 0),
+            correct_count=data.get("correct_count", 0),
+        )
+        for topic, data in bkt_data.items()
+    }
+
+
+def _transform_error_analysis(error_data: dict | None) -> ErrorAnalysis | None:
+    """에러 분석 데이터를 모델로 변환."""
+    if not error_data:
+        return None
+    patterns = {}
+    raw_patterns = error_data.get("patterns", {})
+    for key, val in raw_patterns.items():
+        patterns[key] = ErrorPatternDetail(
+            count=val.get("count", 0),
+            rate=val.get("rate", 0.0),
+            examples=val.get("examples", []),
+        )
+    return ErrorAnalysis(
+        dominant_type=error_data.get("dominant_type"),
+        summary=error_data.get("summary", ""),
+        total_errors=error_data.get("total_errors", 0),
+        patterns=patterns,
+    )
 
 
 @router.get("/report", response_model=AnalysisReportResponse)
@@ -66,6 +105,11 @@ async def get_analysis_report(
             moodDistribution=report_data.get("moodDistribution", {}),
             breakthroughMoments=report_data.get("breakthroughMoments", []),
             teachingNotes=report_data.get("teachingNotes", []),
+            detailedFeedback=report_data.get("detailedFeedback"),
+            # Learning Analytics Framework 메트릭
+            bktMastery=_transform_bkt_mastery(report_data.get("bktMastery")),
+            bloomMetrics=BloomMetrics(**report_data["bloomMetrics"]) if report_data.get("bloomMetrics") else None,
+            errorAnalysis=_transform_error_analysis(report_data.get("errorAnalysis")),
         )
 
         return AnalysisReportResponse(hasReport=True, report=report)
@@ -115,12 +159,41 @@ async def generate_analysis(
             moodDistribution=report_data.get("moodDistribution", {}),
             breakthroughMoments=report_data.get("breakthroughMoments", []),
             teachingNotes=report_data.get("teachingNotes", []),
+            detailedFeedback=report_data.get("detailedFeedback"),
+            # Learning Analytics Framework 메트릭
+            bktMastery=_transform_bkt_mastery(report_data.get("bktMastery")),
+            bloomMetrics=BloomMetrics(**report_data["bloomMetrics"]) if report_data.get("bloomMetrics") else None,
+            errorAnalysis=_transform_error_analysis(report_data.get("errorAnalysis")),
         )
 
     except InsufficientDataError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 생성 실패: {str(e)}")
+
+
+@router.post("/recommend-problems", response_model=list[RecommendedProblem])
+async def recommend_problems(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    추천 문제 조회 (분석과 분리됨).
+
+    약점 기반으로 추천 문제를 검색하고 DB에 저장합니다.
+    분석 생성과 별도로 호출하여 필요할 때만 실행합니다.
+    """
+    try:
+        service = AnalysisService(db)
+        problems = await service.recommend_problems(user_id)
+
+        return [
+            RecommendedProblem(**p)
+            for p in problems
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"추천 문제 조회 실패: {str(e)}")
 
 
 # ============================================================

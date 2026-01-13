@@ -32,10 +32,10 @@ export function WeeklyChallengesPanel({ data, isLoading, onClaim }: WeeklyChalle
   const completedCount = data.challenges.filter(c => c.status === 'completed' || c.status === 'claimed').length;
   const claimedCount = data.challenges.filter(c => c.status === 'claimed').length;
 
-  // 이번 주 남은 일수 계산
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const daysUntilSunday = (7 - dayOfWeek) % 7 || 7;
+  // 다음 월요일까지 남은 시간 계산 (주간 리셋 기준)
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
 
   return (
     <div className="space-y-4">
@@ -48,7 +48,7 @@ export function WeeklyChallengesPanel({ data, isLoading, onClaim }: WeeklyChalle
           </span>
         </div>
         <span className="text-xs text-muted-foreground">
-          {daysUntilSunday}일 남음
+          {daysUntilMonday}일 남음
         </span>
       </div>
 

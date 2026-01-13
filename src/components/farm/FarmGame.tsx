@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as Phaser from 'phaser';
 import { FarmScene } from './scenes/FarmScene';
 import type { PlacementChanges } from './scenes/UnifiedPlacementManager';
-import type { InventoryItem, PlacedItem, ItemMetadata } from '@/lib/api/farm';
+import type { InventoryItem, PlacedItem, ItemMetadata, FarmSlot } from '@/lib/api/farm';
 
 // 외부에서 접근 가능한 메서드
 export interface FarmGameHandle {
@@ -42,8 +42,10 @@ interface FarmGameProps {
   onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => string | null;
   onMoveItem: (itemId: string, tileX: number, tileY: number) => Promise<void>;
   onRemoveItem: (itemId: string) => Promise<void>;
-  onPlantOnPlot: (plotId: string, cropCode: string) => Promise<void>;
-  onHarvestFromPlot: (plotId: string) => Promise<{ gold: number; xp: number } | null>;
+  // 슬롯 기반 밭 시스템 (신규)
+  farmSlots: FarmSlot[];
+  onPlantOnSlot: (slot: number, cropCode: string) => Promise<FarmSlot | null>;
+  onHarvestFromSlot: (slot: number) => Promise<{ gold: number; xp: number; slot: FarmSlot } | null>;
   // 콜백으로 핸들 전달 (dynamic import 호환용)
   onReady?: (handle: FarmGameHandle) => void;
 }
@@ -60,8 +62,9 @@ export function FarmGame({
   onPlaceItemLocally,
   onMoveItem,
   onRemoveItem,
-  onPlantOnPlot,
-  onHarvestFromPlot,
+  farmSlots,
+  onPlantOnSlot,
+  onHarvestFromSlot,
   onReady,
 }: FarmGameProps) {
   const gameContainerRef = useRef<HTMLDivElement>(null);
@@ -116,8 +119,10 @@ export function FarmGame({
           onPlaceItemLocally, // 로컬 배치 (API 호출 없음)
           onMoveItem,
           onRemoveItem,
-          onPlantOnPlot,
-          onHarvestFromPlot,
+          // 슬롯 기반 밭 시스템
+          farmSlots,
+          onPlantOnSlot,
+          onHarvestFromSlot,
         });
 
         // 핸들 생성 및 콜백 호출
@@ -170,6 +175,13 @@ export function FarmGame({
       sceneRef.current.updateSelectedPlacementItem(selectedPlacementItem || null);
     }
   }, [selectedPlacementItem, isLoaded]);
+
+  // 밭 슬롯 변경 시 씬 업데이트
+  useEffect(() => {
+    if (sceneRef.current && isLoaded && farmSlots) {
+      sceneRef.current.updateFarmSlots(farmSize, farmSlots);
+    }
+  }, [farmSlots, farmSize, isLoaded]);
 
   return (
     <div

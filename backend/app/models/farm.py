@@ -47,11 +47,16 @@ class CharacterCreateRequest(BaseModel):
 # =====================================================
 
 class FarmSlot(BaseModel):
-    """농장 슬롯 (작물 한 칸)"""
+    """농장 슬롯 (작물 한 칸) - 프론트엔드용 camelCase"""
     slot: int
-    crop_code: Optional[str] = None
-    planted_at: Optional[datetime] = None
+    cropCode: Optional[str] = None
+    plantedAt: Optional[str] = None  # ISO datetime string
+    growTimeSeconds: Optional[int] = None
     stage: int = Field(default=0, ge=0, le=4)  # 0=empty, 1-3=growing, 4=ready
+
+    class Config:
+        # DB에서 snake_case로 저장되어도 camelCase로 변환
+        populate_by_name = True
 
 
 # =====================================================
@@ -59,7 +64,7 @@ class FarmSlot(BaseModel):
 # =====================================================
 
 class UserFarmResponse(BaseModel):
-    """사용자 농장 상태 응답 (통합 배치 시스템)"""
+    """사용자 농장 상태 응답 (그리드 기반 밭 시스템)"""
     id: UUID
     user_id: UUID
     character_created: bool
@@ -67,13 +72,11 @@ class UserFarmResponse(BaseModel):
     farm_unlocked: bool
     farm_level: int
     gold: int
-    farm_size: int  # 배치 가능 영역 크기
+    farm_size: int  # 밭 슬롯 개수 (1, 4, 9, 16, 25)
     house_level: int
+    farm_slots: List[FarmSlot] = []  # 밭 그리드 슬롯 데이터
     created_at: datetime
     updated_at: datetime
-    # 레거시 필드 제거됨:
-    # - farm_slots → user_placed_items 사용 (GET /placement/items)
-    # - customization_data → user_placed_items 사용
 
 
 class FarmItemResponse(BaseModel):
@@ -106,14 +109,39 @@ class InventoryResponse(BaseModel):
 # Action Request/Response Models
 # =====================================================
 
+class PlantSlotRequest(BaseModel):
+    """슬롯에 씨앗 심기 요청"""
+    crop_code: str
+
+
+class PlantSlotResponse(BaseModel):
+    """슬롯에 씨앗 심기 응답"""
+    success: bool
+    message: str
+    slot: FarmSlot  # 업데이트된 슬롯
+    farm_slots: List[FarmSlot]  # 전체 슬롯 배열
+    inventory: Dict[str, int]  # 업데이트된 인벤토리
+
+
+class HarvestSlotResponse(BaseModel):
+    """슬롯 수확 응답"""
+    success: bool
+    message: str
+    slot: FarmSlot  # 초기화된 슬롯
+    farm_slots: List[FarmSlot]  # 전체 슬롯 배열
+    rewards: Dict[str, int]  # {"gold": 25, "xp": 5}
+    gold: int  # 현재 골드
+
+
+# Legacy models (하위 호환성)
 class PlantRequest(BaseModel):
-    """씨앗 심기 요청"""
+    """씨앗 심기 요청 (레거시)"""
     slot: int = Field(..., ge=0)
     crop_code: str
 
 
 class PlantResponse(BaseModel):
-    """씨앗 심기 응답"""
+    """씨앗 심기 응답 (레거시)"""
     success: bool
     message: str
     farm_slots: List[FarmSlot]
@@ -121,12 +149,12 @@ class PlantResponse(BaseModel):
 
 
 class HarvestRequest(BaseModel):
-    """수확 요청"""
+    """수확 요청 (레거시)"""
     slot: int = Field(..., ge=0)
 
 
 class HarvestResponse(BaseModel):
-    """수확 응답"""
+    """수확 응답 (레거시)"""
     success: bool
     message: str
     rewards: Dict[str, int]  # {"gold": 25, "xp": 5}
@@ -165,7 +193,7 @@ class SellResponse(BaseModel):
 
 class ExpandRequest(BaseModel):
     """농장 확장 요청"""
-    target_size: int = Field(..., ge=9, le=36)  # 9, 16, 25, 36
+    target_size: int = Field(..., ge=1, le=25)  # 1, 4, 9, 16, 25
 
 
 class ExpandResponse(BaseModel):
@@ -174,6 +202,7 @@ class ExpandResponse(BaseModel):
     message: str
     farm_size: int
     gold: int
+    farm_slots: List[FarmSlot] = []  # 확장된 슬롯 배열
 
 
 class ExpansionCost(BaseModel):
@@ -249,13 +278,13 @@ class CustomizationResponse(BaseModel):
 # Constants
 # =====================================================
 
-# 농장 확장 비용
+# 농장 확장 비용 (그리드 기반: 1x1 -> 5x5)
 EXPANSION_COSTS = {
-    4: {"grid": "2x2", "name": "작은 농장", "cost": 0},
+    1: {"grid": "1x1", "name": "씨앗 밭", "cost": 0},
+    4: {"grid": "2x2", "name": "작은 농장", "cost": 200},
     9: {"grid": "3x3", "name": "중간 농장", "cost": 500},
     16: {"grid": "4x4", "name": "큰 농장", "cost": 1500},
     25: {"grid": "5x5", "name": "대형 농장", "cost": 4000},
-    36: {"grid": "6x6", "name": "최대 농장", "cost": 8000},
 }
 
 # 캐릭터 생성 시 초기 지급

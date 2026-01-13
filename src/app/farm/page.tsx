@@ -63,8 +63,9 @@ export default function FarmPage() {
     placeItem,
     moveItem,
     removeItem,
-    plantOnPlot,
-    harvestFromPlot,
+    // 슬롯 기반 밭 시스템
+    plantOnSlot,
+    harvestFromSlot,
   } = useFarm();
 
   // 토스트 알림
@@ -301,8 +302,7 @@ export default function FarmPage() {
 
   // 계산된 값들
   const gold = farm?.gold || 0;
-  const dbFarmSize = farm?.farmSize || 4;
-  const farmSize = Math.sqrt(dbFarmSize);
+  const dbFarmSize = farm?.farmSize || 1;
 
   // 로딩 상태
   if (isLoading) {
@@ -346,7 +346,7 @@ export default function FarmPage() {
       <div className="absolute inset-0">
         <FarmGame
           onReady={handleFarmGameReady}
-          farmSize={farmSize}
+          farmSize={dbFarmSize}
           gold={gold}
           inventory={inventory}
           selectedSeed={selectedSeed}
@@ -357,8 +357,9 @@ export default function FarmPage() {
           onPlaceItemLocally={handlePlaceItemLocally}
           onMoveItem={moveItem}
           onRemoveItem={removeItem}
-          onPlantOnPlot={plantOnPlot}
-          onHarvestFromPlot={harvestFromPlot}
+          farmSlots={farm?.farmSlots || []}
+          onPlantOnSlot={plantOnSlot}
+          onHarvestFromSlot={harvestFromSlot}
         />
       </div>
 

@@ -1,13 +1,14 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { Lightbulb, HelpCircle, ThumbsUp, TrendingUp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface HintUsageData {
   total_requested: number;
+  by_level?: Record<string, number>; // 레벨별 힌트 사용 횟수
   helpful_count: number;
   helpful_rate: number;
+  avg_per_problem?: number; // 문제당 평균 힌트 수
   avg_hint_level: number;
 }
 
@@ -18,22 +19,18 @@ interface HintUsageCardProps {
 export function HintUsageCard({ hintUsage }: HintUsageCardProps) {
   if (!hintUsage || hintUsage.total_requested === 0) {
     return (
-      <motion.div
-        className="flex flex-col h-full p-4 rounded-xl bg-zinc-800/30 border border-zinc-700/50"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-      >
-        <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">
-          Hint Usage
-        </h3>
-        <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
-          <div className="text-center">
-            <Lightbulb className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p>아직 힌트 사용 기록이 없습니다</p>
-          </div>
+      <div className="p-6">
+        <div className="flex items-center gap-2 mb-1.5">
+          <Lightbulb className="w-5 h-5 text-amber-400" />
+          <h3 className="text-base font-semibold text-zinc-100">힌트 사용 패턴</h3>
         </div>
-      </motion.div>
+        <p className="text-xs text-zinc-500 mb-4">
+          힌트를 언제, 얼마나 사용하는지 분석합니다.
+        </p>
+        <div className="flex items-center justify-center py-8 text-zinc-600 text-sm">
+          <p>힌트 사용 기록이 쌓이면 패턴이 표시됩니다</p>
+        </div>
+      </div>
     );
   }
 
@@ -55,17 +52,18 @@ export function HintUsageCard({ hintUsage }: HintUsageCardProps) {
   const levelAssessment = getLevelAssessment(avg_hint_level);
 
   return (
-    <motion.div
-      className="flex flex-col h-full p-4 rounded-xl bg-zinc-800/30 border border-zinc-700/50"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.3 }}
-    >
-      <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">
-        Hint Usage
-      </h3>
+    <div className="p-6">
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-1.5">
+          <Lightbulb className="w-5 h-5 text-amber-400" />
+          <h3 className="text-base font-semibold text-zinc-100">힌트 사용 패턴</h3>
+        </div>
+        <p className="text-xs text-zinc-500">
+          힌트 의존도가 낮을수록 스스로 해결하는 능력이 높습니다.
+        </p>
+      </div>
 
-      <div className="flex-1 flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
         {/* 파이 차트 */}
         <div className="flex items-center gap-4">
           <div className="w-20 h-20">
@@ -138,7 +136,7 @@ export function HintUsageCard({ hintUsage }: HintUsageCardProps) {
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 

@@ -6,8 +6,20 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { Check, Gift, Loader2, Coins, Star, Sprout } from 'lucide-react';
+import { Check, Gift, Loader2, Coins, Star } from 'lucide-react';
 import type { Mission } from '@/lib/api/missions';
+import { CROPS, CROP_ASSET_PATH } from '@/components/farm/config/cropConfig';
+
+// 씨앗 코드에서 작물 정보 가져오기 (seed_carrot -> carrot)
+function getSeedInfo(seedCode: string): { name: string; image: string } | null {
+  const cropCode = seedCode.replace('seed_', '');
+  const crop = CROPS[cropCode];
+  if (!crop) return null;
+  return {
+    name: crop.nameKo,
+    image: `${CROP_ASSET_PATH}${crop.seedSprite}`,
+  };
+}
 
 interface MissionCardProps {
   mission: Mission;
@@ -19,10 +31,8 @@ const conditionTypeLabels: Record<string, string> = {
   problems: '문제',
   blank: '빈칸',
   puzzle: '퍼즐',
-  output: '출력 예측',
-  bug: '버그 찾기',
-  refactor: '리팩토링',
-  streak: '연속 풀이',
+  guided: '가이디드',
+  implementation: '구현',
 };
 
 const difficultyLabels: Record<string, string> = {
@@ -30,6 +40,7 @@ const difficultyLabels: Record<string, string> = {
   medium: '보통',
   hard: '어려움',
 };
+
 
 export function MissionCard({ mission, onClaim, isWeekly = false }: MissionCardProps) {
   const [isClaiming, setIsClaiming] = useState(false);
@@ -73,6 +84,11 @@ export function MissionCard({ mission, onClaim, isWeekly = false }: MissionCardP
               {mission.difficulty && (
                 <Badge variant="outline" className="text-xs">
                   {difficultyLabels[mission.difficulty] || mission.difficulty}
+                </Badge>
+              )}
+              {mission.requireAllTypes && (
+                <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-400 border-amber-500/30">
+                  All
                 </Badge>
               )}
               {isClaimed && (
@@ -121,14 +137,16 @@ export function MissionCard({ mission, onClaim, isWeekly = false }: MissionCardP
                   <span>{mission.rewardXp}</span>
                 </div>
               )}
-              {mission.rewardSeeds && Object.keys(mission.rewardSeeds).length > 0 && (
-                <div className="flex items-center gap-1 text-green-400">
-                  <Sprout className="w-3.5 h-3.5" />
-                  <span>
-                    {Object.values(mission.rewardSeeds).reduce((a, b) => a + b, 0)}
-                  </span>
-                </div>
-              )}
+              {mission.rewardSeeds && Object.entries(mission.rewardSeeds).map(([seedCode, amount]) => {
+                const seedInfo = getSeedInfo(seedCode);
+                if (!seedInfo) return null;
+                return (
+                  <div key={seedCode} className="flex items-center gap-1 text-green-400" title={`${seedInfo.name} 씨앗`}>
+                    <img src={seedInfo.image} alt={seedInfo.name} className="w-4 h-4" style={{ imageRendering: 'pixelated' }} />
+                    <span>{amount}</span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Claim Button */}
