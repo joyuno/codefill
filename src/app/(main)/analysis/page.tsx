@@ -247,7 +247,6 @@ export default function AnalysisPage() {
           summaryText={report.summaryText || ""}
           studyPlan={report.studyPlan}
           detailedFeedback={report.detailedFeedback}
-          breakthroughMoments={report.breakthroughMoments}
           commonErrorPatterns={report.commonErrorPatterns}
           strengths={report.strengths}
           weaknesses={report.weaknesses}

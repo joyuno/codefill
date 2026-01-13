@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Coins, Star, Sprout, Trophy } from 'lucide-react';
+import { Coins, Star, Sprout, Trophy, Crown, Users } from 'lucide-react';
 import {
   StatsSummary,
   QuestSection,
@@ -58,6 +58,9 @@ export default function ChallengePage() {
   const [dailyData, setDailyData] = useState<DailyMissionsResponse | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyChallengesResponse | null>(null);
   const [isMissionsLoading, setIsMissionsLoading] = useState(true);
+
+  // Leaderboard total
+  const [leaderboardTotal, setLeaderboardTotal] = useState(0);
 
   // Fetch current user ID
   useEffect(() => {
@@ -168,62 +171,75 @@ export default function ChallengePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 via-background to-background">
       <div className="container max-w-5xl mx-auto px-4 py-10">
-        {/* 헤더 + 탭 */}
+        {/* 헤더 + 탭 (컴팩트) */}
         <motion.div
-          initial={{ opacity: 0, y: -20 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="mb-6"
         >
-          {/* 페이지 타이틀 */}
-          <div className="text-center mb-6">
-            <h1 className="quest-title text-3xl font-bold text-white tracking-wider mb-2">
-              Ranking Board
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              도전하고, 성장하고, 정상에 오르세요
-            </p>
-          </div>
+          <div className="flex items-center justify-between">
+            {/* 타이틀 - 탭에 따라 동적 */}
+            {activeTab === 'quests' ? (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-600/20 flex items-center justify-center border border-emerald-500/20">
+                  <Sprout className="w-4.5 h-4.5 text-emerald-400" />
+                </div>
+                <h1 className="text-lg font-semibold text-white tracking-wide">
+                  Quests
+                </h1>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-yellow-500/20 to-amber-600/20 flex items-center justify-center border border-yellow-500/20">
+                  <Crown className="w-4.5 h-4.5 text-yellow-400" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-white tracking-wide">
+                    Leaderboard
+                  </h1>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Users className="w-3 h-3" />
+                    총 <span className="text-white font-medium">{leaderboardTotal.toLocaleString()}</span>명
+                  </p>
+                </div>
+              </div>
+            )}
 
-          {/* 탭 */}
-          {isAuthenticated && (
-            <div className="flex items-center justify-center">
-              <div className="flex items-center gap-1 p-1.5 rounded-2xl bg-card/80 border border-border/50 backdrop-blur-sm">
+            {/* 탭 */}
+            {isAuthenticated && (
+              <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/30 border border-border/30">
                 <button
                   onClick={() => setActiveTab('quests')}
                   className={cn(
-                    'px-6 py-2.5 rounded-xl text-sm font-medium transition-all',
+                    'px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5',
                     activeTab === 'quests'
-                      ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
-                      : 'text-muted-foreground hover:text-white hover:bg-muted/50'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-white'
                   )}
                 >
-                  <span className="flex items-center gap-2">
-                    <Sprout className="w-4 h-4" />
-                    일일 퀘스트
-                    {totalClaimable > 0 && (
-                      <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-white/20 font-bold">
-                        {totalClaimable}
-                      </span>
-                    )}
-                  </span>
+                  <Sprout className="w-3.5 h-3.5" />
+                  퀘스트
+                  {totalClaimable > 0 && (
+                    <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-white/20 font-bold leading-none">
+                      {totalClaimable}
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={() => setActiveTab('leaderboard')}
                   className={cn(
-                    'px-6 py-2.5 rounded-xl text-sm font-medium transition-all',
+                    'px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5',
                     activeTab === 'leaderboard'
-                      ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-lg shadow-yellow-500/25'
-                      : 'text-muted-foreground hover:text-white hover:bg-muted/50'
+                      ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-black shadow-sm'
+                      : 'text-muted-foreground hover:text-white'
                   )}
                 >
-                  <span className="flex items-center gap-2">
-                    <Trophy className="w-4 h-4" />
-                    리더보드
-                  </span>
+                  <Crown className="w-3.5 h-3.5" />
+                  랭킹
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </motion.div>
 
         {/* 로그인 필요 안내 */}
@@ -296,7 +312,7 @@ export default function ChallengePage() {
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
               >
-                <LeaderboardSection currentUserId={currentUserId} />
+                <LeaderboardSection currentUserId={currentUserId} onTotalChange={setLeaderboardTotal} />
               </motion.div>
             )}
           </>

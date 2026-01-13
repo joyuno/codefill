@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import {
   Bot,
   TrendingUp,
-  Flame,
   AlertTriangle,
   ChevronRight,
   BookOpen,
@@ -20,7 +19,6 @@ interface AICoachingSectionProps {
   summaryText: string;
   studyPlan?: string;
   detailedFeedback?: string;
-  breakthroughMoments?: string[];
   commonErrorPatterns?: string[];
   // BKT 기반 분석
   strengths?: TopicScore[];
@@ -33,7 +31,6 @@ export function AICoachingSection({
   summaryText,
   studyPlan,
   detailedFeedback,
-  breakthroughMoments = [],
   commonErrorPatterns = [],
   strengths = [],
   weaknesses = [],
@@ -200,37 +197,6 @@ export function AICoachingSection({
                   {detailedFeedback}
                 </ReactMarkdown>
               </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Breakthrough Moments */}
-        {breakthroughMoments.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.25 }}
-            className="space-y-3"
-          >
-            <div className="flex items-center gap-2">
-              <Flame className="w-4 h-4 text-orange-400" />
-              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
-                Breakthrough Moments
-              </h3>
-            </div>
-            <div className="space-y-2">
-              {breakthroughMoments.slice(0, 3).map((moment, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -5 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + index * 0.05 }}
-                  className="flex items-start gap-2 p-3 rounded-lg bg-orange-500/5 border border-orange-500/10"
-                >
-                  <ChevronRight className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-zinc-300">{moment}</p>
-                </motion.div>
-              ))}
             </div>
           </motion.div>
         )}
