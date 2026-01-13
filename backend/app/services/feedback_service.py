@@ -7,8 +7,9 @@ DB에서 풀이 관련 데이터를 수집하고, LLM을 통해 맞춤형 피드
 
 import json
 import logging
+import math
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from ..database import get_supabase_client
 from ..services.openrouter import openrouter_service
 from ..config import get_settings
@@ -20,6 +21,23 @@ from ..prompts.feedback_agent import (
     calculate_xp,
     get_difficulty_config,
 )
+
+# ELO 레이팅 상수
+ELO_MIN = 600
+ELO_MAX = 1600
+ELO_DEFAULT = 1000
+ELO_K_FACTOR_NEW = 32      # 초보자 (20문제 미만)
+ELO_K_FACTOR_MEDIUM = 24   # 중급자 (50문제 미만)
+ELO_K_FACTOR_VETERAN = 16  # 숙련자 (100문제 이상)
+
+# 난이도별 기본 ELO
+DIFFICULTY_ELO_MAP = {
+    "easy": 800,
+    "medium": 1000,
+    "medium_hard": 1150,
+    "hard": 1300,
+    "very_hard": 1500,
+}
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -148,6 +166,198 @@ class FeedbackService:
         except Exception as e:
             logger.warning(f"[FeedbackService] Problem not found: {e}")
             return None
+
+    # ============================================================
+    # ELO 레이팅 관련 메서드
+    # ============================================================
+
+    def get_problem_elo(self, problem_id: str, difficulty: str = "medium") -> int:
+        """
+        문제의 ELO 레이팅 조회
+
+        Args:
+            problem_id: base_problems 테이블의 UUID
+            difficulty: 조회 실패 시 fallback 난이도
+
+        Returns:
+            ELO 레이팅 (600~1600)
+        """
+        try:
+            result = self.supabase.table("base_problems") \
+                .select("elo_rating, difficulty") \
+                .eq("id", problem_id) \
+                .single() \
+                .execute()
+
+            if result.data:
+                elo = result.data.get("elo_rating")
+                if elo:
+                    return elo
+                # elo_rating이 없으면 difficulty에서 추론
+                diff = result.data.get("difficulty", difficulty)
+                return DIFFICULTY_ELO_MAP.get(diff, ELO_DEFAULT)
+
+        except Exception as e:
+            logger.warning(f"[FeedbackService] Failed to get problem ELO: {e}")
+
+        # Fallback: 난이도 기반 기본값
+        return DIFFICULTY_ELO_MAP.get(difficulty, ELO_DEFAULT)
+
+    def _calculate_expected_probability(self, user_elo: int, problem_elo: int) -> float:
+        """
+        ELO 기반 예상 정답 확률 계산
+
+        Args:
+            user_elo: 사용자 ELO
+            problem_elo: 문제 ELO
+
+        Returns:
+            예상 정답 확률 (0.0 ~ 1.0)
+        """
+        return 1.0 / (1.0 + math.pow(10, (problem_elo - user_elo) / 400.0))
+
+    def _get_k_factor(self, problems_attempted: int, current_k: float = None) -> float:
+        """
+        K-factor 결정 (문제 풀이 수 기반)
+
+        문제를 적게 푼 사용자는 K-factor가 높아서 ELO가 빠르게 변함.
+        많이 푼 사용자는 K-factor가 낮아서 안정적.
+
+        Args:
+            problems_attempted: 총 시도한 문제 수
+            current_k: 현재 저장된 K-factor (있으면 우선 사용)
+
+        Returns:
+            K-factor (16~32)
+        """
+        if current_k is not None:
+            return current_k
+
+        if problems_attempted < 20:
+            return ELO_K_FACTOR_NEW  # 32
+        elif problems_attempted < 50:
+            return 28
+        elif problems_attempted < 100:
+            return ELO_K_FACTOR_MEDIUM  # 24
+        elif problems_attempted < 200:
+            return 20
+        else:
+            return ELO_K_FACTOR_VETERAN  # 16
+
+    def _calculate_time_factor(
+        self,
+        time_spent: Optional[int],
+        avg_time: int = 300,
+        difficulty: str = "medium"
+    ) -> float:
+        """
+        시간 보정 팩터 계산
+
+        빠르게 풀면 보너스, 느리게 풀면 페널티.
+
+        Args:
+            time_spent: 실제 풀이 시간 (초)
+            avg_time: 평균 풀이 시간 (초)
+            difficulty: 문제 난이도
+
+        Returns:
+            시간 팩터 (0.5 ~ 1.2)
+        """
+        if not time_spent or time_spent <= 0:
+            return 1.0
+
+        # 난이도별 기대 시간 조정
+        difficulty_multiplier = {
+            "easy": 0.7,
+            "medium": 1.0,
+            "medium_hard": 1.3,
+            "hard": 1.6,
+            "very_hard": 2.0,
+        }.get(difficulty, 1.0)
+
+        expected_time = avg_time * difficulty_multiplier
+        time_ratio = time_spent / expected_time
+
+        if time_ratio < 0.5:
+            # 매우 빠름: 보너스
+            return 1.2
+        elif time_ratio < 0.75:
+            # 빠름: 약간 보너스
+            return 1.1
+        elif time_ratio < 1.25:
+            # 평균: 기본값
+            return 1.0
+        elif time_ratio < 2.0:
+            # 느림: 약간 페널티
+            return 0.9
+        else:
+            # 매우 느림: 페널티
+            return 0.7
+
+    def _calculate_hint_factor(self, hints_used: Optional[int]) -> float:
+        """
+        힌트 보정 팩터 계산
+
+        힌트 사용 시 ELO 상승폭 감소.
+
+        Args:
+            hints_used: 사용한 힌트 수
+
+        Returns:
+            힌트 팩터 (0.5 ~ 1.0)
+        """
+        if not hints_used or hints_used <= 0:
+            return 1.0
+        elif hints_used == 1:
+            return 0.9
+        elif hints_used == 2:
+            return 0.8
+        elif hints_used == 3:
+            return 0.7
+        else:
+            return 0.5  # 4개 이상
+
+    def _calculate_elo_change(
+        self,
+        current_elo: int,
+        problem_elo: int,
+        is_correct: bool,
+        k_factor: float,
+        time_factor: float = 1.0,
+        hint_factor: float = 1.0,
+    ) -> Tuple[int, int, float]:
+        """
+        ELO 변화량 계산
+
+        Args:
+            current_elo: 현재 사용자 ELO
+            problem_elo: 문제 ELO
+            is_correct: 정답 여부
+            k_factor: K-factor
+            time_factor: 시간 보정
+            hint_factor: 힌트 보정
+
+        Returns:
+            (새 ELO, 변화량, 예상 확률)
+        """
+        # 예상 정답 확률
+        expected = self._calculate_expected_probability(current_elo, problem_elo)
+
+        # 실제 결과 (시간/힌트 보정 적용)
+        if is_correct:
+            actual = min(1.0, 1.0 * time_factor * hint_factor)
+        else:
+            actual = 0.0
+
+        # ELO 변화량
+        change = round(k_factor * (actual - expected))
+        new_elo = current_elo + change
+
+        # 범위 제한
+        new_elo = max(ELO_MIN, min(ELO_MAX, new_elo))
+        actual_change = new_elo - current_elo
+
+        return new_elo, actual_change, expected
 
     def get_previous_attempts(self, user_id: str, problem_id: str) -> List[Dict[str, Any]]:
         """이전 시도들 조회 (base_problem_id 기준)"""
@@ -683,7 +893,7 @@ class FeedbackService:
 
 
     # ============================================================
-    # user_analysis_reports 업데이트 (ELO-like)
+    # user_analysis_reports 업데이트 (실제 ELO 시스템)
     # ============================================================
 
     async def update_skill_profile(
@@ -695,9 +905,16 @@ class FeedbackService:
         problem_type: Optional[str] = None,  # 문제 유형 (blank/puzzle/guided)
         time_spent: Optional[int] = None,     # 풀이 시간 (초)
         hints_used: Optional[int] = None,     # 힌트 사용 횟수
+        base_problem_id: Optional[str] = None,  # 문제 UUID (ELO 조회용)
     ) -> Dict[str, Any]:
         """
-        사용자 스킬 프로필 업데이트 (ELO-like 알고리즘)
+        사용자 스킬 프로필 업데이트 (실제 ELO 알고리즘)
+
+        ELO 레이팅 시스템:
+        - 사용자별, 토픽별 ELO 레이팅 (600~1600, 기본 1000)
+        - 문제의 ELO와 사용자 ELO 비교하여 기대 확률 계산
+        - 정답/오답에 따라 ELO 변화
+        - 시간/힌트 보정 팩터 적용
 
         Args:
             user_id: 사용자 UUID
@@ -707,9 +924,10 @@ class FeedbackService:
             problem_type: 문제 유형 (blank/puzzle/guided)
             time_spent: 풀이 시간 (초)
             hints_used: 힌트 사용 횟수
+            base_problem_id: base_problems 테이블의 UUID
 
         Returns:
-            업데이트된 스킬 정보
+            업데이트된 스킬 정보 (ELO 포함)
         """
         try:
             # 1. 현재 프로파일 조회 (없으면 생성)
@@ -726,43 +944,112 @@ class FeedbackService:
                 profile = {
                     "user_id": user_id,
                     "skill_by_topic": {},
+                    "elo_by_topic": {},
+                    "elo_overall": ELO_DEFAULT,
+                    "elo_problems_by_topic": {},
+                    "elo_history": [],
+                    "elo_k_factor": ELO_K_FACTOR_NEW,
                     "success_rate_by_difficulty": {},
                     "weak_topics": [],
                 }
 
-            skill_by_topic = profile.get("skill_by_topic", {})
-            success_rate = profile.get("success_rate_by_difficulty", {})
+            # 기존 데이터 추출
+            skill_by_topic = profile.get("skill_by_topic", {}) or {}
+            elo_by_topic = profile.get("elo_by_topic", {}) or {}
+            elo_problems_by_topic = profile.get("elo_problems_by_topic", {}) or {}
+            elo_history = profile.get("elo_history", []) or []
+            success_rate = profile.get("success_rate_by_difficulty", {}) or {}
 
-            # 2. 토픽별 실력 업데이트 (ELO-like)
+            # 2. 문제 ELO 조회
+            if base_problem_id:
+                problem_elo = self.get_problem_elo(base_problem_id, difficulty)
+            else:
+                problem_elo = DIFFICULTY_ELO_MAP.get(difficulty, ELO_DEFAULT)
+
+            # 3. 현재 K-factor 및 문제 수 조회
+            total_problems_attempted = (profile.get("total_problems_attempted", 0) or 0) + 1
+            current_k = profile.get("elo_k_factor")
+            k_factor = self._get_k_factor(total_problems_attempted, current_k)
+
+            # 4. 시간/힌트 보정 팩터 계산
+            avg_solve_time = profile.get("avg_solve_time_seconds", 300) or 300
+            time_factor = self._calculate_time_factor(time_spent, avg_solve_time, difficulty)
+            hint_factor = self._calculate_hint_factor(hints_used)
+
+            # 5. 토픽별 ELO 업데이트 + 기존 skill 계산 (별도 유지)
+            elo_changes = []
             for topic in problem_topics:
                 if not topic:
                     continue
 
-                current_skill = skill_by_topic.get(topic, 0.5)
+                # ===== ELO 계산 (피드백 평가용) =====
+                current_elo = elo_by_topic.get(topic, ELO_DEFAULT)
 
+                new_elo, change, expected = self._calculate_elo_change(
+                    current_elo=current_elo,
+                    problem_elo=problem_elo,
+                    is_correct=is_correct,
+                    k_factor=k_factor,
+                    time_factor=time_factor,
+                    hint_factor=hint_factor,
+                )
+
+                elo_by_topic[topic] = new_elo
+                elo_problems_by_topic[topic] = (elo_problems_by_topic.get(topic, 0) or 0) + 1
+
+                elo_changes.append({
+                    "topic": topic,
+                    "before": current_elo,
+                    "after": new_elo,
+                    "change": change,
+                    "expected": round(expected, 3),
+                })
+
+                # ===== 기존 skill 계산 (약점분석용 - 별도 유지) =====
+                current_skill = skill_by_topic.get(topic, 0.5)
                 if is_correct:
-                    # 정답: 실력 상승 (현재 실력이 높을수록 상승폭 감소)
                     new_skill = current_skill + 0.05 * (1 - current_skill)
                 else:
-                    # 오답: 실력 하락 (현재 실력이 낮을수록 하락폭 감소)
                     new_skill = current_skill - 0.03 * current_skill
-
-                # 0.0 ~ 1.0 범위 유지
                 skill_by_topic[topic] = round(max(0.0, min(1.0, new_skill)), 3)
 
-            # 3. 난이도별 성공률 업데이트
+            # 6. ELO 히스토리 업데이트 (최근 20개 유지)
+            if elo_changes:
+                from datetime import date
+                history_entry = {
+                    "date": date.today().isoformat(),
+                    "topics": [e["topic"] for e in elo_changes],
+                    "changes": elo_changes,
+                    "problem_elo": problem_elo,
+                    "is_correct": is_correct,
+                }
+                elo_history.insert(0, history_entry)
+                elo_history = elo_history[:20]
+
+            # 7. 전체 ELO 계산 (토픽별 가중 평균)
+            if elo_by_topic:
+                # 문제 수 가중치 적용
+                total_weight = sum(elo_problems_by_topic.get(t, 1) for t in elo_by_topic.keys())
+                weighted_elo = sum(
+                    elo_by_topic[t] * elo_problems_by_topic.get(t, 1)
+                    for t in elo_by_topic.keys()
+                )
+                elo_overall = round(weighted_elo / total_weight) if total_weight > 0 else ELO_DEFAULT
+            else:
+                elo_overall = ELO_DEFAULT
+
+            # 8. 난이도별 성공률 업데이트
             if difficulty not in success_rate:
                 success_rate[difficulty] = {"success": 0, "total": 0}
-
             success_rate[difficulty]["total"] += 1
             if is_correct:
                 success_rate[difficulty]["success"] += 1
 
-            # 4. 약점/강점 토픽 분석
+            # 9. 약점/강점 토픽 분석 (기존 skill 기준 유지 - 약점분석용)
             weak_topics = [t for t, s in skill_by_topic.items() if s < 0.4]
             strong_topics = [t for t, s in skill_by_topic.items() if s > 0.7]
 
-            # 5. 문제 유형별 통계 업데이트
+            # 10. 문제 유형별 통계 업데이트
             stats_by_type = profile.get("stats_by_problem_type", {}) or {}
             if problem_type:
                 if problem_type not in stats_by_type:
@@ -775,24 +1062,24 @@ class FeedbackService:
                 if hints_used is not None:
                     stats_by_type[problem_type]["total_hints"] = stats_by_type[problem_type].get("total_hints", 0) + hints_used
                 # 평균 계산
-                total_count = stats_by_type[problem_type]["total"]
-                if total_count > 0:
-                    stats_by_type[problem_type]["avg_time"] = round(stats_by_type[problem_type].get("total_time", 0) / total_count)
-                    stats_by_type[problem_type]["avg_hints"] = round(stats_by_type[problem_type].get("total_hints", 0) / total_count, 2)
+                type_count = stats_by_type[problem_type]["total"]
+                if type_count > 0:
+                    stats_by_type[problem_type]["avg_time"] = round(stats_by_type[problem_type].get("total_time", 0) / type_count)
+                    stats_by_type[problem_type]["avg_hints"] = round(stats_by_type[problem_type].get("total_hints", 0) / type_count, 2)
 
-            # 5b. 전체 평균 풀이 시간/힌트 계산
+            # 11. 전체 평균 풀이 시간/힌트 계산
             total_time = sum(s.get("total_time", 0) for s in stats_by_type.values())
-            total_hints = sum(s.get("total_hints", 0) for s in stats_by_type.values())
+            total_hints_sum = sum(s.get("total_hints", 0) for s in stats_by_type.values())
             total_count = sum(s.get("total", 0) for s in stats_by_type.values())
-            avg_solve_time = round(total_time / total_count) if total_count > 0 else None
-            avg_hints_per = round(total_hints / total_count, 2) if total_count > 0 else None
+            new_avg_solve_time = round(total_time / total_count) if total_count > 0 else None
+            avg_hints_per = round(total_hints_sum / total_count, 2) if total_count > 0 else None
 
-            # 5c. 선호 문제 유형 (가장 많이 푼 유형)
+            # 12. 선호 문제 유형
             preferred_type = None
             if stats_by_type:
                 preferred_type = max(stats_by_type.keys(), key=lambda k: stats_by_type[k].get("total", 0))
 
-            # 5d. Streak 계산
+            # 13. Streak 계산
             current_streak = profile.get("current_streak", 0) or 0
             longest_streak = profile.get("longest_streak", 0) or 0
             if is_correct:
@@ -801,38 +1088,44 @@ class FeedbackService:
             else:
                 current_streak = 0
 
-            # 5e. 총 문제 수 추적
-            total_problems_attempted = profile.get("total_problems_attempted", 0) or 0
-            total_problems_solved = profile.get("total_problems_solved", 0) or 0
-            total_problems_attempted += 1
+            # 14. 총 문제 수 추적
+            total_problems_solved = (profile.get("total_problems_solved", 0) or 0)
             if is_correct:
                 total_problems_solved += 1
 
-            # 6. 최근 토픽/난이도 추적
+            # 15. 최근 토픽/난이도 추적
             recent_topics = profile.get("recent_topics", []) or []
             recent_difficulties = profile.get("recent_difficulties", []) or []
 
-            # 최근 토픽에 현재 문제 토픽 추가 (최대 20개)
             for topic in problem_topics:
                 if topic and topic not in recent_topics:
                     recent_topics.insert(0, topic)
             recent_topics = recent_topics[:20]
 
-            # 최근 난이도 추가 (최대 10개)
             if difficulty and difficulty not in recent_difficulties[:3]:
                 recent_difficulties.insert(0, difficulty)
             recent_difficulties = recent_difficulties[:10]
 
-            # 7. DB 업데이트 (upsert)
+            # 16. K-factor 업데이트 (문제 수 기반)
+            new_k_factor = self._get_k_factor(total_problems_attempted)
+
+            # 17. DB 업데이트 (upsert)
             update_data = {
                 "user_id": user_id,
+                # 레거시 (skill 0.0~1.0)
                 "skill_by_topic": skill_by_topic,
+                # ELO 시스템 (600~1600)
+                "elo_by_topic": elo_by_topic,
+                "elo_overall": elo_overall,
+                "elo_problems_by_topic": elo_problems_by_topic,
+                "elo_history": elo_history,
+                "elo_k_factor": new_k_factor,
+                # 통계
                 "success_rate_by_difficulty": success_rate,
                 "weak_topics": weak_topics[:10],
                 "strong_topics": strong_topics[:10],
                 "recent_topics": recent_topics,
                 "recent_difficulties": recent_difficulties,
-                # 새로운 필드들 추가
                 "stats_by_problem_type": stats_by_type,
                 "current_streak": current_streak,
                 "longest_streak": longest_streak,
@@ -840,11 +1133,11 @@ class FeedbackService:
                 "total_problems_solved": total_problems_solved,
                 "updated_at": "now()",
             }
-            # Optional 필드들 (None이 아닐 때만)
+            # Optional 필드들
             if preferred_type:
                 update_data["preferred_problem_type"] = preferred_type
-            if avg_solve_time is not None:
-                update_data["avg_solve_time_seconds"] = avg_solve_time
+            if new_avg_solve_time is not None:
+                update_data["avg_solve_time_seconds"] = new_avg_solve_time
             if avg_hints_per is not None:
                 update_data["avg_hints_per_problem"] = avg_hints_per
 
@@ -852,17 +1145,26 @@ class FeedbackService:
                 .upsert(update_data, on_conflict="user_id") \
                 .execute()
 
-            logger.info(f"[FeedbackService] Skill profile updated for user {user_id}")
+            logger.info(
+                f"[FeedbackService] ELO updated for user {user_id[:8]}: "
+                f"overall={elo_overall}, topics={list(elo_by_topic.keys())[:3]}, "
+                f"changes={[e['change'] for e in elo_changes]}"
+            )
 
             return {
                 "skill_by_topic": skill_by_topic,
+                "elo_by_topic": elo_by_topic,
+                "elo_overall": elo_overall,
+                "elo_changes": elo_changes,
                 "weak_topics": weak_topics,
                 "updated_topics": problem_topics,
             }
 
         except Exception as e:
             logger.error(f"[FeedbackService] Failed to update skill profile: {e}")
-            return {"skill_by_topic": {}, "weak_topics": [], "error": str(e)}
+            import traceback
+            traceback.print_exc()
+            return {"skill_by_topic": {}, "elo_by_topic": {}, "weak_topics": [], "error": str(e)}
 
     async def recalculate_skill_profile_from_history(
         self,
@@ -889,7 +1191,7 @@ class FeedbackService:
             # 1. attempts 테이블에서 모든 시도 조회
             # ============================================================
             attempts_result = self.supabase.table("attempts") \
-                .select("*, base_problems(tags, difficulty)") \
+                .select("*, base_problems(tags, difficulty, elo_rating)") \
                 .eq("user_id", user_id) \
                 .order("created_at") \
                 .execute()
@@ -912,23 +1214,30 @@ class FeedbackService:
             avg_hints_per = round(total_hints / total_attempted, 2) if total_attempted > 0 else 0
 
             # ============================================================
-            # 3. 문제 유형별 통계
+            # 3. 문제 유형별 통계 (실제 ELO 계산 적용)
             # ============================================================
             stats_by_type = {}
             skill_by_topic = {}
+            elo_by_topic = {}
+            elo_problems_by_topic = {}
+            elo_history = []
             success_rate_by_difficulty = {}
             languages_used = {}
 
-            for attempt in attempts:
+            # K-factor 계산 (전체 시도 수 기반)
+            k_factor = self._get_k_factor(total_attempted)
+
+            for idx, attempt in enumerate(attempts):
                 is_correct = attempt.get("is_correct", False)
                 time_spent = attempt.get("time_spent", 0) or 0
                 hints_used = attempt.get("hints_used", 0) or 0
 
-                # attempts에서 problem_type, base_problems에서 난이도/태그 추출
+                # attempts에서 problem_type, base_problems에서 난이도/태그/ELO 추출
                 problem_type = attempt.get("problem_type") or "unknown"
                 base_problem = attempt.get("base_problems") or {}
                 difficulty = attempt.get("difficulty") or base_problem.get("difficulty", "medium")
                 tags = attempt.get("topics") or base_problem.get("tags", []) or []
+                problem_elo = base_problem.get("elo_rating") or DIFFICULTY_ELO_MAP.get(difficulty, ELO_DEFAULT)
 
                 # 3a. 문제 유형별 통계
                 if problem_type not in stats_by_type:
@@ -949,16 +1258,58 @@ class FeedbackService:
                 if is_correct:
                     success_rate_by_difficulty[difficulty]["success"] += 1
 
-                # 3c. 토픽별 스킬 (ELO-like)
+                # 3c. 토픽별 ELO 계산 + 기존 skill 계산 (별도 유지)
+                time_factor = self._calculate_time_factor(time_spent, avg_solve_time, difficulty)
+                hint_factor = self._calculate_hint_factor(hints_used)
+
+                elo_changes_for_attempt = []
                 for topic in tags:
                     if not topic:
                         continue
+
+                    # ===== ELO 계산 (피드백 평가용) =====
+                    current_elo = elo_by_topic.get(topic, ELO_DEFAULT)
+
+                    new_elo, change, expected = self._calculate_elo_change(
+                        current_elo=current_elo,
+                        problem_elo=problem_elo,
+                        is_correct=is_correct,
+                        k_factor=k_factor,
+                        time_factor=time_factor,
+                        hint_factor=hint_factor,
+                    )
+
+                    elo_by_topic[topic] = new_elo
+                    elo_problems_by_topic[topic] = (elo_problems_by_topic.get(topic, 0) or 0) + 1
+
+                    elo_changes_for_attempt.append({
+                        "topic": topic,
+                        "before": current_elo,
+                        "after": new_elo,
+                        "change": change,
+                    })
+
+                    # ===== 기존 skill 계산 (약점분석용 - 별도 유지) =====
                     current_skill = skill_by_topic.get(topic, 0.5)
                     if is_correct:
                         new_skill = current_skill + 0.05 * (1 - current_skill)
                     else:
                         new_skill = current_skill - 0.03 * current_skill
                     skill_by_topic[topic] = round(max(0.0, min(1.0, new_skill)), 3)
+
+                # 최근 20개 히스토리만 유지
+                if elo_changes_for_attempt and idx >= total_attempted - 20:
+                    from datetime import date
+                    created_at = attempt.get("created_at", date.today().isoformat())
+                    if isinstance(created_at, str) and len(created_at) > 10:
+                        created_at = created_at[:10]
+                    elo_history.append({
+                        "date": created_at,
+                        "topics": [e["topic"] for e in elo_changes_for_attempt],
+                        "changes": elo_changes_for_attempt,
+                        "problem_elo": problem_elo,
+                        "is_correct": is_correct,
+                    })
 
                 # 3d. 언어 사용 통계 (submitted_code에서 추론)
                 submitted_code = attempt.get("submitted_code", "")
@@ -969,6 +1320,20 @@ class FeedbackService:
                         languages_used["javascript"] = languages_used.get("javascript", 0) + 1
                     elif "public class " in submitted_code or "void " in submitted_code:
                         languages_used["java"] = languages_used.get("java", 0) + 1
+
+            # 히스토리는 최신순으로 정렬
+            elo_history = list(reversed(elo_history))[:20]
+
+            # 전체 ELO 계산 (토픽별 가중 평균)
+            if elo_by_topic:
+                total_weight = sum(elo_problems_by_topic.get(t, 1) for t in elo_by_topic.keys())
+                weighted_elo = sum(
+                    elo_by_topic[t] * elo_problems_by_topic.get(t, 1)
+                    for t in elo_by_topic.keys()
+                )
+                elo_overall = round(weighted_elo / total_weight) if total_weight > 0 else ELO_DEFAULT
+            else:
+                elo_overall = ELO_DEFAULT
 
             # 문제 유형별 평균 계산
             for ptype, stats in stats_by_type.items():
@@ -985,7 +1350,7 @@ class FeedbackService:
             preferred_language = max(languages_used.keys(), key=lambda k: languages_used[k]) if languages_used else None
 
             # ============================================================
-            # 5. 약점/강점 토픽
+            # 5. 약점/강점 토픽 (기존 skill 기준 유지 - 약점분석용)
             # ============================================================
             weak_topics = [t for t, s in skill_by_topic.items() if s < 0.4]
             strong_topics = [t for t, s in skill_by_topic.items() if s > 0.7]
@@ -1136,14 +1501,21 @@ class FeedbackService:
                 "total_problems_solved": total_solved,
                 "avg_solve_time_seconds": avg_solve_time,
                 "avg_hints_per_problem": avg_hints_per,
-                # 분석 결과
+                # 레거시 skill (0.0~1.0)
                 "skill_by_topic": skill_by_topic,
+                # ELO 시스템 (600~1600)
+                "elo_by_topic": elo_by_topic,
+                "elo_overall": elo_overall,
+                "elo_problems_by_topic": elo_problems_by_topic,
+                "elo_history": elo_history,
+                "elo_k_factor": k_factor,
+                # 기타 분석 결과
                 "success_rate_by_difficulty": success_rate_by_difficulty,
                 "stats_by_problem_type": stats_by_type,
                 # 선호도
                 "preferred_problem_type": preferred_type,
                 "preferred_language": preferred_language,
-                # 강점/약점
+                # 강점/약점 (ELO 기준)
                 "weak_topics": weak_topics[:15],
                 "strong_topics": strong_topics[:15],
                 # 최근 활동
@@ -1176,7 +1548,10 @@ class FeedbackService:
                 .upsert(update_data, on_conflict="user_id") \
                 .execute()
 
-            logger.info(f"[FeedbackService] Skill profile recalculated: user={user_id[:8]}, attempted={total_attempted}, solved={total_solved}")
+            logger.info(
+                f"[FeedbackService] Skill profile recalculated: user={user_id[:8]}, "
+                f"attempted={total_attempted}, solved={total_solved}, elo_overall={elo_overall}"
+            )
 
             # ============================================================
             # 11. 스냅샷 저장 (10문제 단위)
@@ -1189,6 +1564,10 @@ class FeedbackService:
                     problems_solved=total_solved,
                     problems_attempted=total_attempted,
                     skill_by_topic=skill_by_topic,
+                    # ELO 데이터 추가
+                    elo_by_topic=elo_by_topic,
+                    elo_overall=elo_overall,
+                    # 기타
                     success_rate_by_difficulty=success_rate_by_difficulty,
                     stats_by_problem_type=stats_by_type,
                     weak_topics=weak_topics[:15],
@@ -1205,6 +1584,10 @@ class FeedbackService:
                 "success": True,
                 "total_attempted": total_attempted,
                 "total_solved": total_solved,
+                # ELO 정보
+                "elo_overall": elo_overall,
+                "elo_by_topic": elo_by_topic,
+                # 기타
                 "weak_topics": weak_topics[:5],
                 "strong_topics": strong_topics[:5],
                 "preferred_type": preferred_type,
@@ -1226,22 +1609,27 @@ class FeedbackService:
         problems_solved: int,
         problems_attempted: int,
         skill_by_topic: Dict[str, float],
-        success_rate_by_difficulty: Dict[str, Dict[str, int]],
-        stats_by_problem_type: Dict[str, Dict[str, Any]],
-        weak_topics: List[str],
-        strong_topics: List[str],
-        learning_style: Optional[Any],
-        common_error_patterns: Optional[List[str]],
-        avg_solve_time_seconds: int,
-        avg_hints_per_problem: float,
-        current_streak: int,
-        longest_streak: int,
+        # ELO 데이터
+        elo_by_topic: Optional[Dict[str, int]] = None,
+        elo_overall: Optional[int] = None,
+        # 기타
+        success_rate_by_difficulty: Dict[str, Dict[str, int]] = None,
+        stats_by_problem_type: Dict[str, Dict[str, Any]] = None,
+        weak_topics: List[str] = None,
+        strong_topics: List[str] = None,
+        learning_style: Optional[Any] = None,
+        common_error_patterns: Optional[List[str]] = None,
+        avg_solve_time_seconds: int = 0,
+        avg_hints_per_problem: float = 0.0,
+        current_streak: int = 0,
+        longest_streak: int = 0,
     ) -> bool:
         """
         스킬 프로필 스냅샷 저장 (10문제 단위)
 
         성장 추적 및 히스토리 그래프용 데이터 저장.
         동일 snapshot_at에 대해 upsert (덮어쓰기).
+        이제 ELO 데이터도 함께 저장합니다.
         """
         try:
             snapshot_data = {
@@ -1249,11 +1637,16 @@ class FeedbackService:
                 "snapshot_at": snapshot_at,
                 "problems_solved": problems_solved,
                 "problems_attempted": problems_attempted,
+                # 레거시 skill
                 "skill_by_topic": skill_by_topic,
-                "success_rate_by_difficulty": success_rate_by_difficulty,
-                "stats_by_problem_type": stats_by_problem_type,
-                "weak_topics": weak_topics,
-                "strong_topics": strong_topics,
+                # ELO 데이터
+                "elo_by_topic": elo_by_topic or {},
+                "elo_overall": elo_overall or ELO_DEFAULT,
+                # 기타
+                "success_rate_by_difficulty": success_rate_by_difficulty or {},
+                "stats_by_problem_type": stats_by_problem_type or {},
+                "weak_topics": weak_topics or [],
+                "strong_topics": strong_topics or [],
                 "avg_solve_time_seconds": avg_solve_time_seconds,
                 "avg_hints_per_problem": avg_hints_per_problem,
                 "current_streak": current_streak,
@@ -1271,7 +1664,7 @@ class FeedbackService:
                 .upsert(snapshot_data, on_conflict="user_id,snapshot_at") \
                 .execute()
 
-            logger.info(f"[FeedbackService] Skill snapshot saved: user={user_id[:8]}, at={snapshot_at} problems")
+            logger.info(f"[FeedbackService] Skill snapshot saved: user={user_id[:8]}, at={snapshot_at}, elo={elo_overall}")
             return True
 
         except Exception as e:
