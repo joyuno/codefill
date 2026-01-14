@@ -81,6 +81,39 @@ class ErrorAnalysis(BaseModel):
     patterns: Dict[str, ErrorPatternDetail] = {}
 
 
+# ============================================================
+# 새로운 시각화 타입
+# ============================================================
+
+class ProblemTypeStat(BaseModel):
+    """문제 유형별 정답률."""
+    type: str  # blank, puzzle, guided, implementation
+    total: int = 0
+    success: int = 0
+    rate: float = 0.0
+
+
+class RecentAttempt(BaseModel):
+    """최근 시도 기록."""
+    problem_name: str
+    problem_type: Optional[str] = None
+    difficulty: Optional[str] = None
+    topics: List[str] = []
+    is_correct: bool = False
+    hints_used: int = 0
+    created_at: Optional[str] = None
+
+
+class HintIndependence(BaseModel):
+    """힌트 독립성 (힌트 없이 해결한 비율)."""
+    solved_without_hint: int = 0
+    solved_with_hint: int = 0
+    failed_with_hint: int = 0
+    failed_without_hint: int = 0
+    total: int = 0
+    independence_rate: float = 0.0
+
+
 class AnalysisReport(BaseModel):
     """AI 분석 리포트."""
     id: Optional[str] = None
@@ -112,6 +145,12 @@ class AnalysisReport(BaseModel):
     bktMastery: Optional[Dict[str, BKTTopicMastery]] = None
     bloomMetrics: Optional[BloomMetrics] = None
     errorAnalysis: Optional[ErrorAnalysis] = None
+
+    # 새로운 시각화 데이터
+    problemTypeStats: List[ProblemTypeStat] = []
+    recent10Attempts: List[RecentAttempt] = []
+    recent10Analysis: Optional[str] = None
+    hintIndependence: Optional[HintIndependence] = None
 
 
 class AnalysisReportResponse(BaseModel):

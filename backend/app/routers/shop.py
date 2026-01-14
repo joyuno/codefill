@@ -26,7 +26,7 @@ router = APIRouter()
 
 @router.get("/items", response_model=ShopListResponse)
 async def get_shop_items(
-    category: Optional[str] = Query(None, description="카테고리 필터 (building, tree, decoration, fence, farm)"),
+    category: Optional[str] = Query(None, description="카테고리 필터 (building, tree, decoration, fence)"),
     user_id: UUID = Depends(get_current_user_id),
     db=Depends(get_db)
 ):
@@ -35,6 +35,7 @@ async def get_shop_items(
 
     - category: 카테고리 필터 (선택사항)
     - 인벤토리 보유량, 배치된 개수, 구매 가능 여부 포함
+    - 제외: seed (씨앗은 farm_items로 관리), farm (그리드 시스템으로 전환)
     """
     farm = FarmService.get_user_farm(db, user_id)
     inventory = FarmService.get_user_inventory(db, user_id)
@@ -53,8 +54,14 @@ async def get_shop_items(
 
     result = query.execute()
 
+    # 제외할 카테고리: seed (씨앗은 farm_items/buySeed로 관리), farm (그리드 시스템으로 전환)
+    EXCLUDED_CATEGORIES = {"seed", "farm"}
+
     items = []
     for item in (result.data or []):
+        # 제외 카테고리 필터링
+        if item["category"] in EXCLUDED_CATEGORIES:
+            continue
         code = item["code"]
         owned = inventory.get(code, 0)
         placed = placed_counts.get(code, 0)

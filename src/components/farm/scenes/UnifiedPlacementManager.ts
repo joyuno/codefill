@@ -57,6 +57,7 @@ const SPRITE_FILES: Record<string, { path: string; file: string; frameWidth?: nu
 
   // 울타리 - 개별 추출된 파일
   'fences/wood': { path: 'terrains/', file: 'fence_wood_horizontal.png' },
+  'fences/brown': { path: 'terrains/', file: 'fence_brown_32x32.png' },
   'fences/wood_horizontal': { path: 'terrains/', file: 'fence_wood_horizontal.png' },
   'fences/wood_vertical': { path: 'terrains/', file: 'fence_wood_vertical.png' },
   'fences/wood_corner': { path: 'terrains/', file: 'fence_wood_corner_tl.png' },
@@ -67,6 +68,15 @@ const SPRITE_FILES: Record<string, { path: string; file: string; frameWidth?: nu
   'fences/metal': { path: 'terrains/', file: 'fence_metal_horizontal.png' },
   'fences/metal_horizontal': { path: 'terrains/', file: 'fence_metal_horizontal.png' },
   'fences/metal_vertical': { path: 'terrains/', file: 'fence_metal_vertical.png' },
+
+  // 바위 (terrains/)
+  'decorations/rock_small': { path: 'terrains/', file: 'Rock_Small_32x32.png' },
+  'decorations/rock_medium': { path: 'terrains/', file: 'Rock_Medium_32x32.png' },
+
+  // 소품 (terrains/)
+  'decorations/bucket': { path: 'terrains/', file: 'Bucket_32x32.png' },
+  'decorations/crate': { path: 'terrains/', file: 'Crate_32x32.png' },
+  'decorations/sign_chicken': { path: 'terrains/', file: 'Sign_Chicken_32x32.png' },
 };
 
 // 배치된 아이템 스프라이트 정보

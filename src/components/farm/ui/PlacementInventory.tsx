@@ -7,11 +7,11 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, X, ChevronDown, ChevronUp, Home, TreeDeciduous, Flower2, Grid, Fence } from 'lucide-react';
+import { Package, X, ChevronDown, ChevronUp, Home, TreeDeciduous, Flower2, Fence } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { UnifiedShopItem } from '@/lib/api/farm';
 
-type CategoryType = 'building' | 'farm' | 'tree' | 'decoration' | 'fence';
+type CategoryType = 'building' | 'tree' | 'decoration' | 'fence';
 
 interface PlacementInventoryProps {
   isOpen: boolean;
@@ -24,7 +24,6 @@ interface PlacementInventoryProps {
 // 카테고리별 아이콘
 const CATEGORY_ICONS: Record<CategoryType, React.ReactNode> = {
   building: <Home className="w-4 h-4" />,
-  farm: <Grid className="w-4 h-4" />,
   tree: <TreeDeciduous className="w-4 h-4" />,
   decoration: <Flower2 className="w-4 h-4" />,
   fence: <Fence className="w-4 h-4" />,
@@ -32,7 +31,6 @@ const CATEGORY_ICONS: Record<CategoryType, React.ReactNode> = {
 
 const CATEGORY_LABELS: Record<CategoryType, string> = {
   building: '건물',
-  farm: '밭',
   tree: '나무',
   decoration: '장식',
   fence: '울타리',
@@ -45,7 +43,6 @@ const ITEM_ICONS: Record<string, string> = {
   chicken_coop: '🐔',
   scarecrow: '🧑‍🌾',
   barn: '🏚️',
-  farm_plot: '🟫',
   tree_oak: '🌳',
   tree_pine: '🌲',
   tree_apple: '🍎',

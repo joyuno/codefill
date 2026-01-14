@@ -20,6 +20,10 @@ from ..models.analysis import (
     BloomMetrics,
     ErrorAnalysis,
     ErrorPatternDetail,
+    # 새로운 시각화 타입
+    ProblemTypeStat,
+    RecentAttempt,
+    HintIndependence,
 )
 from ..services.analysis_service import AnalysisService, InsufficientDataError
 
@@ -110,12 +114,26 @@ async def get_analysis_report(
             bktMastery=_transform_bkt_mastery(report_data.get("bktMastery")),
             bloomMetrics=BloomMetrics(**report_data["bloomMetrics"]) if report_data.get("bloomMetrics") else None,
             errorAnalysis=_transform_error_analysis(report_data.get("errorAnalysis")),
+            # 새로운 시각화 데이터
+            problemTypeStats=[
+                ProblemTypeStat(**p)
+                for p in report_data.get("problemTypeStats", [])
+            ],
+            recent10Attempts=[
+                RecentAttempt(**a)
+                for a in report_data.get("recent10Attempts", [])
+            ],
+            recent10Analysis=report_data.get("recent10Analysis"),
+            hintIndependence=HintIndependence(**report_data["hintIndependence"]) if report_data.get("hintIndependence") else None,
         )
 
         return AnalysisReportResponse(hasReport=True, report=report)
 
     except Exception as e:
         # Return empty on error
+        import traceback
+        print(f"❌ [ERROR] get_analysis_report failed: {e}")
+        traceback.print_exc()
         return AnalysisReportResponse(hasReport=False, report=None)
 
 
@@ -164,6 +182,17 @@ async def generate_analysis(
             bktMastery=_transform_bkt_mastery(report_data.get("bktMastery")),
             bloomMetrics=BloomMetrics(**report_data["bloomMetrics"]) if report_data.get("bloomMetrics") else None,
             errorAnalysis=_transform_error_analysis(report_data.get("errorAnalysis")),
+            # 새로운 시각화 데이터
+            problemTypeStats=[
+                ProblemTypeStat(**p)
+                for p in report_data.get("problemTypeStats", [])
+            ],
+            recent10Attempts=[
+                RecentAttempt(**a)
+                for a in report_data.get("recent10Attempts", [])
+            ],
+            recent10Analysis=report_data.get("recent10Analysis"),
+            hintIndependence=HintIndependence(**report_data["hintIndependence"]) if report_data.get("hintIndependence") else None,
         )
 
     except InsufficientDataError as e:

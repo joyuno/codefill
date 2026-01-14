@@ -41,12 +41,6 @@ export interface HintUsage {
   avg_hint_level: number;
 }
 
-export interface LearningStyle {
-  type?: string; // "methodical | exploratory | hint-dependent | independent"
-  description?: string; // 학습 스타일에 대한 설명
-  strategy?: string; // 이 스타일에 맞는 학습 전략
-}
-
 // =====================================================
 // Learning Analytics Framework Types
 // =====================================================
@@ -77,23 +71,59 @@ export interface BloomMetrics {
   gap_analysis: string;  // 격차 분석 설명
 }
 
+// =====================================================
+// Visualization Types (새로운 시각화용)
+// =====================================================
+
+/**
+ * 문제 유형별 정답률
+ */
+export interface ProblemTypeStat {
+  type: string;     // blank, puzzle, guided, implementation
+  total: number;    // 총 시도 횟수
+  success: number;  // 성공 횟수
+  rate: number;     // 정답률 (0.0~1.0)
+}
+
+/**
+ * 최근 시도 기록
+ */
+export interface RecentAttempt {
+  problem_name: string;
+  problem_type?: string;
+  difficulty?: string;
+  topics?: string[];
+  is_correct: boolean;
+  hints_used: number;
+  created_at?: string;
+}
+
+/**
+ * 힌트 독립성 (힌트 없이 해결한 비율)
+ */
+export interface HintIndependence {
+  solved_without_hint: number;  // 힌트 없이 성공
+  solved_with_hint: number;     // 힌트로 성공
+  failed_with_hint: number;     // 힌트 줘도 실패
+  failed_without_hint: number;  // 힌트 없이 실패
+  total: number;
+  independence_rate: number;    // 힌트 없이 성공 비율
+}
+
 export interface AnalysisReport {
   id?: string;
   summaryText: string;
   strengths: TopicScore[];
   weaknesses: TopicScore[];
-  recommendations: string[];
-  studyPlan?: string;
   skillSnapshot: Record<string, number>;
   statsSnapshot: StatsSnapshot;
   difficultySnapshot: Record<string, number>;
   recommendedProblems: RecommendedProblem[];
   createdAt?: string;
-  // 새로 추가된 필드들
+  // 추가 데이터
   conceptsStruggling: string[];
   conceptsLearned: string[];
   hintUsage?: HintUsage;
-  learningStyle?: LearningStyle;
   commonErrorPatterns: string[];
   moodDistribution: Record<string, number>;
   breakthroughMoments: string[];
@@ -103,6 +133,11 @@ export interface AnalysisReport {
   // 학습 분석 프레임워크 메트릭
   bktMastery?: BKTMastery;
   bloomMetrics?: BloomMetrics;
+  // 새로운 시각화 데이터
+  problemTypeStats?: ProblemTypeStat[];
+  recent10Attempts?: RecentAttempt[];
+  recent10Analysis?: string;
+  hintIndependence?: HintIndependence;
 }
 
 export interface AnalysisReportResponse {

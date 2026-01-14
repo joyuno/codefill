@@ -9,9 +9,10 @@ import { ScoreOverview } from '@/components/analysis/ScoreOverview';
 import { SkillRadar } from '@/components/analysis/SkillRadar';
 import { TopicMasteryChart } from '@/components/analysis/TopicMasteryChart';
 import { HintUsageCard } from '@/components/analysis/HintUsageCard';
-import { LearningStyleCard } from '@/components/analysis/LearningStyleCard';
 import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
 import { AICoachingSection } from '@/components/analysis/AICoachingSection';
+import { RecentAttemptsCard } from '@/components/analysis/RecentAttemptsCard';
+import { HintIndependenceCard } from '@/components/analysis/HintIndependenceCard';
 import { analysisApi, type AnalysisReport } from '@/lib/api';
 
 // 종합 점수 계산 (0-100)
@@ -56,6 +57,11 @@ export default function AnalysisPage() {
 
     try {
       const response = await analysisApi.getReport();
+      console.log('📊 [DEBUG] getReport response:', response);
+      console.log('📊 [DEBUG] report data:', response.data?.report);
+      console.log('📊 [DEBUG] problemTypeStats:', response.data?.report?.problemTypeStats);
+      console.log('📊 [DEBUG] recent10Attempts:', response.data?.report?.recent10Attempts);
+      console.log('📊 [DEBUG] hintIndependence:', response.data?.report?.hintIndependence);
       if (response.data?.hasReport && response.data.report) {
         setReport(response.data.report);
       } else {
@@ -75,6 +81,10 @@ export default function AnalysisPage() {
 
     try {
       const response = await analysisApi.generateAnalysis();
+      console.log('📊 [DEBUG] generateAnalysis response:', response);
+      console.log('📊 [DEBUG] problemTypeStats:', response.data?.problemTypeStats);
+      console.log('📊 [DEBUG] recent10Attempts:', response.data?.recent10Attempts);
+      console.log('📊 [DEBUG] hintIndependence:', response.data?.hintIndependence);
       if (response.data) {
         setReport(response.data);
       } else {
@@ -212,29 +222,25 @@ export default function AnalysisPage() {
         </motion.div>
       )}
 
-      {/* Row 1: ScoreRing + HintUsage + LearningStyle */}
+      {/* Row 1: ScoreRing + HintUsage */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
       >
-        {/* 종합 점수 + 스탯 + 난이도별 정답률 */}
+        {/* 종합 점수 + 스탯 + 난이도별/유형별 정답률 */}
         <div className="min-h-[280px]">
           <ScoreOverview
             score={overallScore}
             stats={report.statsSnapshot}
             difficultySnapshot={report.difficultySnapshot}
+            problemTypeStats={report.problemTypeStats}
           />
         </div>
 
         {/* 힌트 사용 패턴 */}
         <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
           <HintUsageCard hintUsage={report.hintUsage} />
-        </div>
-
-        {/* 학습 습관 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
-          <LearningStyleCard learningStyle={report.learningStyle} />
         </div>
       </motion.div>
 
@@ -269,10 +275,8 @@ export default function AnalysisPage() {
       >
         <AICoachingSection
           summaryText={report.summaryText || ""}
-          studyPlan={report.studyPlan}
           detailedFeedback={report.detailedFeedback}
           commonErrorPatterns={report.commonErrorPatterns}
-          recommendations={report.recommendations}
         />
       </motion.div>
 
@@ -335,11 +339,48 @@ export default function AnalysisPage() {
         </div>
       </motion.div>
 
-      {/* Row 5: RecommendedProblems */}
+      {/* Row 5: 최근 풀이 기록 + 힌트 독립률 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18 }}
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+      >
+        {/* 최근 10문제 결과 */}
+        {report.recent10Attempts && report.recent10Attempts.length > 0 && (
+          <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
+            <div className="px-4 py-3 border-b border-zinc-800">
+              <h3 className="text-sm font-bold text-zinc-100">최근 풀이 기록</h3>
+              <p className="text-[10px] text-zinc-500 mt-0.5">
+                최근 10문제 결과 분석
+              </p>
+            </div>
+            <RecentAttemptsCard
+              attempts={report.recent10Attempts}
+              analysis={report.recent10Analysis}
+            />
+          </div>
+        )}
+
+        {/* 힌트 독립률 (도넛 차트) */}
+        {report.hintIndependence && report.hintIndependence.total > 0 && (
+          <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
+            <div className="px-4 py-3 border-b border-zinc-800">
+              <h3 className="text-sm font-bold text-zinc-100">힌트 독립률</h3>
+              <p className="text-[10px] text-zinc-500 mt-0.5">
+                힌트 없이 해결한 문제 비율
+              </p>
+            </div>
+            <HintIndependenceCard data={report.hintIndependence} />
+          </div>
+        )}
+      </motion.div>
+
+      {/* Row 6: RecommendedProblems */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.22 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
       >
         <RecommendedProblems initialProblems={report.recommendedProblems} />

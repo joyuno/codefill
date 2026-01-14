@@ -535,8 +535,11 @@ export const farmApi = {
    */
   async getUnifiedShopItems(category?: string): Promise<UnifiedShopResponse> {
     const url = category ? `/shop/items?category=${category}` : '/shop/items';
+    console.log('[farmApi] getUnifiedShopItems - url:', url);
     const response = await api.get<UnifiedShopResponse>(url);
+    console.log('[farmApi] getUnifiedShopItems - response:', response);
     if (response.error) throw new Error(response.error.message);
+    console.log('[farmApi] getUnifiedShopItems - data:', response.data);
     return response.data!;
   },
 

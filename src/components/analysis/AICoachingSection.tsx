@@ -3,28 +3,22 @@
 import { motion } from 'framer-motion';
 import {
   Bot,
-  TrendingUp,
   AlertTriangle,
-  ChevronRight,
   BookOpen,
-  Lightbulb,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
 interface AICoachingSectionProps {
   summaryText: string;
-  studyPlan?: string;
   detailedFeedback?: string;
   commonErrorPatterns?: string[];
-  recommendations?: string[];
 }
 
 export function AICoachingSection({
   summaryText,
-  studyPlan,
   detailedFeedback,
   commonErrorPatterns = [],
-  recommendations = [],
 }: AICoachingSectionProps) {
   return (
     <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
@@ -55,43 +49,12 @@ export function AICoachingSection({
           </motion.div>
         )}
 
-        {/* 추천 사항 */}
-        {recommendations.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="space-y-3"
-          >
-            <div className="flex items-center gap-2">
-              <Lightbulb className="w-4 h-4 text-blue-400" />
-              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
-                Recommendations
-              </h3>
-            </div>
-            <div className="space-y-2">
-              {recommendations.slice(0, 3).map((rec, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -5 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.2 + index * 0.05 }}
-                  className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10"
-                >
-                  <ChevronRight className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-zinc-300">{rec}</p>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
         {/* Detailed Feedback - Markdown */}
         {detailedFeedback && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ delay: 0.1 }}
             className="space-y-3"
           >
             <div className="flex items-center gap-2">
@@ -121,7 +84,7 @@ export function AICoachingSection({
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
+            transition={{ delay: 0.2 }}
             className="space-y-3"
           >
             <div className="flex items-center gap-2">
@@ -136,37 +99,13 @@ export function AICoachingSection({
                   key={index}
                   initial={{ opacity: 0, x: -5 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.35 + index * 0.05 }}
+                  transition={{ delay: 0.25 + index * 0.05 }}
                   className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/10"
                 >
-                  <ChevronRight className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                  <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-zinc-400">{pattern}</p>
                 </motion.div>
               ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Study Plan */}
-        {studyPlan && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45 }}
-            className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/5 to-blue-500/5 border border-emerald-500/20"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-emerald-300 mb-1">
-                  Recommended Path
-                </h3>
-                <p className="text-sm text-zinc-300 leading-relaxed">
-                  {studyPlan}
-                </p>
-              </div>
             </div>
           </motion.div>
         )}
