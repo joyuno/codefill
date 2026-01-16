@@ -1239,7 +1239,7 @@ async def get_public_farm(
                 slotIndex=slot.get("slot_index", 0),
                 cropType=slot.get("crop_type"),
                 stage=slot.get("growth_stage", 0),
-                isReady=slot.get("growth_stage", 0) >= 4,
+                isReady=slot.get("growth_stage", 0) >= 6,
             ))
 
         return PublicFarm(
@@ -1471,7 +1471,7 @@ async def get_public_profile_all(
                         slotIndex=slot.get("slot", 0),
                         cropType=slot.get("crop_code"),
                         stage=slot.get("stage", 0),
-                        isReady=slot.get("stage", 0) >= 4,
+                        isReady=slot.get("stage", 0) >= 6,
                     ) for slot in farm_slots_json]
 
                     farm = PublicFarm(

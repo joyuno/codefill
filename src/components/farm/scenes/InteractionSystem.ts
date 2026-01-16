@@ -148,8 +148,8 @@ export class InteractionSystem {
     slotData: FarmSlot,
     selectedSeed: string | null
   ): InteractionType {
-    // 작물이 있고 수확 가능한 경우 (stage >= 4)
-    if (slotData.cropCode && slotData.stage >= 4) {
+    // 작물이 있고 수확 가능한 경우 (stage >= 6)
+    if (slotData.cropCode && slotData.stage >= 6) {
       return 'harvest';
     }
 

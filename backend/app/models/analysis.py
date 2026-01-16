@@ -117,9 +117,9 @@ class HintIndependence(BaseModel):
 class EloChange(BaseModel):
     """ELO 변화 기록 (단일 토픽)."""
     topic: str
-    before: int
-    after: int
-    change: int
+    before: float
+    after: float
+    change: float
     expected: float
 
 
@@ -128,7 +128,7 @@ class EloHistoryEntry(BaseModel):
     date: str
     topics: List[str] = []
     is_correct: bool = False
-    problem_elo: int = 1000
+    problem_elo: float = 1000
     changes: List[EloChange] = []
 
 

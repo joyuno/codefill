@@ -113,7 +113,8 @@ export class FarmScene extends Phaser.Scene {
     }
 
     try {
-      await this.playerController.playHarvestAnimation();
+      // 심기는 dig(땅파기) 애니메이션 사용
+      await this.playerController.playDigAnimation();
       console.log('[FarmScene] Calling onPlantOnSlot...');
       const result = await this.farmData.onPlantOnSlot(slot, cropCode);
       console.log('[FarmScene] onPlantOnSlot result:', result);
@@ -299,7 +300,7 @@ export class FarmScene extends Phaser.Scene {
 
     const slotData = this.farmSlots.find(s => s.slot === slot);
 
-    if (slotData?.cropCode && slotData.stage >= 4) {
+    if (slotData?.cropCode && slotData.stage >= 6) {
       // 수확 가능한 작물이 있으면 수확
       await this.harvestCrop(slot);
     } else if (!slotData?.cropCode && this.selectedSeed) {
@@ -345,7 +346,7 @@ export class FarmScene extends Phaser.Scene {
         this.farmData.onNotify('수확할 작물이 없습니다!', 'error');
         return;
       }
-      if (slotData.stage < 4) {
+      if (slotData.stage < 6) {
         this.farmData.onNotify('아직 다 자라지 않았습니다!', 'error');
         return;
       }

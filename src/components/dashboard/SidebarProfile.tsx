@@ -134,7 +134,7 @@ function calculateRemainingSeconds(slot: MinimapSlot): number {
   return Math.max(0, remaining);
 }
 
-// 실시간 stage 계산 (plantedAt, growTimeSeconds 기반)
+// 실시간 stage 계산 (plantedAt, growTimeSeconds 기반) - 7단계 (0~6)
 function calculateStage(slot: MinimapSlot): number {
   if (!slot.cropCode) return 0;
   if (!slot.plantedAt || !slot.growTimeSeconds) return slot.stage;
@@ -144,19 +144,21 @@ function calculateStage(slot: MinimapSlot): number {
   const elapsedSeconds = Math.floor((now - plantedTime) / 1000);
   const progress = elapsedSeconds / slot.growTimeSeconds;
 
-  if (progress >= 1) return 4; // 수확 가능
-  if (progress >= 0.75) return 3;
-  if (progress >= 0.5) return 2;
-  if (progress >= 0.25) return 1;
-  return 1; // 최소 stage 1 (씨앗)
+  if (progress >= 1) return 6; // 수확 가능
+  if (progress >= 0.833) return 5;
+  if (progress >= 0.667) return 4;
+  if (progress >= 0.5) return 3;
+  if (progress >= 0.333) return 2;
+  if (progress >= 0.167) return 1;
+  return 0; // 씨앗
 }
 
 // 작물 슬롯 정렬 (수확 가능 우선 → 남은 시간 짧은 순)
 function sortCropSlots(slots: MinimapSlot[]): MinimapSlot[] {
   return [...slots].sort((a, b) => {
-    // 1. 수확 가능(실시간 stage >= 4)한 작물 우선
-    const aReady = calculateStage(a) >= 4;
-    const bReady = calculateStage(b) >= 4;
+    // 1. 수확 가능(실시간 stage >= 6)한 작물 우선
+    const aReady = calculateStage(a) >= 6;
+    const bReady = calculateStage(b) >= 6;
     if (aReady && !bReady) return -1;
     if (!aReady && bReady) return 1;
 
@@ -713,7 +715,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                     isOwnProfile ? farm?.farmSlots : undefined,
                     !isOwnProfile ? publicFarm?.slots : undefined
                   );
-                  const readyCount = slots.filter(s => calculateStage(s) >= 4).length;
+                  const readyCount = slots.filter(s => calculateStage(s) >= 6).length;
                   return readyCount > 0 ? (
                     <div className="text-xs text-green-400 flex items-center gap-1">
                       <TrendingUp className="h-3 w-3" />

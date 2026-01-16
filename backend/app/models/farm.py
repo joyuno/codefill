@@ -56,7 +56,7 @@ class FarmSlot(BaseModel):
     cropCode: Optional[str] = None
     plantedAt: Optional[str] = None  # ISO datetime string
     growTimeSeconds: Optional[int] = None
-    stage: int = Field(default=0, ge=0, le=4)  # 0=empty, 1-3=growing, 4=ready
+    stage: int = Field(default=0, ge=0, le=6)  # 0=empty, 1-5=growing, 6=ready
 
     class Config:
         # DB에서 snake_case로 저장되어도 camelCase로 변환

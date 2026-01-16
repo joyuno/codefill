@@ -219,59 +219,58 @@ export default function AdminProblemCreatePage() {
           });
 
           // 기존 변형 체크 및 수정 모드 설정
+          // 모든 변형 데이터를 로드 (탭 전환 시에도 데이터 유지)
           const newEditMode = { blank: null as { id: string; language: string } | null, puzzle: null as { id: string; language: string } | null, guided: null as { id: string; language: string } | null };
 
-          // 빈칸 변형 체크
+          // 빈칸 변형 - 항상 로드
           if (data.blanks && data.blanks.length > 0) {
             const existing = data.blanks[0];
             newEditMode.blank = { id: existing.id, language: existing.language };
-            if (typeParam === 'blank') {
-              const codeTemplate = existing.code_template || '';
-              const parsedBlanks = parseBlankPositions(codeTemplate);
-              const answers = existing.answers || [];
+            const codeTemplate = existing.code_template || '';
+            const parsedBlanks = parseBlankPositions(codeTemplate);
+            const answers = existing.answers || [];
 
-              // 초기 로드 플래그 설정 (useEffect가 덮어쓰지 않도록)
-              isInitialBlankLoad.current = true;
+            // 초기 로드 플래그 설정 (useEffect가 덮어쓰지 않도록)
+            isInitialBlankLoad.current = true;
 
-              setBlankForm({
-                code_template: codeTemplate,
-                blanks: parsedBlanks.length > 0
-                  ? parsedBlanks.map((parsed) => ({
-                      id: `blank-${parsed.index}`,
-                      index: parsed.index,
-                      answer: answers[parsed.index] || '',
-                      context: parsed.context,
-                      lineNumber: parsed.lineNumber,
-                    }))
-                  : answers.map((ans, i) => ({
-                      id: `blank-${i}`,
-                      index: i,
-                      answer: ans,
-                      context: '',
-                      lineNumber: 0,
-                    })),
-              });
-            }
-          } else if (typeParam === 'blank') {
+            setBlankForm({
+              code_template: codeTemplate,
+              blanks: parsedBlanks.length > 0
+                ? parsedBlanks.map((parsed) => ({
+                    id: `blank-${parsed.index}`,
+                    index: parsed.index,
+                    answer: answers[parsed.index] || '',
+                    context: parsed.context,
+                    lineNumber: parsed.lineNumber,
+                  }))
+                : answers.map((ans, i) => ({
+                    id: `blank-${i}`,
+                    index: i,
+                    answer: ans,
+                    context: '',
+                    lineNumber: 0,
+                  })),
+            });
+          } else {
+            // 기존 빈칸 없으면 솔루션 코드로 초기화
             setBlankForm({ code_template: solutionCode, blanks: [] });
           }
 
-          // 퍼즐 변형 체크
+          // 퍼즐 변형 - 항상 로드
           if (data.puzzles && data.puzzles.length > 0) {
             const existing = data.puzzles[0];
             newEditMode.puzzle = { id: existing.id, language: existing.language };
-            if (typeParam === 'puzzle') {
-              setPuzzleForm({
-                language: existing.language,
-                fixed_start: existing.fixed_start || '',
-                fixed_end: existing.fixed_end || '',
-                blocks: (existing.blocks || []).map((b: { id: number; code: string }) => ({
-                  id: b.id,
-                  code: b.code,
-                })),
-              });
-            }
-          } else if (typeParam === 'puzzle') {
+            setPuzzleForm({
+              language: existing.language,
+              fixed_start: existing.fixed_start || '',
+              fixed_end: existing.fixed_end || '',
+              blocks: (existing.blocks || []).map((b: { id: number; code: string }) => ({
+                id: b.id,
+                code: b.code,
+              })),
+            });
+          } else {
+            // 기존 퍼즐 없으면 솔루션 코드 라인으로 초기화
             const lines = solutionCode.split('\n').filter((l: string) => l.trim());
             setPuzzleForm({
               language: solutionLang,
@@ -281,20 +280,19 @@ export default function AdminProblemCreatePage() {
             });
           }
 
-          // 가이드 변형 체크
+          // 가이드 변형 - 항상 로드
           if (data.guideds && data.guideds.length > 0) {
             const existing = data.guideds[0];
             newEditMode.guided = { id: existing.id, language: existing.language };
-            if (typeParam === 'guided') {
-              setGuidedForm({
-                language: existing.language,
-                concept_explanation: existing.concept_explanation || '',
-                variables_guide: existing.variables_guide || [],
-                approach_guide: existing.approach_guide || '',
-                starter_code: existing.starter_code || '',
-              });
-            }
-          } else if (typeParam === 'guided') {
+            setGuidedForm({
+              language: existing.language,
+              concept_explanation: existing.concept_explanation || '',
+              variables_guide: existing.variables_guide || [],
+              approach_guide: existing.approach_guide || '',
+              starter_code: existing.starter_code || '',
+            });
+          } else {
+            // 기존 가이드 없으면 빈 폼으로 초기화
             setGuidedForm({
               language: solutionLang,
               concept_explanation: '',

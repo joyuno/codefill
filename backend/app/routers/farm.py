@@ -114,18 +114,23 @@ def calculate_crop_stage(planted_at_str: str, grow_time_seconds: int) -> int:
         elapsed = (now - planted_at).total_seconds()
         progress = elapsed / grow_time_seconds if grow_time_seconds > 0 else 1.0
 
+        # 7단계 성장 (0~6)
         if progress >= 1.0:
+            return 6
+        elif progress >= 0.833:
+            return 5
+        elif progress >= 0.667:
             return 4
-        elif progress >= 0.75:
-            return 3
         elif progress >= 0.5:
+            return 3
+        elif progress >= 0.333:
             return 2
-        elif progress >= 0.25:
+        elif progress >= 0.167:
             return 1
         else:
-            return 1  # 최소 1단계
+            return 0  # 씨앗
     except:
-        return 1
+        return 0
 
 
 def get_farm_slots(db, user_id: UUID) -> List[FarmSlot]:
@@ -574,7 +579,7 @@ async def plant_on_slot(
     target_slot.cropCode = request.crop_code
     target_slot.plantedAt = now
     target_slot.growTimeSeconds = grow_time
-    target_slot.stage = 1
+    target_slot.stage = 0
 
     # DB 업데이트
     update_farm_slots(db, user_id, current_slots)
@@ -627,8 +632,8 @@ async def harvest_from_slot(
             detail="수확할 작물이 없습니다"
         )
 
-    # 수확 가능 여부 확인 (stage 4)
-    if target_slot.stage < 4:
+    # 수확 가능 여부 확인 (stage 6)
+    if target_slot.stage < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="아직 수확할 수 없습니다 (성장 중)"
