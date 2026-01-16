@@ -19,7 +19,7 @@ class FarmService:
     def get_user_farm(db, user_id: UUID) -> dict:
         """사용자 농장 조회"""
         result = db.table("user_farm")\
-            .select("id, user_id, gold, exp, level, width, height")\
+            .select("id, user_id, gold, farm_level, farm_size, farm_slots")\
             .eq("user_id", str(user_id))\
             .execute()
         if result.data and len(result.data) > 0:

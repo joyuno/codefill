@@ -23,6 +23,9 @@ from ..models.auth import (
     RecoveryRequiredResponse,
     RecoverAccountRequest,
     RecoverOAuthRequest,
+    BannedResponse,
+    WithdrawBannedEmailRequest,
+    WithdrawBannedOAuthRequest,
 )
 
 router = APIRouter()
@@ -180,16 +183,54 @@ async def login(request: LoginRequest, db=Depends(get_db)):
     Authenticate user with email and password.
     Uses bcrypt password verification and returns JWT tokens.
 
-    If user is soft-deleted (within 30 days), returns recovery_required response.
-    User must confirm recovery via /auth/recover endpoint.
+    Priority order:
+    1. Check if user is banned (banned_until)
+    2. Check active users (deleted_at IS NULL)
+    3. Check soft-deleted users for recovery (deleted_at IS NOT NULL)
     """
     from ..utils.security import verify_password, create_access_token, create_refresh_token
     from datetime import datetime, timedelta, timezone
 
     email = request.email.lower()
+    now = datetime.now(timezone.utc)
+    PERMANENT_BAN_YEAR = 9999  # 영구 정지 기준 연도
 
     try:
-        # 1. First, check for active users (deleted_at IS NULL)
+        # 1. First, check if user is BANNED (regardless of deleted_at)
+        banned_result = db.table("users").select("id, email, password_hash, banned_until").ilike("email", email).not_.is_("banned_until", "null").execute()
+
+        if banned_result.data and len(banned_result.data) > 0:
+            banned_user = banned_result.data[0]
+            banned_until_str = banned_user.get("banned_until")
+
+            if banned_until_str:
+                if isinstance(banned_until_str, str):
+                    banned_until = datetime.fromisoformat(banned_until_str.replace('Z', '+00:00'))
+                else:
+                    banned_until = banned_until_str
+
+                # Check if still banned
+                if now < banned_until:
+                    # Verify password first (so we don't reveal ban status to random people)
+                    if not banned_user.get("password_hash") or not verify_password(request.password, banned_user["password_hash"]):
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="이메일 또는 비밀번호가 올바르지 않습니다."
+                        )
+
+                    is_permanent = banned_until.year >= PERMANENT_BAN_YEAR
+                    return BannedResponse(
+                        banned=True,
+                        message="계정이 정지되었습니다." if is_permanent else f"계정이 {banned_until.strftime('%Y년 %m월 %d일')}까지 정지되었습니다.",
+                        email=banned_user.get("email", email),
+                        banned_until="permanent" if is_permanent else banned_until.isoformat(),
+                        is_permanent=is_permanent,
+                    )
+                else:
+                    # Ban expired, clear it and proceed with normal login
+                    db.table("users").update({"banned_until": None}).eq("id", banned_user["id"]).execute()
+
+        # 2. Check for active users (deleted_at IS NULL)
         result = db.table("users").select("id, password_hash").ilike("email", email).is_("deleted_at", "null").execute()
 
         if result.data and len(result.data) > 0:
@@ -213,7 +254,7 @@ async def login(request: LoginRequest, db=Depends(get_db)):
                 expires_in=settings.access_token_expire_minutes * 60,
             )
 
-        # 2. Check for soft-deleted users within 30 days (recovery eligible)
+        # 3. Check for soft-deleted users within 30 days (recovery eligible)
         deleted_result = db.table("users").select("id, email, password_hash, deleted_at").ilike("email", email).not_.is_("deleted_at", "null").order("deleted_at", desc=True).limit(1).execute()
 
         if deleted_result.data and len(deleted_result.data) > 0:
@@ -227,7 +268,6 @@ async def login(request: LoginRequest, db=Depends(get_db)):
                     deleted_at = deleted_at_str
 
                 recovery_deadline = deleted_at + timedelta(days=REJOIN_RESTRICTION_DAYS)
-                now = datetime.now(timezone.utc)
 
                 if now < recovery_deadline:
                     # Verify password before offering recovery
@@ -670,6 +710,178 @@ async def withdraw_account(
 
 
 # =====================================================
+# Banned User Withdrawal Endpoints (정지 사용자 탈퇴)
+# =====================================================
+
+@router.post("/withdraw-banned", response_model=AuthResponse)
+async def withdraw_banned_email(
+    request: WithdrawBannedEmailRequest,
+    db=Depends(get_db)
+):
+    """
+    정지된 사용자의 회원탈퇴 (이메일/비밀번호 사용자용).
+
+    - 정지 상태인 사용자만 사용 가능
+    - 비밀번호 확인으로 본인 인증
+    - '탈퇴합니다' 확인 문구 입력 필요
+    """
+    from datetime import datetime, timezone
+    from ..utils.security import verify_password
+
+    # Verify confirmation text
+    if request.confirmation != "탈퇴합니다":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="확인 문구가 일치하지 않습니다. '탈퇴합니다'를 정확히 입력해주세요."
+        )
+
+    email = request.email.lower()
+    now = datetime.now(timezone.utc)
+
+    # Find user by email (must be banned)
+    user_result = db.table("users").select("id, password_hash, banned_until").ilike("email", email).not_.is_("banned_until", "null").execute()
+
+    if not user_result.data or len(user_result.data) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="정지된 계정을 찾을 수 없습니다."
+        )
+
+    user = user_result.data[0]
+    banned_until_str = user.get("banned_until")
+
+    # Check if still banned
+    if banned_until_str:
+        if isinstance(banned_until_str, str):
+            banned_until = datetime.fromisoformat(banned_until_str.replace('Z', '+00:00'))
+        else:
+            banned_until = banned_until_str
+
+        if now >= banned_until:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="정지가 해제된 계정입니다. 일반 탈퇴 기능을 이용해주세요."
+            )
+
+    # Verify password
+    if not user.get("password_hash") or not verify_password(request.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="비밀번호가 올바르지 않습니다."
+        )
+
+    # Hard delete: 정지 사용자는 복구 기간 없이 즉시 삭제
+    await _hard_delete_user(db, user["id"])
+
+    return AuthResponse(
+        success=True,
+        message="회원탈퇴가 완료되었습니다. 모든 데이터가 즉시 삭제되었습니다."
+    )
+
+
+@router.post("/withdraw-banned-oauth", response_model=AuthResponse)
+async def withdraw_banned_oauth(
+    request: WithdrawBannedOAuthRequest,
+    db=Depends(get_db)
+):
+    """
+    정지된 사용자의 회원탈퇴 (OAuth 사용자용).
+
+    - 정지 상태인 사용자만 사용 가능
+    - provider + provider_id로 본인 확인
+    - '탈퇴합니다' 확인 문구 입력 필요
+    """
+    from datetime import datetime, timezone
+
+    # Verify confirmation text
+    if request.confirmation != "탈퇴합니다":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="확인 문구가 일치하지 않습니다. '탈퇴합니다'를 정확히 입력해주세요."
+        )
+
+    now = datetime.now(timezone.utc)
+
+    # Find user by provider (must be banned)
+    user_result = db.table("users").select("id, banned_until").eq("provider", request.provider).eq("provider_id", request.provider_id).not_.is_("banned_until", "null").execute()
+
+    if not user_result.data or len(user_result.data) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="정지된 계정을 찾을 수 없습니다."
+        )
+
+    user = user_result.data[0]
+    banned_until_str = user.get("banned_until")
+
+    # Check if still banned
+    if banned_until_str:
+        if isinstance(banned_until_str, str):
+            banned_until = datetime.fromisoformat(banned_until_str.replace('Z', '+00:00'))
+        else:
+            banned_until = banned_until_str
+
+        if now >= banned_until:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="정지가 해제된 계정입니다. 일반 탈퇴 기능을 이용해주세요."
+            )
+
+    # Hard delete: 정지 사용자는 복구 기간 없이 즉시 삭제
+    await _hard_delete_user(db, user["id"])
+
+    return AuthResponse(
+        success=True,
+        message="회원탈퇴가 완료되었습니다. 모든 데이터가 즉시 삭제되었습니다."
+    )
+
+
+# =====================================================
+# Hard Delete Helper
+# =====================================================
+
+async def _hard_delete_user(db, user_id: str):
+    """
+    정지 사용자를 위한 완전 삭제 (복구 불가).
+
+    DB 스키마에서 모든 user_id FK에 ON DELETE CASCADE가 설정되어 있어
+    users 테이블에서 삭제하면 관련 데이터가 자동으로 삭제됩니다.
+    - user_stats, user_preferences, attempts, hint_logs, daily_activity,
+      user_badges, subscriptions, problem_solutions, solution_votes, comment_votes: CASCADE
+    - solution_comments: SET NULL (익명화)
+    """
+    import traceback
+
+    print(f"[hard_delete] Starting deletion for user_id: {user_id}")
+
+    try:
+        # users 테이블에서 삭제 (CASCADE로 연관 데이터 자동 삭제)
+        result = db.table("users").delete().eq("id", user_id).execute()
+        deleted_count = len(result.data) if result.data else 0
+        print(f"[hard_delete] users: deleted {deleted_count} rows")
+
+        if deleted_count == 0:
+            print(f"[hard_delete] WARNING: No user found with id {user_id}")
+            # 이미 삭제된 경우일 수 있으므로 에러를 던지지 않음
+
+        # 삭제 확인
+        check = db.table("users").select("id").eq("id", user_id).execute()
+        if check.data and len(check.data) > 0:
+            print(f"[hard_delete] ERROR: User {user_id} still exists after delete!")
+            raise Exception("User deletion verification failed - record still exists")
+
+        print(f"[hard_delete] Successfully deleted user {user_id}")
+
+    except Exception as e:
+        print(f"[hard_delete] FAILED: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"계정 삭제에 실패했습니다. 관리자에게 문의해주세요."
+        )
+
+
+# =====================================================
 # OAuth Helper Functions
 # =====================================================
 
@@ -739,6 +951,71 @@ def _recover_user(db, user_id: str) -> None:
     db.table("users").update({"deleted_at": None}).eq("id", user_id).execute()
 
 
+def _check_banned_user(db, email: str = None, provider: str = None, provider_id: str = None) -> Optional[dict]:
+    """
+    Check if user is banned (banned_until is set and in the future).
+
+    Returns:
+        dict with ban info if currently banned, None otherwise
+    """
+    from datetime import datetime, timezone
+    PERMANENT_BAN_YEAR = 9999
+
+    now = datetime.now(timezone.utc)
+
+    # Check by provider_id first (for social users)
+    if provider and provider_id:
+        banned = db.table("users").select("id, email, banned_until").eq("provider", provider).eq("provider_id", provider_id).not_.is_("banned_until", "null").execute()
+        if banned.data and len(banned.data) > 0:
+            banned_until_str = banned.data[0].get("banned_until")
+            if banned_until_str:
+                if isinstance(banned_until_str, str):
+                    banned_until = datetime.fromisoformat(banned_until_str.replace('Z', '+00:00'))
+                else:
+                    banned_until = banned_until_str
+
+                if now < banned_until:
+                    is_permanent = banned_until.year >= PERMANENT_BAN_YEAR
+                    return {
+                        "email": banned.data[0].get("email"),
+                        "banned_until": "permanent" if is_permanent else banned_until.isoformat(),
+                        "banned_until_display": "영구 정지" if is_permanent else banned_until.strftime('%Y년 %m월 %d일'),
+                        "is_permanent": is_permanent,
+                        "provider": provider,
+                        "provider_id": provider_id,
+                    }
+                else:
+                    # Ban expired, clear it
+                    db.table("users").update({"banned_until": None}).eq("id", banned.data[0]["id"]).execute()
+
+    # Check by email
+    if email:
+        banned = db.table("users").select("id, email, banned_until, provider, provider_id").ilike("email", email).not_.is_("banned_until", "null").execute()
+        if banned.data and len(banned.data) > 0:
+            banned_until_str = banned.data[0].get("banned_until")
+            if banned_until_str:
+                if isinstance(banned_until_str, str):
+                    banned_until = datetime.fromisoformat(banned_until_str.replace('Z', '+00:00'))
+                else:
+                    banned_until = banned_until_str
+
+                if now < banned_until:
+                    is_permanent = banned_until.year >= PERMANENT_BAN_YEAR
+                    return {
+                        "email": banned.data[0].get("email"),
+                        "banned_until": "permanent" if is_permanent else banned_until.isoformat(),
+                        "banned_until_display": "영구 정지" if is_permanent else banned_until.strftime('%Y년 %m월 %d일'),
+                        "is_permanent": is_permanent,
+                        "provider": banned.data[0].get("provider"),
+                        "provider_id": banned.data[0].get("provider_id"),
+                    }
+                else:
+                    # Ban expired, clear it
+                    db.table("users").update({"banned_until": None}).eq("id", banned.data[0]["id"]).execute()
+
+    return None
+
+
 # =====================================================
 # Kakao OAuth Endpoints
 # =====================================================
@@ -806,6 +1083,21 @@ async def kakao_callback(
         email = kakao_account.get("email")
         nickname = profile.get("nickname", f"kakao_{kakao_id}")
         profile_image = profile.get("profile_image_url")
+
+        # 3.4. Check for BANNED user first - redirect to banned page
+        ban_info = _check_banned_user(db, email=email, provider="kakao", provider_id=kakao_id)
+        if ban_info:
+            from urllib.parse import quote
+            redirect_url = (
+                f"{settings.frontend_url}/login"
+                f"?banned=true"
+                f"&until={quote(ban_info['banned_until'])}"
+                f"&display={quote(ban_info['banned_until_display'])}"
+                f"&email={quote(ban_info.get('email', ''))}"
+                f"&provider=kakao"
+                f"&provider_id={kakao_id}"
+            )
+            return RedirectResponse(url=redirect_url)
 
         # 3.5. Check for withdrawn user - redirect to recovery confirmation page
         recovery_info = _check_withdrawn_user_for_recovery(db, email=email, provider="kakao", provider_id=kakao_id)
@@ -942,6 +1234,21 @@ async def google_callback(
         email = google_user.get("email")
         name = google_user.get("name", f"google_{google_id}")
         profile_image = google_user.get("picture")
+
+        # 3.4. Check for BANNED user first - redirect to banned page
+        ban_info = _check_banned_user(db, email=email, provider="google", provider_id=google_id)
+        if ban_info:
+            from urllib.parse import quote
+            redirect_url = (
+                f"{settings.frontend_url}/login"
+                f"?banned=true"
+                f"&until={quote(ban_info['banned_until'])}"
+                f"&display={quote(ban_info['banned_until_display'])}"
+                f"&email={quote(ban_info.get('email', ''))}"
+                f"&provider=google"
+                f"&provider_id={google_id}"
+            )
+            return RedirectResponse(url=redirect_url)
 
         # 3.5. Check for withdrawn user - redirect to recovery confirmation page
         recovery_info = _check_withdrawn_user_for_recovery(db, email=email, provider="google", provider_id=google_id)
@@ -1130,6 +1437,21 @@ async def github_callback(
         login = github_user.get("login", f"github_{github_id}")
         name = github_user.get("name") or login
         avatar_url = github_user.get("avatar_url")
+
+        # 4.4. Check for BANNED user first - redirect to banned page
+        ban_info = _check_banned_user(db, email=email, provider="github", provider_id=github_id)
+        if ban_info:
+            from urllib.parse import quote
+            redirect_url = (
+                f"{settings.frontend_url}/login"
+                f"?banned=true"
+                f"&until={quote(ban_info['banned_until'])}"
+                f"&display={quote(ban_info['banned_until_display'])}"
+                f"&email={quote(ban_info.get('email', ''))}"
+                f"&provider=github"
+                f"&provider_id={github_id}"
+            )
+            return RedirectResponse(url=redirect_url)
 
         # 4.5. Check for withdrawn user - redirect to recovery confirmation page
         recovery_info = _check_withdrawn_user_for_recovery(db, email=email, provider="github", provider_id=github_id)

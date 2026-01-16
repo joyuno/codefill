@@ -171,9 +171,16 @@ export function useFarm(): UseFarmReturn {
   // Load unified shop items
   // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const loadUnifiedShop = useCallback(async (category?: string) => {
-    const result = await farmApi.getUnifiedShopItems(category);
-    setUnifiedShopItems(result.items);
-    setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
+    console.log('[useFarm] loadUnifiedShop called, category:', category);
+    try {
+      const result = await farmApi.getUnifiedShopItems(category);
+      console.log('[useFarm] loadUnifiedShop result:', result);
+      console.log('[useFarm] items count:', result.items?.length);
+      setUnifiedShopItems(result.items);
+      setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
+    } catch (err) {
+      console.error('[useFarm] loadUnifiedShop error:', err);
+    }
   }, []);
 
   // Buy item from unified shop

@@ -60,6 +60,26 @@ export interface RecoveryRequiredResponse {
   days_remaining: number;
 }
 
+export interface BannedResponse {
+  banned: boolean;
+  message: string;
+  email: string;
+  banned_until: string;  // ISO datetime string or "permanent"
+  is_permanent: boolean;
+}
+
+export interface WithdrawBannedData {
+  email: string;
+  password: string;
+  confirmation: string;  // '탈퇴합니다'
+}
+
+export interface WithdrawBannedOAuthData {
+  provider: string;
+  provider_id: string;
+  confirmation: string;  // '탈퇴합니다'
+}
+
 export interface RecoverData {
   email: string;
   password: string;
@@ -89,16 +109,17 @@ export const authApi = {
 
   /**
    * Login with email and password
-   * Returns TokenResponse on success, or RecoveryRequiredResponse if account needs recovery
+   * Returns TokenResponse on success, RecoveryRequiredResponse if account needs recovery,
+   * or BannedResponse if account is banned
    */
   login: async (data: LoginData): Promise<{
-    data?: TokenResponse | RecoveryRequiredResponse;
+    data?: TokenResponse | RecoveryRequiredResponse | BannedResponse;
     error?: { code: string; message: string }
   }> => {
-    const result = await api.post<TokenResponse | RecoveryRequiredResponse>('/auth/login', data, false);
+    const result = await api.post<TokenResponse | RecoveryRequiredResponse | BannedResponse>('/auth/login', data, false);
 
     if (result.data && 'access_token' in result.data) {
-      // Store tokens on successful login (not recovery required)
+      // Store tokens on successful login (not recovery required or banned)
       apiClient.setTokens(result.data.access_token, result.data.refresh_token);
     }
 
@@ -224,5 +245,25 @@ export const authApi = {
     }
 
     return result;
+  },
+
+  /**
+   * 정지된 계정 탈퇴 (이메일 로그인 사용자)
+   * - 정지된 사용자가 탈퇴를 원할 때 사용
+   * - 비밀번호 확인 필요
+   * - 로그인 불가 상태이므로 JWT 불필요
+   */
+  withdrawBanned: async (data: WithdrawBannedData): Promise<{ data?: AuthResponse; error?: { code: string; message: string } }> => {
+    return api.post<AuthResponse>('/auth/withdraw-banned', data, false);
+  },
+
+  /**
+   * 정지된 계정 탈퇴 (OAuth 사용자)
+   * - 정지된 소셜 로그인 사용자가 탈퇴를 원할 때 사용
+   * - provider + provider_id로 사용자 확인
+   * - 로그인 불가 상태이므로 JWT 불필요
+   */
+  withdrawBannedOAuth: async (data: WithdrawBannedOAuthData): Promise<{ data?: AuthResponse; error?: { code: string; message: string } }> => {
+    return api.post<AuthResponse>('/auth/withdraw-banned-oauth', data, false);
   },
 };

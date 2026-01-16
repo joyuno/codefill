@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Trophy, Target, Flame, Zap } from 'lucide-react';
+import { Trophy, Target, Flame, Zap, FileCode, Puzzle, BookOpen, Code2 } from 'lucide-react';
 
 interface StatsData {
   level: number;
@@ -17,10 +17,18 @@ interface DifficultyData {
   hard?: number;
 }
 
+interface ProblemTypeStat {
+  type: string;
+  total: number;
+  success: number;
+  rate: number;
+}
+
 interface ScoreOverviewProps {
   score: number;
   stats: StatsData;
   difficultySnapshot?: DifficultyData;
+  problemTypeStats?: ProblemTypeStat[];
 }
 
 // 점수에 따른 등급 및 색상
@@ -41,7 +49,19 @@ const DIFFICULTY_COLORS = {
   hard: { color: '#ef4444', label: 'Hard' },
 };
 
-export function ScoreOverview({ score, stats, difficultySnapshot }: ScoreOverviewProps) {
+// 문제 유형 설정
+const PROBLEM_TYPE_CONFIG: Record<string, { icon: typeof FileCode; label: string; color: string }> = {
+  blank: { icon: FileCode, label: '빈칸', color: '#3b82f6' },
+  puzzle: { icon: Puzzle, label: '퍼즐', color: '#8b5cf6' },
+  guided: { icon: BookOpen, label: '가이드', color: '#10b981' },
+  implementation: { icon: Code2, label: '구현', color: '#f59e0b' },
+};
+
+function getProblemTypeConfig(type: string) {
+  return PROBLEM_TYPE_CONFIG[type] || { icon: FileCode, label: type, color: '#6b7280' };
+}
+
+export function ScoreOverview({ score, stats, difficultySnapshot, problemTypeStats }: ScoreOverviewProps) {
   const [animatedScore, setAnimatedScore] = useState(0);
   const gradeInfo = getGradeInfo(score);
 
@@ -134,48 +154,92 @@ export function ScoreOverview({ score, stats, difficultySnapshot }: ScoreOvervie
         />
       </motion.div>
 
-      {/* 하단: 난이도별 정답률 */}
-      {difficultySnapshot && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-        >
-          <div className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
-            Difficulty Breakdown
-          </div>
-          <div className="space-y-2.5">
-            {(['easy', 'medium', 'hard'] as const).map((difficulty) => {
-              const rate = difficultySnapshot[difficulty] ?? 0;
-              const config = DIFFICULTY_COLORS[difficulty];
-              const percentage = Math.round(rate * 100);
+      {/* 하단: 난이도별 + 유형별 정답률 (2열 레이아웃) */}
+      <motion.div
+        className="grid grid-cols-2 gap-4"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+      >
+        {/* 난이도별 정답률 */}
+        {difficultySnapshot && (
+          <div>
+            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
+              Difficulty
+            </div>
+            <div className="space-y-2">
+              {(['easy', 'medium', 'hard'] as const).map((difficulty) => {
+                const rate = difficultySnapshot[difficulty] ?? 0;
+                const config = DIFFICULTY_COLORS[difficulty];
+                const percentage = Math.round(rate * 100);
 
-              return (
-                <div key={difficulty} className="flex items-center gap-3">
-                  <span
-                    className="text-xs font-medium w-14"
-                    style={{ color: config.color }}
-                  >
-                    {config.label}
-                  </span>
-                  <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: config.color }}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${percentage}%` }}
-                      transition={{ delay: 0.8, duration: 0.8, ease: 'easeOut' }}
-                    />
+                return (
+                  <div key={difficulty} className="flex items-center gap-2">
+                    <span
+                      className="text-[10px] font-medium w-12"
+                      style={{ color: config.color }}
+                    >
+                      {config.label}
+                    </span>
+                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: config.color }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ delay: 0.8, duration: 0.8, ease: 'easeOut' }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-400 w-8 text-right">
+                      {percentage}%
+                    </span>
                   </div>
-                  <span className="text-xs font-mono text-zinc-400 w-10 text-right">
-                    {percentage}%
-                  </span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </motion.div>
-      )}
+        )}
+
+        {/* 문제 유형별 정답률 */}
+        {problemTypeStats && problemTypeStats.length > 0 && (
+          <div>
+            <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
+              Problem Type
+            </div>
+            <div className="space-y-2">
+              {problemTypeStats.slice(0, 3).map((stat) => {
+                const config = getProblemTypeConfig(stat.type);
+                const Icon = config.icon;
+                const percentage = Math.round(stat.rate * 100);
+
+                return (
+                  <div key={stat.type} className="flex items-center gap-2">
+                    <Icon className="w-3 h-3 flex-shrink-0" style={{ color: config.color }} />
+                    <span
+                      className="text-[10px] font-medium w-10 truncate"
+                      style={{ color: config.color }}
+                    >
+                      {config.label}
+                    </span>
+                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ backgroundColor: config.color }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ delay: 1, duration: 0.8, ease: 'easeOut' }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono text-zinc-400 w-8 text-right">
+                      {percentage}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 }

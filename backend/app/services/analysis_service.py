@@ -167,13 +167,15 @@ class AnalysisService:
             return None
 
         data = result.data[0]  # 첫 번째 row 사용
+
+        # 실시간 시각화 데이터 조회
+        viz_data = await self._get_visualization_data(user_id)
+
         return {
             "id": data.get("id"),
             "summaryText": data.get("summary_text"),
             "strengths": data.get("strengths", []),
             "weaknesses": data.get("weaknesses", []),
-            "recommendations": data.get("recommendations", []),
-            "studyPlan": data.get("study_plan"),
             "skillSnapshot": data.get("skill_snapshot", {}),
             "statsSnapshot": data.get("stats_snapshot", {}),
             "difficultySnapshot": data.get("difficulty_snapshot", {}),
@@ -183,7 +185,6 @@ class AnalysisService:
             "conceptsStruggling": data.get("concepts_struggling", []),
             "conceptsLearned": data.get("concepts_learned", []),
             "hintUsage": data.get("hint_usage", {}),
-            "learningStyle": data.get("learning_style", {}),
             "commonErrorPatterns": data.get("common_error_patterns", {}),
             "moodDistribution": data.get("mood_distribution", {}),
             "breakthroughMoments": data.get("breakthrough_moments", []),
@@ -193,6 +194,120 @@ class AnalysisService:
             # 학습 분석 프레임워크 메트릭
             "bktMastery": data.get("bkt_mastery", {}),
             "bloomMetrics": data.get("bloom_metrics", {}),
+            # 실시간 시각화 데이터
+            **viz_data,
+        }
+
+    async def _get_visualization_data(self, user_id: UUID) -> Dict[str, Any]:
+        """실시간 시각화 데이터 조회 (캐시 없이 항상 새로 계산)."""
+
+        # 1. 문제 유형별 정답률 (상위 5개)
+        problem_type_result = self.db.table("attempts").select(
+            "problem_type, is_correct"
+        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").not_.is_("problem_type", "null").execute()
+
+        problem_type_stats = []
+        if problem_type_result.data:
+            type_stats: Dict[str, Dict[str, int]] = {}
+            for attempt in problem_type_result.data:
+                ptype = attempt.get("problem_type")
+                is_correct = attempt.get("is_correct", False)
+                if ptype:
+                    if ptype not in type_stats:
+                        type_stats[ptype] = {"success": 0, "total": 0}
+                    type_stats[ptype]["total"] += 1
+                    if is_correct:
+                        type_stats[ptype]["success"] += 1
+
+            sorted_types = sorted(
+                type_stats.items(),
+                key=lambda x: x[1]["total"],
+                reverse=True
+            )[:5]
+
+            problem_type_stats = [
+                {
+                    "type": ptype,
+                    "total": stats["total"],
+                    "success": stats["success"],
+                    "rate": round(stats["success"] / stats["total"], 2) if stats["total"] > 0 else 0
+                }
+                for ptype, stats in sorted_types
+            ]
+
+        # 2. 최근 10문제 결과
+        recent_attempts_result = self.db.table("attempts").select(
+            "problem_name, problem_type, difficulty, topics, is_correct, hints_used, created_at"
+        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").order(
+            "created_at", desc=True
+        ).limit(10).execute()
+
+        recent_10_attempts = []
+        if recent_attempts_result.data:
+            recent_10_attempts = [
+                {
+                    "problem_name": a.get("problem_name", "Unknown"),
+                    "problem_type": a.get("problem_type"),
+                    "difficulty": a.get("difficulty"),
+                    "topics": a.get("topics", []),
+                    "is_correct": a.get("is_correct"),
+                    "hints_used": a.get("hints_used", 0),
+                    "created_at": a.get("created_at"),
+                }
+                for a in recent_attempts_result.data
+            ]
+
+        # 최근 10문제 LLM 분석
+        recent_analysis = await self._analyze_recent_attempts(recent_10_attempts)
+
+        # 3. 힌트 없이 해결 비율
+        hint_result = self.db.table("attempts").select(
+            "is_correct, hints_used"
+        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").execute()
+
+        hint_independence = {
+            "solved_without_hint": 0,
+            "solved_with_hint": 0,
+            "failed_with_hint": 0,
+            "failed_without_hint": 0,
+            "total": 0,
+            "independence_rate": 0,
+        }
+
+        if hint_result.data:
+            solved_without_hint = 0
+            solved_with_hint = 0
+            failed_with_hint = 0
+            failed_without_hint = 0
+
+            for attempt in hint_result.data:
+                is_correct = attempt.get("is_correct", False)
+                hints_used = attempt.get("hints_used") or 0
+
+                if is_correct and hints_used == 0:
+                    solved_without_hint += 1
+                elif is_correct and hints_used > 0:
+                    solved_with_hint += 1
+                elif not is_correct and hints_used > 0:
+                    failed_with_hint += 1
+                else:
+                    failed_without_hint += 1
+
+            total = len(hint_result.data)
+            hint_independence = {
+                "solved_without_hint": solved_without_hint,
+                "solved_with_hint": solved_with_hint,
+                "failed_with_hint": failed_with_hint,
+                "failed_without_hint": failed_without_hint,
+                "total": total,
+                "independence_rate": round(solved_without_hint / total, 2) if total > 0 else 0,
+            }
+
+        return {
+            "problemTypeStats": problem_type_stats,
+            "recent10Attempts": recent_10_attempts,
+            "recent10Analysis": recent_analysis,
+            "hintIndependence": hint_independence,
         }
 
     async def generate_analysis(self, user_id: UUID) -> Dict[str, Any]:
@@ -217,14 +332,16 @@ class AnalysisService:
         # 3. 분석 생성 (LLM 사용, 실패 시 템플릿 폴백)
         analysis = await self._generate_analysis_with_llm(user_data)
 
+        # 3-1. 최근 10문제 LLM 분석 (별도 호출)
+        recent_attempts = user_data.get("recent_10_attempts", [])
+        recent_analysis = await self._analyze_recent_attempts(recent_attempts)
+
         # 4. DB 저장 (upsert) - 새 필드들 포함 (문제 추천은 별도 API로 분리)
         report_data = {
             "user_id": str(user_id),
             "summary_text": analysis["summary"],
             "strengths": analysis["strengths"],
             "weaknesses": analysis["weaknesses"],
-            "recommendations": analysis["recommendations"],
-            "study_plan": analysis["study_plan"],
             "skill_snapshot": user_data.get("skill_by_topic", {}),
             "stats_snapshot": {
                 "level": user_data.get("level", 1),
@@ -238,7 +355,6 @@ class AnalysisService:
             "concepts_struggling": user_data.get("concepts_struggling", []),
             "concepts_learned": user_data.get("concepts_learned", []),
             "hint_usage": user_data.get("hint_usage", {}),
-            "learning_style": analysis.get("learning_style") if analysis.get("learning_style") is not None else user_data.get("learning_style", {}),
             "common_error_patterns": analysis.get("common_error_patterns") if analysis.get("common_error_patterns") is not None else user_data.get("common_error_patterns", {}),
             "mood_distribution": user_data.get("mood_distribution", {}),
             "breakthrough_moments": user_data.get("breakthrough_moments", []),
@@ -264,8 +380,6 @@ class AnalysisService:
             "summaryText": analysis["summary"],
             "strengths": analysis["strengths"],
             "weaknesses": analysis["weaknesses"],
-            "recommendations": analysis["recommendations"],
-            "studyPlan": analysis["study_plan"],
             "skillSnapshot": user_data.get("skill_by_topic", {}),
             "statsSnapshot": report_data["stats_snapshot"],
             "difficultySnapshot": user_data.get("difficulty_stats", {}),
@@ -275,8 +389,6 @@ class AnalysisService:
             "conceptsStruggling": user_data.get("concepts_struggling", []),
             "conceptsLearned": user_data.get("concepts_learned", []),
             "hintUsage": user_data.get("hint_usage", {}),
-            # LLM이 생성한 결과 사용, 없으면 user_data 폴백
-            "learningStyle": analysis.get("learning_style") or user_data.get("learning_style", {}),
             "commonErrorPatterns": analysis.get("common_error_patterns") or user_data.get("common_error_patterns", []),
             "moodDistribution": user_data.get("mood_distribution", {}),
             "breakthroughMoments": user_data.get("breakthrough_moments", []),
@@ -286,6 +398,11 @@ class AnalysisService:
             # 학습 분석 프레임워크 메트릭
             "bktMastery": user_data.get("bkt_mastery", {}),
             "bloomMetrics": user_data.get("bloom_metrics", {}),
+            # 새로운 시각화 데이터
+            "problemTypeStats": user_data.get("problem_type_stats", []),
+            "recent10Attempts": user_data.get("recent_10_attempts", []),
+            "recent10Analysis": recent_analysis,
+            "hintIndependence": user_data.get("hint_independence", {}),
         }
 
     async def recommend_problems(self, user_id: UUID) -> List[Dict[str, Any]]:
@@ -383,12 +500,19 @@ class AnalysisService:
             data["existing_error_patterns"] = None
 
         # 3. attempts 테이블에서 정확도 및 폴백용 스킬 데이터 계산
-        # 시간순 정렬하여 BKT 시퀀스 구성에도 활용
-        attempts_for_skill = self.db.table("attempts").select(
+        # 최근 500개만 가져와서 BKT 시퀀스 구성 (최신순 정렬 후 역순으로 시간순 변환)
+        attempts_result = self.db.table("attempts").select(
             "topics, difficulty, is_correct, created_at"
         ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").order(
-            "created_at", desc=False
-        ).execute()
+            "created_at", desc=True  # 최신순으로 가져옴
+        ).limit(500).execute()
+
+        # BKT는 시간순(오래된 것 먼저)이 필요하므로 역순 정렬
+        class AttemptsWrapper:
+            def __init__(self, data):
+                self.data = list(reversed(data)) if data else []
+
+        attempts_for_skill = AttemptsWrapper(attempts_result.data)
 
         # 폴백 계산 (use_cached_skill이 False일 때만 skill_by_topic 덮어쓰기)
         if not use_cached_skill:
@@ -616,6 +740,14 @@ class AnalysisService:
                 if a.get("base_problem_id")
             ))
 
+            # ============ DEBUG: problem_ids 확인 (나중에 삭제할 것) ============
+            print(f"\n🔍 [DEBUG] recent_attempts count: {len(recent_attempts.data)}")
+            print(f"🔍 [DEBUG] problem_ids: {problem_ids}")
+            print(f"🔍 [DEBUG] problem_ids count: {len(problem_ids)}")
+            base_problem_ids_raw = [a.get("base_problem_id") for a in recent_attempts.data]
+            print(f"🔍 [DEBUG] base_problem_id values (raw): {base_problem_ids_raw[:10]}...")  # 처음 10개만
+            # ============ DEBUG END ============
+
             # attempt_details 조회 (에러 패턴 분석을 위해 blank_user_answer, blank_correct_answer 포함)
             details_result = self.db.table("attempt_details").select(
                 "action_type, blank_hint_level, blank_is_correct, "
@@ -674,7 +806,8 @@ class AnalysisService:
 
             # 힌트 사용 통계 집계
             total_hints = max(total_hints_requested, total_from_logs)
-            num_problems = len(problem_ids) if problem_ids else 1
+            # base_problem_id가 NULL일 경우 problems_solved를 폴백으로 사용
+            num_problems = len(problem_ids) if problem_ids else data.get("problems_solved", 1)
             avg_per_problem = round(total_hints / num_problems, 2) if num_problems > 0 else 0
 
             data["hint_usage"] = {
@@ -688,6 +821,112 @@ class AnalysisService:
             data["blank_accuracy"] = round(
                 blank_correct_count / blank_total_count, 2
             ) if blank_total_count > 0 else None
+
+        # ============================================
+        # 새로운 시각화용 데이터 수집
+        # ============================================
+
+        # 6. 문제 유형별 정답률 (상위 5개)
+        problem_type_result = self.db.table("attempts").select(
+            "problem_type, is_correct"
+        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").not_.is_("problem_type", "null").execute()
+
+        if problem_type_result.data:
+            type_stats: Dict[str, Dict[str, int]] = {}
+            for attempt in problem_type_result.data:
+                ptype = attempt.get("problem_type")
+                is_correct = attempt.get("is_correct", False)
+                if ptype:
+                    if ptype not in type_stats:
+                        type_stats[ptype] = {"success": 0, "total": 0}
+                    type_stats[ptype]["total"] += 1
+                    if is_correct:
+                        type_stats[ptype]["success"] += 1
+
+            # 시도 횟수 기준 상위 5개
+            sorted_types = sorted(
+                type_stats.items(),
+                key=lambda x: x[1]["total"],
+                reverse=True
+            )[:5]
+
+            data["problem_type_stats"] = [
+                {
+                    "type": ptype,
+                    "total": stats["total"],
+                    "success": stats["success"],
+                    "rate": round(stats["success"] / stats["total"], 2) if stats["total"] > 0 else 0
+                }
+                for ptype, stats in sorted_types
+            ]
+        else:
+            data["problem_type_stats"] = []
+
+        # 7. 최근 10문제 결과
+        recent_attempts_result = self.db.table("attempts").select(
+            "problem_name, problem_type, difficulty, topics, is_correct, hints_used, created_at"
+        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").order(
+            "created_at", desc=True
+        ).limit(10).execute()
+
+        if recent_attempts_result.data:
+            data["recent_10_attempts"] = [
+                {
+                    "problem_name": a.get("problem_name", "Unknown"),
+                    "problem_type": a.get("problem_type"),
+                    "difficulty": a.get("difficulty"),
+                    "topics": a.get("topics", []),
+                    "is_correct": a.get("is_correct"),
+                    "hints_used": a.get("hints_used", 0),
+                    "created_at": a.get("created_at"),
+                }
+                for a in recent_attempts_result.data
+            ]
+        else:
+            data["recent_10_attempts"] = []
+
+        # 8. 힌트 없이 해결 비율
+        hint_independence_result = self.db.table("attempts").select(
+            "is_correct, hints_used"
+        ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").execute()
+
+        if hint_independence_result.data:
+            solved_without_hint = 0
+            solved_with_hint = 0
+            failed_with_hint = 0
+            failed_without_hint = 0
+
+            for attempt in hint_independence_result.data:
+                is_correct = attempt.get("is_correct", False)
+                hints_used = attempt.get("hints_used") or 0
+
+                if is_correct and hints_used == 0:
+                    solved_without_hint += 1
+                elif is_correct and hints_used > 0:
+                    solved_with_hint += 1
+                elif not is_correct and hints_used > 0:
+                    failed_with_hint += 1
+                else:
+                    failed_without_hint += 1
+
+            total = len(hint_independence_result.data)
+            data["hint_independence"] = {
+                "solved_without_hint": solved_without_hint,
+                "solved_with_hint": solved_with_hint,
+                "failed_with_hint": failed_with_hint,
+                "failed_without_hint": failed_without_hint,
+                "total": total,
+                "independence_rate": round(solved_without_hint / total, 2) if total > 0 else 0,
+            }
+        else:
+            data["hint_independence"] = {
+                "solved_without_hint": 0,
+                "solved_with_hint": 0,
+                "failed_with_hint": 0,
+                "failed_without_hint": 0,
+                "total": 0,
+                "independence_rate": 0,
+            }
 
         return data
 
@@ -748,31 +987,6 @@ class AnalysisService:
                     "insight": w.get("insight", ""),
                 })
 
-        # learning_style 정규화
-        learning_style = result.get("learning_style")
-        if learning_style and isinstance(learning_style, dict):
-            learning_style = {
-                "type": learning_style.get("type", "independent"),
-                "description": learning_style.get("description", ""),
-                "strategy": learning_style.get("strategy", ""),
-            }
-        else:
-            # hint_usage 기반 기본 스타일 결정
-            hint_usage = user_data.get("hint_usage", {})
-            avg_hints = hint_usage.get("avg_per_problem", 0)
-            if avg_hints >= 2:
-                learning_style = {
-                    "type": "hint-dependent",
-                    "description": "힌트를 적극적으로 활용하여 문제를 해결하는 스타일입니다.",
-                    "strategy": "힌트를 보기 전에 5분간 스스로 고민해보세요."
-                }
-            else:
-                learning_style = {
-                    "type": "independent",
-                    "description": "스스로 문제를 해결하는 독립적인 학습 스타일입니다.",
-                    "strategy": "현재 페이스를 유지하며 더 어려운 문제에 도전해보세요."
-                }
-
         # common_error_patterns 정규화
         error_patterns = result.get("common_error_patterns", [])
         if not error_patterns:
@@ -782,12 +996,79 @@ class AnalysisService:
             "summary": result.get("summary", "분석 결과를 생성했습니다."),
             "strengths": strengths,
             "weaknesses": weaknesses,
-            "recommendations": result.get("recommendations", ["꾸준히 문제를 풀며 실력을 쌓아가세요!"]),
-            "study_plan": result.get("study_plan", "다양한 유형의 문제에 도전해보세요!"),
-            "learning_style": learning_style,
             "common_error_patterns": error_patterns,
             "detailed_feedback": result.get("detailed_feedback", ""),
         }
+
+    async def _analyze_recent_attempts(self, recent_attempts: List[Dict[str, Any]]) -> str:
+        """최근 10문제 결과를 LLM으로 간단히 분석."""
+        if not recent_attempts:
+            return "최근 풀이 기록이 없습니다."
+
+        try:
+            # 간단한 통계 계산
+            total = len(recent_attempts)
+            correct = sum(1 for a in recent_attempts if a.get("is_correct"))
+            with_hints = sum(1 for a in recent_attempts if (a.get("hints_used") or 0) > 0)
+
+            # 연속 성공/실패 패턴 찾기
+            results = [a.get("is_correct") for a in recent_attempts]
+            streak_info = self._find_streak_pattern(results)
+
+            prompt = f"""최근 10문제 풀이 결과를 2-3문장으로 간단히 분석해주세요.
+
+데이터:
+- 정답: {correct}/{total}
+- 힌트 사용: {with_hints}문제
+- 결과 패턴 (최근→과거): {['✓' if r else '✗' for r in results]}
+- 연속 패턴: {streak_info}
+
+규칙:
+1. 한국어로 작성
+2. 격려보다 객관적 사실 중심
+3. 2-3문장 이내
+4. 개선 포인트 1개 제안
+
+예시: "최근 10문제 중 7문제를 맞혔습니다. 마지막 3문제 연속 정답으로 상승세입니다. 힌트 의존도를 줄이면 더 빠른 성장이 가능합니다."
+"""
+
+            response = await openrouter_service.chat_completion(
+                model=settings.llm_model_analysis,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=200,
+            )
+
+            content = openrouter_service.get_content(response)
+            return content.strip()
+
+        except Exception as e:
+            logger.warning(f"최근 시도 분석 실패: {e}")
+            # 폴백: 간단한 통계 기반 메시지
+            correct = sum(1 for a in recent_attempts if a.get("is_correct"))
+            total = len(recent_attempts)
+            return f"최근 {total}문제 중 {correct}문제를 맞혔습니다. (정답률 {round(correct/total*100)}%)"
+
+    def _find_streak_pattern(self, results: List[bool]) -> str:
+        """연속 성공/실패 패턴 찾기."""
+        if not results:
+            return "기록 없음"
+
+        # 최근부터 연속 패턴 확인
+        current = results[0]
+        streak = 1
+        for r in results[1:]:
+            if r == current:
+                streak += 1
+            else:
+                break
+
+        if current:
+            return f"최근 {streak}연속 정답"
+        else:
+            return f"최근 {streak}연속 오답"
 
     def _generate_analysis_content(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """분석 콘텐츠 생성 (MVP: 템플릿 기반)."""
@@ -830,41 +1111,6 @@ class AnalysisService:
         else:
             summary = "아직 분석할 데이터가 충분하지 않습니다. 더 많은 문제를 풀어보세요!"
 
-        # Recommendations
-        recommendations = []
-        if streak > 0:
-            recommendations.append(f"현재 {streak}일 연속 학습 중입니다! 이 페이스를 유지하세요.")
-        if accuracy < 0.5 and problems_solved > 5:
-            recommendations.append("정답률이 낮은 편입니다. 쉬운 문제부터 차근차근 풀어보세요.")
-        if weaknesses:
-            weak_topic = weaknesses[0]["topic"]
-            recommendations.append(f"{weak_topic} 기초 문제부터 시작해보세요.")
-        if not recommendations:
-            recommendations.append("꾸준히 문제를 풀며 실력을 쌓아가세요!")
-
-        # Study plan
-        if weaknesses:
-            plan_topics = " → ".join([w["topic"] for w in weaknesses[:3]])
-            study_plan = f"추천 학습 경로: {plan_topics}"
-        else:
-            study_plan = "다양한 유형의 문제에 도전해보세요!"
-
-        # Learning style (hint_usage 기반 기본값)
-        hint_usage = user_data.get("hint_usage", {})
-        avg_hints = hint_usage.get("avg_per_problem", 0)
-        if avg_hints >= 2:
-            learning_style = {
-                "type": "hint-dependent",
-                "description": "힌트를 적극적으로 활용하여 문제를 해결하는 스타일입니다.",
-                "strategy": "힌트를 보기 전에 5분간 스스로 고민해보세요."
-            }
-        else:
-            learning_style = {
-                "type": "independent",
-                "description": "스스로 문제를 해결하는 독립적인 학습 스타일입니다.",
-                "strategy": "현재 페이스를 유지하며 더 어려운 문제에 도전해보세요."
-            }
-
         # Common error patterns (기존 데이터 유지 또는 빈 배열)
         error_patterns = user_data.get("existing_error_patterns", [])
 
@@ -885,18 +1131,12 @@ class AnalysisService:
                 detailed_parts.append(f"- **{w['topic']}**: {w['insight']}\n")
             detailed_parts.append("\n")
 
-        detailed_parts.append("### 다음 단계\n")
-        detailed_parts.append(study_plan + "\n")
-
         detailed_feedback = "".join(detailed_parts)
 
         return {
             "summary": summary,
             "strengths": strengths,
             "weaknesses": weaknesses,
-            "recommendations": recommendations,
-            "study_plan": study_plan,
-            "learning_style": learning_style,
             "common_error_patterns": error_patterns,
             "detailed_feedback": detailed_feedback,
         }

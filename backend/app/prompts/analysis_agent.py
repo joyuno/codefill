@@ -115,27 +115,13 @@ ANALYSIS_SYSTEM_PROMPT = """
     }}
   ],
 
-  "recommendations": [
-    "구체적 액션. 예: 'DP 문제 접근 시 먼저 n=1,2,3 케이스를 손으로 계산하여 점화식 패턴을 도출한 후 코드 작성'",
-    "예: 'Graph 탐색 시 visited 배열 업데이트 위치를 BFS는 큐 삽입 시점, DFS는 재귀 호출 시점으로 통일'",
-    "예: 'rule 유형 오류가 60% 차지하므로, 반복문 조건 작성 후 경계값(0, n-1, n)으로 검증'"
-  ],
-
-  "study_plan": "단계별 학습 경로. 예: '1단계: 1차원 DP 기초 문제 5개 연속 정답 달성 → 2단계: 2차원 DP로 확장 → 3단계: Graph에서 visited 패턴 학습'",
-
-  "learning_style": {{
-    "type": "학습 스타일 유형. methodical | exploratory | hint-dependent | independent 중 하나",
-    "description": "학습 스타일에 대한 설명. 예: '체계적으로 단계별 접근을 선호하며, 힌트를 적절히 활용합니다.'",
-    "strategy": "이 스타일에 맞는 학습 전략. 예: '기초 개념을 먼저 정리한 후 문제에 접근하세요.'"
-  }},
-
   "common_error_patterns": [
     "concepts_struggling의 각 항목을 '원인 → 결과' 형식으로 변환",
     "예: '점화식 도출' → 'dp[i] 정의 없이 코드 작성 시작 → 점화식 오류'",
     "예: '방문 체크' → 'visited를 큐 삽입 후가 아닌 pop 후에 처리 → 중복 방문'"
   ],
 
-  "detailed_feedback": "## 약점 집중 분석\\n\\n### 1. DP (mastery 11%)\\n\\n**현황**: 10회 시도 중 2회 정답. 최근 6회 연속 오답으로 mastery 급락.\\n\\n**원인 분석**\\n- 어려워하는 개념: 상태 정의, 점화식 도출, 2차원 DP\\n- 최근 실패: 'DP 배낭 문제'에서 힌트 3개 사용에도 실패\\n- AI 튜터 진단: '작은 케이스부터 시작하도록 유도 필요'\\n\\n**개선 방법**\\n1. dp[i]가 무엇을 의미하는지 문장으로 먼저 정의하세요\\n2. n=1,2,3 케이스를 손으로 계산하여 점화식 패턴을 찾으세요\\n3. 1차원 DP (피보나치, 계단 오르기)부터 다시 시작하세요\\n\\n---\\n\\n### 2. Graph (mastery 11%)\\n\\n**현황**: 8회 시도 중 1회 정답.\\n\\n**원인 분석**\\n- 어려워하는 개념: 방문 체크, 재귀 종료 조건, 그래프 표현\\n- 최근 실패: 'Graph 최단경로'에서 다익스트라 구현 실패\\n- AI 튜터 진단: '그래프 시각화가 필요'\\n\\n**개선 방법**\\n1. 문제를 읽고 노드와 간선을 직접 그려보세요\\n2. BFS는 큐 삽입 시점에, DFS는 함수 진입 시점에 visited 체크하세요\\n3. 간단한 BFS 미로 탐색부터 연습하세요\\n\\n---\\n\\n### 학습 패턴 진단\\n\\n**힌트 의존도**: 실패한 문제에서 레벨 3 힌트 집중 사용 → 스스로 풀이 전 힌트에 의존하는 경향\\n**감정 상태**: frustrated 40% → DP/Graph 실패로 좌절감 누적\\n\\n**권장 사항**: 현재 자신감이 낮은 상태입니다. 숙달된 Array/String 문제로 리듬을 회복한 후 약점 토픽에 도전하세요."
+  "detailed_feedback": "## 약점 집중 분석\\n\\n### 1. DP (mastery 11%)\\n\\n**현황**: 10회 시도 중 2회 정답. 최근 6회 연속 오답으로 mastery 급락.\\n\\n**원인 분석**\\n- 어려워하는 개념: 상태 정의, 점화식 도출, 2차원 DP\\n- 최근 실패: 'DP 배낭 문제'에서 힌트 3개 사용에도 실패\\n- AI 튜터 진단: '작은 케이스부터 시작하도록 유도 필요'\\n\\n**개선 방법**\\n1. dp[i]가 무엇을 의미하는지 문장으로 먼저 정의하세요\\n2. n=1,2,3 케이스를 손으로 계산하여 점화식 패턴을 찾으세요\\n3. 1차원 DP (피보나치, 계단 오르기)부터 다시 시작하세요\\n\\n---\\n\\n### 2. Graph (mastery 11%)\\n\\n**현황**: 8회 시도 중 1회 정답.\\n\\n**원인 분석**\\n- 어려워하는 개념: 방문 체크, 재귀 종료 조건, 그래프 표현\\n- 최근 실패: 'Graph 최단경로'에서 다익스트라 구현 실패\\n- AI 튜터 진단: '그래프 시각화가 필요'\\n\\n**개선 방법**\\n1. 문제를 읽고 노드와 간선을 직접 그려보세요\\n2. BFS는 큐 삽입 시점에, DFS는 함수 진입 시점에 visited 체크하세요\\n3. 간단한 BFS 미로 탐색부터 연습하세요"
 }}
 ```
 
@@ -144,11 +130,15 @@ ANALYSIS_SYSTEM_PROMPT = """
 ## 분석 지침
 
 ### 필수 규칙
-1. **strengths**: bkt_mastery에서 mastery >= 0.7인 토픽
-2. **weaknesses**: bkt_mastery에서 mastery < 0.5인 토픽
+1. **strengths**: bkt_mastery에서 mastery >= 0.7인 토픽 **전부** (최대 6개, 높은 순)
+2. **weaknesses**: bkt_mastery에서 mastery < 0.5인 토픽 **전부** (최대 6개, 낮은 순)
 3. **score**: 반드시 bkt_mastery의 mastery 값 사용
 4. **common_error_patterns**: 반드시 concepts_struggling 데이터를 분석하여 생성
-5. **learning_style**: hint_usage, mood_distribution 데이터를 분석하여 type, description, strategy 생성
+
+### 중요: 모든 해당 토픽에 insight 생성
+- 70% 이상 토픽이 5개면 strengths에 5개 모두 포함 (각각 insight 필수)
+- 50% 미만 토픽이 4개면 weaknesses에 4개 모두 포함 (각각 insight 필수)
+- **일부만 선택하지 말고, 조건에 맞는 토픽은 전부 포함하세요**
 
 ### insight 작성법
 
@@ -191,26 +181,20 @@ ANALYSIS_SYSTEM_PROMPT = """
 
 **아래 필드들은 절대로 빈 값으로 두지 마세요:**
 
-1. **learning_style** (필수)
-   - type: methodical | exploratory | hint-dependent | independent 중 하나
-   - description: 학습 스타일에 대한 설명
-   - strategy: 이 스타일에 맞는 학습 전략
-   - 빈 객체 {{}} 금지
-
-2. **common_error_patterns** (필수)
+1. **common_error_patterns** (필수)
    - concepts_struggling의 각 항목을 '원인 → 결과' 형식으로 변환
    - 최소 2-3개 이상의 패턴 작성
    - 빈 배열 [] 금지
 
-3. **strengths** (필수) - bkt_mastery >= 0.7인 토픽
-4. **weaknesses** (필수) - bkt_mastery < 0.5인 토픽
-5. **recommendations** (필수) - 구체적 액션 아이템 3개 이상
-6. **study_plan** (필수) - 단계별 학습 경로
-7. **detailed_feedback** (필수) - 약점 중심 분석
+2. **strengths** (필수)
+   - bkt_mastery >= 0.7인 토픽 **전부 포함** (최대 6개)
+   - **각 토픽마다 insight 필수** (빈 문자열 금지)
+   - insight는 해당 토픽의 시도횟수, 정답수, mastery 수치를 반드시 포함
 
-### learning_style type 판단 기준
-- **methodical**: 체계적 접근, 힌트 사용 적음, 꾸준한 학습 패턴
-- **exploratory**: 다양한 시도, 실험적 접근, 호기심 많음
-- **hint-dependent**: 힌트 의존도 높음 (avg_per_problem >= 2)
-- **independent**: 힌트 거의 사용 안 함, 스스로 해결
+3. **weaknesses** (필수)
+   - bkt_mastery < 0.5인 토픽 **전부 포함** (최대 6개)
+   - **각 토픽마다 insight 필수** (빈 문자열 금지)
+   - insight는 해당 토픽의 시도횟수, 정답수, mastery 수치와 원인 분석 포함
+
+4. **detailed_feedback** (필수) - 약점 중심 분석
 """

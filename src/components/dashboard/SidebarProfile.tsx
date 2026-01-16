@@ -5,9 +5,9 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Progress } from '@/components/ui/progress';
 import { usersApi, publicProfileApi, type PublicFarm, type PublicBadge } from '@/lib/api/users';
-import { farmApi } from '@/lib/api/farm';
+import { farmApi, type InventoryItem } from '@/lib/api/farm';
 import type { Badge as BadgeType } from '@/lib/types';
-import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck } from 'lucide-react';
+import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck, Sprout, Package } from 'lucide-react';
 import { BadgeIcon } from '@/components/ui/badge-icon';
 import { BadgeDetailModal, type BadgeRarity } from '@/components/ui/badge-detail-modal';
 import { Button } from '@/components/ui/button';
@@ -19,8 +19,7 @@ import {
   FarmMinimap,
   FarmerSprite,
   HouseSprite,
-  type CropVariety,
-  type CropStage,
+  type MinimapSlot,
 } from '@/components/farm/GameSprites';
 import { CROP_INFO } from '@/components/farm/ui/Hotbar';
 import { useAuth, SUBSCRIPTION_FEATURES } from '@/hooks/useAuth';
@@ -101,15 +100,92 @@ export function updateFarmCache(data: UserFarm): void {
   setFarmToCache(data);
 }
 
-// 샘플 작물 데이터 (Modern Farm 에셋 기반)
-const SAMPLE_CROPS: Array<{ type: CropVariety; stage: CropStage }> = [
-  { type: 'tomato', stage: 4 },
-  { type: 'carrot', stage: 3 },
-  { type: 'corn', stage: 4 },
-  { type: 'strawberry', stage: 2 },
-  { type: 'cabbage', stage: 4 },
-  { type: 'pumpkin', stage: 3 },
-];
+// 농장 슬롯을 미니맵용 슬롯으로 변환
+function convertToMinimapSlots(
+  farmSlots?: Array<{ cropCode?: string | null; slot?: number; stage?: number; plantedAt?: string | null; growTimeSeconds?: number | null }>,
+  publicSlots?: Array<{ cropType?: string | null; slotIndex?: number; stage?: number }>
+): MinimapSlot[] {
+  // 본인 프로필 (farmSlots)
+  if (farmSlots && farmSlots.length > 0) {
+    return farmSlots.map(s => ({
+      cropCode: s.cropCode || null,
+      stage: s.stage || 0,
+      plantedAt: s.plantedAt || null,
+      growTimeSeconds: s.growTimeSeconds || null,
+    }));
+  }
+  // 타인 프로필 (publicSlots)
+  if (publicSlots && publicSlots.length > 0) {
+    return publicSlots.map(s => ({
+      cropCode: s.cropType || null,
+      stage: s.stage || 0,
+    }));
+  }
+  return [];
+}
+
+// 남은 시간 계산 (초 단위)
+function calculateRemainingSeconds(slot: MinimapSlot): number {
+  if (!slot.plantedAt || !slot.growTimeSeconds) return Infinity;
+  const plantedTime = new Date(slot.plantedAt).getTime();
+  const now = Date.now();
+  const elapsedSeconds = Math.floor((now - plantedTime) / 1000);
+  const remaining = slot.growTimeSeconds - elapsedSeconds;
+  return Math.max(0, remaining);
+}
+
+// 실시간 stage 계산 (plantedAt, growTimeSeconds 기반)
+function calculateStage(slot: MinimapSlot): number {
+  if (!slot.cropCode) return 0;
+  if (!slot.plantedAt || !slot.growTimeSeconds) return slot.stage;
+
+  const plantedTime = new Date(slot.plantedAt).getTime();
+  const now = Date.now();
+  const elapsedSeconds = Math.floor((now - plantedTime) / 1000);
+  const progress = elapsedSeconds / slot.growTimeSeconds;
+
+  if (progress >= 1) return 4; // 수확 가능
+  if (progress >= 0.75) return 3;
+  if (progress >= 0.5) return 2;
+  if (progress >= 0.25) return 1;
+  return 1; // 최소 stage 1 (씨앗)
+}
+
+// 작물 슬롯 정렬 (수확 가능 우선 → 남은 시간 짧은 순)
+function sortCropSlots(slots: MinimapSlot[]): MinimapSlot[] {
+  return [...slots].sort((a, b) => {
+    // 1. 수확 가능(실시간 stage >= 4)한 작물 우선
+    const aReady = calculateStage(a) >= 4;
+    const bReady = calculateStage(b) >= 4;
+    if (aReady && !bReady) return -1;
+    if (!aReady && bReady) return 1;
+
+    // 2. 둘 다 수확 가능하면 순서 유지
+    if (aReady && bReady) return 0;
+
+    // 3. 남은 시간 짧은 순
+    const aRemaining = calculateRemainingSeconds(a);
+    const bRemaining = calculateRemainingSeconds(b);
+    return aRemaining - bRemaining;
+  });
+}
+
+// 남은 시간 포맷팅 (초 → "M:SS" 또는 "H:MM")
+function formatRemainingTime(seconds: number): string {
+  if (seconds <= 0 || seconds === Infinity) return '';
+
+  if (seconds < 60) {
+    return `${seconds}s`;
+  } else if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${mins}m`;
+  } else {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return mins > 0 ? `${hours}h${mins}m` : `${hours}h`;
+  }
+}
 
 interface SidebarProfileProps {
   /** 조회할 사용자 username. 없으면 본인 프로필 */
@@ -169,6 +245,11 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
     iconUrl?: string;
     earnedAt?: string;
   } | null>(null);
+
+  // 씨앗/작물 탭 상태
+  const [farmTabActive, setFarmTabActive] = useState<'seeds' | 'crops'>('crops');
+  // 인벤토리 (씨앗용)
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
 
   // 공개 프로필 데이터
   const [publicProfile, setPublicProfile] = useState<{
@@ -321,6 +402,15 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
         .catch(() => setBadges([]));
     }
   }, [isAuthenticated, isOwnProfile, propBadges]);
+
+  // 인벤토리 로드 (씨앗 표시용)
+  useEffect(() => {
+    if (isAuthenticated && isOwnProfile) {
+      farmApi.getInventory()
+        .then(setInventory)
+        .catch(() => setInventory([]));
+    }
+  }, [isAuthenticated, isOwnProfile]);
 
   // 친구 추가 핸들러
   const handleAddFriend = async () => {
@@ -516,25 +606,42 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                 </div>
               </div>
               
-              {/* 농장 미니맵 */}
-              <FarmMinimap 
+              {/* 농장 미니맵 - 실제 데이터 연동 */}
+              <FarmMinimap
                 level={farmLevel}
-                crops={SAMPLE_CROPS}
-                className="rounded-t-none h-48"
+                farmSlots={convertToMinimapSlots(
+                  isOwnProfile ? farm?.farmSlots : undefined,
+                  !isOwnProfile ? publicFarm?.slots : undefined
+                )}
+                farmSize={isOwnProfile ? (farm?.farmSize || 9) : 9}
+                className="rounded-t-none"
               />
-              
+
               {/* 캐릭터 정보 오버레이 (한 줄) */}
               <div className={cn(
-                'absolute bottom-2 left-2 right-2 z-20',
+                'absolute bottom-4 left-2 right-2 z-20',
                 'flex items-center justify-between px-3 py-1.5 rounded-lg',
                 'bg-black/40 backdrop-blur-sm'
               )}>
                 <span className="font-bold text-sm text-white truncate">{character.name}</span>
                 <span className="text-xs text-amber-300">Lv.{displayLevel} 농부</span>
-                <div className="text-xs text-green-400 flex items-center gap-1">
-                  <TrendingUp className="h-3 w-3" />
-                  <span>{SAMPLE_CROPS.filter(c => c.stage === 4).length} 수확</span>
-                </div>
+                {(() => {
+                  const slots = convertToMinimapSlots(
+                    isOwnProfile ? farm?.farmSlots : undefined,
+                    !isOwnProfile ? publicFarm?.slots : undefined
+                  );
+                  const readyCount = slots.filter(s => calculateStage(s) >= 4).length;
+                  return readyCount > 0 ? (
+                    <div className="text-xs text-green-400 flex items-center gap-1">
+                      <TrendingUp className="h-3 w-3" />
+                      <span>{readyCount} 수확</span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-amber-200/70">
+                      농장 Lv.{farmLevel}
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
             
@@ -588,36 +695,149 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
               </Button>
             )}
             
-            {/* 빠른 작물 현황 */}
-            <div className={cn(
-              'p-3 rounded-xl',
-              'bg-gradient-to-b from-amber-100 to-amber-50',
-              'border-3 border-amber-600 shadow-[2px_2px_0_0_#92400e]'
-            )}>
-              <h4 className="text-xs font-bold text-amber-800 mb-2 flex items-center gap-1">
-                <Leaf className="h-3 w-3" />
-                작물 현황
-              </h4>
-              <div className="grid grid-cols-6 gap-1">
-                {SAMPLE_CROPS.map((crop, i) => (
-                  <motion.div
-                    key={i}
-                    whileHover={{ scale: 1.1 }}
-                    className="flex items-center justify-center text-xl cursor-default"
-                    style={{
-                      textShadow: `
-                        -1px -1px 0 #78350f,
-                        1px -1px 0 #78350f,
-                        -1px 1px 0 #78350f,
-                        1px 1px 0 #78350f
-                      `,
-                    }}
-                  >
-                    {CROP_INFO[crop.type]?.emoji || '🌱'}
-                  </motion.div>
-                ))}
-              </div>
-            </div>
+            {/* 씨앗/작물 탭 UI */}
+            {(() => {
+              const slots = convertToMinimapSlots(
+                isOwnProfile ? farm?.farmSlots : undefined,
+                !isOwnProfile ? publicFarm?.slots : undefined
+              );
+              const cropsWithData = sortCropSlots(slots.filter(s => s.cropCode));
+
+              // 씨앗 인벤토리 필터링 (seed_ 또는 _seed로 시작하는 아이템)
+              const seedItems = inventory.filter(item =>
+                item.itemCode.startsWith('seed_') || item.itemCode.includes('_seed')
+              );
+
+              return (
+                <div className={cn(
+                  'rounded-xl overflow-hidden',
+                  'bg-gradient-to-b from-amber-100 to-amber-50',
+                  'border-2 border-amber-500'
+                )}>
+                  {/* 탭 헤더 */}
+                  <div className="flex border-b border-amber-300">
+                    <button
+                      onClick={() => setFarmTabActive('crops')}
+                      className={cn(
+                        'flex-1 px-3 py-2 text-xs font-bold flex items-center justify-center gap-1 transition-colors',
+                        farmTabActive === 'crops'
+                          ? 'bg-amber-200 text-amber-900'
+                          : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                      )}
+                    >
+                      <Leaf className="h-3 w-3" />
+                      작물 ({cropsWithData.length})
+                    </button>
+                    <button
+                      onClick={() => setFarmTabActive('seeds')}
+                      className={cn(
+                        'flex-1 px-3 py-2 text-xs font-bold flex items-center justify-center gap-1 transition-colors',
+                        farmTabActive === 'seeds'
+                          ? 'bg-green-200 text-green-900'
+                          : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                      )}
+                    >
+                      <Sprout className="h-3 w-3" />
+                      씨앗 ({seedItems.reduce((sum, i) => sum + i.quantity, 0)})
+                    </button>
+                  </div>
+
+                  {/* 탭 컨텐츠 */}
+                  <div className="p-3">
+                    {farmTabActive === 'crops' ? (
+                      // 작물 현황 탭
+                      cropsWithData.length === 0 ? (
+                        <p className="text-xs text-amber-600 text-center py-2">아직 심은 작물이 없어요</p>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-6 gap-1">
+                            {cropsWithData.slice(0, 6).map((slot, i) => {
+                              const cropInfo = slot.cropCode ? CROP_INFO[slot.cropCode as keyof typeof CROP_INFO] : null;
+                              const currentStage = calculateStage(slot);
+                              const isReady = currentStage >= 4;
+                              const remaining = calculateRemainingSeconds(slot);
+                              const timeText = isReady ? '완료' : formatRemainingTime(remaining);
+                              return (
+                                <motion.div
+                                  key={i}
+                                  whileHover={{ scale: 1.05 }}
+                                  className={cn(
+                                    'flex flex-col items-center cursor-default',
+                                    isReady && 'animate-pulse'
+                                  )}
+                                >
+                                  <div
+                                    className="text-lg relative"
+                                    style={{
+                                      textShadow: `
+                                        -1px -1px 0 #78350f,
+                                        1px -1px 0 #78350f,
+                                        -1px 1px 0 #78350f,
+                                        1px 1px 0 #78350f
+                                      `,
+                                    }}
+                                  >
+                                    {cropInfo?.emoji || '🌱'}
+                                    {isReady && (
+                                      <span className="absolute -top-1 -right-2 text-[8px]">✨</span>
+                                    )}
+                                  </div>
+                                  <span className={cn(
+                                    'text-[9px] font-medium leading-none mt-0.5',
+                                    isReady ? 'text-green-600' : 'text-amber-700'
+                                  )}>
+                                    {timeText}
+                                  </span>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                          {cropsWithData.length > 6 && (
+                            <p className="text-[10px] text-amber-600 text-center">
+                              +{cropsWithData.length - 6}개 더 있음
+                            </p>
+                          )}
+                        </div>
+                      )
+                    ) : (
+                      // 씨앗 현황 탭
+                      seedItems.length === 0 ? (
+                        <p className="text-xs text-green-600 text-center py-2">보유한 씨앗이 없어요</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {seedItems.slice(0, 4).map((item) => {
+                            // seed_tomato → tomato 형태로 변환하여 CROP_INFO 조회
+                            const cropCode = item.itemCode.replace('seed_', '').replace('_seed', '');
+                            const cropInfo = CROP_INFO[cropCode as keyof typeof CROP_INFO];
+                            return (
+                              <div
+                                key={item.itemCode}
+                                className="flex items-center justify-between px-2 py-1 bg-green-100 rounded-lg"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">{cropInfo?.emoji || '🌱'}</span>
+                                  <span className="text-xs font-medium text-green-800">
+                                    {cropInfo?.name || item.itemCode} 씨앗
+                                  </span>
+                                </div>
+                                <span className="text-xs font-bold text-green-700 bg-green-200 px-2 py-0.5 rounded-full">
+                                  x{item.quantity}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {seedItems.length > 4 && (
+                            <p className="text-[10px] text-green-600 text-center">
+                              +{seedItems.length - 4}종류 더 있음
+                            </p>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </>
         ) : (
           /* 캐릭터 없을 때 */

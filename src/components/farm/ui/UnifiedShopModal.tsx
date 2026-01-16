@@ -7,11 +7,11 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Store, X, Coins, Check, Home, TreeDeciduous, Flower2, Grid, Fence, MapPin } from 'lucide-react';
+import { Store, X, Coins, Check, Home, TreeDeciduous, Flower2, Fence, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { UnifiedShopItem } from '@/lib/api/farm';
 
-type CategoryType = 'building' | 'farm' | 'tree' | 'decoration' | 'fence';
+type CategoryType = 'building' | 'tree' | 'decoration' | 'fence';
 
 interface UnifiedShopModalProps {
   isOpen: boolean;
@@ -26,7 +26,6 @@ interface UnifiedShopModalProps {
 // 카테고리별 아이콘/색상
 const CATEGORY_CONFIG: Record<CategoryType, { icon: React.ReactNode; label: string; color: string }> = {
   building: { icon: <Home className="w-4 h-4" />, label: '건물', color: 'text-amber-400' },
-  farm: { icon: <Grid className="w-4 h-4" />, label: '밭', color: 'text-green-400' },
   tree: { icon: <TreeDeciduous className="w-4 h-4" />, label: '나무', color: 'text-emerald-400' },
   decoration: { icon: <Flower2 className="w-4 h-4" />, label: '장식', color: 'text-pink-400' },
   fence: { icon: <Fence className="w-4 h-4" />, label: '울타리', color: 'text-stone-400' },
@@ -54,7 +53,6 @@ const ITEM_ICONS: Record<string, string> = {
   chicken_coop: '🐔',
   scarecrow: '🧑‍🌾',
   barn: '🏚️',
-  farm_plot: '🟫',
   tree_oak: '🌳',
   tree_pine: '🌲',
   tree_apple: '🍎',

@@ -3,15 +3,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { Brain, RefreshCw, Loader2, Sparkles, FileCode } from 'lucide-react';
+import { Brain, RefreshCw, Loader2, Sparkles, FileCode, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScoreOverview } from '@/components/analysis/ScoreOverview';
-import { SkillRadar } from '@/components/analysis/SkillRadar';
 import { TopicMasteryChart } from '@/components/analysis/TopicMasteryChart';
-import { HintUsageCard } from '@/components/analysis/HintUsageCard';
-import { LearningStyleCard } from '@/components/analysis/LearningStyleCard';
 import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
 import { AICoachingSection } from '@/components/analysis/AICoachingSection';
+import { RecentAttemptsCard } from '@/components/analysis/RecentAttemptsCard';
+import { HintIndependenceCard } from '@/components/analysis/HintIndependenceCard';
 import { analysisApi, type AnalysisReport } from '@/lib/api';
 
 // 종합 점수 계산 (0-100)
@@ -56,6 +56,11 @@ export default function AnalysisPage() {
 
     try {
       const response = await analysisApi.getReport();
+      console.log('📊 [DEBUG] getReport response:', response);
+      console.log('📊 [DEBUG] report data:', response.data?.report);
+      console.log('📊 [DEBUG] problemTypeStats:', response.data?.report?.problemTypeStats);
+      console.log('📊 [DEBUG] recent10Attempts:', response.data?.report?.recent10Attempts);
+      console.log('📊 [DEBUG] hintIndependence:', response.data?.report?.hintIndependence);
       if (response.data?.hasReport && response.data.report) {
         setReport(response.data.report);
       } else {
@@ -75,6 +80,10 @@ export default function AnalysisPage() {
 
     try {
       const response = await analysisApi.generateAnalysis();
+      console.log('📊 [DEBUG] generateAnalysis response:', response);
+      console.log('📊 [DEBUG] problemTypeStats:', response.data?.problemTypeStats);
+      console.log('📊 [DEBUG] recent10Attempts:', response.data?.recent10Attempts);
+      console.log('📊 [DEBUG] hintIndependence:', response.data?.hintIndependence);
       if (response.data) {
         setReport(response.data);
       } else {
@@ -212,29 +221,25 @@ export default function AnalysisPage() {
         </motion.div>
       )}
 
-      {/* Row 1: ScoreRing + HintUsage + LearningStyle */}
+      {/* Row 1: ScoreRing + HintUsage */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
       >
-        {/* 종합 점수 + 스탯 + 난이도별 정답률 */}
+        {/* 종합 점수 + 스탯 + 난이도별/유형별 정답률 */}
         <div className="min-h-[280px]">
           <ScoreOverview
             score={overallScore}
             stats={report.statsSnapshot}
             difficultySnapshot={report.difficultySnapshot}
+            problemTypeStats={report.problemTypeStats}
           />
         </div>
 
-        {/* 힌트 사용 패턴 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
-          <HintUsageCard hintUsage={report.hintUsage} />
-        </div>
-
-        {/* 학습 습관 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px]">
-          <LearningStyleCard learningStyle={report.learningStyle} />
+        {/* 빈 카드 - TODO: 새로운 콘텐츠 추가 예정 */}
+        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px] flex items-center justify-center">
+          <p className="text-zinc-600 text-sm">새로운 콘텐츠 예정</p>
         </div>
       </motion.div>
 
@@ -248,9 +253,53 @@ export default function AnalysisPage() {
         >
           <div className="px-4 py-3 border-b border-zinc-800">
             <h3 className="text-sm font-bold text-zinc-100">토픽별 숙련도 & AI 분석</h3>
-            <p className="text-[10px] text-zinc-500 mt-0.5">
-              BKT 기반 실력 분석 · 토픽을 클릭하면 상세 피드백을 볼 수 있습니다
-            </p>
+            <div className="flex items-center gap-1 mt-0.5">
+              <p className="text-[10px] text-zinc-500">
+                BKT 기반 실력 분석 · 토픽을 클릭하면 상세 피드백을 볼 수 있습니다
+              </p>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5">
+                    <HelpCircle className="w-3.5 h-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-80 p-0 bg-zinc-900 border-zinc-700"
+                >
+                  <div className="px-4 py-3 border-b border-zinc-800">
+                    <h4 className="text-sm font-semibold text-zinc-100">BKT란?</h4>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">Bayesian Knowledge Tracing</p>
+                  </div>
+                  <div className="px-4 py-3 space-y-3 text-xs text-zinc-400">
+                    <p>
+                      <span className="text-zinc-200 font-medium">단순 정답률과 다릅니다.</span>{' '}
+                      BKT는 정답/오답의 <span className="text-primary">순서와 패턴</span>을 분석하여
+                      실제 이해도를 측정합니다.
+                    </p>
+                    <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
+                      <p className="text-zinc-300 font-medium text-[11px]">예시: 10문제 중 5문제 정답 (50%)</p>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400">●●●●●</span>
+                          <span className="text-zinc-500">○○○○○</span>
+                          <span className="text-zinc-400">→ BKT 낮음 (최근 연속 오답)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-zinc-500">○○○○○</span>
+                          <span className="text-emerald-400">●●●●●</span>
+                          <span className="text-zinc-400">→ BKT 높음 (최근 연속 정답)</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-zinc-500 text-[11px]">
+                      최근 정답을 맞추면 숙련도가 올라가고, 최근 오답이 많으면 내려갑니다.
+                      꾸준히 정답을 맞추면 점수가 안정적으로 상승합니다.
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
           <TopicMasteryChart
             bktMastery={report.bktMastery}
@@ -261,78 +310,53 @@ export default function AnalysisPage() {
         </motion.div>
       )}
 
-      {/* Row 3: AI Coach (모든 AI 분석 통합) */}
+      {/* Row 3: 최근 풀이 기록 + 힌트 독립률 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.10 }}
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
       >
-        <AICoachingSection
-          summaryText={report.summaryText || ""}
-          studyPlan={report.studyPlan}
-          detailedFeedback={report.detailedFeedback}
-          commonErrorPatterns={report.commonErrorPatterns}
-          recommendations={report.recommendations}
-        />
+        {/* 최근 10문제 결과 */}
+        {report.recent10Attempts && report.recent10Attempts.length > 0 && (
+          <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
+            <div className="px-4 py-3 border-b border-zinc-800">
+              <h3 className="text-sm font-bold text-zinc-100">최근 풀이 기록</h3>
+              <p className="text-[10px] text-zinc-500 mt-0.5">
+                최근 10문제 결과 분석
+              </p>
+            </div>
+            <RecentAttemptsCard
+              attempts={report.recent10Attempts}
+              analysis={report.recent10Analysis}
+            />
+          </div>
+        )}
+
+        {/* 힌트 독립률 (도넛 차트) */}
+        {report.hintIndependence && report.hintIndependence.total > 0 && (
+          <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
+            <div className="px-4 py-3 border-b border-zinc-800">
+              <h3 className="text-sm font-bold text-zinc-100">힌트 독립률</h3>
+              <p className="text-[10px] text-zinc-500 mt-0.5">
+                힌트 없이 해결한 문제 비율
+              </p>
+            </div>
+            <HintIndependenceCard data={report.hintIndependence} />
+          </div>
+        )}
       </motion.div>
 
-      {/* Row 4: 레이더 차트 (순수 정답률 데이터) */}
+      {/* Row 4: AI Coach (모든 AI 분석 통합) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.14 }}
-        className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden"
       >
-        <div className="px-4 py-3 border-b border-zinc-800">
-          <h3 className="text-base font-bold text-zinc-100">토픽별 정답률</h3>
-          <p className="text-[11px] text-zinc-500 mt-0.5">
-            문제 풀이 결과 기반 통계
-          </p>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2">
-          {/* 레이더 차트 */}
-          <div className="relative p-4 flex flex-col items-center justify-center min-h-[280px] bg-gradient-to-br from-zinc-900 to-zinc-950">
-            <div className="absolute inset-0 opacity-30">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[280px] rounded-full bg-primary/5 blur-3xl" />
-            </div>
-            <div className="relative z-10 w-full max-w-[240px]">
-              <SkillRadar
-                skills={Object.entries(report.skillSnapshot || {}).map(([topic, score]) => ({
-                  topic,
-                  score: score as number,
-                }))}
-                size={220}
-              />
-            </div>
-          </div>
-
-          {/* 토픽별 정답률 텍스트 */}
-          <div className="border-t lg:border-t-0 lg:border-l border-zinc-800 p-4">
-            <div className="space-y-1.5">
-              {Object.entries(report.skillSnapshot || {})
-                .sort(([, a], [, b]) => (b as number) - (a as number))
-                .map(([topic, score]) => (
-                  <div key={topic} className="flex items-center justify-between">
-                    <span className="text-xs text-zinc-400">{topic}</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${(score as number) * 100}%`,
-                            backgroundColor: (score as number) >= 0.7 ? '#22c55e' : (score as number) >= 0.4 ? '#eab308' : '#ef4444'
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs font-medium text-zinc-300 w-10 text-right">
-                        {Math.round((score as number) * 100)}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
+        <AICoachingSection
+          detailedFeedback={report.detailedFeedback}
+          commonErrorPatterns={report.commonErrorPatterns}
+        />
       </motion.div>
 
       {/* Row 5: RecommendedProblems */}

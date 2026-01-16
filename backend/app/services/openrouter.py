@@ -79,25 +79,16 @@ class OpenRouterService:
             payload["response_format"] = response_format
 
         async with httpx.AsyncClient(timeout=120.0) as client:
-            logger.debug(f"Calling model: {model_id}")
             response = await client.post(
                 f"{self.BASE_URL}/chat/completions",
                 headers=self._get_headers(),
                 json=payload,
             )
-            logger.debug(f"Response status: {response.status_code}")
             if response.status_code != 200:
                 logger.error(f"Error response: {response.text[:500]}")
             response.raise_for_status()
 
-            result = response.json()
-
-            # 응답 내용 미리보기 (디버깅용)
-            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            if content:
-                logger.debug(f"Content preview: {content[:200]}...")
-
-            return result
+            return response.json()
 
     async def chat_completion_stream(
         self,
