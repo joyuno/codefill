@@ -1193,8 +1193,9 @@ async def record_solve(
                     problem_type=submission.problem_type,
                     time_spent=submission.time_spent,
                     hints_used=submission.hints_used,
+                    base_problem_id=base_problem_id,  # 중복 풀이 체크용
                 )
-                print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}, type={submission.problem_type}")
+                print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}, type={submission.problem_type}, base_problem_id={base_problem_id}")
 
                 # ============================================================
                 # 🚀 매 10문제마다 전체 스킬 프로필 재계산 (LLM 분석 포함)

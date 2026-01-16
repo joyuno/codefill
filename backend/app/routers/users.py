@@ -223,6 +223,38 @@ async def update_user_preferences(
         )
 
 
+@router.post("/me/initialize-elo")
+async def initialize_user_elo(
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """
+    온보딩 완료 후 초기 ELO 설정
+
+    users 테이블의 experience_level, learning_goal과
+    user_preferences의 preferred_difficulty를 기반으로 초기 ELO를 계산합니다.
+
+    반환값:
+        - initial_elo: 설정된 초기 ELO (770~1130 범위)
+        - factors: 계산에 사용된 요소들
+    """
+    from ..services.feedback_service import FeedbackService
+
+    try:
+        service = FeedbackService()
+        initial_elo = service.set_initial_elo_for_user(str(user_id))
+
+        return {
+            "success": True,
+            "initial_elo": initial_elo,
+            "message": f"초기 ELO가 {initial_elo}로 설정되었습니다.",
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initialize ELO: {str(e)}"
+        )
+
+
 @router.get("/me/badges", response_model=List[Badge])
 async def get_user_badges(
     user_id: UUID = Depends(get_current_user_id),

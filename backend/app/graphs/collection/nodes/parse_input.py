@@ -177,6 +177,28 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         updates["is_question"] = True
         updates["question_type"] = question_info.get("question_type", "explanation")
         updates["question_info"] = question_info  # 전체 정보 전달
+
+        # 🔧 FIX: 질문과 함께 값도 추출됐으면 저장 (동시 처리)
+        # 예: "파이썬으로 할게 근데 골드면 어느정도야?" → language=python + 질문 응답
+        extracted_with_question = {}  # 이번 턴에 추출된 값 (handle_question에서 응답에 포함)
+        for step in ["topic", "difficulty", "language"]:
+            value = extraction.values.get(step)
+            if value and extraction.confidence >= 0.50:
+                if not existing_values.get(step):  # 기존 값이 없을 때만
+                    updates[step] = value
+                    extracted_with_question[step] = value
+                    print(f"[parse_input] Value extracted with question: {step}={value}")
+
+        # 추출된 값 정보를 handle_question에 전달
+        if extracted_with_question:
+            updates["extracted_with_question"] = extracted_with_question
+
+        # 다음 단계도 업데이트 (추출된 값 반영)
+        updates["current_step"] = _determine_next_step(
+            topic=updates.get("topic") or existing_values["topic"],
+            difficulty=updates.get("difficulty") or existing_values["difficulty"],
+            language=updates.get("language") or existing_values["language"],
+        )
         return updates
 
     # 현재 단계 값 확인
@@ -257,6 +279,16 @@ def _determine_next_step(
 def _classify_question_type(message: str) -> str:
     """질문 유형 분류 (간단한 키워드 체크)"""
     message_lower = message.lower()
+
+    # 주제 목록 요청 (topic_list)
+    topic_list_keywords = [
+        "주제 목록", "주제 다", "주제가 뭐", "주제 있", "주제 알려",
+        "알고리즘 목록", "알고리즘 있", "어떤 주제", "무슨 주제",
+        "태그 목록", "태그 다", "토픽 목록", "토픽 있",
+        "문제 종류", "카테고리 목록", "분류 목록"
+    ]
+    if any(kw in message_lower for kw in topic_list_keywords):
+        return "topic_list"
 
     # 추천 요청
     if any(p in message_lower for p in ["추천", "뭐가 좋", "알아서", "골라", "아무"]):

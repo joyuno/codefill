@@ -39,6 +39,46 @@ DIFFICULTY_ELO_MAP = {
     "very_hard": 1500,
 }
 
+# ============================================================
+# 초기 ELO 계산용 상수 (온보딩 데이터 기반)
+# ============================================================
+# 보수적 범위: 770 ~ 1130
+
+# 경험 레벨별 기본 ELO
+EXPERIENCE_LEVEL_ELO = {
+    "beginner": 800,      # 입문자
+    "elementary": 900,    # 초급
+    "intermediate": 950,  # 중급
+    "advanced": 1050,     # 고급
+}
+
+# 학습 목표별 보정
+LEARNING_GOAL_ADJUSTMENT = {
+    "big_tech": 30,       # 대기업 코테 준비
+    "mid_startup": 0,     # 중견/스타트업
+    "skill_up": 0,        # 실력 향상
+    "competition": 50,    # 대회 준비 (고수)
+}
+
+# 선호 난이도별 보정
+PREFERRED_DIFFICULTY_ADJUSTMENT = {
+    "easy": -30,          # 실버 선택 = 자신감 낮음
+    "medium": 0,          # 골드 (기본)
+    "medium_hard": 20,    # 플래티넘
+    "hard": 30,           # 다이아
+}
+
+# ============================================================
+# 문제 유형별 ELO 보정 계수 (CodeFill은 일반 코테보다 쉬움)
+# ============================================================
+# 빈칸채우기/퍼즐은 직접 구현보다 쉬우므로 ELO 상승을 보수적으로
+PROBLEM_TYPE_ELO_FACTOR = {
+    "implementation": 1.0,  # 직접 구현 (기준)
+    "guided": 0.6,          # 가이드 있음
+    "blank": 0.5,           # 빈칸 채우기
+    "puzzle": 0.4,          # 퍼즐 (가장 쉬움)
+}
+
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -325,6 +365,7 @@ class FeedbackService:
         k_factor: float,
         time_factor: float = 1.0,
         hint_factor: float = 1.0,
+        problem_type: str = "blank",  # 문제 유형별 보정
     ) -> Tuple[int, int, float]:
         """
         ELO 변화량 계산
@@ -336,6 +377,7 @@ class FeedbackService:
             k_factor: K-factor
             time_factor: 시간 보정
             hint_factor: 힌트 보정
+            problem_type: 문제 유형 (blank/puzzle/guided/implementation)
 
         Returns:
             (새 ELO, 변화량, 예상 확률)
@@ -343,14 +385,26 @@ class FeedbackService:
         # 예상 정답 확률
         expected = self._calculate_expected_probability(current_elo, problem_elo)
 
+        # 문제 유형별 보정 계수 (빈칸채우기/퍼즐은 일반 코테보다 쉬움)
+        type_factor = PROBLEM_TYPE_ELO_FACTOR.get(problem_type, 0.5)
+
         # 실제 결과 (시간/힌트 보정 적용)
         if is_correct:
             actual = min(1.0, 1.0 * time_factor * hint_factor)
         else:
             actual = 0.0
 
-        # ELO 변화량
-        change = round(k_factor * (actual - expected))
+        # ELO 변화량 계산
+        raw_change = k_factor * (actual - expected)
+
+        # 문제 유형별 보정 적용 (변화량에 적용)
+        # - 정답 시: ELO 상승을 보정 (빈칸채우기면 50%만 상승)
+        # - 오답 시: 페널티는 그대로 유지 (쉬운 문제 틀리면 온전히 하락)
+        if raw_change > 0:
+            change = round(raw_change * type_factor)
+        else:
+            change = round(raw_change)  # 오답 페널티는 보정 없이 적용
+
         new_elo = current_elo + change
 
         # 범위 제한
@@ -358,6 +412,112 @@ class FeedbackService:
         actual_change = new_elo - current_elo
 
         return new_elo, actual_change, expected
+
+    @staticmethod
+    def calculate_initial_elo(
+        experience_level: str = None,
+        learning_goal: str = None,
+        preferred_difficulty: str = None,
+    ) -> int:
+        """
+        온보딩 데이터 기반 초기 ELO 계산
+
+        Args:
+            experience_level: beginner, elementary, intermediate, advanced
+            learning_goal: big_tech, mid_startup, skill_up, competition
+            preferred_difficulty: easy, medium, medium_hard, hard
+
+        Returns:
+            초기 ELO (보수적 범위: 770 ~ 1130)
+        """
+        # 기본 ELO (경험 레벨 기반)
+        base_elo = EXPERIENCE_LEVEL_ELO.get(experience_level, ELO_DEFAULT)
+
+        # 학습 목표 보정
+        goal_adj = LEARNING_GOAL_ADJUSTMENT.get(learning_goal, 0)
+
+        # 선호 난이도 보정
+        diff_adj = PREFERRED_DIFFICULTY_ADJUSTMENT.get(preferred_difficulty, 0)
+
+        # 최종 ELO (범위 제한)
+        initial_elo = base_elo + goal_adj + diff_adj
+        initial_elo = max(ELO_MIN, min(ELO_MAX, initial_elo))
+
+        return initial_elo
+
+    def set_initial_elo_for_user(self, user_id: str) -> int:
+        """
+        신규 사용자의 초기 ELO 설정
+
+        users 테이블에서 온보딩 데이터(experience_level, learning_goal)를 읽어서
+        user_stats.elo_overall과 user_analysis_reports.elo_overall을 설정합니다.
+
+        Args:
+            user_id: 사용자 UUID
+
+        Returns:
+            설정된 초기 ELO
+        """
+        try:
+            # 1. users 테이블에서 온보딩 데이터 조회
+            user_result = self.supabase.table("users") \
+                .select("experience_level, learning_goal") \
+                .eq("id", user_id) \
+                .single() \
+                .execute()
+
+            if not user_result.data:
+                logger.warning(f"[FeedbackService] User not found: {user_id}")
+                return ELO_DEFAULT
+
+            user = user_result.data
+            experience_level = user.get("experience_level")
+            learning_goal = user.get("learning_goal")
+
+            # 2. user_preferences에서 preferred_difficulty 조회
+            pref_result = self.supabase.table("user_preferences") \
+                .select("preferred_difficulty") \
+                .eq("user_id", user_id) \
+                .limit(1) \
+                .execute()
+
+            preferred_difficulty = None
+            if pref_result.data and len(pref_result.data) > 0:
+                preferred_difficulty = pref_result.data[0].get("preferred_difficulty")
+
+            # 3. 초기 ELO 계산
+            initial_elo = self.calculate_initial_elo(
+                experience_level=experience_level,
+                learning_goal=learning_goal,
+                preferred_difficulty=preferred_difficulty,
+            )
+
+            # 4. user_stats 업데이트
+            self.supabase.table("user_stats") \
+                .update({"elo_overall": initial_elo}) \
+                .eq("user_id", user_id) \
+                .execute()
+
+            # 5. user_analysis_reports 업데이트 (있으면)
+            self.supabase.table("user_analysis_reports") \
+                .upsert({
+                    "user_id": user_id,
+                    "elo_overall": initial_elo,
+                    "elo_by_topic": {},
+                    "elo_k_factor": ELO_K_FACTOR_NEW,
+                }, on_conflict="user_id") \
+                .execute()
+
+            logger.info(
+                f"[FeedbackService] Initial ELO set for user {user_id[:8]}: "
+                f"elo={initial_elo}, level={experience_level}, goal={learning_goal}"
+            )
+
+            return initial_elo
+
+        except Exception as e:
+            logger.error(f"[FeedbackService] Failed to set initial ELO: {e}")
+            return ELO_DEFAULT
 
     def get_previous_attempts(self, user_id: str, problem_id: str) -> List[Dict[str, Any]]:
         """이전 시도들 조회 (base_problem_id 기준)"""
@@ -915,6 +1075,7 @@ class FeedbackService:
         - 문제의 ELO와 사용자 ELO 비교하여 기대 확률 계산
         - 정답/오답에 따라 ELO 변화
         - 시간/힌트 보정 팩터 적용
+        - 🔒 이미 정답을 맞춘 문제는 ELO 변화 없음 (중복 방지)
 
         Args:
             user_id: 사용자 UUID
@@ -930,6 +1091,54 @@ class FeedbackService:
             업데이트된 스킬 정보 (ELO 포함)
         """
         try:
+            # ============================================================
+            # 🔒 중복 풀이 체크 (같은 문제 반복 풀이 시 ELO 변화 방지)
+            # ============================================================
+            if base_problem_id:
+                prev_correct_result = self.supabase.table("attempts") \
+                    .select("id") \
+                    .eq("user_id", user_id) \
+                    .eq("base_problem_id", base_problem_id) \
+                    .eq("is_correct", True) \
+                    .limit(1) \
+                    .execute()
+
+                already_solved = prev_correct_result.data and len(prev_correct_result.data) > 0
+
+                if already_solved:
+                    logger.info(
+                        f"[FeedbackService] Skipping ELO update - already solved: "
+                        f"user={user_id[:8]}, problem={base_problem_id[:8]}"
+                    )
+                    # 이미 맞춘 문제 → ELO 변화 없이 현재 프로필 반환
+                    profile_result = self.supabase.table("user_analysis_reports") \
+                        .select("skill_by_topic, elo_by_topic, elo_overall, weak_topics") \
+                        .eq("user_id", user_id) \
+                        .limit(1) \
+                        .execute()
+
+                    if profile_result.data:
+                        profile = profile_result.data[0]
+                        return {
+                            "skill_by_topic": profile.get("skill_by_topic", {}),
+                            "elo_by_topic": profile.get("elo_by_topic", {}),
+                            "elo_overall": profile.get("elo_overall", ELO_DEFAULT),
+                            "elo_changes": [],  # 변화 없음
+                            "weak_topics": profile.get("weak_topics", []),
+                            "updated_topics": problem_topics,
+                            "elo_skipped": True,
+                            "skip_reason": "already_solved",
+                        }
+                    return {
+                        "skill_by_topic": {},
+                        "elo_by_topic": {},
+                        "elo_overall": ELO_DEFAULT,
+                        "elo_changes": [],
+                        "weak_topics": [],
+                        "updated_topics": problem_topics,
+                        "elo_skipped": True,
+                        "skip_reason": "already_solved",
+                    }
             # 1. 현재 프로파일 조회 (없으면 생성)
             profile_result = self.supabase.table("user_analysis_reports") \
                 .select("*") \
@@ -992,6 +1201,7 @@ class FeedbackService:
                     k_factor=k_factor,
                     time_factor=time_factor,
                     hint_factor=hint_factor,
+                    problem_type=problem_type or "blank",  # 문제 유형별 보정
                 )
 
                 elo_by_topic[topic] = new_elo
@@ -1145,6 +1355,15 @@ class FeedbackService:
                 .upsert(update_data, on_conflict="user_id") \
                 .execute()
 
+            # 18. user_stats에도 elo_overall 업데이트 (프로필 표시용)
+            try:
+                self.supabase.table("user_stats") \
+                    .update({"elo_overall": elo_overall, "updated_at": "now()"}) \
+                    .eq("user_id", user_id) \
+                    .execute()
+            except Exception as stats_err:
+                logger.warning(f"[FeedbackService] Failed to update user_stats ELO: {stats_err}")
+
             logger.info(
                 f"[FeedbackService] ELO updated for user {user_id[:8]}: "
                 f"overall={elo_overall}, topics={list(elo_by_topic.keys())[:3]}, "
@@ -1277,6 +1496,7 @@ class FeedbackService:
                         k_factor=k_factor,
                         time_factor=time_factor,
                         hint_factor=hint_factor,
+                        problem_type=problem_type,  # 문제 유형별 보정
                     )
 
                     elo_by_topic[topic] = new_elo
@@ -1547,6 +1767,15 @@ class FeedbackService:
             self.supabase.table("user_analysis_reports") \
                 .upsert(update_data, on_conflict="user_id") \
                 .execute()
+
+            # user_stats에도 elo_overall 업데이트 (프로필 표시용)
+            try:
+                self.supabase.table("user_stats") \
+                    .update({"elo_overall": elo_overall, "updated_at": "now()"}) \
+                    .eq("user_id", user_id) \
+                    .execute()
+            except Exception as stats_err:
+                logger.warning(f"[FeedbackService] Failed to update user_stats ELO: {stats_err}")
 
             logger.info(
                 f"[FeedbackService] Skill profile recalculated: user={user_id[:8]}, "

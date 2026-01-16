@@ -285,6 +285,27 @@ QUESTION_PROMPTS = {
 - "안녕하세요! 반가워요 😊 그럼 문제 추천을 시작해볼게요! 어떤 알고리즘 주제로 연습해볼까요?"
 - "힘내세요! 코딩하면 기분 풀릴 거예요. 자, 어떤 난이도로 해볼까요?"
 """,
+    "topic_list": """
+사용자가 문제집에 있는 모든 주제/알고리즘 목록을 요청했습니다.
+
+현재 수집 단계: {current_step}
+수집된 정보:
+- 주제: {topic}
+- 난이도: {difficulty}
+- 언어: {language}
+
+사용자 메시지: "{message}"
+{question_context}
+
+아래 주제 목록을 사용자에게 안내해주세요. 카테고리별로 정리해서 보여주세요.
+
+{topic_list_data}
+
+1. 주제 목록을 간단하고 보기 좋게 정리해서 알려주세요
+2. 마지막에 현재 단계({current_step})에 맞는 값을 하나 추천하세요
+
+예: "이 중에서 {current_step == 'topic' and '어떤 주제로 연습해볼까요?' or '어떤 걸로 해볼까요?'}"
+""",
     "rejection": """
 사용자가 이전 추천을 거절했거나 추천을 요청했습니다.
 
@@ -377,6 +398,9 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
     rejected_values = state.get("rejected_values", [])
     rejection_reason = state.get("rejection_reason")
 
+    # 🔧 FIX: 질문과 함께 추출된 값 확인 (동시 처리용)
+    extracted_with_question = state.get("extracted_with_question", {})
+
     # ============================================================
     # question_info에서 상세 정보 추출 (Tool 기반 분석 결과)
     # ============================================================
@@ -437,6 +461,12 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
     # ============================================================
     if question_type == "off_topic":
         return await _handle_off_topic(state, current_step, message, user_context)
+
+    # ============================================================
+    # topic_list 타입일 때 특별 처리 (주제 목록 요청)
+    # ============================================================
+    if question_type == "topic_list":
+        return await _handle_topic_list(state, current_step, message, user_context, personalized)
 
     # rejection 타입일 때 특별 처리
     if question_type == "rejection":
@@ -636,6 +666,16 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
             display_value = _get_display_value(suggested_value, current_step)
             answer += f"\n\n{display_value}{_get_particle(display_value)} 해볼까요?"
 
+        # 🔧 FIX: 질문과 함께 추출된 값이 있으면 응답에 확인 메시지 추가
+        if extracted_with_question:
+            ack_parts = []
+            step_names = {"topic": "주제", "difficulty": "난이도", "language": "언어"}
+            for step, value in extracted_with_question.items():
+                display = _get_display_value(value, step)
+                ack_parts.append(f"{step_names.get(step, step)}: {display}")
+            ack_message = f"👍 {', '.join(ack_parts)}(으)로 저장했어요!\n\n"
+            answer = ack_message + answer
+
         return {
             "response_message": answer,
             "suggested_value": suggested_value,
@@ -702,6 +742,16 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
             difficulty_msg = fallback_messages.get(
                 current_step, f"{prefix}{display_value}{_get_particle(display_value)} 해볼까요?"
             )
+
+        # 🔧 FIX: 질문과 함께 추출된 값이 있으면 응답에 확인 메시지 추가
+        if extracted_with_question:
+            ack_parts = []
+            step_names_fallback = {"topic": "주제", "difficulty": "난이도", "language": "언어"}
+            for step, value in extracted_with_question.items():
+                display = _get_display_value(value, step)
+                ack_parts.append(f"{step_names_fallback.get(step, step)}: {display}")
+            ack_message = f"👍 {', '.join(ack_parts)}(으)로 저장했어요!\n\n"
+            difficulty_msg = ack_message + difficulty_msg
 
         return {
             "response_message": difficulty_msg,
@@ -1024,6 +1074,103 @@ async def _handle_off_topic(
         "is_question": False,
         "chips": chips,
     }
+
+
+async def _handle_topic_list(
+    state: CollectionState,
+    current_step: str,
+    message: str,
+    user_context: dict = None,
+    personalized: dict = None,
+) -> Dict[str, Any]:
+    """
+    주제 목록 요청 처리 (topic_list)
+
+    사용자가 "문제집에 있는 주제 다 알려줘" 같은 요청을 했을 때
+    정적 JSON 파일에서 모든 주제 목록을 가져와 응답
+    """
+    from app.tools.user_tools import get_user_tools
+
+    user_context = user_context or {}
+    personalized = personalized or {}
+    tools = get_user_tools()
+
+    # get_all_topics Tool 호출
+    topic_data = tools.get_all_topics(include_counts=True)
+
+    # 주제 목록 포맷팅
+    if topic_data.get("success"):
+        all_topics = topic_data.get("topics", [])  # List of topic names (strings)
+        topic_details = topic_data.get("topic_details", [])  # List of dicts with name and problem_count
+        by_category = topic_data.get("by_category", {})  # Dict: category -> list of topic names
+        total_count = topic_data.get("total_topics", len(all_topics))
+        total_problems = topic_data.get("total_problems", 0)
+
+        # topic_details를 dict로 변환 (이름 → 문제 수)
+        topic_counts = {t.get("name", ""): t.get("problem_count", 0) for t in topic_details}
+
+        # 카테고리별로 주제 정리
+        formatted_parts = []
+        formatted_parts.append(f"📚 **문제집 주제 목록** (총 {total_count}개 주제, {total_problems}문제)")
+        formatted_parts.append("")
+
+        # 카테고리별 출력
+        category_order = ["자료구조", "알고리즘", "수학", "기타"]
+        for category in category_order:
+            if category in by_category:
+                topics_in_cat = by_category[category]  # List of topic names
+                topic_strs = []
+                for name in topics_in_cat[:8]:  # 카테고리당 최대 8개만 표시
+                    count = topic_counts.get(name, 0)
+                    topic_strs.append(f"{name}({count})")
+                formatted_parts.append(f"**{category}**: {', '.join(topic_strs)}")
+
+        # 전체 주제 목록 (간단히)
+        formatted_parts.append("")
+        formatted_parts.append("**전체 주제**: " + ", ".join(all_topics[:15]))
+        if len(all_topics) > 15:
+            formatted_parts.append(f"  ...외 {len(all_topics) - 15}개")
+
+        topic_list_response = "\n".join(formatted_parts)
+
+        # 현재 단계에 맞는 안내 메시지 추가
+        if current_step == "topic":
+            topic_list_response += "\n\n이 중에서 어떤 주제로 연습해볼까요?"
+            # 추천 칩 생성 (개인화된 상위 6개)
+            recommended_topics = personalized.get("topic_options", ["DP", "그래프", "구현", "정렬", "문자열", "기초"])[:6]
+            chips = [
+                {"label": t, "value": t, "category": "topic"}
+                for t in recommended_topics
+            ]
+        else:
+            step_guidance = {
+                "difficulty": "어떤 난이도로 해볼까요?",
+                "language": "어떤 언어로 풀어볼까요?",
+            }
+            topic_list_response += f"\n\n{step_guidance.get(current_step, '계속해볼까요?')}"
+            chips = await _get_step_chips(current_step, user_context)
+
+        return {
+            "response_message": topic_list_response,
+            "suggested_value": None,
+            "awaiting_confirmation": False,
+            "is_question": False,
+            "chips": chips,
+        }
+
+    else:
+        # 주제 목록 조회 실패 시 fallback
+        fallback_topics = ["DP", "그래프", "구현", "정렬", "문자열", "기초", "BFS/DFS", "이분탐색"]
+        return {
+            "response_message": f"현재 문제집에는 다양한 주제가 있어요: {', '.join(fallback_topics)} 등이 있습니다.\n\n이 중에서 어떤 주제로 연습해볼까요?",
+            "suggested_value": None,
+            "awaiting_confirmation": False,
+            "is_question": False,
+            "chips": [
+                {"label": t, "value": t, "category": "topic"}
+                for t in fallback_topics[:6]
+            ],
+        }
 
 
 async def _get_step_chips(current_step: str, user_context: dict = None) -> list:

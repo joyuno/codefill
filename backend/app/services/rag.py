@@ -639,6 +639,8 @@ class RAGService:
 
         # Format similar problems for context (question + solutions 포함)
         similar_context = []
+        code_stats = {"total_lines": 0, "total_chars": 0, "count": 0}  # 코드 통계
+
         for p in similar_problems[:3]:  # Top 3 as context
             # solutions 코드 추출 (사용자가 선택한 언어 우선)
             solutions = p.get("solutions", [])
@@ -655,6 +657,12 @@ class RAGService:
             if not solution_code and solutions:
                 solution_code = solutions[0].get("code", "")[:2000]
 
+            # 🆕 코드 통계 수집 (생성 시 참고용)
+            if solution_code:
+                code_stats["total_lines"] += solution_code.count("\n") + 1
+                code_stats["total_chars"] += len(solution_code)
+                code_stats["count"] += 1
+
             similar_context.append({
                 "title": p.get("name", ""),
                 "question": p.get("question", ""),  # 전체 question 전달
@@ -663,6 +671,17 @@ class RAGService:
                 "solution_code": solution_code,  # 솔루션 코드 추가
                 "solution_language": preferred_lang if solution_code else None,
             })
+
+        # 🆕 평균 코드 통계 계산
+        if code_stats["count"] > 0:
+            avg_lines = code_stats["total_lines"] // code_stats["count"]
+            avg_chars = code_stats["total_chars"] // code_stats["count"]
+            user_request["code_length_guide"] = {
+                "avg_lines": avg_lines,
+                "avg_chars": avg_chars,
+                "target_range": f"{max(10, avg_lines - 10)}~{avg_lines + 10}줄"
+            }
+            print(f"[CodeGen] Code stats: avg {avg_lines} lines, {avg_chars} chars")
 
         system_prompt = CODE_GEN_SYSTEM_PROMPT.format(
             user_request=json.dumps(user_request, ensure_ascii=False),

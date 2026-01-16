@@ -19,6 +19,8 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass, field
 from collections import Counter
 import logging
+import json
+import os
 
 from ..database import get_supabase_client
 
@@ -617,6 +619,108 @@ class UserTools:
             logger.error(f"[UserTools] Failed to get tag distribution: {e}")
             return {}
 
+    # ============================================================
+    # Tool 5: 전체 주제 목록 조회 (정적 파일 기반)
+    # ============================================================
+
+    def get_all_topics(
+        self,
+        category: Optional[str] = None,
+        level: Optional[str] = None,
+        include_counts: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        문제집에 있는 모든 주제 목록을 반환합니다.
+
+        Tool 설명 (LLM용):
+        - "문제집에 있는 주제 다 알려줘" 같은 요청 시 호출
+        - 카테고리별, 난이도별 필터링 가능
+        - 각 주제별 문제 수 포함
+
+        Args:
+            category: 카테고리 필터 (자료구조, 알고리즘, 수학, 기타)
+            level: 난이도 레벨 필터 (beginner, elementary, intermediate, advanced)
+            include_counts: 문제 수 포함 여부
+
+        Returns:
+            {
+                "success": True,
+                "total_topics": 32,
+                "total_problems": 1897,
+                "topics": ["수학", "자료구조", ...],
+                "by_category": {...},  # category 필터 없을 때
+                "by_level": {...},  # level 필터 있을 때
+                "topic_details": [{name, problem_count}, ...]
+            }
+        """
+        try:
+            # 정적 JSON 파일 로드
+            taxonomy_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "data",
+                "topic_taxonomy.json"
+            )
+
+            if not os.path.exists(taxonomy_path):
+                logger.warning(f"[UserTools] Topic taxonomy file not found: {taxonomy_path}")
+                return {
+                    "success": False,
+                    "error": "주제 데이터 파일이 없습니다. 관리자에게 문의해주세요.",
+                    "topics": [],
+                }
+
+            with open(taxonomy_path, "r", encoding="utf-8") as f:
+                taxonomy = json.load(f)
+
+            result = {
+                "success": True,
+                "total_topics": taxonomy.get("_total_topics", 0),
+                "total_problems": taxonomy.get("_total_problems", 0),
+            }
+
+            # 카테고리 필터
+            if category:
+                by_category = taxonomy.get("by_category", {})
+                if category in by_category:
+                    topics_in_category = by_category[category]
+                    result["topics"] = [t["name"] for t in topics_in_category]
+                    result["category"] = category
+                    if include_counts:
+                        result["topic_details"] = topics_in_category
+                else:
+                    result["topics"] = []
+                    result["error"] = f"'{category}' 카테고리를 찾을 수 없습니다. 가능한 카테고리: {list(by_category.keys())}"
+            # 레벨 필터
+            elif level:
+                by_level = taxonomy.get("by_level", {})
+                if level in by_level:
+                    result["topics"] = by_level[level]
+                    result["level"] = level
+                    result["recommendation_reason"] = f"{level} 레벨에 적합한 주제입니다."
+                else:
+                    result["topics"] = []
+                    result["error"] = f"'{level}' 레벨을 찾을 수 없습니다."
+            # 전체 조회
+            else:
+                result["topics"] = taxonomy.get("topic_names", [])
+                result["by_category"] = {
+                    cat: [t["name"] for t in topics]
+                    for cat, topics in taxonomy.get("by_category", {}).items()
+                }
+                if include_counts:
+                    result["topic_details"] = taxonomy.get("all_topics", [])
+
+            logger.info(f"[UserTools] get_all_topics: {len(result.get('topics', []))} topics returned")
+            return result
+
+        except Exception as e:
+            logger.error(f"[UserTools] Failed to get all topics: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "topics": [],
+            }
+
 
 # ============================================================
 # Tool Definitions for LLM (OpenAI Function Calling 형식)
@@ -688,6 +792,33 @@ USER_TOOLS_DEFINITIONS = [
                     "selected_topic": {
                         "type": "string",
                         "description": "선택된 주제 (메시지 커스텀용)"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_all_topics",
+            "description": "문제집에 있는 모든 주제(알고리즘/자료구조) 목록을 조회합니다. '어떤 주제가 있어?', '문제집에 있는 주제 다 알려줘', '알고리즘 목록' 같은 요청 시 사용합니다.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["자료구조", "알고리즘", "수학", "기타"],
+                        "description": "카테고리 필터 (선택사항)"
+                    },
+                    "level": {
+                        "type": "string",
+                        "enum": ["beginner", "elementary", "intermediate", "advanced"],
+                        "description": "난이도 레벨 필터 (선택사항)"
+                    },
+                    "include_counts": {
+                        "type": "boolean",
+                        "description": "각 주제별 문제 수 포함 여부 (기본 true)"
                     }
                 },
                 "required": []

@@ -41,6 +41,7 @@ class CollectionState(TypedDict, total=False):
     question_type: Optional[str]          # 질문 유형 (recommendation, explanation, comparison)
     question_info: Optional[Dict[str, Any]]  # 질문 상세 정보 (question_type, question_target, question_subjects)
     is_off_topic: bool                    # 관련 없는 메시지인지
+    extracted_with_question: Optional[Dict[str, str]]  # 질문과 함께 추출된 값 (동시 처리용)
 
     # ============================================================
     # 추천/확인 관련 (handle_question 용)
@@ -198,6 +199,7 @@ def get_initial_state(
         is_question=False,
         extracted_value=None,
         question_type=None,
+        extracted_with_question=None,  # 질문과 함께 추출된 값
         suggested_value=None,
         awaiting_confirmation=False,
         is_positive_response=False,

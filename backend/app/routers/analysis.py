@@ -1,5 +1,6 @@
 """Analysis router for AI-based learning analysis."""
 
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from uuid import UUID
 
@@ -26,7 +27,7 @@ from ..services.analysis_service import AnalysisService, InsufficientDataError
 router = APIRouter()
 
 
-def _transform_bkt_mastery(bkt_data: dict | None) -> dict | None:
+def _transform_bkt_mastery(bkt_data: Optional[dict]) -> Optional[dict]:
     """BKT 마스터리 데이터를 모델로 변환."""
     if not bkt_data:
         return None
@@ -41,7 +42,7 @@ def _transform_bkt_mastery(bkt_data: dict | None) -> dict | None:
     }
 
 
-def _transform_error_analysis(error_data: dict | None) -> ErrorAnalysis | None:
+def _transform_error_analysis(error_data: Optional[dict]) -> Optional[ErrorAnalysis]:
     """에러 분석 데이터를 모델로 변환."""
     if not error_data:
         return None
@@ -172,7 +173,7 @@ async def generate_analysis(
         raise HTTPException(status_code=500, detail=f"분석 생성 실패: {str(e)}")
 
 
-@router.post("/recommend-problems", response_model=list[RecommendedProblem])
+@router.post("/recommend-problems", response_model=List[RecommendedProblem])
 async def recommend_problems(
     user_id: UUID = Depends(get_current_user_id),
     db=Depends(get_db)
