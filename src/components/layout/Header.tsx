@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CreditCard, LogOut, User, Settings, Crown, Users } from 'lucide-react';
+import { CreditCard, LogOut, User, Settings, Crown, Users, Shield, FileText, UserCog } from 'lucide-react';
 import { friendsApi } from '@/lib/api';
 import { FriendModal } from '@/components/friends';
 import { Button } from '@/components/ui/button';
@@ -136,6 +136,13 @@ export function Header() {
                     <span className="hidden sm:inline max-w-[100px] truncate">
                       {profile?.username || user.email?.split('@')[0]}
                     </span>
+                    {/* 관리자 뱃지 - 닉네임 옆에 표시 */}
+                    {profile?.role === 'admin' && (
+                      <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/15 text-primary border border-primary/20">
+                        <Shield className="h-3 w-3" />
+                        관리자
+                      </span>
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
@@ -191,6 +198,19 @@ export function Header() {
                       설정
                     </Link>
                   </DropdownMenuItem>
+
+                  {/* 관리자 메뉴 */}
+                  {profile?.role === 'admin' && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin" className="cursor-pointer text-primary hover:text-primary">
+                          <Shield className="mr-2 h-4 w-4" />
+                          관리자 대시보드
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
 
                   <DropdownMenuSeparator />
 

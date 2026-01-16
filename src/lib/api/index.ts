@@ -184,3 +184,20 @@ export {
   type MissionsSummary,
   type AllMissionsResponse,
 } from './missions';
+export {
+  adminApi,
+  type AdminUser,
+  type AdminUserDetail,
+  type AdminUserListResponse,
+  type AdminProblem,
+  type AdminProblemListResponse,
+  type AdminProblemDetail,
+  type AdminDashboardStats,
+  type BlankVariant,
+  type PuzzleVariant,
+  type GuidedVariant,
+  type CreateBaseProblemRequest,
+  type CreateBlankProblemRequest,
+  type CreatePuzzleProblemRequest,
+  type CreateGuidedProblemRequest,
+} from './admin';

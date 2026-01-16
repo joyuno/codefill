@@ -180,3 +180,36 @@ class RecoverOAuthRequest(BaseModel):
     """Request model for OAuth account recovery."""
     provider: str = Field(..., description="OAuth provider (kakao, google)")
     provider_id: str = Field(..., description="Provider user ID")
+
+
+# =====================================================
+# Account Ban Models (정지 관련)
+# =====================================================
+
+class BannedResponse(BaseModel):
+    """Response when user account is banned."""
+    banned: bool = True
+    message: str
+    email: str
+    banned_until: str  # ISO datetime string or "permanent"
+    is_permanent: bool  # 영구 정지 여부
+
+
+class WithdrawBannedEmailRequest(BaseModel):
+    """Request model for banned user withdrawal (email/password users)."""
+    email: EmailStr
+    password: str
+    confirmation: str = Field(
+        ...,
+        description="User must type '탈퇴합니다' to confirm withdrawal"
+    )
+
+
+class WithdrawBannedOAuthRequest(BaseModel):
+    """Request model for banned user withdrawal (OAuth users)."""
+    provider: str = Field(..., description="OAuth provider (kakao, google, github)")
+    provider_id: str = Field(..., description="Provider user ID")
+    confirmation: str = Field(
+        ...,
+        description="User must type '탈퇴합니다' to confirm withdrawal"
+    )

@@ -147,6 +147,7 @@ class MypageProfile(BaseModel):
     username: str
     avatarShape: str = "hexagon"
     avatarColor: str = "hsl(142, 71%, 45%)"
+    role: str = "user"
     level: int = 1
     currentXP: int = 0
     requiredXP: int = 100

@@ -11,9 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Image from 'next/image';
-import { Loader2, Eye, EyeOff, MessageCircle, RefreshCcw, X } from 'lucide-react';
+import { Loader2, Eye, EyeOff, MessageCircle, RefreshCcw, X, Ban, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { authApi, RecoveryRequiredResponse } from '@/lib/api';
+import { authApi, RecoveryRequiredResponse, BannedResponse } from '@/lib/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -51,6 +51,12 @@ function LoginPageContent() {
   const [isRecovering, setIsRecovering] = useState(false);
   const [recoveryInfo, setRecoveryInfo] = useState<RecoveryRequiredResponse | null>(null);
   const [recoveryCredentials, setRecoveryCredentials] = useState<{ email: string; password: string } | null>(null);
+  // 정지 사용자 상태
+  const [bannedInfo, setBannedInfo] = useState<BannedResponse | null>(null);
+  const [bannedCredentials, setBannedCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
+  const [withdrawConfirmText, setWithdrawConfirmText] = useState('');
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   const {
     register,
@@ -60,15 +66,35 @@ function LoginPageContent() {
     resolver: zodResolver(loginSchema),
   });
 
-  // Check for OAuth error from URL params (e.g., withdrawn user)
+  // Check for OAuth error from URL params (e.g., withdrawn user, banned user)
   useEffect(() => {
     const error = searchParams.get('error');
     const message = searchParams.get('message');
+    const bannedUntil = searchParams.get('banned_until');
+    const provider = searchParams.get('provider');
+    const providerId = searchParams.get('provider_id');
 
     if (error) {
       const decodedMessage = message ? decodeURIComponent(message) : '';
 
-      if (error === 'withdrawn') {
+      if (error === 'banned' && bannedUntil) {
+        // Banned user trying to login via social - show banned modal
+        const isPermanent = bannedUntil === 'permanent';
+        setBannedInfo({
+          banned: true,
+          message: decodedMessage,
+          email: '',  // OAuth users don't have email in URL
+          banned_until: bannedUntil,
+          is_permanent: isPermanent,
+        });
+        // Store OAuth credentials for potential withdrawal
+        if (provider && providerId) {
+          setBannedCredentials({
+            email: `oauth:${provider}:${providerId}`,  // Special format for OAuth
+            password: '',
+          });
+        }
+      } else if (error === 'withdrawn') {
         // Withdrawn user trying to login via social
         toast({
           title: '재가입 제한',
@@ -85,8 +111,10 @@ function LoginPageContent() {
         });
       }
 
-      // Clean up URL params
-      router.replace('/login');
+      // Clean up URL params (except for banned modal which needs to stay)
+      if (error !== 'banned') {
+        router.replace('/login');
+      }
     }
   }, [searchParams, toast, router]);
 
@@ -105,6 +133,14 @@ function LoginPageContent() {
           description: result.error.message,
           variant: 'destructive',
         });
+        return;
+      }
+
+      // Check if user is banned
+      if (result.data && 'banned' in result.data) {
+        // Show banned user modal
+        setBannedInfo(result.data as BannedResponse);
+        setBannedCredentials({ email: data.email, password: data.password });
         return;
       }
 
@@ -178,6 +214,86 @@ function LoginPageContent() {
   const handleCancelRecovery = () => {
     setRecoveryInfo(null);
     setRecoveryCredentials(null);
+  };
+
+  const handleCancelBanned = () => {
+    setBannedInfo(null);
+    setBannedCredentials(null);
+    setShowWithdrawConfirm(false);
+    setWithdrawConfirmText('');
+    router.replace('/login');
+  };
+
+  const handleWithdrawBanned = async () => {
+    if (withdrawConfirmText !== '탈퇴합니다') {
+      toast({
+        title: '확인 문구 오류',
+        description: "'탈퇴합니다'를 정확히 입력해주세요.",
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!bannedCredentials) return;
+
+    setIsWithdrawing(true);
+
+    try {
+      let result;
+
+      // Check if OAuth user (special format: oauth:provider:providerId)
+      if (bannedCredentials.email.startsWith('oauth:')) {
+        const [, provider, providerId] = bannedCredentials.email.split(':');
+        result = await authApi.withdrawBannedOAuth({
+          provider,
+          provider_id: providerId,
+          confirmation: withdrawConfirmText,
+        });
+      } else {
+        result = await authApi.withdrawBanned({
+          email: bannedCredentials.email,
+          password: bannedCredentials.password,
+          confirmation: withdrawConfirmText,
+        });
+      }
+
+      if (result.error) {
+        toast({
+          title: '탈퇴 실패',
+          description: result.error.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      toast({
+        title: '탈퇴 완료',
+        description: '계정과 모든 데이터가 즉시 삭제되었습니다.',
+      });
+
+      handleCancelBanned();
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '탈퇴 처리 중 문제가 발생했습니다.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsWithdrawing(false);
+    }
+  };
+
+  // 정지 만료일 포맷팅
+  const formatBannedUntil = (bannedUntil: string): string => {
+    if (bannedUntil === 'permanent') {
+      return '영구 정지';
+    }
+    try {
+      const date = new Date(bannedUntil);
+      return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
+    } catch {
+      return bannedUntil;
+    }
   };
 
   return (
@@ -417,6 +533,132 @@ function LoginPageContent() {
                 <br />
                 30일이 지나면 계정이 영구 삭제됩니다.
               </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Banned User Modal */}
+      <AnimatePresence>
+        {bannedInfo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={handleCancelBanned}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-sm rounded-xl border border-border bg-card p-6 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+                  <Ban className="h-8 w-8 text-destructive" />
+                </div>
+              </div>
+
+              <h2 className="text-xl font-semibold text-center text-destructive">계정 정지</h2>
+
+              <div className="text-center text-muted-foreground text-sm space-y-2">
+                <p>{bannedInfo.message || '계정이 정지되었습니다.'}</p>
+                {bannedInfo.email && (
+                  <p className="font-medium text-foreground">
+                    {bannedInfo.email}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-lg bg-destructive/5 border border-destructive/20 p-3 text-sm">
+                <p className="text-center">
+                  {bannedInfo.is_permanent ? (
+                    <span className="font-semibold text-destructive">영구 정지</span>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-destructive">
+                        {formatBannedUntil(bannedInfo.banned_until)}
+                      </span>
+                      <span className="text-muted-foreground"> 까지 정지</span>
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {!showWithdrawConfirm ? (
+                <div className="flex flex-col gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleCancelBanned}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    닫기
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full text-muted-foreground hover:text-destructive"
+                    onClick={() => setShowWithdrawConfirm(true)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    계정 탈퇴하기
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3 pt-2">
+                  <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm">
+                    <p className="font-medium text-destructive mb-1">즉시 삭제 안내</p>
+                    <p className="text-muted-foreground">
+                      정지된 계정은 <span className="text-destructive font-medium">복구 기간 없이 즉시 삭제</span>됩니다.
+                      <br />
+                      모든 데이터가 영구적으로 삭제되며 복구할 수 없습니다.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="withdraw-confirm" className="text-sm">
+                      확인을 위해 &apos;탈퇴합니다&apos;를 입력해주세요
+                    </Label>
+                    <Input
+                      id="withdraw-confirm"
+                      placeholder="탈퇴합니다"
+                      value={withdrawConfirmText}
+                      onChange={(e) => setWithdrawConfirmText(e.target.value)}
+                      className="bg-secondary"
+                      disabled={isWithdrawing}
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setShowWithdrawConfirm(false);
+                        setWithdrawConfirmText('');
+                      }}
+                      disabled={isWithdrawing}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="flex-1"
+                      onClick={handleWithdrawBanned}
+                      disabled={isWithdrawing || withdrawConfirmText !== '탈퇴합니다'}
+                    >
+                      {isWithdrawing ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          처리 중...
+                        </>
+                      ) : (
+                        '탈퇴하기'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}

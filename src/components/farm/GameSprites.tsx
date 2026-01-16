@@ -158,9 +158,10 @@ interface FarmerSpriteProps {
 /**
  * 농부 스프라이트 컴포넌트
  * - farm 페이지 PlayerController 구조 기반
- * - 스프라이트시트: 24열 x 3행, 각 프레임 32x64
- * - Row 0: 정적, Row 1: idle/breathing, Row 2: walking
- * - 방향 순서: right(0), up(1), left(2), down(3)
+ * - idle/walk: Farmer_1_32x32.png (24열 x 3행)
+ * - harvest/farm: Farmer_1_Harvesting_36_frames_32x32.png (36열 x 1행)
+ * - 방향 순서: idle/walk = right(0), up(1), left(2), down(3)
+ * - 방향 순서: harvest = down(0), left(1), right(2), up(3)
  */
 export function FarmerSprite({
   action = 'idle',
@@ -171,53 +172,100 @@ export function FarmerSprite({
 }: FarmerSpriteProps) {
   const [frame, setFrame] = useState(0);
 
-  const FRAME_WIDTH = 32;
-  const FRAME_HEIGHT = 64;
-  const COLUMNS = 24;
-  const FRAMES_PER_DIRECTION = 6;
+  // harvest/farm 액션 여부
+  const isHarvesting = action === 'farm' || action === 'harvest';
 
-  // 방향 인덱스
-  const directionIndex: Record<Direction, number> = {
+  // 스프라이트별 프레임 크기
+  // idle/walk: 32x64, dig: 64x64
+  const FRAME_WIDTH = isHarvesting ? 64 : 32;
+  const FRAME_HEIGHT = isHarvesting ? 64 : 64;
+
+  // 스프라이트시트별 설정
+  // idle: 24열 x 3행
+  // dig: 36열 x 1행 (마지막 8프레임 = down 방향)
+  const IDLE_COLUMNS = 24;
+  const IDLE_FRAMES_PER_DIR = 6;
+  const FARM_COLUMNS = 36;
+  const FARM_FRAMES_PER_DIR = 8;
+
+  // idle/walk 방향 인덱스: right(0), up(1), left(2), down(3)
+  const idleDirectionIndex: Record<Direction, number> = {
     right: 0,
     up: 1,
     left: 2,
     down: 3,
   };
 
-  const dirIdx = directionIndex[direction];
+  // watering(farm) 방향 인덱스: right(0), up(1), left(2), down(3)
+  const farmDirectionIndex: Record<Direction, number> = {
+    right: 0,
+    up: 1,
+    left: 2,
+    down: 3,
+  };
 
-  // Row 1: idle/breathing, Row 2: walking
-  const row = action === 'walk' ? 2 : 1;
-  const startFrame = (row * COLUMNS) + (dirIdx * FRAMES_PER_DIRECTION);
-  const frameCount = FRAMES_PER_DIRECTION;
+  // 현재 설정 계산
+  const columns = isHarvesting ? FARM_COLUMNS : IDLE_COLUMNS;
+  const framesPerDir = isHarvesting ? FARM_FRAMES_PER_DIR : IDLE_FRAMES_PER_DIR;
+  const dirIdx = isHarvesting ? farmDirectionIndex[direction] : idleDirectionIndex[direction];
+
+  // 시작 프레임 계산
+  let startFrame: number;
+  if (isHarvesting) {
+    // dig: 마지막 8프레임 (28-35)
+    startFrame = 28;
+  } else {
+    // idle/walk: Row 1 = idle, Row 2 = walk
+    const row = action === 'walk' ? 2 : 1;
+    startFrame = (row * IDLE_COLUMNS) + (dirIdx * IDLE_FRAMES_PER_DIR);
+  }
+
+  // action 변경 시 프레임 리셋
+  useEffect(() => {
+    setFrame(0);
+  }, [action]);
 
   // 애니메이션 프레임 업데이트
+  // dig: 8프레임 x 3번 = 24프레임 사이클
+  const totalFrames = isHarvesting ? 24 : framesPerDir;
+
   useEffect(() => {
     if (!animated) return;
 
-    const fps = action === 'walk' ? 10 : 4;
+    // fps 설정: farm=12, walk=10, idle=4
+    const fps = isHarvesting ? 12 : (action === 'walk' ? 10 : 4);
     const interval = setInterval(() => {
-      setFrame(prev => (prev + 1) % frameCount);
+      setFrame(prev => (prev + 1) % totalFrames);
     }, 1000 / fps);
 
     return () => clearInterval(interval);
-  }, [action, animated, frameCount]);
+  }, [action, animated, totalFrames, isHarvesting]);
 
   // 현재 프레임의 X, Y 위치 계산
-  const currentFrameIndex = startFrame + frame;
-  const frameX = (currentFrameIndex % COLUMNS) * FRAME_WIDTH;
-  const frameY = Math.floor(currentFrameIndex / COLUMNS) * FRAME_HEIGHT;
+  // dig: frame이 0-23을 돌지만, 실제 스프라이트는 8프레임이므로 % 연산
+  const actualFrame = isHarvesting ? frame % framesPerDir : frame;
+  const currentFrameIndex = startFrame + actualFrame;
+  const frameX = (currentFrameIndex % columns) * FRAME_WIDTH;
+  const frameY = Math.floor(currentFrameIndex / columns) * FRAME_HEIGHT;
 
-  // 캐릭터 높이가 64px이므로 비율 유지
-  const scale = size / FRAME_WIDTH;
-  const displayHeight = FRAME_HEIGHT * scale;
+  // 스프라이트시트 파일 선택
+  const spriteFile = isHarvesting
+    ? 'Farmer_1_Dig_36_frames_32x32.png'
+    : 'Farmer_1_32x32.png';
+
+  // 캐릭터 크기는 항상 32x64 기준으로 scale 계산
+  const scale = size / 32;
+  // watering은 프레임이 크므로 부모 div도 크게
+  const displayWidth = isHarvesting ? FRAME_WIDTH * scale : size;
+  const displayHeight = isHarvesting ? FRAME_HEIGHT * scale : 64 * scale;
 
   return (
     <div
-      className={cn('relative overflow-hidden', className)}
+      className={cn('relative', className)}
       style={{
-        width: size,
+        width: displayWidth,
         height: displayHeight,
+        overflow: 'visible',
       }}
     >
       {/* 그림자 */}
@@ -235,7 +283,7 @@ export function FarmerSprite({
           position: 'absolute',
           width: FRAME_WIDTH,
           height: FRAME_HEIGHT,
-          backgroundImage: `url(${FARM_ASSETS.characters}/Farmer_1_32x32.png)`,
+          backgroundImage: `url(${FARM_ASSETS.characters}/${spriteFile})`,
           backgroundRepeat: 'no-repeat',
           backgroundPosition: `-${frameX}px -${frameY}px`,
           transform: `scale(${scale})`,
@@ -456,176 +504,378 @@ export function HouseSprite({
 }
 
 // ============================================
-// 농장 미니맵 (사이드바용)
+// 농장 미니맵 (사이드바용) - 리뉴얼 버전
 // ============================================
+
+// 미니맵용 슬롯 타입 (본인/타인 프로필 모두 지원)
+export interface MinimapSlot {
+  cropCode: string | null;
+  stage: number;
+  // 정렬용 추가 필드 (optional)
+  plantedAt?: string | null;
+  growTimeSeconds?: number | null;
+}
 
 interface FarmMinimapProps {
   level?: number;
-  crops?: Array<{ type: CropVariety; stage: CropStage }>;
+  /** 실제 농장 슬롯 데이터 */
+  farmSlots?: MinimapSlot[];
+  /** 농장 그리드 크기 (예: 9 = 3x3, 16 = 4x4) */
+  farmSize?: number;
   className?: string;
 }
 
+// 밭 칸 좌표 (시계방향 순서)
+// 밭 영역: left 6%, bottom 18%, width 48%, height 45%
+// 그리드 inset: 12% → 실제 그리드 X: 11.76%~48.24%, Y: 42.4%~76.6%
+// 셀 중심: 열(18%, 30%, 42%), 행(51%, 68%)
+// 그리드 (3x2): [0][1][2] / [3][4][5]
+// 시계방향: 0 → 1 → 2 → 5 → 4 → 3 → 0
+const FARM_CELL_POSITIONS = [
+  { x: 18, y: 48 },  // 칸 0 (좌상)
+  { x: 30, y: 48 },  // 칸 1 (중상)
+  { x: 42, y: 48 },  // 칸 2 (우상)
+  { x: 42, y: 65 },  // 칸 5 (우하)
+  { x: 30, y: 65 },  // 칸 4 (중하)
+  { x: 18, y: 65 },  // 칸 3 (좌하)
+];
+
+// 이동 방향 계산
+function getDirection(from: { x: number; y: number }, to: { x: number; y: number }): Direction {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? 'right' : 'left';
+  }
+  return dy > 0 ? 'down' : 'up';
+}
+
+// 타이밍 설정 (ms)
+const MOVE_DURATION = 2000;   // 이동 시간
+const IDLE_BEFORE_FARM = 1500; // 농사 전 대기 (숨쉬기)
+const WATER_DURATION = 2500;   // 물뿌리기 시간
+const IDLE_AFTER_FARM = 1500;  // 농사 후 대기 (숨쉬기)
+
 /**
- * 농장 미니맵 컴포넌트
- * - 메인 대시보드 사이드바에 표시되는 작은 농장 뷰
- * - 농부 자동 이동 및 행동 애니메이션 포함
+ * 농장 미니맵 컴포넌트 (리뉴얼)
+ * - 실제 farmSlots 데이터 연동
+ * - 상태 머신 기반 농부 움직임
+ * - 세련된 픽셀아트 스타일
  */
 export function FarmMinimap({
   level = 1,
-  crops = [],
+  farmSlots = [],
+  farmSize = 9,
   className,
 }: FarmMinimapProps) {
-  const [farmerPos, setFarmerPos] = useState({ x: 50, y: 50 });
-  const [farmerAction, setFarmerAction] = useState<FarmerAction>('idle');
-  const [farmerDirection, setFarmerDirection] = useState<Direction>('down');
-  const [isInHouse, setIsInHouse] = useState(false);
-  
-  // 농부 자동 이동 로직
+  // 농부 위치를 직접 관리 (x, y 좌표)
+  const [farmerPos, setFarmerPos] = useState(FARM_CELL_POSITIONS[0]);
+  const [cellIndex, setCellIndex] = useState(0);
+  // phase: idle_before → watering → idle_after → moving → idle_before...
+  const [phase, setPhase] = useState<'idle_before' | 'watering' | 'idle_after' | 'moving'>('idle_before');
+  // 초기 마운트 시 transition 비활성화
+  const [isReady, setIsReady] = useState(false);
+
+  // 컴포넌트 마운트 시 초기화
   useEffect(() => {
-    const actionInterval = setInterval(() => {
-      const random = Math.random();
-      
-      if (random < 0.1) {
-        // 10% 확률로 집에 들어감
-        setIsInHouse(true);
-        setFarmerAction('sleep');
-        setTimeout(() => {
-          setIsInHouse(false);
-          setFarmerAction('idle');
-        }, 3000);
-      } else if (random < 0.3) {
-        // 20% 확률로 농사
-        setFarmerAction('farm');
-        setFarmerPos({ x: 15 + Math.random() * 35, y: 50 + Math.random() * 20 });
-        setTimeout(() => setFarmerAction('idle'), 2000);
-      } else if (random < 0.5) {
-        // 20% 확률로 물주기
-        setFarmerAction('water');
-        setTimeout(() => setFarmerAction('idle'), 1500);
-      } else {
-        // 50% 확률로 걷기 (가로 또는 세로 한 방향만)
-        setFarmerAction('walk');
-        const moveHorizontal = Math.random() > 0.5;
+    // 즉시 첫 번째 위치로 설정 (transition 없이)
+    setFarmerPos({ x: 18, y: 48 });
+    setCellIndex(0);
+    setPhase('idle_before');
+    setIsReady(false);
 
-        if (moveHorizontal) {
-          // 가로 이동
-          const delta = (Math.random() - 0.5) * 20;
-          const newX = Math.max(10, Math.min(75, farmerPos.x + delta));
-          setFarmerDirection(delta > 0 ? 'right' : 'left');
-          setFarmerPos({ x: newX, y: farmerPos.y });
-        } else {
-          // 세로 이동
-          const delta = (Math.random() - 0.5) * 10;
-          const newY = Math.max(35, Math.min(55, farmerPos.y + delta));
-          setFarmerDirection(delta > 0 ? 'down' : 'up');
-          setFarmerPos({ x: farmerPos.x, y: newY });
-        }
+    // 약간의 딜레이 후 애니메이션 활성화
+    const readyTimer = setTimeout(() => {
+      setIsReady(true);
+    }, 100);
 
-        setTimeout(() => setFarmerAction('idle'), 1500);
-      }
-    }, 2500);
-    
-    return () => clearInterval(actionInterval);
-  }, [farmerPos]);
-  
-  const houseSize = HOUSE_SIZES[level as 1 | 2 | 3 | 4] || HOUSE_SIZES[1];
-  
+    return () => clearTimeout(readyTimer);
+  }, []); // 마운트 시 한 번만 실행
+
+  // 상태 머신: idle_before → watering → idle_after → moving → idle_before...
+  useEffect(() => {
+    if (!isReady) return;
+
+    let timer: NodeJS.Timeout;
+
+    switch (phase) {
+      case 'idle_before':
+        // 대기 후 물뿌리기 시작
+        timer = setTimeout(() => {
+          setPhase('watering');
+        }, IDLE_BEFORE_FARM);
+        break;
+
+      case 'watering':
+        // 물뿌리기 후 대기
+        timer = setTimeout(() => {
+          setPhase('idle_after');
+        }, WATER_DURATION);
+        break;
+
+      case 'idle_after':
+        // 대기 후 이동 시작
+        timer = setTimeout(() => {
+          setPhase('moving');
+          // 다음 위치로 이동 시작
+          const nextIdx = (cellIndex + 1) % FARM_CELL_POSITIONS.length;
+          setFarmerPos(FARM_CELL_POSITIONS[nextIdx]);
+        }, IDLE_AFTER_FARM);
+        break;
+
+      case 'moving':
+        // 이동 완료 후 다음 칸에서 대기
+        timer = setTimeout(() => {
+          setCellIndex((prev) => (prev + 1) % FARM_CELL_POSITIONS.length);
+          setPhase('idle_before');
+        }, MOVE_DURATION);
+        break;
+    }
+
+    return () => clearTimeout(timer);
+  }, [phase, isReady, cellIndex]);
+
+  // 현재 상태에 따른 액션과 방향
+  const currentPos = FARM_CELL_POSITIONS[cellIndex];
+  const nextIndex = (cellIndex + 1) % FARM_CELL_POSITIONS.length;
+  const nextPos = FARM_CELL_POSITIONS[nextIndex];
+
+  // phase에 따른 action 결정
+  let action: FarmerAction;
+  if (phase === 'moving') {
+    action = 'walk';
+  } else if (phase === 'watering') {
+    action = 'farm';
+  } else {
+    action = 'idle';
+  }
+
+  const direction: Direction = phase === 'moving'
+    ? getDirection(currentPos, nextPos)
+    : 'down';
+
+  // 그리드 크기 계산 (3x3, 4x4, 5x5 등)
+  const gridCols = Math.ceil(Math.sqrt(farmSize));
+
+  // 슬롯 데이터를 작물 정보로 변환
+  const displaySlots = farmSlots.slice(0, Math.min(farmSlots.length, 6));
+  const hasAnyCrops = displaySlots.some(s => s.cropCode);
+  const readyCrops = displaySlots.filter(s => s.stage >= 4).length;
+
   return (
     <div
       className={cn(
-        'relative w-full rounded-xl overflow-hidden',
-        'border-4 border-amber-800',
-        'shadow-[4px_4px_0_0_#78350f]',
+        'relative w-full overflow-hidden select-none',
+        'rounded-lg',
         className
       )}
       style={{
+        aspectRatio: '16/12',
         background: `
-          linear-gradient(to bottom,
-            #87CEEB 0%,
-            #B0E2FF 30%,
-            #7CBA5F 30%,
-            #5A9F4A 100%
+          linear-gradient(180deg,
+            #7EC8E3 0%,
+            #98D1E8 25%,
+            #58A65C 25%,
+            #4A9150 60%,
+            #3D7A42 100%
           )
+        `,
+        boxShadow: `
+          inset 0 0 0 3px #2D5A30,
+          inset 0 0 0 5px #1A3A1C,
+          0 4px 12px rgba(0,0,0,0.3)
         `,
       }}
     >
-      {/* 하늘 장식 */}
-      <motion.div
-        className="absolute top-2 right-3 text-2xl"
-        animate={{ rotate: [0, 10, 0] }}
-        transition={{ duration: 4, repeat: Infinity }}
-      >
-        ☀️
-      </motion.div>
-      
-      <motion.div
-        className="absolute top-4 left-4 text-base opacity-70"
-        animate={{ x: [0, 8, 0] }}
-        transition={{ duration: 8, repeat: Infinity }}
-      >
-        ☁️
-      </motion.div>
-      
-      {/* 밭 영역 */}
-      <div 
-        className="absolute left-[8%] top-[45%] w-[45%] h-[40%] rounded-lg overflow-hidden"
-        style={{ 
-          backgroundColor: '#8B5A2B',
-          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
-        }}
-      >
-        {/* 작물 그리드 */}
-        <div className="grid grid-cols-3 gap-0.5 p-1 h-full">
-          {crops.slice(0, 6).map((crop, i) => (
-            <div key={i} className="flex items-center justify-center">
-              <CropSprite type={crop.type} stage={crop.stage} size={20} />
-            </div>
-          ))}
-        </div>
-      </div>
-      
-      {/* 집 */}
-      <div
-        className="absolute right-[25%] top-[20%]"
-        style={{
-          width: `${houseSize.width * 10}%`,
-          height: `${houseSize.height * 10}%`,
-        }}
-      >
-        <HouseSprite
-          level={level as 1 | 2 | 3 | 4}
-          gridSize={60}
-          showFarmerInside={isInHouse}
-        />
-      </div>
-      
-      {/* 농부 */}
-      {!isInHouse && (
-        <motion.div
-          className="absolute z-10"
-          animate={{
-            left: `${farmerPos.x}%`,
-            top: `${farmerPos.y}%`,
-          }}
-          transition={{
-            duration: 1.2,
-            ease: 'easeInOut',
-          }}
+      {/* === 하늘 레이어 === */}
+      <div className="absolute inset-0 h-[25%] overflow-hidden">
+        {/* 태양 */}
+        <div
+          className="absolute top-2 right-4 w-8 h-8 rounded-full"
           style={{
-            transform: 'translate(-50%, -50%)',
+            background: 'radial-gradient(circle, #FFE566 30%, #FFB833 70%, transparent 100%)',
+            boxShadow: '0 0 20px 8px rgba(255,200,50,0.4)',
+            animation: 'pulse 4s ease-in-out infinite',
           }}
+        />
+
+        {/* 구름들 */}
+        <motion.div
+          className="absolute top-3 left-3"
+          animate={{ x: [0, 6, 0] }}
+          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
         >
-          <FarmerSprite
-            action={farmerAction}
-            direction={farmerDirection}
-            size={16}
+          <div
+            className="w-10 h-4 rounded-full opacity-80"
+            style={{
+              background: 'linear-gradient(180deg, #fff 0%, #e8f4f8 100%)',
+              boxShadow: '6px 0 0 -1px #fff, 12px 2px 0 -2px rgba(255,255,255,0.8)',
+            }}
           />
         </motion.div>
-      )}
-      
-      {/* 잔디 장식 */}
-      <div className="absolute bottom-2 left-2 text-xs opacity-60">🌿</div>
-      <div className="absolute bottom-3 right-3 text-xs opacity-60">🌱</div>
+
+        <motion.div
+          className="absolute top-5 left-[40%]"
+          animate={{ x: [0, 4, 0] }}
+          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+        >
+          <div
+            className="w-6 h-3 rounded-full opacity-60"
+            style={{
+              background: 'linear-gradient(180deg, #fff 0%, #e8f4f8 100%)',
+              boxShadow: '4px 0 0 -1px rgba(255,255,255,0.9)',
+            }}
+          />
+        </motion.div>
+      </div>
+
+      {/* === 잔디 패턴 (텍스처) === */}
+      <div
+        className="absolute inset-0 top-[25%] opacity-30 pointer-events-none"
+        style={{
+          backgroundImage: `
+            radial-gradient(circle at 20% 40%, #2D5A30 1px, transparent 1px),
+            radial-gradient(circle at 60% 60%, #2D5A30 1px, transparent 1px),
+            radial-gradient(circle at 80% 30%, #2D5A30 1px, transparent 1px)
+          `,
+          backgroundSize: '20px 20px',
+        }}
+      />
+
+      {/* === 밭 영역 === */}
+      <div
+        className="absolute left-[6%] bottom-[18%] w-[48%] h-[45%] rounded-sm overflow-hidden"
+        style={{
+          background: 'linear-gradient(180deg, #8B6B4A 0%, #6B4D32 100%)',
+          boxShadow: `
+            inset 0 2px 4px rgba(0,0,0,0.4),
+            inset 0 -1px 2px rgba(255,255,255,0.1),
+            2px 3px 6px rgba(0,0,0,0.3)
+          `,
+          border: '2px solid #4A3728',
+        }}
+      >
+        {/* 밭 고랑 패턴 */}
+        <div
+          className="absolute inset-0 opacity-40"
+          style={{
+            backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 8px, rgba(0,0,0,0.2) 8px, rgba(0,0,0,0.2) 9px)',
+          }}
+        />
+
+        {/* 작물 그리드 - 항상 6칸 (3x2) 표시 */}
+        <div
+          className="absolute grid grid-cols-3 grid-rows-2 gap-1"
+          style={{ inset: '12%' }}
+        >
+          {Array.from({ length: 6 }).map((_, i) => {
+            const slot = displaySlots[i];
+            const hasCrop = slot?.cropCode;
+            const isReady = slot?.stage >= 4;
+
+            return (
+              <div
+                key={i}
+                className="flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(180deg, #6B5540 0%, #584435 100%)',
+                  borderRadius: '4px',
+                  boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.1), inset 0 -1px 2px rgba(0,0,0,0.2)',
+                }}
+              >
+                {hasCrop && (
+                  <div className="relative">
+                    <CropSprite
+                      type={slot.cropCode as CropVariety}
+                      stage={slot.stage as CropStage}
+                      size={14}
+                    />
+                    {isReady && (
+                      <motion.div
+                        className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-yellow-400"
+                        animate={{ scale: [1, 1.3, 1], opacity: [1, 0.7, 1] }}
+                        transition={{ duration: 1, repeat: Infinity }}
+                        style={{ boxShadow: '0 0 3px #FFD700' }}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* === 집 === */}
+      <div className="absolute right-[8%] top-[28%]">
+        <div className="relative">
+          <Image
+            src={`${FARM_ASSETS.houses}/${HOUSE_IMAGE_MAP[Math.min(level, 4)]?.src || 'Farmer_House_1_32x32.png'}`}
+            alt="House"
+            width={56}
+            height={64}
+            className="drop-shadow-lg"
+            style={{
+              imageRendering: 'pixelated',
+              filter: 'drop-shadow(2px 3px 2px rgba(0,0,0,0.3))',
+            }}
+            unoptimized
+          />
+          {/* 레벨 4: 반짝임 */}
+          {level >= 4 && (
+            <motion.div
+              className="absolute -top-1 -right-1 text-xs"
+              animate={{ scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              ✨
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      {/* === 농부 (밭 위에서 시계방향 순찰) === */}
+      {/* CSS transition 사용 - Framer Motion 내부 상태 문제 방지 */}
+      <div
+        className="absolute z-10"
+        style={{
+          left: `${farmerPos.x}%`,
+          top: `${farmerPos.y}%`,
+          transform: 'translate(-50%, -50%)',
+          // 초기화 전에는 transition 없음, 이동 중에만 transition 적용
+          transitionProperty: 'left, top',
+          transitionDuration: isReady && phase === 'moving' ? `${MOVE_DURATION}ms` : '0ms',
+          transitionTimingFunction: 'linear',
+        }}
+      >
+        <FarmerSprite
+          action={action}
+          direction={direction}
+          size={18}
+        />
+      </div>
+
+      {/* === 장식 요소들 === */}
+      {/* 잔디 터프트 */}
+      <Image
+        src={`${FARM_ASSETS.terrains}/Grass_Tufts_Flowers_32x32_1.png`}
+        alt=""
+        width={16}
+        height={16}
+        className="absolute bottom-[8%] right-[35%] opacity-80"
+        style={{ imageRendering: 'pixelated' }}
+        unoptimized
+      />
+      <Image
+        src={`${FARM_ASSETS.terrains}/Grass_Tufts_Flowers_32x32_3.png`}
+        alt=""
+        width={14}
+        height={14}
+        className="absolute bottom-[18%] left-[56%] opacity-70"
+        style={{ imageRendering: 'pixelated' }}
+        unoptimized
+      />
+
     </div>
   );
 }

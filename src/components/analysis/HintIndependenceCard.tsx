@@ -1,46 +1,38 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Trophy, Lightbulb, AlertTriangle, HelpCircle } from 'lucide-react';
 import type { HintIndependence } from '@/lib/api/analysis';
 
 interface HintIndependenceCardProps {
   data: HintIndependence;
 }
 
-// 도넛 차트 세그먼트 컴포넌트
-function DonutSegment({
-  percentage,
-  offset,
-  color,
-  delay,
-}: {
-  percentage: number;
-  offset: number;
-  color: string;
-  delay: number;
-}) {
-  const radius = 45;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDasharray = (percentage / 100) * circumference;
+// 파이 슬라이스 경로 생성
+function createPieSlice(
+  cx: number,
+  cy: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number
+): string {
+  const start = polarToCartesian(cx, cy, radius, endAngle);
+  const end = polarToCartesian(cx, cy, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
 
-  return (
-    <motion.circle
-      cx="50"
-      cy="50"
-      r={radius}
-      fill="none"
-      stroke={color}
-      strokeWidth="10"
-      strokeLinecap="round"
-      strokeDasharray={`${strokeDasharray} ${circumference}`}
-      strokeDashoffset={-(offset / 100) * circumference}
-      transform="rotate(-90 50 50)"
-      initial={{ strokeDasharray: `0 ${circumference}` }}
-      animate={{ strokeDasharray: `${strokeDasharray} ${circumference}` }}
-      transition={{ duration: 0.8, delay, ease: 'easeOut' }}
-    />
-  );
+  return [
+    'M', cx, cy,
+    'L', start.x, start.y,
+    'A', radius, radius, 0, largeArcFlag, 0, end.x, end.y,
+    'Z'
+  ].join(' ');
+}
+
+function polarToCartesian(cx: number, cy: number, radius: number, angle: number) {
+  const rad = (angle - 90) * Math.PI / 180;
+  return {
+    x: cx + radius * Math.cos(rad),
+    y: cy + radius * Math.sin(rad)
+  };
 }
 
 export function HintIndependenceCard({ data }: HintIndependenceCardProps) {
@@ -61,130 +53,144 @@ export function HintIndependenceCard({ data }: HintIndependenceCardProps) {
     independence_rate
   } = data;
 
-  // 각 카테고리의 비율 계산
   const segments = [
     {
       key: 'solved_without_hint',
-      label: '힌트 없이 성공',
+      label: '스스로 해결',
+      desc: '힌트 없이 정답',
       value: solved_without_hint,
-      percent: Math.round((solved_without_hint / total) * 100),
+      percent: (solved_without_hint / total) * 100,
       color: '#22c55e',
-      icon: Trophy,
+      icon: '✓',
     },
     {
       key: 'solved_with_hint',
-      label: '힌트로 성공',
+      label: '힌트로 해결',
+      desc: '힌트 참고 후 정답',
       value: solved_with_hint,
-      percent: Math.round((solved_with_hint / total) * 100),
+      percent: (solved_with_hint / total) * 100,
       color: '#3b82f6',
-      icon: Lightbulb,
+      icon: '💡',
     },
     {
       key: 'failed_with_hint',
-      label: '힌트에도 실패',
+      label: '힌트 후 실패',
+      desc: '힌트 봤지만 오답',
       value: failed_with_hint,
-      percent: Math.round((failed_with_hint / total) * 100),
+      percent: (failed_with_hint / total) * 100,
       color: '#ef4444',
-      icon: AlertTriangle,
+      icon: '✗',
     },
     {
       key: 'failed_without_hint',
-      label: '힌트 없이 실패',
+      label: '미해결',
+      desc: '힌트 없이 오답/포기',
       value: failed_without_hint,
-      percent: Math.round((failed_without_hint / total) * 100),
-      color: '#6b7280',
-      icon: HelpCircle,
+      percent: (failed_without_hint / total) * 100,
+      color: '#71717a',
+      icon: '−',
     },
   ].filter(s => s.value > 0);
 
-  // 누적 offset 계산
-  let currentOffset = 0;
-  const segmentsWithOffset = segments.map((segment) => {
-    const result = { ...segment, offset: currentOffset };
-    currentOffset += segment.percent;
-    return result;
+  // 각도 계산
+  let currentAngle = 0;
+  const slices = segments.map((segment) => {
+    const startAngle = currentAngle;
+    const sweepAngle = (segment.percent / 100) * 360;
+    currentAngle += sweepAngle;
+    return { ...segment, startAngle, endAngle: currentAngle };
   });
 
-  // 독립률에 따른 메시지
-  const getIndependenceMessage = (rate: number): { text: string; type: 'good' | 'warn' | 'bad' } => {
-    if (rate >= 0.5) return { text: '스스로 해결하는 능력이 좋습니다!', type: 'good' };
-    if (rate >= 0.3) return { text: '힌트 의존도를 줄여보세요.', type: 'warn' };
-    return { text: '힌트 없이 먼저 시도해보세요.', type: 'bad' };
+  const percentValue = Math.round(independence_rate * 100);
+
+  // 독립률 기반 메시지
+  const getMessage = (rate: number) => {
+    if (rate >= 0.6) return { text: '스스로 문제를 해결하는 능력이 뛰어납니다.', type: 'good' };
+    if (rate >= 0.4) return { text: '힌트 의존도를 조금씩 줄여보세요.', type: 'normal' };
+    if (rate >= 0.2) return { text: '힌트 없이 먼저 고민하는 습관을 길러보세요.', type: 'warn' };
+    return { text: '스스로 해결하려는 시도가 실력 향상의 지름길입니다.', type: 'bad' };
   };
 
-  const message = getIndependenceMessage(independence_rate);
+  const message = getMessage(independence_rate);
 
   return (
-    <div className="p-4 flex flex-col items-center">
-      {/* 도넛 차트 */}
-      <div className="relative w-36 h-36 mb-4">
-        <svg viewBox="0 0 100 100" className="w-full h-full">
-          {/* 배경 원 */}
-          <circle
-            cx="50"
-            cy="50"
-            r="45"
-            fill="none"
-            stroke="#27272a"
-            strokeWidth="10"
-          />
-          {/* 데이터 세그먼트 */}
-          {segmentsWithOffset.map((segment, index) => (
-            <DonutSegment
-              key={segment.key}
-              percentage={segment.percent}
-              offset={segment.offset}
-              color={segment.color}
-              delay={index * 0.1}
-            />
+    <div className="p-5">
+      <div className="flex items-center gap-5">
+        {/* 파이 차트 */}
+        <div className="relative flex-shrink-0">
+          <svg viewBox="0 0 100 100" className="w-40 h-40">
+            {slices.map((slice, index) => (
+              <motion.path
+                key={slice.key}
+                d={createPieSlice(50, 50, 42, slice.startAngle, slice.endAngle)}
+                fill={slice.color}
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.4, delay: index * 0.05 }}
+                style={{ transformOrigin: '50px 50px' }}
+              />
+            ))}
+            {/* 중앙 원 (도넛 효과) */}
+            <circle cx="50" cy="50" r="24" fill="#18181b" />
+          </svg>
+
+          {/* 중앙 텍스트 */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <motion.span
+              className="text-xl font-bold text-zinc-100"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+            >
+              {percentValue}%
+            </motion.span>
+            <span className="text-[10px] text-zinc-500">독립률</span>
+          </div>
+        </div>
+
+        {/* 우측 범례 */}
+        <div className="flex-1 space-y-2.5">
+          {slices.map((slice) => (
+            <div key={slice.key} className="flex items-center gap-2">
+              <div
+                className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                style={{ backgroundColor: slice.color }}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-zinc-300">{slice.label}</span>
+                  <span className="text-[10px] text-zinc-600">{slice.desc}</span>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-zinc-200 tabular-nums">
+                {slice.value}
+              </span>
+              <span className="text-[10px] text-zinc-500 w-9 text-right tabular-nums">
+                {Math.round(slice.percent)}%
+              </span>
+            </div>
           ))}
-        </svg>
-        {/* 중앙 텍스트 */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <motion.span
-            className="text-2xl font-bold text-zinc-100"
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            {Math.round(independence_rate * 100)}%
-          </motion.span>
-          <span className="text-[10px] text-zinc-500">독립 해결률</span>
+
+          {/* 총계 */}
+          <div className="pt-2 border-t border-zinc-800/50">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-zinc-500">총 문제</span>
+              <span className="text-xs font-medium text-zinc-300">{total}문제</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 범례 */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 w-full">
-        {segments.map((segment) => {
-          const Icon = segment.icon;
-          return (
-            <div
-              key={segment.key}
-              className="flex items-center gap-1.5"
-            >
-              <div
-                className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ backgroundColor: segment.color }}
-              />
-              <span className="text-[10px] text-zinc-400 truncate">
-                {segment.label}
-              </span>
-              <span className="text-[10px] font-medium text-zinc-300 ml-auto">
-                {segment.percent}%
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 메시지 */}
+      {/* 설명 메시지 */}
       <div
-        className={`mt-3 text-center text-xs py-1.5 px-3 rounded-lg w-full ${
+        className={`mt-4 text-xs px-3 py-2 rounded-lg ${
           message.type === 'good'
-            ? 'bg-emerald-500/10 text-emerald-400'
+            ? 'bg-emerald-500/10 text-emerald-400/90'
+            : message.type === 'normal'
+            ? 'bg-blue-500/10 text-blue-400/90'
             : message.type === 'warn'
-            ? 'bg-amber-500/10 text-amber-400'
-            : 'bg-red-500/10 text-red-400'
+            ? 'bg-amber-500/10 text-amber-400/90'
+            : 'bg-rose-500/10 text-rose-400/90'
         }`}
       >
         {message.text}

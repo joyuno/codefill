@@ -430,7 +430,7 @@ async def get_mypage_profile(
     try:
         # Get user (필요한 컬럼만 선택)
         user_result = db.table("users").select(
-            "id, email, name, avatar_url, created_at"
+            "id, email, name, avatar_url, role, created_at"
         ).eq("id", str(user_id)).single().execute()
         user_data = user_result.data
 
@@ -461,6 +461,7 @@ async def get_mypage_profile(
             username=user_data.get("name", "User"),
             avatarShape="hexagon",
             avatarColor=user_data.get("avatar_url") or "hsl(142, 71%, 45%)",
+            role=user_data.get("role", "user"),
             level=level,
             currentXP=calculate_current_xp(total_xp, level),
             requiredXP=calculate_required_xp(level),

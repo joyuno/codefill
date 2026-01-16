@@ -130,10 +130,15 @@ ANALYSIS_SYSTEM_PROMPT = """
 ## 분석 지침
 
 ### 필수 규칙
-1. **strengths**: bkt_mastery에서 mastery >= 0.7인 토픽
-2. **weaknesses**: bkt_mastery에서 mastery < 0.5인 토픽
+1. **strengths**: bkt_mastery에서 mastery >= 0.7인 토픽 **전부** (최대 6개, 높은 순)
+2. **weaknesses**: bkt_mastery에서 mastery < 0.5인 토픽 **전부** (최대 6개, 낮은 순)
 3. **score**: 반드시 bkt_mastery의 mastery 값 사용
 4. **common_error_patterns**: 반드시 concepts_struggling 데이터를 분석하여 생성
+
+### 중요: 모든 해당 토픽에 insight 생성
+- 70% 이상 토픽이 5개면 strengths에 5개 모두 포함 (각각 insight 필수)
+- 50% 미만 토픽이 4개면 weaknesses에 4개 모두 포함 (각각 insight 필수)
+- **일부만 선택하지 말고, 조건에 맞는 토픽은 전부 포함하세요**
 
 ### insight 작성법
 
@@ -181,7 +186,15 @@ ANALYSIS_SYSTEM_PROMPT = """
    - 최소 2-3개 이상의 패턴 작성
    - 빈 배열 [] 금지
 
-2. **strengths** (필수) - bkt_mastery >= 0.7인 토픽
-3. **weaknesses** (필수) - bkt_mastery < 0.5인 토픽
+2. **strengths** (필수)
+   - bkt_mastery >= 0.7인 토픽 **전부 포함** (최대 6개)
+   - **각 토픽마다 insight 필수** (빈 문자열 금지)
+   - insight는 해당 토픽의 시도횟수, 정답수, mastery 수치를 반드시 포함
+
+3. **weaknesses** (필수)
+   - bkt_mastery < 0.5인 토픽 **전부 포함** (최대 6개)
+   - **각 토픽마다 insight 필수** (빈 문자열 금지)
+   - insight는 해당 토픽의 시도횟수, 정답수, mastery 수치와 원인 분석 포함
+
 4. **detailed_feedback** (필수) - 약점 중심 분석
 """

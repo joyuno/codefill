@@ -10,13 +10,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 interface AICoachingSectionProps {
-  summaryText: string;
   detailedFeedback?: string;
   commonErrorPatterns?: string[];
 }
 
 export function AICoachingSection({
-  summaryText,
   detailedFeedback,
   commonErrorPatterns = [],
 }: AICoachingSectionProps) {
@@ -36,19 +34,6 @@ export function AICoachingSection({
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Summary Quote */}
-        {summaryText && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="relative pl-3 border-l-2 border-amber-500/50"
-          >
-            <p className="text-sm text-zinc-300 leading-relaxed italic">
-              "{summaryText}"
-            </p>
-          </motion.div>
-        )}
-
         {/* Detailed Feedback - Markdown */}
         {detailedFeedback && (
           <motion.div

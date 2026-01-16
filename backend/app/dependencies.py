@@ -218,3 +218,42 @@ def validate_token_type(payload: Dict[str, Any], expected_type: str = "access") 
         bool: 토큰 타입이 일치하면 True
     """
     return payload.get("type") == expected_type
+
+
+# ============================================================
+# Admin Authorization Dependencies
+# ============================================================
+
+async def get_current_admin_user(
+    user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    관리자 권한을 검증하고 사용자 정보를 반환합니다.
+
+    Args:
+        user_id: 사용자 ID (get_current_user_id에서 추출)
+        db: Supabase 클라이언트
+
+    Returns:
+        Dict: 관리자 사용자 정보
+
+    Raises:
+        HTTPException 404: 사용자를 찾을 수 없는 경우
+        HTTPException 403: 관리자 권한이 없는 경우
+    """
+    result = db.table("users").select("*").eq("id", str(user_id)).single().execute()
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    if result.data.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    return result.data

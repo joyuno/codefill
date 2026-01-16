@@ -500,12 +500,19 @@ class AnalysisService:
             data["existing_error_patterns"] = None
 
         # 3. attempts 테이블에서 정확도 및 폴백용 스킬 데이터 계산
-        # 시간순 정렬하여 BKT 시퀀스 구성에도 활용
-        attempts_for_skill = self.db.table("attempts").select(
+        # 최근 500개만 가져와서 BKT 시퀀스 구성 (최신순 정렬 후 역순으로 시간순 변환)
+        attempts_result = self.db.table("attempts").select(
             "topics, difficulty, is_correct, created_at"
         ).eq("user_id", str(user_id)).not_.is_("is_correct", "null").order(
-            "created_at", desc=False
-        ).execute()
+            "created_at", desc=True  # 최신순으로 가져옴
+        ).limit(500).execute()
+
+        # BKT는 시간순(오래된 것 먼저)이 필요하므로 역순 정렬
+        class AttemptsWrapper:
+            def __init__(self, data):
+                self.data = list(reversed(data)) if data else []
+
+        attempts_for_skill = AttemptsWrapper(attempts_result.data)
 
         # 폴백 계산 (use_cached_skill이 False일 때만 skill_by_topic 덮어쓰기)
         if not use_cached_skill:

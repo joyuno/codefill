@@ -14,6 +14,7 @@ interface UserProfile {
   email: string;
   username: string;
   avatar_url?: string;
+  role: 'admin' | 'user';
   level: number;
   current_xp: number;
   required_xp: number;
@@ -118,6 +119,7 @@ export function useAuth() {
         email: data.email,
         username: data.username || data.name || data.email?.split('@')[0] || 'User',
         avatar_url: data.avatar_url || data.avatarColor,
+        role: data.role === 'admin' ? 'admin' : 'user',
         level: data.level || 1,
         current_xp: data.current_xp || data.currentXP || 0,
         required_xp: data.required_xp || data.requiredXP || 100,
