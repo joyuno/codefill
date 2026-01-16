@@ -114,6 +114,24 @@ class HintIndependence(BaseModel):
     independence_rate: float = 0.0
 
 
+class EloChange(BaseModel):
+    """ELO 변화 기록 (단일 토픽)."""
+    topic: str
+    before: int
+    after: int
+    change: int
+    expected: float
+
+
+class EloHistoryEntry(BaseModel):
+    """ELO 히스토리 엔트리 (단일 문제 풀이)."""
+    date: str
+    topics: List[str] = []
+    is_correct: bool = False
+    problem_elo: int = 1000
+    changes: List[EloChange] = []
+
+
 class AnalysisReport(BaseModel):
     """AI 분석 리포트."""
     id: Optional[str] = None
@@ -151,6 +169,10 @@ class AnalysisReport(BaseModel):
     recent10Attempts: List[RecentAttempt] = []
     recent10Analysis: Optional[str] = None
     hintIndependence: Optional[HintIndependence] = None
+
+    # ELO 성장 데이터
+    eloHistory: Optional[List[EloHistoryEntry]] = None
+    eloOverall: Optional[int] = None
 
 
 class AnalysisReportResponse(BaseModel):

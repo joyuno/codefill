@@ -1131,34 +1131,40 @@ export default function AdminProblemDetailPage() {
                     <Code2 className="h-3 w-3 text-cyan-400" />
                   </div>
                   <span className="text-xs font-medium">빈칸</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{problem.blanks?.length || 0}</span>
                 </div>
                 {problem.blanks && problem.blanks.length > 0 ? (
-                  <div className="space-y-1">
-                    {problem.blanks.slice(0, 2).map((blank) => (
-                      <div key={blank.id} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-white/3">
-                        <span className="text-muted-foreground">{getLanguageLabel(blank.language)}</span>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-5 w-5 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleteVariant({ type: 'blank', id: blank.id })}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                  <div className="space-y-2">
+                    <div className="p-2 rounded-lg bg-cyan-500/5 border border-cyan-500/10">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-cyan-400">{getLanguageLabel(problem.blanks[0].language)}</span>
+                        <span className="text-[10px] text-muted-foreground">{problem.blanks[0].answers?.length || 0}개 빈칸</span>
                       </div>
-                    ))}
-                    {problem.blanks.length > 2 && (
-                      <p className="text-[10px] text-muted-foreground text-center">+{problem.blanks.length - 2} more</p>
-                    )}
+                    </div>
+                    <div className="flex gap-1">
+                      <Link href={`/admin/problems/create?type=blank&originalId=${originalId}`} className="flex-1">
+                        <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-white/5 border-white/10 hover:bg-white/10">
+                          <Edit className="h-3 w-3 mr-1" />
+                          수정
+                        </Button>
+                      </Link>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs rounded-lg bg-white/5 border-white/10 text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteVariant({ type: 'blank', id: problem.blanks![0].id })}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                ) : null}
-                <Link href={`/admin/problems/create?type=blank&originalId=${originalId}`} className="block mt-2">
-                  <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-cyan-500/10 border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20">
-                    <Plus className="h-3 w-3 mr-1" />
-                    {problem.blanks?.length ? '추가' : '생성'}
-                  </Button>
-                </Link>
+                ) : (
+                  <Link href={`/admin/problems/create?type=blank&originalId=${originalId}`} className="block">
+                    <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-cyan-500/10 border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20">
+                      <Plus className="h-3 w-3 mr-1" />
+                      생성
+                    </Button>
+                  </Link>
+                )}
               </div>
 
               {/* Puzzle */}
@@ -1168,34 +1174,40 @@ export default function AdminProblemDetailPage() {
                     <Puzzle className="h-3 w-3 text-pink-400" />
                   </div>
                   <span className="text-xs font-medium">퍼즐</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{problem.puzzles?.length || 0}</span>
                 </div>
                 {problem.puzzles && problem.puzzles.length > 0 ? (
-                  <div className="space-y-1">
-                    {problem.puzzles.slice(0, 2).map((puzzle) => (
-                      <div key={puzzle.id} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-white/3">
-                        <span className="text-muted-foreground">{getLanguageLabel(puzzle.language)}</span>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-5 w-5 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleteVariant({ type: 'puzzle', id: puzzle.id })}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                  <div className="space-y-2">
+                    <div className="p-2 rounded-lg bg-pink-500/5 border border-pink-500/10">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-pink-400">{getLanguageLabel(problem.puzzles[0].language)}</span>
+                        <span className="text-[10px] text-muted-foreground">{problem.puzzles[0].blocks?.length || 0}개 블록</span>
                       </div>
-                    ))}
-                    {problem.puzzles.length > 2 && (
-                      <p className="text-[10px] text-muted-foreground text-center">+{problem.puzzles.length - 2} more</p>
-                    )}
+                    </div>
+                    <div className="flex gap-1">
+                      <Link href={`/admin/problems/create?type=puzzle&originalId=${originalId}`} className="flex-1">
+                        <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-white/5 border-white/10 hover:bg-white/10">
+                          <Edit className="h-3 w-3 mr-1" />
+                          수정
+                        </Button>
+                      </Link>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs rounded-lg bg-white/5 border-white/10 text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteVariant({ type: 'puzzle', id: problem.puzzles![0].id })}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                ) : null}
-                <Link href={`/admin/problems/create?type=puzzle&originalId=${originalId}`} className="block mt-2">
-                  <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-pink-500/10 border-pink-500/20 text-pink-400 hover:bg-pink-500/20">
-                    <Plus className="h-3 w-3 mr-1" />
-                    {problem.puzzles?.length ? '추가' : '생성'}
-                  </Button>
-                </Link>
+                ) : (
+                  <Link href={`/admin/problems/create?type=puzzle&originalId=${originalId}`} className="block">
+                    <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-pink-500/10 border-pink-500/20 text-pink-400 hover:bg-pink-500/20">
+                      <Plus className="h-3 w-3 mr-1" />
+                      생성
+                    </Button>
+                  </Link>
+                )}
               </div>
 
               {/* Guided */}
@@ -1205,34 +1217,40 @@ export default function AdminProblemDetailPage() {
                     <BookOpen className="h-3 w-3 text-amber-400" />
                   </div>
                   <span className="text-xs font-medium">가이드</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{problem.guideds?.length || 0}</span>
                 </div>
                 {problem.guideds && problem.guideds.length > 0 ? (
-                  <div className="space-y-1">
-                    {problem.guideds.slice(0, 2).map((guided) => (
-                      <div key={guided.id} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-white/3">
-                        <span className="text-muted-foreground">{getLanguageLabel(guided.language)}</span>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-5 w-5 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleteVariant({ type: 'guided', id: guided.id })}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                  <div className="space-y-2">
+                    <div className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-amber-400">{getLanguageLabel(problem.guideds[0].language)}</span>
+                        <span className="text-[10px] text-muted-foreground">{problem.guideds[0].variables_guide?.length || 0}개 변수</span>
                       </div>
-                    ))}
-                    {problem.guideds.length > 2 && (
-                      <p className="text-[10px] text-muted-foreground text-center">+{problem.guideds.length - 2} more</p>
-                    )}
+                    </div>
+                    <div className="flex gap-1">
+                      <Link href={`/admin/problems/create?type=guided&originalId=${originalId}`} className="flex-1">
+                        <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-white/5 border-white/10 hover:bg-white/10">
+                          <Edit className="h-3 w-3 mr-1" />
+                          수정
+                        </Button>
+                      </Link>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs rounded-lg bg-white/5 border-white/10 text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteVariant({ type: 'guided', id: problem.guideds![0].id })}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                ) : null}
-                <Link href={`/admin/problems/create?type=guided&originalId=${originalId}`} className="block mt-2">
-                  <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20">
-                    <Plus className="h-3 w-3 mr-1" />
-                    {problem.guideds?.length ? '추가' : '생성'}
-                  </Button>
-                </Link>
+                ) : (
+                  <Link href={`/admin/problems/create?type=guided&originalId=${originalId}`} className="block">
+                    <Button size="sm" variant="outline" className="w-full h-7 text-xs rounded-lg bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20">
+                      <Plus className="h-3 w-3 mr-1" />
+                      생성
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </motion.div>

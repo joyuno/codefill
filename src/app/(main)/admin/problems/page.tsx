@@ -89,6 +89,7 @@ export default function AdminProblemsPage() {
   const [problems, setProblems] = useState<AdminProblem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [difficultyFilter, setDifficultyFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
@@ -102,11 +103,20 @@ export default function AdminProblemsPage() {
   // Dialog state
   const [deleteTarget, setDeleteTarget] = useState<AdminProblem | null>(null);
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchProblems = useCallback(async () => {
     setLoading(true);
     try {
       const response = await adminApi.listProblems({
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         source: sourceFilter !== 'all' ? sourceFilter : undefined,
         difficulty: difficultyFilter !== 'all' ? difficultyFilter : undefined,
         tags: tagFilter !== 'all' ? tagFilter : undefined,
@@ -123,19 +133,11 @@ export default function AdminProblemsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, sourceFilter, difficultyFilter, tagFilter, sortBy, sortOrder, page]);
+  }, [debouncedSearch, sourceFilter, difficultyFilter, tagFilter, sortBy, sortOrder, page]);
 
   useEffect(() => {
     fetchProblems();
   }, [fetchProblems]);
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -214,95 +216,115 @@ export default function AdminProblemsPage() {
         <h2 className="text-lg font-semibold">문제 목록</h2>
       </div>
 
-      {/* Filters */}
-      <div className="admin-glass-card rounded-2xl p-4">
-        <div className="flex flex-wrap gap-4">
-          <div className="admin-search flex-1 min-w-[240px] max-w-md">
-            <Search className="admin-search-icon h-4 w-4" />
-            <input
-              type="text"
-              placeholder="제목으로 검색..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+      {/* Filters - Compact inline */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
+          <input
+            type="text"
+            placeholder="제목 검색..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full h-8 pl-9 pr-3 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+          />
+        </div>
 
+        <Select
+          value={sourceFilter}
+          onValueChange={(v) => {
+            setSourceFilter(v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-8 w-auto min-w-[80px] px-2.5 text-xs bg-white/5 border-white/10 rounded-lg">
+            <SelectValue placeholder="출처" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">전체 출처</SelectItem>
+            <SelectItem value="leetcode">LeetCode</SelectItem>
+            <SelectItem value="programmers">프로그래머스</SelectItem>
+            <SelectItem value="baekjoon">백준</SelectItem>
+            <SelectItem value="custom">직접 생성</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={difficultyFilter}
+          onValueChange={(v) => {
+            setDifficultyFilter(v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-8 w-auto min-w-[80px] px-2.5 text-xs bg-white/5 border-white/10 rounded-lg">
+            <SelectValue placeholder="난이도" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">전체 난이도</SelectItem>
+            <SelectItem value="easy">
+              <span className="flex items-center gap-1.5">
+                <SilverIcon className="h-3.5 w-3.5" />
+                실버
+              </span>
+            </SelectItem>
+            <SelectItem value="medium">
+              <span className="flex items-center gap-1.5">
+                <GoldIcon className="h-3.5 w-3.5" />
+                골드
+              </span>
+            </SelectItem>
+            <SelectItem value="medium_hard">
+              <span className="flex items-center gap-1.5">
+                <PlatinumIcon className="h-3.5 w-3.5" />
+                플래티넘
+              </span>
+            </SelectItem>
+            <SelectItem value="hard">
+              <span className="flex items-center gap-1.5">
+                <DiamondIcon className="h-3.5 w-3.5" />
+                다이아
+              </span>
+            </SelectItem>
+            <SelectItem value="very_hard">
+              <span className="flex items-center gap-1.5">
+                <MasterIcon className="h-3.5 w-3.5" />
+                마스터
+              </span>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={tagFilter}
+          onValueChange={(v) => {
+            setTagFilter(v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-8 w-auto min-w-[80px] px-2.5 text-xs bg-white/5 border-white/10 rounded-lg">
+            <SelectValue placeholder="태그" />
+          </SelectTrigger>
+          <SelectContent>
+            {TAG_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="flex items-center gap-1.5 ml-auto">
           <Select
-            value={sourceFilter}
+            value={sortBy}
             onValueChange={(v) => {
-              setSourceFilter(v);
+              setSortBy(v);
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-[140px] bg-white/5 border-white/10 rounded-xl">
-              <SelectValue placeholder="출처" />
+            <SelectTrigger className="h-8 w-auto min-w-[70px] px-2.5 text-xs bg-white/5 border-white/10 rounded-lg">
+              <SelectValue placeholder="정렬" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">모든 출처</SelectItem>
-              <SelectItem value="leetcode">LeetCode</SelectItem>
-              <SelectItem value="programmers">프로그래머스</SelectItem>
-              <SelectItem value="baekjoon">백준</SelectItem>
-              <SelectItem value="custom">직접 생성</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={difficultyFilter}
-            onValueChange={(v) => {
-              setDifficultyFilter(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[140px] bg-white/5 border-white/10 rounded-xl">
-              <SelectValue placeholder="난이도" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">모든 난이도</SelectItem>
-              <SelectItem value="easy">
-                <span className="flex items-center gap-1.5">
-                  <SilverIcon className="h-4 w-4" />
-                  실버
-                </span>
-              </SelectItem>
-              <SelectItem value="medium">
-                <span className="flex items-center gap-1.5">
-                  <GoldIcon className="h-4 w-4" />
-                  골드
-                </span>
-              </SelectItem>
-              <SelectItem value="medium_hard">
-                <span className="flex items-center gap-1.5">
-                  <PlatinumIcon className="h-4 w-4" />
-                  플래티넘
-                </span>
-              </SelectItem>
-              <SelectItem value="hard">
-                <span className="flex items-center gap-1.5">
-                  <DiamondIcon className="h-4 w-4" />
-                  다이아
-                </span>
-              </SelectItem>
-              <SelectItem value="very_hard">
-                <span className="flex items-center gap-1.5">
-                  <MasterIcon className="h-4 w-4" />
-                  마스터
-                </span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={tagFilter}
-            onValueChange={(v) => {
-              setTagFilter(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[160px] bg-white/5 border-white/10 rounded-xl">
-              <SelectValue placeholder="태그" />
-            </SelectTrigger>
-            <SelectContent>
-              {TAG_OPTIONS.map((opt) => (
+              {SORT_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>
@@ -310,35 +332,12 @@ export default function AdminProblemsPage() {
             </SelectContent>
           </Select>
 
-          <div className="flex items-center gap-2 ml-auto">
-            <Select
-              value={sortBy}
-              onValueChange={(v) => {
-                setSortBy(v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger className="w-[120px] bg-white/5 border-white/10 rounded-xl">
-                <SelectValue placeholder="정렬" />
-              </SelectTrigger>
-              <SelectContent>
-                {SORT_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-              className="px-3 bg-white/5 border-white/10 hover:bg-white/10 rounded-xl"
-            >
-              {sortOrder === 'asc' ? '↑ 오름' : '↓ 내림'}
-            </Button>
-          </div>
+          <button
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="h-8 px-2.5 text-xs bg-white/5 border border-white/10 rounded-lg text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors"
+          >
+            {sortOrder === 'asc' ? '↑' : '↓'}
+          </button>
         </div>
       </div>
 

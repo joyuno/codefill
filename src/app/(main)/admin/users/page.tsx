@@ -51,6 +51,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [includeBanned, setIncludeBanned] = useState(false);
   const [page, setPage] = useState(1);
@@ -63,11 +64,20 @@ export default function AdminUsersPage() {
   const [showBanDialog, setShowBanDialog] = useState(false);
   const [banDuration, setBanDuration] = useState<string>('7');  // 정지 기간 (일)
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const response = await adminApi.listUsers({
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         role: roleFilter !== 'all' ? roleFilter : undefined,
         include_banned: includeBanned,
         page,
@@ -81,19 +91,11 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, roleFilter, includeBanned, page]);
+  }, [debouncedSearch, roleFilter, includeBanned, page]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const handleBanToggle = async () => {
     if (!selectedUser) return;
@@ -168,51 +170,49 @@ export default function AdminUsersPage() {
         <h2 className="text-lg font-semibold">사용자 목록</h2>
       </div>
 
-      {/* Filters */}
-      <div className="admin-glass-card rounded-2xl p-4">
-        <div className="flex flex-wrap gap-4">
-          <div className="admin-search flex-1 min-w-[240px] max-w-md">
-            <Search className="admin-search-icon h-4 w-4" />
-            <input
-              type="text"
-              placeholder="이메일 또는 이름으로 검색..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <Select
-            value={roleFilter}
-            onValueChange={(v) => {
-              setRoleFilter(v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[140px] bg-white/5 border-white/10 rounded-xl">
-              <SelectValue placeholder="역할" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">모든 역할</SelectItem>
-              <SelectItem value="admin">관리자</SelectItem>
-              <SelectItem value="user">일반 사용자</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Button
-            variant={includeBanned ? 'default' : 'outline'}
-            onClick={() => {
-              setIncludeBanned(!includeBanned);
-              setPage(1);
-            }}
-            className={`rounded-xl ${
-              includeBanned
-                ? ''
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            정지 사용자 포함
-          </Button>
+      {/* Filters - Compact inline */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
+          <input
+            type="text"
+            placeholder="이메일 또는 이름 검색..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full h-8 pl-9 pr-3 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+          />
         </div>
+
+        <Select
+          value={roleFilter}
+          onValueChange={(v) => {
+            setRoleFilter(v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-8 w-auto min-w-[90px] px-3 text-xs bg-white/5 border-white/10 rounded-lg">
+            <SelectValue placeholder="역할" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">모든 역할</SelectItem>
+            <SelectItem value="admin">관리자</SelectItem>
+            <SelectItem value="user">일반 사용자</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <button
+          onClick={() => {
+            setIncludeBanned(!includeBanned);
+            setPage(1);
+          }}
+          className={`h-8 px-3 text-xs rounded-lg border transition-colors ${
+            includeBanned
+              ? 'bg-primary/15 border-primary/30 text-primary'
+              : 'bg-white/5 border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20'
+          }`}
+        >
+          정지 포함
+        </button>
       </div>
 
       {/* Users List */}

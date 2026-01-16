@@ -194,6 +194,9 @@ class AnalysisService:
             # 학습 분석 프레임워크 메트릭
             "bktMastery": data.get("bkt_mastery", {}),
             "bloomMetrics": data.get("bloom_metrics", {}),
+            # ELO 성장 데이터
+            "eloHistory": data.get("elo_history", []),
+            "eloOverall": data.get("elo_overall"),
             # 실시간 시각화 데이터
             **viz_data,
         }
@@ -403,6 +406,9 @@ class AnalysisService:
             "recent10Attempts": user_data.get("recent_10_attempts", []),
             "recent10Analysis": recent_analysis,
             "hintIndependence": user_data.get("hint_independence", {}),
+            # ELO 성장 데이터
+            "eloHistory": user_data.get("elo_history", []),
+            "eloOverall": user_data.get("elo_overall"),
         }
 
     async def recommend_problems(self, user_id: UUID) -> List[Dict[str, Any]]:
@@ -447,7 +453,7 @@ class AnalysisService:
             "stats_by_problem_type, total_problems_solved, total_problems_attempted, "
             "avg_solve_time_seconds, avg_hints_per_problem, current_streak, longest_streak, "
             "preferred_problem_type, preferred_language, recent_topics, recent_difficulties, "
-            "learning_style, common_error_patterns"
+            "learning_style, common_error_patterns, elo_history, elo_overall"
         ).eq("user_id", str(user_id)).execute()
 
         use_cached_skill = (
@@ -479,6 +485,12 @@ class AnalysisService:
             data["recent_difficulties"] = skill.get("recent_difficulties", [])
             data["existing_learning_style"] = skill.get("learning_style")
             data["existing_error_patterns"] = skill.get("common_error_patterns")
+
+            # ELO 성장 데이터
+            data["elo_history"] = skill.get("elo_history", [])
+            data["elo_overall"] = skill.get("elo_overall")
+            logger.debug(f"[ELO DEBUG] skill.elo_history: {skill.get('elo_history')}")
+            logger.debug(f"[ELO DEBUG] skill.elo_overall: {skill.get('elo_overall')}")
 
             # difficulty_stats 변환
             diff_raw = skill.get("success_rate_by_difficulty", {})

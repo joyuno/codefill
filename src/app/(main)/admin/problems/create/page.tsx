@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
-  ArrowRight,
-  Check,
   Code2,
   Puzzle,
   BookOpen,
@@ -14,22 +12,19 @@ import {
   Plus,
   Trash2,
   GripVertical,
+  Loader2,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { adminApi } from '@/lib/api/admin';
+import { toast } from 'sonner';
 import {
-  Select,
+  Select as SelectUI,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { adminApi } from '@/lib/api/admin';
-import { toast } from 'sonner';
 
 type ProblemType = 'base' | 'blank' | 'puzzle' | 'guided';
 
@@ -37,6 +32,39 @@ interface BlankItem {
   id: string;
   answer: string;
   hint?: string;
+  context: string; // 빈칸 주변 코드 컨텍스트
+  lineNumber: number; // 빈칸이 있는 라인 번호
+}
+
+// [BLANK] 파싱 헬퍼 함수
+function parseBlankPositions(codeTemplate: string): { context: string; lineNumber: number }[] {
+  const blanks: { context: string; lineNumber: number }[] = [];
+  const lines = codeTemplate.split('\n');
+
+  lines.forEach((line, lineIndex) => {
+    const regex = /\[BLANK\]/g;
+    let match;
+    while ((match = regex.exec(line)) !== null) {
+      // 빈칸 주변 컨텍스트 추출 (앞뒤 문자)
+      const start = Math.max(0, match.index - 15);
+      const end = Math.min(line.length, match.index + 7 + 15);
+      let context = line.substring(start, end);
+
+      // 컨텍스트 정리
+      if (start > 0) context = '...' + context;
+      if (end < line.length) context = context + '...';
+
+      // [BLANK]를 ___로 표시
+      context = context.replace('[BLANK]', '________');
+
+      blanks.push({
+        context: context.trim(),
+        lineNumber: lineIndex + 1,
+      });
+    }
+  });
+
+  return blanks;
 }
 
 interface PuzzleBlock {
@@ -51,18 +79,25 @@ interface VariableGuide {
   initial?: string;
 }
 
-const difficultyOptions = [
-  { value: 'easy', label: '쉬움' },
-  { value: 'medium', label: '보통' },
-  { value: 'hard', label: '어려움' },
+const DIFFICULTY_OPTIONS = [
+  { value: 'easy', label: '쉬움', color: 'text-emerald-400' },
+  { value: 'medium', label: '보통', color: 'text-amber-400' },
+  { value: 'hard', label: '어려움', color: 'text-rose-400' },
 ];
 
-const languageOptions = [
+const LANGUAGE_OPTIONS = [
   { value: 'python', label: 'Python' },
   { value: 'javascript', label: 'JavaScript' },
   { value: 'typescript', label: 'TypeScript' },
   { value: 'java', label: 'Java' },
   { value: 'cpp', label: 'C++' },
+];
+
+const TYPE_OPTIONS = [
+  { value: 'base', label: '원본', icon: FileText, color: 'text-slate-300', bg: 'bg-slate-500/15 border-slate-500/30', desc: '새 문제 생성' },
+  { value: 'blank', label: '빈칸', icon: Code2, color: 'text-blue-400', bg: 'bg-blue-500/15 border-blue-500/30', desc: '빈칸 채우기', needsOriginal: true },
+  { value: 'puzzle', label: '퍼즐', icon: Puzzle, color: 'text-violet-400', bg: 'bg-violet-500/15 border-violet-500/30', desc: '코드 순서 배치', needsOriginal: true },
+  { value: 'guided', label: '가이드', icon: BookOpen, color: 'text-emerald-400', bg: 'bg-emerald-500/15 border-emerald-500/30', desc: '단계별 안내', needsOriginal: true },
 ];
 
 export default function AdminProblemCreatePage() {
@@ -71,11 +106,17 @@ export default function AdminProblemCreatePage() {
   const typeParam = searchParams.get('type') as ProblemType | null;
   const originalIdParam = searchParams.get('originalId');
 
-  const [step, setStep] = useState(1);
   const [problemType, setProblemType] = useState<ProblemType>(typeParam || 'base');
   const [loading, setLoading] = useState(false);
 
-  // Base problem form (백엔드 API 스키마에 맞춤)
+  // Edit mode state - 기존 변형이 있으면 수정 모드
+  const [editMode, setEditMode] = useState<{
+    blank: { id: string; language: string } | null;
+    puzzle: { id: string; language: string } | null;
+    guided: { id: string; language: string } | null;
+  }>({ blank: null, puzzle: null, guided: null });
+
+  // Base problem form
   const [baseForm, setBaseForm] = useState({
     original_id: '',
     name: '',
@@ -95,8 +136,43 @@ export default function AdminProblemCreatePage() {
     code_template: '',
     blanks: [] as BlankItem[],
   });
+  const isInitialBlankLoad = useRef(false); // 초기 데이터 로드 플래그
 
-  // Puzzle problem form (백엔드 API 스키마에 맞춤)
+  // 코드 템플릿 변경 시 빈칸 자동 동기화
+  useEffect(() => {
+    if (problemType !== 'blank') return;
+
+    // 초기 로드 시에는 건너뜀 (기존 데이터 유지)
+    if (isInitialBlankLoad.current) {
+      isInitialBlankLoad.current = false;
+      return;
+    }
+
+    const parsedBlanks = parseBlankPositions(blankForm.code_template);
+
+    // 파싱된 빈칸이 없으면 업데이트하지 않음 (기존 데이터 형식 유지)
+    if (parsedBlanks.length === 0 && blankForm.blanks.length > 0) {
+      return;
+    }
+
+    setBlankForm((prev) => {
+      // 기존 정답 유지하면서 새로운 빈칸 구조에 맞춤
+      const newBlanks = parsedBlanks.map((parsed, index) => {
+        const existingBlank = prev.blanks[index];
+        return {
+          id: `blank-${index}`,
+          answer: existingBlank?.answer || '',
+          hint: existingBlank?.hint || '',
+          context: parsed.context,
+          lineNumber: parsed.lineNumber,
+        };
+      });
+
+      return { ...prev, blanks: newBlanks };
+    });
+  }, [blankForm.code_template, problemType]);
+
+  // Puzzle problem form
   const [puzzleForm, setPuzzleForm] = useState({
     language: 'python',
     fixed_start: '',
@@ -104,7 +180,7 @@ export default function AdminProblemCreatePage() {
     blocks: [] as PuzzleBlock[],
   });
 
-  // Guided problem form (DB 스키마에 맞춤)
+  // Guided problem form
   const [guidedForm, setGuidedForm] = useState({
     language: 'python',
     concept_explanation: '',
@@ -113,7 +189,7 @@ export default function AdminProblemCreatePage() {
     starter_code: '',
   });
 
-  // If originalId is provided, fetch base problem details
+  // Fetch base problem and check existing variants
   useEffect(() => {
     if (originalIdParam && typeParam && typeParam !== 'base') {
       const fetchBaseProblem = async () => {
@@ -135,23 +211,90 @@ export default function AdminProblemCreatePage() {
             solutions: data.solutions || [{ language: 'python', code: '' }],
           });
 
-          // Auto-generate initial data based on solution code
-          if (typeParam === 'blank') {
-            setBlankForm({
-              code_template: solutionCode,
-              blanks: [],
-            });
+          // 기존 변형 체크 및 수정 모드 설정
+          const newEditMode = { blank: null as { id: string; language: string } | null, puzzle: null as { id: string; language: string } | null, guided: null as { id: string; language: string } | null };
+
+          // 빈칸 변형 체크
+          if (data.blanks && data.blanks.length > 0) {
+            const existing = data.blanks[0];
+            newEditMode.blank = { id: existing.id, language: existing.language };
+            if (typeParam === 'blank') {
+              const codeTemplate = existing.code_template || '';
+              const parsedBlanks = parseBlankPositions(codeTemplate);
+              const answers = existing.answers || [];
+
+              // 초기 로드 플래그 설정 (useEffect가 덮어쓰지 않도록)
+              isInitialBlankLoad.current = true;
+
+              // 기존 데이터 형식 체크: [BLANK]가 없으면 기존 형식 그대로 표시
+              if (parsedBlanks.length === 0 && answers.length > 0) {
+                // 기존 형식 (예: ___ 또는 다른 형식) - 정답만 표시
+                setBlankForm({
+                  code_template: codeTemplate,
+                  blanks: answers.map((ans, i) => ({
+                    id: `blank-${i}`,
+                    answer: ans,
+                    hint: '',
+                    context: `빈칸 #${i + 1}`, // 컨텍스트 없음
+                    lineNumber: 0,
+                  })),
+                });
+              } else {
+                // [BLANK] 형식
+                setBlankForm({
+                  code_template: codeTemplate,
+                  blanks: parsedBlanks.map((parsed, i) => ({
+                    id: `blank-${i}`,
+                    answer: answers[i] || '',
+                    hint: '',
+                    context: parsed.context,
+                    lineNumber: parsed.lineNumber,
+                  })),
+                });
+              }
+            }
+          } else if (typeParam === 'blank') {
+            setBlankForm({ code_template: solutionCode, blanks: [] });
+          }
+
+          // 퍼즐 변형 체크
+          if (data.puzzles && data.puzzles.length > 0) {
+            const existing = data.puzzles[0];
+            newEditMode.puzzle = { id: existing.id, language: existing.language };
+            if (typeParam === 'puzzle') {
+              setPuzzleForm({
+                language: existing.language,
+                fixed_start: existing.fixed_start || '',
+                fixed_end: existing.fixed_end || '',
+                blocks: (existing.blocks || []).map((b: { id: number; code: string }) => ({
+                  id: b.id,
+                  code: b.code,
+                })),
+              });
+            }
           } else if (typeParam === 'puzzle') {
             const lines = solutionCode.split('\n').filter((l: string) => l.trim());
             setPuzzleForm({
               language: solutionLang,
               fixed_start: '',
               fixed_end: '',
-              blocks: lines.map((line: string, i: number) => ({
-                id: i,
-                code: line,
-              })),
+              blocks: lines.map((line: string, i: number) => ({ id: i, code: line })),
             });
+          }
+
+          // 가이드 변형 체크
+          if (data.guideds && data.guideds.length > 0) {
+            const existing = data.guideds[0];
+            newEditMode.guided = { id: existing.id, language: existing.language };
+            if (typeParam === 'guided') {
+              setGuidedForm({
+                language: existing.language,
+                concept_explanation: existing.concept_explanation || '',
+                variables_guide: existing.variables_guide || [],
+                approach_guide: existing.approach_guide || '',
+                starter_code: existing.starter_code || '',
+              });
+            }
           } else if (typeParam === 'guided') {
             setGuidedForm({
               language: solutionLang,
@@ -161,7 +304,8 @@ export default function AdminProblemCreatePage() {
               starter_code: '',
             });
           }
-          setStep(2);
+
+          setEditMode(newEditMode);
         } catch (error) {
           console.error('Failed to fetch base problem:', error);
           toast.error('원본 문제를 불러오는데 실패했습니다');
@@ -171,9 +315,10 @@ export default function AdminProblemCreatePage() {
     }
   }, [originalIdParam, typeParam]);
 
+  // Handlers
   const handleCreateBase = async () => {
     if (!baseForm.original_id || !baseForm.name || !baseForm.question) {
-      toast.error('필수 항목을 모두 입력해주세요 (문제 ID, 제목, 설명)');
+      toast.error('필수 항목을 입력해주세요 (ID, 제목, 설명)');
       return;
     }
     if (!baseForm.solutions[0]?.code) {
@@ -195,11 +340,11 @@ export default function AdminProblemCreatePage() {
         memory_limit: baseForm.memory_limit || undefined,
         solutions: baseForm.solutions.filter(s => s.code.trim()),
       });
-      toast.success('원본 문제가 생성되었습니다');
+      toast.success('문제가 생성되었습니다');
       router.push(`/admin/problems/${result.original_id}`);
     } catch (error) {
       console.error('Failed to create base problem:', error);
-      toast.error('문제 생성에 실패했습니다');
+      toast.error('문제 생성 실패');
     } finally {
       setLoading(false);
     }
@@ -207,23 +352,22 @@ export default function AdminProblemCreatePage() {
 
   const handleCreateBlank = async () => {
     if (!originalIdParam || blankForm.blanks.length === 0) {
-      toast.error('빈칸을 최소 1개 이상 추가해주세요');
+      toast.error('빈칸을 1개 이상 추가해주세요');
       return;
     }
 
     setLoading(true);
     try {
-      const solutionLang = baseForm.solutions?.[0]?.language || 'python';
       await adminApi.createBlankProblem(originalIdParam, {
-        language: solutionLang,
+        language: baseForm.solutions?.[0]?.language || 'python',
         code_template: blankForm.code_template,
         answers: blankForm.blanks.map((b) => b.answer),
       });
-      toast.success('빈칸 채우기 문제가 생성되었습니다');
+      toast.success('빈칸 문제가 생성되었습니다');
       router.push(`/admin/problems/${originalIdParam}`);
     } catch (error) {
       console.error('Failed to create blank problem:', error);
-      toast.error('문제 생성에 실패했습니다');
+      toast.error('생성 실패');
     } finally {
       setLoading(false);
     }
@@ -231,7 +375,7 @@ export default function AdminProblemCreatePage() {
 
   const handleCreatePuzzle = async () => {
     if (!originalIdParam || puzzleForm.blocks.length === 0) {
-      toast.error('블록을 최소 1개 이상 추가해주세요');
+      toast.error('블록을 1개 이상 추가해주세요');
       return;
     }
 
@@ -241,16 +385,13 @@ export default function AdminProblemCreatePage() {
         language: puzzleForm.language,
         fixed_start: puzzleForm.fixed_start || undefined,
         fixed_end: puzzleForm.fixed_end || undefined,
-        blocks: puzzleForm.blocks.map((b) => ({
-          id: b.id,
-          code: b.code,
-        })),
+        blocks: puzzleForm.blocks.map((b) => ({ id: b.id, code: b.code })),
       });
       toast.success('퍼즐 문제가 생성되었습니다');
       router.push(`/admin/problems/${originalIdParam}`);
     } catch (error) {
       console.error('Failed to create puzzle problem:', error);
-      toast.error('문제 생성에 실패했습니다');
+      toast.error('생성 실패');
     } finally {
       setLoading(false);
     }
@@ -262,7 +403,7 @@ export default function AdminProblemCreatePage() {
       return;
     }
     if (!guidedForm.concept_explanation || !guidedForm.approach_guide || !guidedForm.starter_code) {
-      toast.error('필수 항목을 모두 입력해주세요 (개념 설명, 접근법, 시작 코드)');
+      toast.error('필수 항목을 입력해주세요');
       return;
     }
 
@@ -279,87 +420,157 @@ export default function AdminProblemCreatePage() {
       router.push(`/admin/problems/${originalIdParam}`);
     } catch (error) {
       console.error('Failed to create guided problem:', error);
-      toast.error('문제 생성에 실패했습니다');
+      toast.error('생성 실패');
     } finally {
       setLoading(false);
     }
   };
 
-  const addBlank = () => {
-    setBlankForm({
-      ...blankForm,
-      blanks: [
-        ...blankForm.blanks,
-        { id: `blank-${Date.now()}`, answer: '', hint: '' },
-      ],
-    });
+  // Update handlers
+  const handleUpdateBlank = async () => {
+    if (!originalIdParam || !editMode.blank) return;
+    if (blankForm.blanks.length === 0) {
+      toast.error('빈칸을 1개 이상 추가해주세요');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await adminApi.updateBlankProblem(originalIdParam, editMode.blank.id, {
+        code_template: blankForm.code_template,
+        answers: blankForm.blanks.map((b) => b.answer),
+      });
+      toast.success('빈칸 문제가 수정되었습니다');
+      router.push(`/admin/problems/${originalIdParam}`);
+    } catch (error) {
+      console.error('Failed to update blank problem:', error);
+      toast.error('수정 실패');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const removeBlank = (id: string) => {
-    setBlankForm({
-      ...blankForm,
-      blanks: blankForm.blanks.filter((b) => b.id !== id),
-    });
+  const handleUpdatePuzzle = async () => {
+    if (!originalIdParam || !editMode.puzzle) return;
+    if (puzzleForm.blocks.length === 0) {
+      toast.error('블록을 1개 이상 추가해주세요');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await adminApi.updatePuzzleProblem(originalIdParam, editMode.puzzle.id, {
+        fixed_start: puzzleForm.fixed_start || undefined,
+        fixed_end: puzzleForm.fixed_end || undefined,
+        blocks: puzzleForm.blocks.map((b) => ({ id: b.id, code: b.code })),
+      });
+      toast.success('퍼즐 문제가 수정되었습니다');
+      router.push(`/admin/problems/${originalIdParam}`);
+    } catch (error) {
+      console.error('Failed to update puzzle problem:', error);
+      toast.error('수정 실패');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const handleUpdateGuided = async () => {
+    if (!originalIdParam || !editMode.guided) return;
+    if (!guidedForm.concept_explanation || !guidedForm.approach_guide || !guidedForm.starter_code) {
+      toast.error('필수 항목을 입력해주세요');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await adminApi.updateGuidedProblem(originalIdParam, editMode.guided.id, {
+        concept_explanation: guidedForm.concept_explanation,
+        variables_guide: guidedForm.variables_guide,
+        approach_guide: guidedForm.approach_guide,
+        starter_code: guidedForm.starter_code,
+      });
+      toast.success('가이드 문제가 수정되었습니다');
+      router.push(`/admin/problems/${originalIdParam}`);
+    } catch (error) {
+      console.error('Failed to update guided problem:', error);
+      toast.error('수정 실패');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete handlers
+  const handleDeleteVariant = async (type: 'blank' | 'puzzle' | 'guided') => {
+    if (!originalIdParam) return;
+    const variantInfo = editMode[type];
+    if (!variantInfo) return;
+
+    if (!confirm('정말 삭제하시겠습니까?')) return;
+
+    setLoading(true);
+    try {
+      if (type === 'blank') {
+        await adminApi.deleteBlankProblem(originalIdParam, variantInfo.id);
+      } else if (type === 'puzzle') {
+        await adminApi.deletePuzzleProblem(originalIdParam, variantInfo.id);
+      } else if (type === 'guided') {
+        await adminApi.deleteGuidedProblem(originalIdParam, variantInfo.id);
+      }
+      toast.success('삭제되었습니다');
+      router.push(`/admin/problems/${originalIdParam}`);
+    } catch (error) {
+      console.error('Failed to delete variant:', error);
+      toast.error('삭제 실패');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = () => {
+    switch (problemType) {
+      case 'base': handleCreateBase(); break;
+      case 'blank': editMode.blank ? handleUpdateBlank() : handleCreateBlank(); break;
+      case 'puzzle': editMode.puzzle ? handleUpdatePuzzle() : handleCreatePuzzle(); break;
+      case 'guided': editMode.guided ? handleUpdateGuided() : handleCreateGuided(); break;
+    }
+  };
+
+  // 현재 타입의 수정 모드 여부
+  const isEditMode = problemType === 'blank' ? !!editMode.blank
+    : problemType === 'puzzle' ? !!editMode.puzzle
+    : problemType === 'guided' ? !!editMode.guided
+    : false;
+
+  // Blank helpers (빈칸은 자동 감지되므로 add/remove 불필요)
   const updateBlank = (id: string, field: keyof BlankItem, value: string) => {
     setBlankForm({
       ...blankForm,
-      blanks: blankForm.blanks.map((b) =>
-        b.id === id ? { ...b, [field]: value } : b
-      ),
+      blanks: blankForm.blanks.map((b) => (b.id === id ? { ...b, [field]: value } : b)),
     });
   };
 
+  // Puzzle helpers
   const addPuzzleBlock = () => {
-    const nextId = puzzleForm.blocks.length > 0
-      ? Math.max(...puzzleForm.blocks.map(b => b.id)) + 1
-      : 0;
-    setPuzzleForm({
-      ...puzzleForm,
-      blocks: [
-        ...puzzleForm.blocks,
-        {
-          id: nextId,
-          code: '',
-        },
-      ],
-    });
+    const nextId = puzzleForm.blocks.length > 0 ? Math.max(...puzzleForm.blocks.map(b => b.id)) + 1 : 0;
+    setPuzzleForm({ ...puzzleForm, blocks: [...puzzleForm.blocks, { id: nextId, code: '' }] });
   };
 
   const removePuzzleBlock = (id: number) => {
+    setPuzzleForm({ ...puzzleForm, blocks: puzzleForm.blocks.filter((b) => b.id !== id) });
+  };
+
+  const updatePuzzleBlock = (id: number, value: string) => {
     setPuzzleForm({
       ...puzzleForm,
-      blocks: puzzleForm.blocks.filter((b) => b.id !== id),
+      blocks: puzzleForm.blocks.map((b) => (b.id === id ? { ...b, code: value } : b)),
     });
   };
 
-  const updatePuzzleBlock = (
-    id: number,
-    field: keyof PuzzleBlock,
-    value: string | number
-  ) => {
-    setPuzzleForm({
-      ...puzzleForm,
-      blocks: puzzleForm.blocks.map((b) =>
-        b.id === id ? { ...b, [field]: value } : b
-      ),
-    });
-  };
-
-  // Variable guide functions for guided problems
+  // Variable guide helpers
   const addVariableGuide = () => {
     setGuidedForm({
       ...guidedForm,
-      variables_guide: [
-        ...guidedForm.variables_guide,
-        {
-          name: '',
-          role: '',
-          type: '',
-          initial: '',
-        },
-      ],
+      variables_guide: [...guidedForm.variables_guide, { name: '', role: '', type: '', initial: '' }],
     });
   };
 
@@ -370,464 +581,425 @@ export default function AdminProblemCreatePage() {
     });
   };
 
-  const updateVariableGuide = (
-    index: number,
-    field: keyof VariableGuide,
-    value: string
-  ) => {
+  const updateVariableGuide = (index: number, field: keyof VariableGuide, value: string) => {
     setGuidedForm({
       ...guidedForm,
-      variables_guide: guidedForm.variables_guide.map((v, i) =>
-        i === index ? { ...v, [field]: value } : v
-      ),
+      variables_guide: guidedForm.variables_guide.map((v, i) => (i === index ? { ...v, [field]: value } : v)),
     });
   };
 
-  const renderTypeSelection = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">문제 유형 선택</h2>
-        <p className="text-muted-foreground">생성할 문제의 유형을 선택하세요</p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card
-          className={`cursor-pointer transition-all ${
-            problemType === 'base'
-              ? 'ring-2 ring-primary'
-              : 'hover:border-primary/50'
-          }`}
-          onClick={() => setProblemType('base')}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-gray-500" />
-              원본 문제
-            </CardTitle>
-            <CardDescription>
-              새로운 코딩 문제를 처음부터 생성합니다
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card
-          className={`cursor-pointer transition-all ${
-            problemType === 'blank'
-              ? 'ring-2 ring-primary'
-              : 'hover:border-primary/50'
-          } ${!originalIdParam && 'opacity-50 cursor-not-allowed'}`}
-          onClick={() => originalIdParam && setProblemType('blank')}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Code2 className="h-5 w-5 text-blue-500" />
-              빈칸 채우기
-              {!originalIdParam && (
-                <Badge variant="outline" className="ml-auto">
-                  원본 필요
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              코드의 일부를 빈칸으로 만들어 채우는 문제
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card
-          className={`cursor-pointer transition-all ${
-            problemType === 'puzzle'
-              ? 'ring-2 ring-primary'
-              : 'hover:border-primary/50'
-          } ${!originalIdParam && 'opacity-50 cursor-not-allowed'}`}
-          onClick={() => originalIdParam && setProblemType('puzzle')}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Puzzle className="h-5 w-5 text-purple-500" />
-              퍼즐
-              {!originalIdParam && (
-                <Badge variant="outline" className="ml-auto">
-                  원본 필요
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              코드 블록을 올바른 순서로 배치하는 문제
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card
-          className={`cursor-pointer transition-all ${
-            problemType === 'guided'
-              ? 'ring-2 ring-primary'
-              : 'hover:border-primary/50'
-          } ${!originalIdParam && 'opacity-50 cursor-not-allowed'}`}
-          onClick={() => originalIdParam && setProblemType('guided')}
-        >
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BookOpen className="h-5 w-5 text-green-500" />
-              가이드
-              {!originalIdParam && (
-                <Badge variant="outline" className="ml-auto">
-                  원본 필요
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              단계별 안내와 함께 문제를 해결하는 문제
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    </div>
-  );
-
+  // Tag helpers
   const handleAddTag = () => {
     if (tagInput.trim() && !baseForm.tags.includes(tagInput.trim())) {
-      setBaseForm({
-        ...baseForm,
-        tags: [...baseForm.tags, tagInput.trim()],
-      });
+      setBaseForm({ ...baseForm, tags: [...baseForm.tags, tagInput.trim()] });
       setTagInput('');
     }
   };
 
   const handleRemoveTag = (tag: string) => {
-    setBaseForm({
-      ...baseForm,
-      tags: baseForm.tags.filter((t) => t !== tag),
-    });
+    setBaseForm({ ...baseForm, tags: baseForm.tags.filter((t) => t !== tag) });
   };
 
+  // Input/Select components
+  const Input = ({ label, required, ...props }: { label?: string; required?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) => (
+    <div className="space-y-1">
+      {label && <label className="text-xs text-muted-foreground">{label}{required && ' *'}</label>}
+      <input
+        {...props}
+        className={`w-full h-9 px-3 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 transition-colors ${props.className || ''}`}
+      />
+    </div>
+  );
+
+  const TextArea = ({ label, required, rows = 4, ...props }: { label?: string; required?: boolean; rows?: number } & React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
+    <div className="space-y-1">
+      {label && <label className="text-xs text-muted-foreground">{label}{required && ' *'}</label>}
+      <textarea
+        rows={rows}
+        {...props}
+        className={`w-full px-3 py-2 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 transition-colors resize-none ${props.className || ''}`}
+      />
+    </div>
+  );
+
+  const Select = ({ label, value, onChange, options }: { label?: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
+    <div className="space-y-1">
+      {label && <label className="text-xs text-muted-foreground">{label}</label>}
+      <SelectUI value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-full h-9 bg-white/5 border-white/10 rounded-lg">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </SelectUI>
+    </div>
+  );
+
+  // Render forms
   const renderBaseForm = () => (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">원본 문제 생성</h2>
-        <p className="text-muted-foreground">문제의 기본 정보를 입력하세요</p>
+      {/* Row 1: ID, Title */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input
+          label="문제 ID"
+          required
+          value={baseForm.original_id}
+          onChange={(e) => setBaseForm({ ...baseForm, original_id: e.target.value })}
+          placeholder="two-sum"
+        />
+        <Input
+          label="제목"
+          required
+          value={baseForm.name}
+          onChange={(e) => setBaseForm({ ...baseForm, name: e.target.value })}
+          placeholder="Two Sum"
+        />
       </div>
 
-      <div className="space-y-4">
-        {/* 문제 ID와 제목 */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">문제 ID *</label>
-            <Input
-              value={baseForm.original_id}
-              onChange={(e) => setBaseForm({ ...baseForm, original_id: e.target.value })}
-              placeholder="예: two-sum, binary-search"
-            />
-            <p className="text-xs text-muted-foreground">영문, 숫자, 하이픈만 사용</p>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">제목 *</label>
-            <Input
-              value={baseForm.name}
-              onChange={(e) => setBaseForm({ ...baseForm, name: e.target.value })}
-              placeholder="문제 제목"
-            />
-          </div>
-        </div>
+      {/* Row 2: Difficulty, Source, URL */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Select
+          label="난이도"
+          value={baseForm.difficulty}
+          onChange={(v) => setBaseForm({ ...baseForm, difficulty: v })}
+          options={DIFFICULTY_OPTIONS}
+        />
+        <Input
+          label="출처"
+          value={baseForm.source}
+          onChange={(e) => setBaseForm({ ...baseForm, source: e.target.value })}
+          placeholder="LeetCode"
+        />
+        <Input
+          label="원본 URL"
+          value={baseForm.url}
+          onChange={(e) => setBaseForm({ ...baseForm, url: e.target.value })}
+          placeholder="https://..."
+        />
+      </div>
 
-        {/* 난이도와 출처 */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">난이도</label>
-            <Select
-              value={baseForm.difficulty}
-              onValueChange={(v) => setBaseForm({ ...baseForm, difficulty: v })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {difficultyOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">출처</label>
-            <Input
-              value={baseForm.source}
-              onChange={(e) => setBaseForm({ ...baseForm, source: e.target.value })}
-              placeholder="예: LeetCode, BOJ"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">원본 URL</label>
-            <Input
-              value={baseForm.url}
-              onChange={(e) => setBaseForm({ ...baseForm, url: e.target.value })}
-              placeholder="https://..."
-            />
-          </div>
-        </div>
-
-        {/* 태그 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">태그</label>
-          <div className="flex gap-2">
-            <Input
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-              placeholder="태그 입력 후 Enter"
-              className="flex-1"
-            />
-            <Button type="button" variant="outline" onClick={handleAddTag}>
-              추가
-            </Button>
-          </div>
-          {baseForm.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-2">
-              {baseForm.tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="cursor-pointer" onClick={() => handleRemoveTag(tag)}>
-                  {tag} ×
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 문제 설명 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">문제 설명 *</label>
-          <Textarea
-            value={baseForm.question}
-            onChange={(e) => setBaseForm({ ...baseForm, question: e.target.value })}
-            placeholder="문제에 대한 설명을 입력하세요"
-            rows={6}
+      {/* Tags */}
+      <div className="space-y-2">
+        <label className="text-xs text-muted-foreground">태그</label>
+        <div className="flex gap-2">
+          <input
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+            placeholder="Enter로 추가"
+            className="flex-1 h-8 px-3 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50"
           />
         </div>
+        {baseForm.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {baseForm.tags.map((tag) => (
+              <span
+                key={tag}
+                onClick={() => handleRemoveTag(tag)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-white/10 border border-white/10 rounded cursor-pointer hover:bg-white/15"
+              >
+                {tag}
+                <X className="h-3 w-3" />
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
-        {/* 솔루션 */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">솔루션 *</label>
-          {baseForm.solutions.map((solution, index) => (
-            <div key={index} className="space-y-2 p-4 border rounded-lg">
-              <div className="flex items-center justify-between">
-                <Select
-                  value={solution.language}
-                  onValueChange={(v) => {
-                    const newSolutions = [...baseForm.solutions];
-                    newSolutions[index] = { ...newSolutions[index], language: v };
-                    setBaseForm({ ...baseForm, solutions: newSolutions });
-                  }}
-                >
-                  <SelectTrigger className="w-[150px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {languageOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {baseForm.solutions.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive"
-                    onClick={() => {
-                      setBaseForm({
-                        ...baseForm,
-                        solutions: baseForm.solutions.filter((_, i) => i !== index),
-                      });
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              <Textarea
-                value={solution.code}
-                onChange={(e) => {
+      {/* Question */}
+      <TextArea
+        label="문제 설명"
+        required
+        value={baseForm.question}
+        onChange={(e) => setBaseForm({ ...baseForm, question: e.target.value })}
+        placeholder="문제 설명..."
+        rows={5}
+      />
+
+      {/* Solutions */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-muted-foreground">솔루션 *</label>
+          <button
+            type="button"
+            onClick={() => setBaseForm({ ...baseForm, solutions: [...baseForm.solutions, { language: 'python', code: '' }] })}
+            className="text-xs text-primary hover:underline"
+          >
+            + 솔루션 추가
+          </button>
+        </div>
+        {baseForm.solutions.map((solution, index) => (
+          <div key={index} className="space-y-2 p-3 bg-white/[0.07] border border-white/10 rounded-lg">
+            <div className="flex items-center justify-between">
+              <SelectUI
+                value={solution.language}
+                onValueChange={(val) => {
                   const newSolutions = [...baseForm.solutions];
-                  newSolutions[index] = { ...newSolutions[index], code: e.target.value };
+                  newSolutions[index] = { ...newSolutions[index], language: val };
                   setBaseForm({ ...baseForm, solutions: newSolutions });
                 }}
-                placeholder="솔루션 코드"
-                rows={10}
-                className="font-mono text-sm"
-              />
+              >
+                <SelectTrigger className="h-7 w-auto min-w-[100px] px-2 text-xs bg-white/5 border-white/10 rounded">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANGUAGE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </SelectUI>
+              {baseForm.solutions.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setBaseForm({ ...baseForm, solutions: baseForm.solutions.filter((_, i) => i !== index) })}
+                  className="p-1 text-muted-foreground/60 hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setBaseForm({
-                ...baseForm,
-                solutions: [...baseForm.solutions, { language: 'python', code: '' }],
-              });
-            }}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            솔루션 추가
-          </Button>
-        </div>
+            <textarea
+              value={solution.code}
+              onChange={(e) => {
+                const newSolutions = [...baseForm.solutions];
+                newSolutions[index] = { ...newSolutions[index], code: e.target.value };
+                setBaseForm({ ...baseForm, solutions: newSolutions });
+              }}
+              placeholder="솔루션 코드..."
+              rows={8}
+              className="w-full px-3 py-2 text-sm font-mono bg-black/20 border border-white/10 rounded placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 resize-none"
+            />
+          </div>
+        ))}
+      </div>
 
-        {/* 시간/메모리 제한 */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">시간 제한</label>
-            <Input
-              value={baseForm.time_limit}
-              onChange={(e) => setBaseForm({ ...baseForm, time_limit: e.target.value })}
-              placeholder="예: 1초"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">메모리 제한</label>
-            <Input
-              value={baseForm.memory_limit}
-              onChange={(e) => setBaseForm({ ...baseForm, memory_limit: e.target.value })}
-              placeholder="예: 256MB"
-            />
-          </div>
-        </div>
+      {/* Time/Memory limits */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input
+          label="시간 제한"
+          value={baseForm.time_limit}
+          onChange={(e) => setBaseForm({ ...baseForm, time_limit: e.target.value })}
+          placeholder="1초"
+        />
+        <Input
+          label="메모리 제한"
+          value={baseForm.memory_limit}
+          onChange={(e) => setBaseForm({ ...baseForm, memory_limit: e.target.value })}
+          placeholder="256MB"
+        />
       </div>
     </div>
   );
 
-  const renderBlankForm = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">빈칸 채우기 문제 생성</h2>
-        <p className="text-muted-foreground">
-          코드 템플릿에서 빈칸으로 만들 부분을 정의하세요
-        </p>
-      </div>
+  const renderBlankForm = () => {
+    const blankCount = (blankForm.code_template.match(/\[BLANK\]/g) || []).length;
 
-      <div className="space-y-4">
+    return (
+      <div className="space-y-5">
+        {/* 코드 템플릿 입력 */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">
-            코드 템플릿 (빈칸 위치에 [BLANK] 사용)
-          </label>
-          <Textarea
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-muted-foreground">
+              코드 템플릿 <span className="text-primary/60">([BLANK] 위치에 빈칸 생성)</span>
+            </label>
+            {blankCount > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                {blankCount}개 빈칸 감지됨
+              </span>
+            )}
+          </div>
+          <textarea
             value={blankForm.code_template}
-            onChange={(e) =>
-              setBlankForm({ ...blankForm, code_template: e.target.value })
-            }
-            placeholder="def example():\n    return [BLANK]"
+            onChange={(e) => setBlankForm((prev) => ({ ...prev, code_template: e.target.value }))}
+            placeholder={`def add(a, b):\n    result = [BLANK]  # 여기에 빈칸\n    return [BLANK]`}
             rows={10}
-            className="font-mono text-sm"
+            className="w-full px-3 py-2 text-sm font-mono bg-black/20 border border-white/10 rounded-lg placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors resize-none"
           />
         </div>
 
+        {/* 빈칸 정답 입력 영역 */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">빈칸 정답</label>
-            <Button size="sm" variant="outline" onClick={addBlank}>
-              <Plus className="h-4 w-4 mr-2" />
-              빈칸 추가
-            </Button>
+            <label className="text-xs text-muted-foreground">빈칸 정답</label>
+            {blankCount === 0 && (
+              <span className="text-xs text-muted-foreground/50">코드에 [BLANK]를 입력하면 자동 감지됩니다</span>
+            )}
           </div>
 
-          <AnimatePresence>
-            {blankForm.blanks.map((blank, index) => (
-              <motion.div
-                key={blank.id}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="flex gap-3 items-start p-3 border rounded-lg"
-              >
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
-                  {index + 1}
-                </div>
-                <div className="flex-1 grid gap-3 md:grid-cols-2">
-                  <Input
-                    value={blank.answer}
-                    onChange={(e) => updateBlank(blank.id, 'answer', e.target.value)}
-                    placeholder="정답"
-                  />
-                  <Input
-                    value={blank.hint || ''}
-                    onChange={(e) => updateBlank(blank.id, 'hint', e.target.value)}
-                    placeholder="힌트 (선택)"
-                  />
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="text-destructive"
-                  onClick={() => removeBlank(blank.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+          <AnimatePresence mode="popLayout">
+            {blankForm.blanks.length > 0 ? (
+              <motion.div className="space-y-2">
+                {blankForm.blanks.map((blank, index) => (
+                  <motion.div
+                    key={blank.id}
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.15 }}
+                    className="p-3 bg-white/[0.04] border border-white/10 rounded-lg hover:border-blue-500/30 transition-colors"
+                  >
+                    {/* 빈칸 헤더: 번호 + 라인 정보 */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="flex items-center justify-center min-w-[24px] h-6 px-1.5 text-xs font-bold bg-blue-500/20 text-blue-400 rounded">
+                        {index + 1}
+                      </span>
+                      {blank.lineNumber > 0 && (
+                        <span className="text-[10px] text-muted-foreground/60">
+                          Line {blank.lineNumber}
+                        </span>
+                      )}
+                    </div>
 
-          {blankForm.blanks.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground border rounded-lg border-dashed">
-              빈칸을 추가하여 문제를 구성하세요
-            </div>
-          )}
+                    {/* 코드 컨텍스트 표시 (있는 경우에만) */}
+                    {blank.lineNumber > 0 ? (
+                      <div className="mb-3 px-3 py-2 bg-black/30 rounded-md border border-white/5">
+                        <code className="text-xs text-muted-foreground font-mono">
+                          {blank.context.split('________').map((part, i, arr) => (
+                            <span key={i}>
+                              {part}
+                              {i < arr.length - 1 && (
+                                <span className="px-1 py-0.5 mx-0.5 bg-blue-500/30 text-blue-300 rounded">
+                                  ____
+                                </span>
+                              )}
+                            </span>
+                          ))}
+                        </code>
+                      </div>
+                    ) : (
+                      <div className="mb-3 px-3 py-1.5 bg-amber-500/10 rounded-md border border-amber-500/20">
+                        <span className="text-xs text-amber-400/80">
+                          기존 형식 - 코드에서 직접 빈칸 위치 확인 필요
+                        </span>
+                      </div>
+                    )}
+
+                    {/* 정답 입력 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground/60 shrink-0">정답:</span>
+                      <input
+                        value={blank.answer}
+                        onChange={(e) => updateBlank(blank.id, 'answer', e.target.value)}
+                        placeholder="빈칸에 들어갈 정답"
+                        className="flex-1 h-8 px-3 text-sm font-mono bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500/50 focus:bg-blue-500/5 transition-colors"
+                      />
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="py-8 text-center border border-dashed border-white/10 rounded-lg"
+              >
+                <Code2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
+                <p className="text-xs text-muted-foreground/50">
+                  코드 템플릿에 <code className="px-1.5 py-0.5 bg-white/10 rounded text-blue-400">[BLANK]</code>를 입력하세요
+                </p>
+                <p className="text-[10px] text-muted-foreground/40 mt-1">
+                  빈칸이 자동으로 감지됩니다
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
+
+        {/* 미리보기 영역 - [BLANK] 형식일 때만 표시 */}
+        {blankForm.blanks.length > 0 && blankForm.blanks[0]?.lineNumber > 0 && (
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground">미리보기</label>
+            <div className="p-4 bg-black/30 border border-white/10 rounded-lg overflow-auto max-h-[200px]">
+              <pre className="text-xs font-mono">
+                {blankForm.code_template.split('\n').map((line, lineIndex) => {
+                  // 각 라인에서 [BLANK]를 찾아서 해당 정답으로 대체 표시
+                  let blankIndexInLine = 0;
+                  const parts = line.split(/(\[BLANK\])/);
+
+                  return (
+                    <div key={lineIndex} className="flex">
+                      <span className="w-8 text-muted-foreground/40 select-none shrink-0">
+                        {lineIndex + 1}
+                      </span>
+                      <span className="flex-1">
+                        {parts.map((part, partIndex) => {
+                          if (part === '[BLANK]') {
+                            // 이 빈칸이 전체에서 몇 번째인지 계산
+                            const globalBlankIndex = blankForm.code_template
+                              .split('\n')
+                              .slice(0, lineIndex)
+                              .join('\n')
+                              .split('[BLANK]').length - 1 + blankIndexInLine;
+                            blankIndexInLine++;
+                            const blankData = blankForm.blanks[globalBlankIndex];
+                            const answer = blankData?.answer;
+
+                            return (
+                              <span
+                                key={partIndex}
+                                className={`px-1 py-0.5 mx-0.5 rounded ${
+                                  answer
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                }`}
+                              >
+                                {answer || '???'}
+                              </span>
+                            );
+                          }
+                          return <span key={partIndex}>{part}</span>;
+                        })}
+                      </span>
+                    </div>
+                  );
+                })}
+              </pre>
+            </div>
+            <p className="text-[10px] text-muted-foreground/50">
+              <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500/30 mr-1" /> 정답 입력됨
+              <span className="inline-block w-2 h-2 rounded-sm bg-rose-500/30 ml-3 mr-1" /> 정답 미입력
+            </p>
+          </div>
+        )}
+
+        {/* 기존 형식 안내 메시지 */}
+        {blankForm.blanks.length > 0 && blankForm.blanks[0]?.lineNumber === 0 && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+            <p className="text-xs text-amber-400">
+              <strong>기존 형식 데이터입니다.</strong><br />
+              새 형식으로 변환하려면 코드 템플릿에서 빈칸 위치에 <code className="px-1 py-0.5 bg-black/30 rounded">[BLANK]</code>를 입력하세요.
+            </p>
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderPuzzleForm = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">퍼즐 문제 생성</h2>
-        <p className="text-muted-foreground">
-          코드 블록을 정의하고 올바른 순서를 지정하세요
-        </p>
-      </div>
+    <div className="space-y-5">
+      <Select
+        label="언어"
+        value={puzzleForm.language}
+        onChange={(v) => setPuzzleForm({ ...puzzleForm, language: v })}
+        options={LANGUAGE_OPTIONS}
+      />
 
-      <div className="space-y-4">
-        {/* 언어 선택 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">언어</label>
-          <Select
-            value={puzzleForm.language}
-            onValueChange={(v) => setPuzzleForm({ ...puzzleForm, language: v })}
-          >
-            <SelectTrigger className="w-[150px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {languageOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <TextArea
+        label="고정 시작 코드 (선택)"
+        value={puzzleForm.fixed_start}
+        onChange={(e) => setPuzzleForm({ ...puzzleForm, fixed_start: e.target.value })}
+        placeholder="블록 이전에 표시되는 코드"
+        rows={2}
+        className="font-mono"
+      />
 
-        {/* 고정 시작 코드 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">고정 시작 코드 (선택)</label>
-          <Textarea
-            value={puzzleForm.fixed_start}
-            onChange={(e) => setPuzzleForm({ ...puzzleForm, fixed_start: e.target.value })}
-            placeholder="블록 이전에 항상 표시되는 코드"
-            rows={3}
-            className="font-mono text-sm"
-          />
-        </div>
-
-        {/* 코드 블록 */}
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">코드 블록 (올바른 순서로 입력)</label>
-          <Button size="sm" variant="outline" onClick={addPuzzleBlock}>
-            <Plus className="h-4 w-4 mr-2" />
-            블록 추가
-          </Button>
+          <label className="text-xs text-muted-foreground">코드 블록 (올바른 순서로)</label>
+          <button type="button" onClick={addPuzzleBlock} className="text-xs text-primary hover:underline">+ 블록 추가</button>
         </div>
 
         <AnimatePresence>
@@ -837,299 +1009,242 @@ export default function AdminProblemCreatePage() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="flex gap-3 items-start p-3 border rounded-lg"
+              className="flex items-center gap-2"
             >
-              <div className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
-                  {index + 1}
-                </div>
-              </div>
-              <div className="flex-1">
-                <Input
-                  value={block.code}
-                  onChange={(e) => updatePuzzleBlock(block.id, 'code', e.target.value)}
-                  placeholder="코드 블록 내용"
-                  className="font-mono text-sm"
-                />
-              </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="text-destructive"
-                onClick={() => removePuzzleBlock(block.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <GripVertical className="h-4 w-4 text-muted-foreground/40" />
+              <span className="flex items-center justify-center w-6 h-6 text-xs bg-white/10 rounded">{index + 1}</span>
+              <input
+                value={block.code}
+                onChange={(e) => updatePuzzleBlock(block.id, e.target.value)}
+                placeholder="코드 블록"
+                className="flex-1 h-8 px-3 text-sm font-mono bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-primary/50"
+              />
+              <button onClick={() => removePuzzleBlock(block.id)} className="p-1.5 text-muted-foreground/60 hover:text-destructive">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </motion.div>
           ))}
         </AnimatePresence>
 
         {puzzleForm.blocks.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground border rounded-lg border-dashed">
-            블록을 추가하여 문제를 구성하세요
+          <div className="py-6 text-center text-xs text-muted-foreground/60 border border-dashed border-white/10 rounded-lg">
+            블록을 추가하세요
           </div>
         )}
-
-        {/* 고정 종료 코드 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">고정 종료 코드 (선택)</label>
-          <Textarea
-            value={puzzleForm.fixed_end}
-            onChange={(e) => setPuzzleForm({ ...puzzleForm, fixed_end: e.target.value })}
-            placeholder="블록 이후에 항상 표시되는 코드"
-            rows={3}
-            className="font-mono text-sm"
-          />
-        </div>
       </div>
+
+      <TextArea
+        label="고정 종료 코드 (선택)"
+        value={puzzleForm.fixed_end}
+        onChange={(e) => setPuzzleForm({ ...puzzleForm, fixed_end: e.target.value })}
+        placeholder="블록 이후에 표시되는 코드"
+        rows={2}
+        className="font-mono"
+      />
     </div>
   );
 
   const renderGuidedForm = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">가이드 문제 생성</h2>
-        <p className="text-muted-foreground">
-          학습자를 위한 개념 설명과 접근법을 정의하세요
-        </p>
-      </div>
+    <div className="space-y-5">
+      <Select
+        label="언어"
+        value={guidedForm.language}
+        onChange={(v) => setGuidedForm({ ...guidedForm, language: v })}
+        options={LANGUAGE_OPTIONS}
+      />
 
-      <div className="space-y-4">
-        {/* 언어 선택 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">언어</label>
-          <Select
-            value={guidedForm.language}
-            onValueChange={(v) => setGuidedForm({ ...guidedForm, language: v })}
-          >
-            <SelectTrigger className="w-[150px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {languageOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <TextArea
+        label="개념 설명"
+        required
+        value={guidedForm.concept_explanation}
+        onChange={(e) => setGuidedForm({ ...guidedForm, concept_explanation: e.target.value })}
+        placeholder="이 문제에서 다루는 핵심 개념"
+        rows={3}
+      />
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-muted-foreground">변수 가이드</label>
+          <button type="button" onClick={addVariableGuide} className="text-xs text-primary hover:underline">+ 변수 추가</button>
         </div>
 
-        {/* 개념 설명 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">개념 설명 *</label>
-          <Textarea
-            value={guidedForm.concept_explanation}
-            onChange={(e) => setGuidedForm({ ...guidedForm, concept_explanation: e.target.value })}
-            placeholder="이 문제에서 다루는 핵심 개념을 설명하세요"
-            rows={4}
-          />
-        </div>
-
-        {/* 변수 가이드 */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">변수 가이드</label>
-            <Button size="sm" variant="outline" onClick={addVariableGuide}>
-              <Plus className="h-4 w-4 mr-2" />
-              변수 추가
-            </Button>
-          </div>
-
-          <AnimatePresence>
-            {guidedForm.variables_guide.map((variable, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="p-4 border rounded-lg space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">변수 {index + 1}</span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="text-destructive"
-                    onClick={() => removeVariableGuide(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Input
-                    value={variable.name}
-                    onChange={(e) => updateVariableGuide(index, 'name', e.target.value)}
-                    placeholder="변수 이름 (예: result)"
-                  />
-                  <Input
-                    value={variable.type}
-                    onChange={(e) => updateVariableGuide(index, 'type', e.target.value)}
-                    placeholder="타입 (예: list)"
-                  />
-                </div>
-                <Input
-                  value={variable.role}
-                  onChange={(e) => updateVariableGuide(index, 'role', e.target.value)}
-                  placeholder="역할 (예: 최종 결과를 저장하는 리스트)"
+        <AnimatePresence>
+          {guidedForm.variables_guide.map((variable, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="p-3 space-y-2 bg-white/[0.07] border border-white/10 rounded-lg"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground/60">변수 {index + 1}</span>
+                <button onClick={() => removeVariableGuide(index)} className="p-1 text-muted-foreground/60 hover:text-destructive">
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <input
+                  value={variable.name}
+                  onChange={(e) => updateVariableGuide(index, 'name', e.target.value)}
+                  placeholder="이름"
+                  className="h-8 px-2.5 text-sm bg-white/5 border border-white/10 rounded focus:outline-none focus:border-primary/50"
                 />
-                <Input
+                <input
+                  value={variable.type}
+                  onChange={(e) => updateVariableGuide(index, 'type', e.target.value)}
+                  placeholder="타입"
+                  className="h-8 px-2.5 text-sm bg-white/5 border border-white/10 rounded focus:outline-none focus:border-primary/50"
+                />
+                <input
                   value={variable.initial || ''}
                   onChange={(e) => updateVariableGuide(index, 'initial', e.target.value)}
-                  placeholder="초기값 (선택, 예: [])"
+                  placeholder="초기값"
+                  className="h-8 px-2.5 text-sm bg-white/5 border border-white/10 rounded focus:outline-none focus:border-primary/50"
                 />
-              </motion.div>
-            ))}
-          </AnimatePresence>
+              </div>
+              <input
+                value={variable.role}
+                onChange={(e) => updateVariableGuide(index, 'role', e.target.value)}
+                placeholder="역할 설명"
+                className="w-full h-8 px-2.5 text-sm bg-white/5 border border-white/10 rounded focus:outline-none focus:border-primary/50"
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
-          {guidedForm.variables_guide.length === 0 && (
-            <div className="text-center py-4 text-muted-foreground text-sm border rounded-lg border-dashed">
-              변수 가이드를 추가하면 학습자가 각 변수의 역할을 이해하는데 도움이 됩니다
-            </div>
-          )}
-        </div>
-
-        {/* 접근법 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">접근법 *</label>
-          <Textarea
-            value={guidedForm.approach_guide}
-            onChange={(e) => setGuidedForm({ ...guidedForm, approach_guide: e.target.value })}
-            placeholder="문제를 해결하는 방법을 단계별로 설명하세요"
-            rows={6}
-          />
-        </div>
-
-        {/* 시작 코드 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">시작 코드 *</label>
-          <Textarea
-            value={guidedForm.starter_code}
-            onChange={(e) => setGuidedForm({ ...guidedForm, starter_code: e.target.value })}
-            placeholder="학습자에게 제공할 초기 코드 템플릿"
-            rows={8}
-            className="font-mono text-sm"
-          />
-        </div>
+        {guidedForm.variables_guide.length === 0 && (
+          <div className="py-4 text-center text-xs text-muted-foreground/60 border border-dashed border-white/10 rounded-lg">
+            변수 가이드 추가 (선택)
+          </div>
+        )}
       </div>
+
+      <TextArea
+        label="접근법"
+        required
+        value={guidedForm.approach_guide}
+        onChange={(e) => setGuidedForm({ ...guidedForm, approach_guide: e.target.value })}
+        placeholder="문제 해결 방법 단계별 설명"
+        rows={5}
+      />
+
+      <TextArea
+        label="시작 코드"
+        required
+        value={guidedForm.starter_code}
+        onChange={(e) => setGuidedForm({ ...guidedForm, starter_code: e.target.value })}
+        placeholder="학습자에게 제공할 초기 코드"
+        rows={6}
+        className="font-mono"
+      />
     </div>
   );
 
-  const handleNext = () => {
-    if (step === 1) {
-      if (problemType === 'base') {
-        setStep(2);
-      } else if (originalIdParam) {
-        setStep(2);
-      }
-    }
-  };
-
-  const handleSubmit = () => {
-    switch (problemType) {
-      case 'base':
-        handleCreateBase();
-        break;
-      case 'blank':
-        handleCreateBlank();
-        break;
-      case 'puzzle':
-        handleCreatePuzzle();
-        break;
-      case 'guided':
-        handleCreateGuided();
-        break;
-    }
-  };
-
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/admin/problems">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+      <div className="flex items-center gap-3">
+        <Link
+          href={originalIdParam ? `/admin/problems/${originalIdParam}` : '/admin/problems'}
+          className="p-2 -ml-2 text-muted-foreground/60 hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">새 문제 생성</h1>
-          <p className="text-muted-foreground">
-            {originalIdParam
-              ? '기존 문제에 변형을 추가합니다'
-              : '새로운 문제를 생성합니다'}
-          </p>
+          <h1 className="text-lg font-semibold">
+            {isEditMode ? '변형 수정' : '새 문제'}
+          </h1>
+          {originalIdParam && (
+            <p className="text-xs text-muted-foreground/60">원본: {originalIdParam}</p>
+          )}
         </div>
       </div>
 
-      {/* Progress */}
-      <div className="flex items-center gap-2">
-        <div
-          className={`flex items-center justify-center w-8 h-8 rounded-full ${
-            step >= 1 ? 'bg-primary text-primary-foreground' : 'bg-muted'
-          }`}
-        >
-          {step > 1 ? <Check className="h-4 w-4" /> : '1'}
-        </div>
-        <div
-          className={`flex-1 h-1 rounded ${step > 1 ? 'bg-primary' : 'bg-muted'}`}
-        />
-        <div
-          className={`flex items-center justify-center w-8 h-8 rounded-full ${
-            step >= 2 ? 'bg-primary text-primary-foreground' : 'bg-muted'
-          }`}
-        >
-          2
-        </div>
-      </div>
+      {/* Type Selection - Tab style */}
+      <div className="flex gap-1 p-1 bg-white/[0.04] rounded-lg border border-white/10">
+        {TYPE_OPTIONS.map((type) => {
+          const Icon = type.icon;
+          const isDisabled = type.needsOriginal && !originalIdParam;
+          const isActive = problemType === type.value;
+          // 해당 타입의 기존 변형 존재 여부
+          const hasExisting = type.value === 'blank' ? !!editMode.blank
+            : type.value === 'puzzle' ? !!editMode.puzzle
+            : type.value === 'guided' ? !!editMode.guided
+            : false;
 
-      {/* Content */}
-      <Card>
-        <CardContent className="pt-6">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
+          return (
+            <button
+              key={type.value}
+              onClick={() => !isDisabled && setProblemType(type.value as ProblemType)}
+              disabled={isDisabled}
+              className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md text-sm font-medium transition-all border ${
+                isActive
+                  ? `${type.bg} ${type.color}`
+                  : isDisabled
+                    ? 'text-muted-foreground/40 cursor-not-allowed border-transparent'
+                    : 'text-muted-foreground/70 hover:text-foreground hover:bg-white/[0.05] border-transparent'
+              }`}
             >
-              {step === 1 && renderTypeSelection()}
-              {step === 2 && problemType === 'base' && renderBaseForm()}
-              {step === 2 && problemType === 'blank' && renderBlankForm()}
-              {step === 2 && problemType === 'puzzle' && renderPuzzleForm()}
-              {step === 2 && problemType === 'guided' && renderGuidedForm()}
-            </motion.div>
-          </AnimatePresence>
-        </CardContent>
-      </Card>
+              <Icon className="h-4 w-4" />
+              <span className="hidden sm:inline">{type.label}</span>
+              {/* 기존 변형 있음 표시 */}
+              {hasExisting && (
+                <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Actions */}
-      <div className="flex justify-between">
-        <Button
-          variant="outline"
-          onClick={() => setStep(1)}
-          disabled={step === 1}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          이전
-        </Button>
-
-        {step === 1 ? (
-          <Button
-            onClick={handleNext}
-            disabled={
-              problemType !== 'base' && !originalIdParam
-            }
+      {/* Form */}
+      <div className="p-6 bg-white/[0.04] border border-white/10 rounded-xl">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={problemType}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15 }}
           >
-            다음
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </Button>
-        ) : (
-          <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? '생성 중...' : '문제 생성'}
-            <Check className="h-4 w-4 ml-2" />
-          </Button>
+            {problemType === 'base' && renderBaseForm()}
+            {problemType === 'blank' && renderBlankForm()}
+            {problemType === 'puzzle' && renderPuzzleForm()}
+            {problemType === 'guided' && renderGuidedForm()}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* Submit */}
+      <div className="flex items-center justify-between">
+        {/* 삭제 버튼 (수정 모드일 때만) */}
+        {isEditMode && problemType !== 'base' && (
+          <button
+            onClick={() => handleDeleteVariant(problemType as 'blank' | 'puzzle' | 'guided')}
+            disabled={loading}
+            className="flex items-center gap-2 h-9 px-4 text-sm font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 disabled:opacity-50 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" />
+            삭제
+          </button>
         )}
+        {!isEditMode && <div />}
+
+        {/* 생성/수정 버튼 */}
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          className="flex items-center gap-2 h-10 px-6 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading
+            ? (isEditMode ? '수정 중...' : '생성 중...')
+            : (isEditMode ? '변형 수정' : '문제 생성')
+          }
+        </button>
       </div>
     </div>
   );

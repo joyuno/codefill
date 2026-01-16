@@ -110,6 +110,28 @@ export interface HintIndependence {
   independence_rate: number;    // 힌트 없이 성공 비율
 }
 
+/**
+ * ELO 변화 기록 (단일 토픽)
+ */
+export interface EloChange {
+  topic: string;
+  before: number;
+  after: number;
+  change: number;
+  expected: number;
+}
+
+/**
+ * ELO 히스토리 엔트리 (단일 문제 풀이)
+ */
+export interface EloHistoryEntry {
+  date: string;
+  topics: string[];
+  is_correct: boolean;
+  problem_elo: number;
+  changes: EloChange[];
+}
+
 export interface AnalysisReport {
   id?: string;
   summaryText: string;
@@ -138,6 +160,9 @@ export interface AnalysisReport {
   recent10Attempts?: RecentAttempt[];
   recent10Analysis?: string;
   hintIndependence?: HintIndependence;
+  // ELO 성장 데이터
+  eloHistory?: EloHistoryEntry[];
+  eloOverall?: number;
 }
 
 export interface AnalysisReportResponse {

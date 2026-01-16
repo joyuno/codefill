@@ -881,6 +881,7 @@ async def create_blank_problem(
         blank_data = {
             "id": str(blank_id),
             "base_problem_id": base_result.data["id"],
+            "creator_id": admin.get("id"),
             "language": request.language,
             "code_template": request.code_template,
             "answers": request.answers,
@@ -943,6 +944,7 @@ async def create_puzzle_problem(
         puzzle_data = {
             "id": str(puzzle_id),
             "base_problem_id": base_result.data["id"],
+            "creator_id": admin.get("id"),
             "language": request.language,
             "fixed_start": request.fixed_start,
             "fixed_end": request.fixed_end,
