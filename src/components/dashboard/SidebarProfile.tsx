@@ -834,54 +834,50 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                       cropsWithData.length === 0 ? (
                         <p className="text-xs text-amber-600 text-center py-2">아직 심은 작물이 없어요</p>
                       ) : (
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-6 gap-1">
-                            {cropsWithData.slice(0, 6).map((slot, i) => {
-                              const cropInfo = slot.cropCode ? CROP_INFO[slot.cropCode as keyof typeof CROP_INFO] : null;
-                              const currentStage = calculateStage(slot);
-                              const isReady = currentStage >= 4;
-                              const remaining = calculateRemainingSeconds(slot);
-                              const timeText = isReady ? '완료' : formatRemainingTime(remaining);
-                              return (
-                                <motion.div
-                                  key={i}
-                                  whileHover={{ scale: 1.05 }}
-                                  className={cn(
-                                    'flex flex-col items-center cursor-default',
-                                    isReady && 'animate-pulse'
+                        <div
+                          className="flex gap-2 overflow-x-auto pb-1"
+                          style={{ scrollbarWidth: 'thin', scrollbarColor: '#fcd34d #fef3c7' }}
+                        >
+                          {cropsWithData.map((slot, i) => {
+                            const cropInfo = slot.cropCode ? CROP_INFO[slot.cropCode as keyof typeof CROP_INFO] : null;
+                            const currentStage = calculateStage(slot);
+                            const isReady = currentStage >= 6;
+                            const remaining = calculateRemainingSeconds(slot);
+                            const timeText = isReady ? '완료' : formatRemainingTime(remaining);
+                            return (
+                              <motion.div
+                                key={i}
+                                whileHover={{ scale: 1.05 }}
+                                title={cropInfo?.name || '작물'}
+                                className={cn(
+                                  'flex flex-col items-center cursor-default flex-shrink-0',
+                                  isReady && 'animate-pulse'
+                                )}
+                              >
+                                <div className="relative w-8 h-8">
+                                  {cropInfo?.icon ? (
+                                    <img
+                                      src={cropInfo.icon}
+                                      alt={cropInfo.name}
+                                      className="w-8 h-8 object-contain"
+                                      style={{ imageRendering: 'pixelated' }}
+                                    />
+                                  ) : (
+                                    <span className="text-lg">🌱</span>
                                   )}
-                                >
-                                  <div
-                                    className="text-lg relative"
-                                    style={{
-                                      textShadow: `
-                                        -1px -1px 0 #78350f,
-                                        1px -1px 0 #78350f,
-                                        -1px 1px 0 #78350f,
-                                        1px 1px 0 #78350f
-                                      `,
-                                    }}
-                                  >
-                                    {cropInfo?.emoji || '🌱'}
-                                    {isReady && (
-                                      <span className="absolute -top-1 -right-2 text-[8px]">✨</span>
-                                    )}
-                                  </div>
-                                  <span className={cn(
-                                    'text-[9px] font-medium leading-none mt-0.5',
-                                    isReady ? 'text-green-600' : 'text-amber-700'
-                                  )}>
-                                    {timeText}
-                                  </span>
-                                </motion.div>
-                              );
-                            })}
-                          </div>
-                          {cropsWithData.length > 6 && (
-                            <p className="text-[10px] text-amber-600 text-center">
-                              +{cropsWithData.length - 6}개 더 있음
-                            </p>
-                          )}
+                                  {isReady && (
+                                    <span className="absolute -top-1 -right-2 text-[8px]">✨</span>
+                                  )}
+                                </div>
+                                <span className={cn(
+                                  'text-[9px] font-medium leading-none mt-0.5',
+                                  isReady ? 'text-green-600' : 'text-amber-700'
+                                )}>
+                                  {timeText}
+                                </span>
+                              </motion.div>
+                            );
+                          })}
                         </div>
                       )
                     ) : (
@@ -889,8 +885,11 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                       seedItems.length === 0 ? (
                         <p className="text-xs text-green-600 text-center py-2">보유한 씨앗이 없어요</p>
                       ) : (
-                        <div className="space-y-1">
-                          {seedItems.slice(0, 4).map((item) => {
+                        <div
+                          className="space-y-1 max-h-[140px] overflow-y-auto overflow-x-hidden pr-1"
+                          style={{ scrollbarWidth: 'thin', scrollbarColor: '#86efac #dcfce7' }}
+                        >
+                          {seedItems.map((item) => {
                             // seed_tomato → tomato 형태로 변환하여 CROP_INFO 조회
                             const cropCode = item.itemCode.replace('seed_', '').replace('_seed', '');
                             const cropInfo = CROP_INFO[cropCode as keyof typeof CROP_INFO];
@@ -900,7 +899,16 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                                 className="flex items-center justify-between px-2 py-1 bg-green-100 rounded-lg"
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-lg">{cropInfo?.emoji || '🌱'}</span>
+                                  {cropInfo?.icon ? (
+                                    <img
+                                      src={cropInfo.icon}
+                                      alt={cropInfo.name}
+                                      className="w-5 h-5 object-contain"
+                                      style={{ imageRendering: 'pixelated' }}
+                                    />
+                                  ) : (
+                                    <span className="text-lg">🌱</span>
+                                  )}
                                   <span className="text-xs font-medium text-green-800">
                                     {cropInfo?.name || item.itemCode} 씨앗
                                   </span>
@@ -911,11 +919,6 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                               </div>
                             );
                           })}
-                          {seedItems.length > 4 && (
-                            <p className="text-[10px] text-green-600 text-center">
-                              +{seedItems.length - 4}종류 더 있음
-                            </p>
-                          )}
                         </div>
                       )
                     )}
