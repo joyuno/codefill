@@ -351,6 +351,7 @@ export default function FarmPage() {
           inventory={inventory}
           selectedSeed={selectedSeed}
           onNotify={handleNotify}
+          characterData={farm?.characterData}
           placementMode={placementMode}
           selectedPlacementItem={selectedPlacementItem}
           placedItems={placedItems}

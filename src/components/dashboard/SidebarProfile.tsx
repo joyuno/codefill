@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { usersApi, publicProfileApi, type PublicFarm, type PublicBadge } from '@/lib/api/users';
 import { farmApi, type InventoryItem } from '@/lib/api/farm';
 import type { Badge as BadgeType } from '@/lib/types';
-import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck, Sprout, Package } from 'lucide-react';
+import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck, Sprout, Package, Settings } from 'lucide-react';
 import { BadgeIcon } from '@/components/ui/badge-icon';
 import { BadgeDetailModal, type BadgeRarity } from '@/components/ui/badge-detail-modal';
 import { Button } from '@/components/ui/button';
@@ -219,6 +219,7 @@ const RARITY_ORDER: Record<string, number> = {
 export function SidebarProfile({ username, publicData, badges: propBadges }: SidebarProfileProps) {
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
+  const [isEditingCharacter, setIsEditingCharacter] = useState(false);
   // 본인 프로필: 캐시에서 초기값 로드 (즉시 표시)
   const [farm, setFarm] = useState<UserFarm | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -436,13 +437,18 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
         ? newCharacter.appearance.color
         : COLOR_MAP[newCharacter.appearance.color] || '#8B4513';
 
+      // 헤어스타일 파일명 조합: Hairstyle_Short_Brown_Dark 형태
+      const hairStyleFull = `${newCharacter.appearance.hair}_${newCharacter.appearance.hairColor}`;
+
       const updatedFarm = await farmApi.createCharacter({
         name: newCharacter.name,
-        hair: newCharacter.appearance.hair,
+        body: newCharacter.appearance.body,
+        hair: hairStyleFull,
         hairColor,
         face: newCharacter.appearance.face,
         outfit: newCharacter.appearance.clothes,
         outfitColor: hairColor,
+        accessory: newCharacter.appearance.accessory,
         farmName: newCharacter.farmName,
       });
       setFarm(updatedFarm);
@@ -454,6 +460,41 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
       localStorage.setItem('codefill_character', JSON.stringify(newCharacter));
       setShowCharacterModal(false);
     }
+  };
+
+  // 캐릭터 수정 핸들러
+  const handleCharacterUpdate = async (updatedCharacter: CharacterData) => {
+    try {
+      const hairColor = updatedCharacter.appearance.color.startsWith('#')
+        ? updatedCharacter.appearance.color
+        : COLOR_MAP[updatedCharacter.appearance.color] || '#8B4513';
+
+      const hairStyleFull = `${updatedCharacter.appearance.hair}_${updatedCharacter.appearance.hairColor}`;
+
+      const updatedFarm = await farmApi.updateCharacter({
+        name: updatedCharacter.name,
+        body: updatedCharacter.appearance.body,
+        hair: hairStyleFull,
+        hairColor,
+        face: updatedCharacter.appearance.face,
+        outfit: updatedCharacter.appearance.clothes,
+        outfitColor: hairColor,
+        accessory: updatedCharacter.appearance.accessory,
+        farmName: updatedCharacter.farmName,
+      });
+      setFarm(updatedFarm);
+      setFarmToCache(updatedFarm);
+      setShowCharacterModal(false);
+      setIsEditingCharacter(false);
+    } catch (error) {
+      console.error('캐릭터 수정 실패:', error);
+    }
+  };
+
+  // 캐릭터 수정 모달 열기
+  const handleOpenEditCharacter = () => {
+    setIsEditingCharacter(true);
+    setShowCharacterModal(true);
   };
 
   // farm 데이터에서 캐릭터 정보 추출 (본인 또는 타인)
@@ -483,6 +524,28 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const gold = isOwnProfile ? (farm?.gold || 0) : (publicFarm?.gold || 0);
 
   const characterColor = character ? COLOR_MAP[character.appearance.color] || COLOR_MAP.brown : COLOR_MAP.brown;
+
+  // 수정 모달용 초기 데이터 (CharacterData 형식)
+  const editInitialData: CharacterData | null = farm?.characterData ? (() => {
+    // hair가 "Short_Brown_Dark" 형태 → "Short"와 "Brown_Dark"로 분리
+    const hairParts = farm.characterData.hair?.split('_') || ['Short', 'Brown', 'Dark'];
+    const hairStyle = hairParts[0] || 'Short'; // Short, Long, Tuft 등
+    const hairColorId = hairParts.slice(1).join('_') || 'Brown_Dark'; // Brown_Dark 등
+
+    return {
+      name: farm.characterData.name,
+      appearance: {
+        body: farm.characterData.body || 'Body_1',
+        hair: hairStyle,
+        hairColor: hairColorId,
+        face: farm.characterData.face,
+        clothes: farm.characterData.outfit,
+        accessory: farm.characterData.accessory || 'none',
+        color: farm.characterData.hairColor || '#3d2314',
+      },
+      farmName: farm.characterData.farmName,
+    };
+  })() : null;
 
   // 표시할 레벨/XP (본인 또는 타인)
   const displayLevel = isOwnProfile ? level : (publicProfile?.level || 1);
@@ -547,11 +610,16 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
 
   return (
     <div className="space-y-4 p-4">
-      {/* Character Creation Modal */}
+      {/* Character Creation/Edit Modal */}
       <CharacterCreationModal
         open={showCharacterModal}
-        onClose={() => setShowCharacterModal(false)}
-        onComplete={handleCharacterCreate}
+        onClose={() => {
+          setShowCharacterModal(false);
+          setIsEditingCharacter(false);
+        }}
+        onComplete={isEditingCharacter ? handleCharacterUpdate : handleCharacterCreate}
+        initialData={isEditingCharacter ? editInitialData : null}
+        isEditing={isEditingCharacter}
       />
 
       {/* 농장 미니맵 섹션 */}
@@ -591,7 +659,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
             >
               {/* 농장 이름 헤더 */}
               <div className={cn(
-                'flex items-center justify-between px-3 py-2 rounded-t-xl',
+                'flex items-center justify-between px-3 py-1.5 rounded-t-xl',
                 'bg-amber-600 border-4 border-b-0 border-amber-800'
               )}>
                 <div className="flex items-center gap-2">
@@ -600,9 +668,24 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                     {character.farmName || '나의 농장'}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 text-xs text-amber-200">
-                  <Coins className="h-3 w-3" />
-                  <span>{gold.toLocaleString()}G</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 text-xs text-amber-200">
+                    <Coins className="h-3 w-3" />
+                    <span>{gold.toLocaleString()}G</span>
+                  </div>
+                  {/* 캐릭터 수정 버튼 (본인 프로필만) */}
+                  {isOwnProfile && (
+                    <button
+                      onClick={handleOpenEditCharacter}
+                      className={cn(
+                        'p-1 rounded hover:bg-amber-500/50 transition-colors',
+                        'text-amber-200 hover:text-amber-100'
+                      )}
+                      title="캐릭터 수정"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
               

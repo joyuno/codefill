@@ -11,11 +11,13 @@ import { api } from './client';
 
 export interface CharacterData {
   name: string;
-  hair: string;
-  hairColor: string;
-  face: string;
-  outfit: string;
+  body: string;           // Body_1 ~ Body_9 (피부색)
+  hair: string;           // Hairstyle_Short_Brown_Dark 형태
+  hairColor: string;      // hex color (#3d2314)
+  face: string;           // Eyes_Brown 등 (눈)
+  outfit: string;         // Outfit_Dungarees_Green 등
   outfitColor: string;
+  accessory: string;      // Accessory_Straw_Hat_Green 등 또는 'none'
   farmName: string;
 }
 
@@ -255,11 +257,13 @@ interface BackendUserFarm {
   character_created: boolean;
   character_data: {
     name: string;
+    body: string;
     hair: string;
     hair_color: string;
     face: string;
     outfit: string;
     outfit_color: string;
+    accessory: string;
     farm_name: string;
   } | null;
   farm_unlocked: boolean;
@@ -333,11 +337,13 @@ function transformUserFarm(data: BackendUserFarm): UserFarm {
     characterData: data.character_data
       ? {
           name: data.character_data.name,
+          body: data.character_data.body || 'Body_1',
           hair: data.character_data.hair,
           hairColor: data.character_data.hair_color,
           face: data.character_data.face,
           outfit: data.character_data.outfit,
           outfitColor: data.character_data.outfit_color,
+          accessory: data.character_data.accessory || 'none',
           farmName: data.character_data.farm_name,
         }
       : null,
@@ -400,20 +406,53 @@ export const farmApi = {
    */
   async createCharacter(data: {
     name: string;
+    body?: string;
     hair?: string;
     hairColor?: string;
     face?: string;
     outfit?: string;
     outfitColor?: string;
+    accessory?: string;
     farmName?: string;
   }): Promise<UserFarm> {
     const response = await api.post<BackendUserFarm>('/farm/character', {
       name: data.name,
-      hair: data.hair || 'style_01',
-      hair_color: data.hairColor || '#8B4513',
-      face: data.face || 'face_01',
-      outfit: data.outfit || 'outfit_casual',
-      outfit_color: data.outfitColor || '#4169E1',
+      body: data.body || 'Body_1',
+      hair: data.hair || 'Short_Brown_Dark',
+      hair_color: data.hairColor || '#3d2314',
+      face: data.face || 'Eyes_Brown',
+      outfit: data.outfit || 'Outfit_Dungarees_Green',
+      outfit_color: data.outfitColor || '#27ae60',
+      accessory: data.accessory || 'none',
+      farm_name: data.farmName || '나의 농장',
+    });
+    if (response.error) throw new Error(response.error.message);
+    return transformUserFarm(response.data!);
+  },
+
+  /**
+   * Update character appearance
+   */
+  async updateCharacter(data: {
+    name: string;
+    body?: string;
+    hair?: string;
+    hairColor?: string;
+    face?: string;
+    outfit?: string;
+    outfitColor?: string;
+    accessory?: string;
+    farmName?: string;
+  }): Promise<UserFarm> {
+    const response = await api.patch<BackendUserFarm>('/farm/character', {
+      name: data.name,
+      body: data.body || 'Body_1',
+      hair: data.hair || 'Short_Brown_Dark',
+      hair_color: data.hairColor || '#3d2314',
+      face: data.face || 'Eyes_Brown',
+      outfit: data.outfit || 'Outfit_Dungarees_Green',
+      outfit_color: data.outfitColor || '#27ae60',
+      accessory: data.accessory || 'none',
       farm_name: data.farmName || '나의 농장',
     });
     if (response.error) throw new Error(response.error.message);

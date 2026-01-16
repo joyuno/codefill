@@ -19,7 +19,7 @@ import { PlayerController } from './PlayerController';
 import { InteractionSystem } from './InteractionSystem';
 import { UnifiedPlacementManager } from './UnifiedPlacementManager';
 import { FarmGridManager, FarmSlot } from './FarmGridManager';
-import type { PlacedItem } from '@/lib/api/farm';
+import type { PlacedItem, CharacterData } from '@/lib/api/farm';
 
 // 인벤토리 아이템 타입
 interface InventoryItem {
@@ -34,6 +34,8 @@ interface FarmSceneData {
   inventory: InventoryItem[];
   onNotify: (message: string, type: 'success' | 'error') => void;
   selectedSeed: string;
+  // 캐릭터 데이터 (레이어 기반 렌더링용)
+  characterData?: CharacterData | null;
   // 통합 배치 시스템
   placedItems: PlacedItem[];
   onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => string | null;
@@ -168,9 +170,9 @@ export class FarmScene extends Phaser.Scene {
    * 에셋 프리로드
    */
   preload(): void {
-    // 매니저 생성
+    // 매니저 생성 (PlayerController에 characterData 전달)
     this.mapManager = new MapManager(this);
-    this.playerController = new PlayerController(this);
+    this.playerController = new PlayerController(this, this.farmData.characterData);
     this.unifiedPlacementManager = new UnifiedPlacementManager(this);
     this.farmGridManager = new FarmGridManager(this);
 

@@ -23,22 +23,26 @@ class CropRarity(str, Enum):
 class CharacterData(BaseModel):
     """캐릭터 외형 데이터"""
     name: str = Field(..., min_length=1, max_length=20)
-    hair: str = Field(default="style_01")
+    body: str = Field(default="Body_1")  # Body_1 ~ Body_9 (피부색)
+    hair: str = Field(default="Short_Brown_Dark")  # Hairstyle_Short_Brown_Dark 형태
     hair_color: str = Field(default="#8B4513")
-    face: str = Field(default="face_01")
-    outfit: str = Field(default="outfit_casual")
+    face: str = Field(default="Eyes_Brown")  # 눈
+    outfit: str = Field(default="Outfit_Dungarees_Green")
     outfit_color: str = Field(default="#4169E1")
+    accessory: str = Field(default="none")  # Accessory_Straw_Hat_Green 등 또는 'none'
     farm_name: str = Field(default="나의 농장", max_length=30)
 
 
 class CharacterCreateRequest(BaseModel):
     """캐릭터 생성 요청"""
     name: str = Field(..., min_length=1, max_length=20)
-    hair: str = Field(default="style_01")
+    body: str = Field(default="Body_1")  # Body_1 ~ Body_9 (피부색)
+    hair: str = Field(default="Short_Brown_Dark")
     hair_color: str = Field(default="#8B4513")
-    face: str = Field(default="face_01")
-    outfit: str = Field(default="outfit_casual")
+    face: str = Field(default="Eyes_Brown")
+    outfit: str = Field(default="Outfit_Dungarees_Green")
     outfit_color: str = Field(default="#4169E1")
+    accessory: str = Field(default="none")  # Accessory_Straw_Hat_Green 등 또는 'none'
     farm_name: str = Field(default="나의 농장", max_length=30)
 
 

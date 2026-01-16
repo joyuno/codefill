@@ -30,41 +30,52 @@ type ProblemType = 'base' | 'blank' | 'puzzle' | 'guided';
 
 interface BlankItem {
   id: string;
+  index: number; // 빈칸 인덱스 (0, 1, 2...)
   answer: string;
-  hint?: string;
   context: string; // 빈칸 주변 코드 컨텍스트
   lineNumber: number; // 빈칸이 있는 라인 번호
 }
 
-// [BLANK] 파싱 헬퍼 함수
-function parseBlankPositions(codeTemplate: string): { context: string; lineNumber: number }[] {
-  const blanks: { context: string; lineNumber: number }[] = [];
+// 빈칸 마커 파싱 함수 (시스템 표준: _N_ 형식)
+// 예: _0_, _1_, _2_ 또는 레거시 ___ 형식 지원
+function parseBlankPositions(codeTemplate: string): { index: number; context: string; lineNumber: number }[] {
+  const blanks: { index: number; context: string; lineNumber: number }[] = [];
   const lines = codeTemplate.split('\n');
 
+  // _N_ 패턴 (예: _0_, _1_, _10_) 또는 레거시 ___ 패턴
+  const blankPattern = /_(\d+)_|___/g;
+  let sequentialIndex = 0;
+
   lines.forEach((line, lineIndex) => {
-    const regex = /\[BLANK\]/g;
+    const regex = new RegExp(blankPattern.source, 'g');
     let match;
+
     while ((match = regex.exec(line)) !== null) {
-      // 빈칸 주변 컨텍스트 추출 (앞뒤 문자)
-      const start = Math.max(0, match.index - 15);
-      const end = Math.min(line.length, match.index + 7 + 15);
+      const marker = match[0];
+      // 빈칸 인덱스: _N_ 이면 N, ___ 이면 순차
+      const blankIndex = match[1] !== undefined ? parseInt(match[1], 10) : sequentialIndex++;
+
+      // 빈칸 주변 컨텍스트 추출
+      const start = Math.max(0, match.index - 20);
+      const end = Math.min(line.length, match.index + marker.length + 20);
       let context = line.substring(start, end);
 
-      // 컨텍스트 정리
       if (start > 0) context = '...' + context;
       if (end < line.length) context = context + '...';
 
-      // [BLANK]를 ___로 표시
-      context = context.replace('[BLANK]', '________');
+      // 마커를 하이라이트용 플레이스홀더로 변경
+      context = context.replace(marker, '{{BLANK}}');
 
       blanks.push({
+        index: blankIndex,
         context: context.trim(),
         lineNumber: lineIndex + 1,
       });
     }
   });
 
-  return blanks;
+  // 인덱스 순으로 정렬
+  return blanks.sort((a, b) => a.index - b.index);
 }
 
 interface PuzzleBlock {
@@ -150,19 +161,15 @@ export default function AdminProblemCreatePage() {
 
     const parsedBlanks = parseBlankPositions(blankForm.code_template);
 
-    // 파싱된 빈칸이 없으면 업데이트하지 않음 (기존 데이터 형식 유지)
-    if (parsedBlanks.length === 0 && blankForm.blanks.length > 0) {
-      return;
-    }
-
     setBlankForm((prev) => {
       // 기존 정답 유지하면서 새로운 빈칸 구조에 맞춤
-      const newBlanks = parsedBlanks.map((parsed, index) => {
-        const existingBlank = prev.blanks[index];
+      const newBlanks = parsedBlanks.map((parsed) => {
+        // 같은 인덱스의 기존 빈칸 찾기
+        const existingBlank = prev.blanks.find(b => b.index === parsed.index);
         return {
-          id: `blank-${index}`,
+          id: `blank-${parsed.index}`,
+          index: parsed.index,
           answer: existingBlank?.answer || '',
-          hint: existingBlank?.hint || '',
           context: parsed.context,
           lineNumber: parsed.lineNumber,
         };
@@ -226,32 +233,24 @@ export default function AdminProblemCreatePage() {
               // 초기 로드 플래그 설정 (useEffect가 덮어쓰지 않도록)
               isInitialBlankLoad.current = true;
 
-              // 기존 데이터 형식 체크: [BLANK]가 없으면 기존 형식 그대로 표시
-              if (parsedBlanks.length === 0 && answers.length > 0) {
-                // 기존 형식 (예: ___ 또는 다른 형식) - 정답만 표시
-                setBlankForm({
-                  code_template: codeTemplate,
-                  blanks: answers.map((ans, i) => ({
-                    id: `blank-${i}`,
-                    answer: ans,
-                    hint: '',
-                    context: `빈칸 #${i + 1}`, // 컨텍스트 없음
-                    lineNumber: 0,
-                  })),
-                });
-              } else {
-                // [BLANK] 형식
-                setBlankForm({
-                  code_template: codeTemplate,
-                  blanks: parsedBlanks.map((parsed, i) => ({
-                    id: `blank-${i}`,
-                    answer: answers[i] || '',
-                    hint: '',
-                    context: parsed.context,
-                    lineNumber: parsed.lineNumber,
-                  })),
-                });
-              }
+              setBlankForm({
+                code_template: codeTemplate,
+                blanks: parsedBlanks.length > 0
+                  ? parsedBlanks.map((parsed) => ({
+                      id: `blank-${parsed.index}`,
+                      index: parsed.index,
+                      answer: answers[parsed.index] || '',
+                      context: parsed.context,
+                      lineNumber: parsed.lineNumber,
+                    }))
+                  : answers.map((ans, i) => ({
+                      id: `blank-${i}`,
+                      index: i,
+                      answer: ans,
+                      context: '',
+                      lineNumber: 0,
+                    })),
+              });
             }
           } else if (typeParam === 'blank') {
             setBlankForm({ code_template: solutionCode, blanks: [] });
@@ -350,6 +349,17 @@ export default function AdminProblemCreatePage() {
     }
   };
 
+  // 빈칸 인덱스에 맞게 정답 배열 생성
+  const buildAnswersArray = (blanks: BlankItem[]): string[] => {
+    if (blanks.length === 0) return [];
+    const maxIndex = Math.max(...blanks.map(b => b.index));
+    const answers = Array(maxIndex + 1).fill('');
+    blanks.forEach(b => {
+      answers[b.index] = b.answer;
+    });
+    return answers;
+  };
+
   const handleCreateBlank = async () => {
     if (!originalIdParam || blankForm.blanks.length === 0) {
       toast.error('빈칸을 1개 이상 추가해주세요');
@@ -361,7 +371,7 @@ export default function AdminProblemCreatePage() {
       await adminApi.createBlankProblem(originalIdParam, {
         language: baseForm.solutions?.[0]?.language || 'python',
         code_template: blankForm.code_template,
-        answers: blankForm.blanks.map((b) => b.answer),
+        answers: buildAnswersArray(blankForm.blanks),
       });
       toast.success('빈칸 문제가 생성되었습니다');
       router.push(`/admin/problems/${originalIdParam}`);
@@ -438,7 +448,7 @@ export default function AdminProblemCreatePage() {
     try {
       await adminApi.updateBlankProblem(originalIdParam, editMode.blank.id, {
         code_template: blankForm.code_template,
-        answers: blankForm.blanks.map((b) => b.answer),
+        answers: buildAnswersArray(blankForm.blanks),
       });
       toast.success('빈칸 문제가 수정되었습니다');
       router.push(`/admin/problems/${originalIdParam}`);
@@ -795,7 +805,7 @@ export default function AdminProblemCreatePage() {
   );
 
   const renderBlankForm = () => {
-    const blankCount = (blankForm.code_template.match(/\[BLANK\]/g) || []).length;
+    const blankCount = blankForm.blanks.length;
 
     return (
       <div className="space-y-5">
@@ -803,7 +813,7 @@ export default function AdminProblemCreatePage() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">
-              코드 템플릿 <span className="text-primary/60">([BLANK] 위치에 빈칸 생성)</span>
+              코드 템플릿 <span className="text-primary/60">(_0_, _1_, _2_ 형식으로 빈칸 표시)</span>
             </label>
             {blankCount > 0 && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
@@ -814,10 +824,13 @@ export default function AdminProblemCreatePage() {
           <textarea
             value={blankForm.code_template}
             onChange={(e) => setBlankForm((prev) => ({ ...prev, code_template: e.target.value }))}
-            placeholder={`def add(a, b):\n    result = [BLANK]  # 여기에 빈칸\n    return [BLANK]`}
+            placeholder={`def add(a, b):\n    result = _0_\n    return _1_`}
             rows={10}
             className="w-full px-3 py-2 text-sm font-mono bg-black/20 border border-white/10 rounded-lg placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors resize-none"
           />
+          <p className="text-[10px] text-muted-foreground/50">
+            빈칸 형식: <code className="px-1 py-0.5 bg-white/10 rounded">_0_</code>, <code className="px-1 py-0.5 bg-white/10 rounded">_1_</code>, <code className="px-1 py-0.5 bg-white/10 rounded">_2_</code> ... (숫자 = 정답 배열 인덱스)
+          </p>
         </div>
 
         {/* 빈칸 정답 입력 영역 */}
@@ -825,14 +838,14 @@ export default function AdminProblemCreatePage() {
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">빈칸 정답</label>
             {blankCount === 0 && (
-              <span className="text-xs text-muted-foreground/50">코드에 [BLANK]를 입력하면 자동 감지됩니다</span>
+              <span className="text-xs text-muted-foreground/50">코드에 _0_, _1_ 형식을 입력하면 자동 감지됩니다</span>
             )}
           </div>
 
           <AnimatePresence mode="popLayout">
             {blankForm.blanks.length > 0 ? (
               <motion.div className="space-y-2">
-                {blankForm.blanks.map((blank, index) => (
+                {blankForm.blanks.map((blank) => (
                   <motion.div
                     key={blank.id}
                     initial={{ opacity: 0, y: -10 }}
@@ -841,11 +854,11 @@ export default function AdminProblemCreatePage() {
                     transition={{ duration: 0.15 }}
                     className="p-3 bg-white/[0.04] border border-white/10 rounded-lg hover:border-blue-500/30 transition-colors"
                   >
-                    {/* 빈칸 헤더: 번호 + 라인 정보 */}
+                    {/* 빈칸 헤더: 마커 + 라인 정보 */}
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="flex items-center justify-center min-w-[24px] h-6 px-1.5 text-xs font-bold bg-blue-500/20 text-blue-400 rounded">
-                        {index + 1}
-                      </span>
+                      <code className="px-2 py-0.5 text-xs font-bold bg-blue-500/20 text-blue-400 rounded font-mono">
+                        _{blank.index}_
+                      </code>
                       {blank.lineNumber > 0 && (
                         <span className="text-[10px] text-muted-foreground/60">
                           Line {blank.lineNumber}
@@ -853,27 +866,21 @@ export default function AdminProblemCreatePage() {
                       )}
                     </div>
 
-                    {/* 코드 컨텍스트 표시 (있는 경우에만) */}
-                    {blank.lineNumber > 0 ? (
+                    {/* 코드 컨텍스트 표시 */}
+                    {blank.lineNumber > 0 && blank.context && (
                       <div className="mb-3 px-3 py-2 bg-black/30 rounded-md border border-white/5">
                         <code className="text-xs text-muted-foreground font-mono">
-                          {blank.context.split('________').map((part, i, arr) => (
+                          {blank.context.split('{{BLANK}}').map((part, i, arr) => (
                             <span key={i}>
                               {part}
                               {i < arr.length - 1 && (
-                                <span className="px-1 py-0.5 mx-0.5 bg-blue-500/30 text-blue-300 rounded">
-                                  ____
+                                <span className="px-1.5 py-0.5 mx-0.5 bg-blue-500/30 text-blue-300 rounded font-bold">
+                                  {blank.answer || `_${blank.index}_`}
                                 </span>
                               )}
                             </span>
                           ))}
                         </code>
-                      </div>
-                    ) : (
-                      <div className="mb-3 px-3 py-1.5 bg-amber-500/10 rounded-md border border-amber-500/20">
-                        <span className="text-xs text-amber-400/80">
-                          기존 형식 - 코드에서 직접 빈칸 위치 확인 필요
-                        </span>
                       </div>
                     )}
 
@@ -883,7 +890,7 @@ export default function AdminProblemCreatePage() {
                       <input
                         value={blank.answer}
                         onChange={(e) => updateBlank(blank.id, 'answer', e.target.value)}
-                        placeholder="빈칸에 들어갈 정답"
+                        placeholder={`_${blank.index}_ 에 들어갈 정답`}
                         className="flex-1 h-8 px-3 text-sm font-mono bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:border-blue-500/50 focus:bg-blue-500/5 transition-colors"
                       />
                     </div>
@@ -898,7 +905,7 @@ export default function AdminProblemCreatePage() {
               >
                 <Code2 className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
                 <p className="text-xs text-muted-foreground/50">
-                  코드 템플릿에 <code className="px-1.5 py-0.5 bg-white/10 rounded text-blue-400">[BLANK]</code>를 입력하세요
+                  코드 템플릿에 <code className="px-1.5 py-0.5 bg-white/10 rounded text-blue-400">_0_</code>, <code className="px-1.5 py-0.5 bg-white/10 rounded text-blue-400">_1_</code> 형식을 입력하세요
                 </p>
                 <p className="text-[10px] text-muted-foreground/40 mt-1">
                   빈칸이 자동으로 감지됩니다
@@ -908,51 +915,60 @@ export default function AdminProblemCreatePage() {
           </AnimatePresence>
         </div>
 
-        {/* 미리보기 영역 - [BLANK] 형식일 때만 표시 */}
-        {blankForm.blanks.length > 0 && blankForm.blanks[0]?.lineNumber > 0 && (
+        {/* 미리보기 영역 */}
+        {blankForm.blanks.length > 0 && (
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">미리보기</label>
             <div className="p-4 bg-black/30 border border-white/10 rounded-lg overflow-auto max-h-[200px]">
               <pre className="text-xs font-mono">
                 {blankForm.code_template.split('\n').map((line, lineIndex) => {
-                  // 각 라인에서 [BLANK]를 찾아서 해당 정답으로 대체 표시
-                  let blankIndexInLine = 0;
-                  const parts = line.split(/(\[BLANK\])/);
+                  // _N_ 패턴 또는 ___ 패턴 찾기
+                  const blankPattern = /_(\d+)_|___/g;
+                  const parts: React.ReactNode[] = [];
+                  let lastIndex = 0;
+                  let match;
+                  let seqIndex = 0;
+
+                  while ((match = blankPattern.exec(line)) !== null) {
+                    // 매칭 전 텍스트
+                    if (match.index > lastIndex) {
+                      parts.push(
+                        <span key={`t-${lineIndex}-${lastIndex}`}>{line.slice(lastIndex, match.index)}</span>
+                      );
+                    }
+
+                    // 빈칸 인덱스 결정
+                    const blankIndex = match[1] !== undefined ? parseInt(match[1], 10) : seqIndex++;
+                    const blankData = blankForm.blanks.find(b => b.index === blankIndex);
+                    const answer = blankData?.answer;
+
+                    parts.push(
+                      <span
+                        key={`b-${lineIndex}-${match.index}`}
+                        className={`px-1 py-0.5 rounded ${
+                          answer
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}
+                      >
+                        {answer || match[0]}
+                      </span>
+                    );
+
+                    lastIndex = match.index + match[0].length;
+                  }
+
+                  // 남은 텍스트
+                  if (lastIndex < line.length) {
+                    parts.push(<span key={`t-${lineIndex}-end`}>{line.slice(lastIndex)}</span>);
+                  }
 
                   return (
                     <div key={lineIndex} className="flex">
                       <span className="w-8 text-muted-foreground/40 select-none shrink-0">
                         {lineIndex + 1}
                       </span>
-                      <span className="flex-1">
-                        {parts.map((part, partIndex) => {
-                          if (part === '[BLANK]') {
-                            // 이 빈칸이 전체에서 몇 번째인지 계산
-                            const globalBlankIndex = blankForm.code_template
-                              .split('\n')
-                              .slice(0, lineIndex)
-                              .join('\n')
-                              .split('[BLANK]').length - 1 + blankIndexInLine;
-                            blankIndexInLine++;
-                            const blankData = blankForm.blanks[globalBlankIndex];
-                            const answer = blankData?.answer;
-
-                            return (
-                              <span
-                                key={partIndex}
-                                className={`px-1 py-0.5 mx-0.5 rounded ${
-                                  answer
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                }`}
-                              >
-                                {answer || '???'}
-                              </span>
-                            );
-                          }
-                          return <span key={partIndex}>{part}</span>;
-                        })}
-                      </span>
+                      <span className="flex-1 whitespace-pre">{parts.length > 0 ? parts : line}</span>
                     </div>
                   );
                 })}
@@ -961,16 +977,6 @@ export default function AdminProblemCreatePage() {
             <p className="text-[10px] text-muted-foreground/50">
               <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500/30 mr-1" /> 정답 입력됨
               <span className="inline-block w-2 h-2 rounded-sm bg-rose-500/30 ml-3 mr-1" /> 정답 미입력
-            </p>
-          </div>
-        )}
-
-        {/* 기존 형식 안내 메시지 */}
-        {blankForm.blanks.length > 0 && blankForm.blanks[0]?.lineNumber === 0 && (
-          <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-            <p className="text-xs text-amber-400">
-              <strong>기존 형식 데이터입니다.</strong><br />
-              새 형식으로 변환하려면 코드 템플릿에서 빈칸 위치에 <code className="px-1 py-0.5 bg-black/30 rounded">[BLANK]</code>를 입력하세요.
             </p>
           </div>
         )}
