@@ -28,37 +28,36 @@ export function EloGrowthCard({ eloHistory, eloOverall }: EloGrowthCardProps) {
     // 토픽별 성장량 집계
     const topicMap = new Map<string, { total: number; current: number; count: number }>();
 
-    // 시간순 ELO 변화 (전체 평균)
-    const timeline: { date: string; avgElo: number; isCorrect: boolean }[] = [];
+    // 시간순 ELO 변화
+    const timeline: { date: string; elo: number; isCorrect: boolean }[] = [];
+
+    let correctCount = 0;
 
     eloHistory.forEach((entry) => {
-      // 각 entry의 changes에서 토픽별 집계
-      entry.changes.forEach((change) => {
-        const existing = topicMap.get(change.topic);
-        if (existing) {
-          existing.total += change.change;
-          existing.current = change.after;
-          existing.count += 1;
-        } else {
-          topicMap.set(change.topic, {
-            total: change.change,
-            current: change.after,
-            count: 1,
-          });
-        }
-      });
-
-      // 타임라인 - 해당 시점의 평균 ELO
-      if (entry.changes.length > 0) {
-        const avgElo = Math.round(
-          entry.changes.reduce((sum, c) => sum + c.after, 0) / entry.changes.length
-        );
-        timeline.push({
-          date: entry.date,
-          avgElo,
-          isCorrect: entry.is_correct,
+      // DB 형식: { date, topic, before, after, change, problem_elo, expected }
+      const existing = topicMap.get(entry.topic);
+      if (existing) {
+        existing.total += entry.change;
+        existing.current = entry.after;
+        existing.count += 1;
+      } else {
+        topicMap.set(entry.topic, {
+          total: entry.change,
+          current: entry.after,
+          count: 1,
         });
       }
+
+      // 정답/오답 추론: change >= 0 이면 정답
+      const isCorrect = entry.change >= 0;
+      if (isCorrect) correctCount++;
+
+      // 타임라인
+      timeline.push({
+        date: entry.date,
+        elo: entry.after,
+        isCorrect,
+      });
     });
 
     // 토픽 성장량 배열로 변환 및 정렬
@@ -84,7 +83,7 @@ export function EloGrowthCard({ eloHistory, eloOverall }: EloGrowthCardProps) {
         totalLoss,
         netChange,
         totalAttempts: eloHistory.length,
-        correctCount: eloHistory.filter(e => e.is_correct).length,
+        correctCount,
       },
     };
   }, [eloHistory]);
@@ -107,23 +106,23 @@ export function EloGrowthCard({ eloHistory, eloOverall }: EloGrowthCardProps) {
     1
   );
 
-  // 라인 차트 계산 - 더 큰 사이즈
+  // 라인 차트 계산
   const chartWidth = 320;
   const chartHeight = 120;
   const padding = { left: 12, right: 12, top: 16, bottom: 16 };
 
-  const eloValues = eloTimeline.map(t => t.avgElo);
+  const eloValues = eloTimeline.map(t => t.elo);
   const minElo = Math.min(...eloValues) - 15;
   const maxElo = Math.max(...eloValues) + 15;
   const eloRange = maxElo - minElo || 1;
 
   const points = eloTimeline.map((entry, idx) => {
     const x = padding.left + (idx / Math.max(eloTimeline.length - 1, 1)) * (chartWidth - padding.left - padding.right);
-    const y = padding.top + (1 - (entry.avgElo - minElo) / eloRange) * (chartHeight - padding.top - padding.bottom);
+    const y = padding.top + (1 - (entry.elo - minElo) / eloRange) * (chartHeight - padding.top - padding.bottom);
     return { x, y, ...entry };
   });
 
-  // SVG 경로 생성 - 부드러운 곡선
+  // SVG 경로 생성
   const linePath = points.length > 1
     ? `M ${points.map(p => `${p.x},${p.y}`).join(' L ')}`
     : '';
@@ -168,7 +167,7 @@ export function EloGrowthCard({ eloHistory, eloOverall }: EloGrowthCardProps) {
         </div>
       </div>
 
-      {/* 메인 라인 차트 - 더 큰 사이즈 */}
+      {/* 메인 라인 차트 */}
       {points.length > 1 && (
         <div className="relative rounded-xl bg-zinc-800/30 p-3">
           {/* Y축 라벨 */}
@@ -266,7 +265,7 @@ export function EloGrowthCard({ eloHistory, eloOverall }: EloGrowthCardProps) {
         </div>
       )}
 
-      {/* 하단: 토픽별 성장량 - 컴팩트하게 */}
+      {/* 하단: 토픽별 성장량 */}
       {topicGrowths.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">

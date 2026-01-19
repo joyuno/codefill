@@ -415,6 +415,8 @@ export default function AnalysisPage() {
         <AICoachingSection
           detailedFeedback={report.detailedFeedback}
           commonErrorPatterns={report.commonErrorPatterns}
+          recommendations={report.recommendations}
+          studyPlan={report.studyPlan}
         />
       </motion.div>
 

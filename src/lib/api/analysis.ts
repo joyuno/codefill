@@ -111,25 +111,16 @@ export interface HintIndependence {
 }
 
 /**
- * ELO 변화 기록 (단일 토픽)
+ * ELO 히스토리 엔트리 (DB update_user_elo() 함수 형식)
  */
-export interface EloChange {
+export interface EloHistoryEntry {
+  date: string;
   topic: string;
   before: number;
   after: number;
   change: number;
-  expected: number;
-}
-
-/**
- * ELO 히스토리 엔트리 (단일 문제 풀이)
- */
-export interface EloHistoryEntry {
-  date: string;
-  topics: string[];
-  is_correct: boolean;
   problem_elo: number;
-  changes: EloChange[];
+  expected: number;
 }
 
 export interface AnalysisReport {
@@ -137,6 +128,8 @@ export interface AnalysisReport {
   summaryText: string;
   strengths: TopicScore[];
   weaknesses: TopicScore[];
+  recommendations: string[];
+  studyPlan?: string;
   skillSnapshot: Record<string, number>;
   statsSnapshot: StatsSnapshot;
   difficultySnapshot: Record<string, number>;
