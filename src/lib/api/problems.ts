@@ -63,6 +63,10 @@ export interface BaseProblemDetail {
   } | string | null;
   explanation: string | null;
   solutions?: Array<{ language: string; code: string }>;  // 문제 유형 생성 시 필요
+  // 통계 정보 (API 호출 최적화)
+  solve_count: number;
+  like_count: number;
+  is_liked: boolean;
 }
 
 export interface BaseProblemListResponse {

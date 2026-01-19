@@ -26,7 +26,6 @@ from ..models.analysis import (
     RecentAttempt,
     HintIndependence,
     # ELO 성장 데이터
-    EloChange,
     EloHistoryEntry,
 )
 from ..services.analysis_service import AnalysisService, InsufficientDataError
@@ -70,25 +69,18 @@ def _transform_error_analysis(error_data: Optional[dict]) -> Optional[ErrorAnaly
 
 
 def _transform_elo_history(elo_data: Optional[list]) -> Optional[List[EloHistoryEntry]]:
-    """ELO 히스토리 데이터를 모델로 변환."""
+    """ELO 히스토리 데이터를 모델로 변환 (DB update_user_elo() 함수 형식)."""
     if not elo_data:
         return None
     return [
         EloHistoryEntry(
             date=entry.get("date", ""),
-            topics=entry.get("topics", []),
-            is_correct=entry.get("is_correct", False),
+            topic=entry.get("topic", ""),
+            before=entry.get("before", 1000),
+            after=entry.get("after", 1000),
+            change=entry.get("change", 0),
             problem_elo=entry.get("problem_elo", 1000),
-            changes=[
-                EloChange(
-                    topic=c.get("topic", ""),
-                    before=c.get("before", 1000),
-                    after=c.get("after", 1000),
-                    change=c.get("change", 0),
-                    expected=c.get("expected", 0.5),
-                )
-                for c in entry.get("changes", [])
-            ],
+            expected=entry.get("expected", 0.5),
         )
         for entry in elo_data
     ]

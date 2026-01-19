@@ -177,6 +177,10 @@ class BaseProblemDetail(BaseModel):
     input_output: Optional[dict] = None
     explanation: Optional[str] = None
     solutions: List[SolutionItem] = []  # 솔루션 코드 목록
+    # 통계 정보 (API 호출 최적화용)
+    solve_count: int = 0
+    like_count: int = 0
+    is_liked: bool = False  # 현재 사용자의 좋아요 여부
 
     @field_validator('input_output', mode='before')
     @classmethod

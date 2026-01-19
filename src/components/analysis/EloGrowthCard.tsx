@@ -19,6 +19,9 @@ interface TopicGrowth {
 }
 
 export function EloGrowthCard({ eloHistory, eloOverall }: EloGrowthCardProps) {
+  // 디버깅: 실제 데이터 형식 확인
+  console.log('[EloGrowthCard] eloHistory:', JSON.stringify(eloHistory, null, 2));
+
   // 데이터 처리
   const { topicGrowths, eloTimeline, stats } = useMemo(() => {
     if (!eloHistory || eloHistory.length === 0) {

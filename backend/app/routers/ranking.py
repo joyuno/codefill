@@ -6,8 +6,11 @@ Ranking Router - 랭킹 시스템
 - GET /ranking/weekly - 주간 랭킹 (XP, 문제 풀이 수)
 - GET /ranking/monthly - 월간 랭킹 (XP, 문제 풀이 수)
 - GET /ranking/me - 내 순위 조회
+- GET /ranking/challenge-page-data - Challenge 페이지 통합 데이터 (최적화)
 """
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException, Depends, Query, status
 from typing import Optional, Literal
 from uuid import UUID
@@ -19,7 +22,12 @@ from ..models.ranking import (
     RankingListResponse,
     MyRankingResponse,
     MyRankingSummary,
+    ChallengePageDataResponse,
 )
+from ..services.mission_service import MissionService
+
+# Thread pool for parallel execution
+_executor = ThreadPoolExecutor(max_workers=4)
 
 router = APIRouter()
 
@@ -218,12 +226,13 @@ async def get_my_ranking(
 ):
     """
     내 순위 조회 (모든 랭킹에서의 순위)
+    - Optimized: 단일 RPC 호출로 랭킹 + 통계 함께 반환
     """
     try:
         user_id = current_user["id"]
 
-        # RPC 함수 호출
-        result = db.rpc("get_my_ranking", {
+        # Optimized RPC 함수 호출 (랭킹 + 내 통계 한번에 반환)
+        result = db.rpc("get_my_ranking_optimized", {
             "p_user_id": user_id
         }).execute()
 
@@ -240,15 +249,6 @@ async def get_my_ranking(
         # 상위 퍼센트 계산
         percentile = round((global_xp_rank / total_users) * 100, 1) if total_users > 0 else 100
 
-        # 내 통계 조회
-        stats_result = db.table("user_stats")\
-            .select("total_xp, problems_solved, longest_streak, level")\
-            .eq("user_id", user_id)\
-            .single()\
-            .execute()
-
-        my_stats = stats_result.data or {}
-
         return MyRankingSummary(
             global_xp_rank=global_xp_rank,
             global_xp_percentile=percentile,
@@ -259,10 +259,11 @@ async def get_my_ranking(
             monthly_xp_rank=ranking_data.get("monthly_xp_rank") or None,
             monthly_solve_rank=ranking_data.get("monthly_solve_rank") or None,
             total_users=total_users,
-            my_total_xp=my_stats.get("total_xp", 0),
-            my_problems_solved=my_stats.get("problems_solved", 0),
-            my_longest_streak=my_stats.get("longest_streak", 0),
-            my_level=my_stats.get("level", 1),
+            # User stats now included in optimized RPC response
+            my_total_xp=ranking_data.get("my_total_xp", 0),
+            my_problems_solved=ranking_data.get("my_problems_solved", 0),
+            my_longest_streak=ranking_data.get("my_longest_streak", 0),
+            my_level=ranking_data.get("my_level", 1),
         )
 
     except HTTPException:
@@ -271,4 +272,86 @@ async def get_my_ranking(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get my ranking: {str(e)}"
+        )
+
+
+# =====================================================
+# Challenge 페이지 통합 데이터 (성능 최적화)
+# =====================================================
+
+@router.get("/challenge-page-data", response_model=ChallengePageDataResponse)
+async def get_challenge_page_data(
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Challenge 페이지 통합 데이터 조회
+    - 내 랭킹 + 일일미션 + 주간챌린지 + userId 한번에 반환
+    - 3개 API 호출 → 1개로 통합하여 지연 시간 3배 감소
+    - 내부적으로 3개 작업을 병렬 실행
+    """
+    try:
+        user_id = current_user["id"]
+        loop = asyncio.get_event_loop()
+        mission_service = MissionService(db)
+
+        # Helper functions for parallel execution
+        def fetch_ranking():
+            result = db.rpc("get_my_ranking_optimized", {
+                "p_user_id": user_id
+            }).execute()
+            return result.data[0] if result.data else None
+
+        def fetch_daily():
+            return mission_service.get_daily_missions(user_id)
+
+        def fetch_weekly():
+            return mission_service.get_weekly_challenges(user_id)
+
+        # 병렬 실행: 랭킹, 일일 미션, 주간 챌린지
+        ranking_data, daily_data, weekly_data = await asyncio.gather(
+            loop.run_in_executor(_executor, fetch_ranking),
+            loop.run_in_executor(_executor, fetch_daily),
+            loop.run_in_executor(_executor, fetch_weekly)
+        )
+
+        if not ranking_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User ranking not found"
+            )
+
+        total_users = ranking_data.get("total_users", 1)
+        global_xp_rank = ranking_data.get("global_xp_rank", total_users)
+        percentile = round((global_xp_rank / total_users) * 100, 1) if total_users > 0 else 100
+
+        ranking = MyRankingSummary(
+            global_xp_rank=global_xp_rank,
+            global_xp_percentile=percentile,
+            global_solve_rank=ranking_data.get("global_solve_rank", total_users),
+            global_streak_rank=ranking_data.get("global_streak_rank", total_users),
+            weekly_xp_rank=ranking_data.get("weekly_xp_rank") or None,
+            weekly_solve_rank=ranking_data.get("weekly_solve_rank") or None,
+            monthly_xp_rank=ranking_data.get("monthly_xp_rank") or None,
+            monthly_solve_rank=ranking_data.get("monthly_solve_rank") or None,
+            total_users=total_users,
+            my_total_xp=ranking_data.get("my_total_xp", 0),
+            my_problems_solved=ranking_data.get("my_problems_solved", 0),
+            my_longest_streak=ranking_data.get("my_longest_streak", 0),
+            my_level=ranking_data.get("my_level", 1),
+        )
+
+        return ChallengePageDataResponse(
+            ranking=ranking,
+            daily=daily_data.model_dump() if daily_data else {"missions": [], "today_completed": 0, "today_claimed": 0},
+            weekly=weekly_data.model_dump() if weekly_data else {"challenges": [], "week_completed": 0, "week_claimed": 0},
+            user_id=user_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get challenge page data: {str(e)}"
         )

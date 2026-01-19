@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { memo } from 'react';
 import {
   Select,
   SelectContent,
@@ -65,7 +65,7 @@ const TAG_OPTIONS = [
   { value: 'Greedy', label: 'Greedy' },
 ];
 
-export function ProblemFilters({
+export const ProblemFilters = memo(function ProblemFilters({
   filters,
   onFiltersChange,
   resultCount,
@@ -100,11 +100,7 @@ export function ProblemFilters({
   const selectedTier = DIFFICULTY_OPTIONS.find(opt => opt.value === filters.difficulty);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-3"
-    >
+    <div className="space-y-3">
       {/* Search Bar */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -210,6 +206,6 @@ export function ProblemFilters({
           </span>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
-}
+});

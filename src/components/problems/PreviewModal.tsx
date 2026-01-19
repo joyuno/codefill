@@ -107,16 +107,20 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
       setProblem(null);
       setTranslatedQuestion(null);
       setShowTranslated(false);
-      // 풀이수/좋아요 상태 초기화
-      setSolveCount(0);
-      setLikeCount(0);
-      setIsLiked(false);
 
       try {
         const data = await problemsApi.getBase(originalId);
         setProblem(data);
+        // 통계 정보가 API 응답에 포함됨 (최적화)
+        setSolveCount(data.solve_count ?? 0);
+        setLikeCount(data.like_count ?? 0);
+        setIsLiked(data.is_liked ?? false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load problem');
+        // 에러 시 stats 초기화
+        setSolveCount(0);
+        setLikeCount(0);
+        setIsLiked(false);
       } finally {
         setLoading(false);
       }
@@ -124,24 +128,6 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
 
     fetchProblem();
   }, [originalId]);
-
-  // 통계 조회 (풀이수는 피드백 완료 시 백엔드에서 증가)
-  useEffect(() => {
-    if (!problem?.id) return;
-
-    const baseProblemId = problem.id;
-
-    // 통계 조회
-    problemsApi.getStats(baseProblemId)
-      .then((stats) => {
-        setSolveCount(stats.solve_count);
-        setLikeCount(stats.like_count);
-        setIsLiked(stats.is_liked);
-      })
-      .catch((err) => {
-        console.warn('Failed to load stats:', err);
-      });
-  }, [problem?.id]);
 
   // 좋아요 토글
   const handleLike = async () => {

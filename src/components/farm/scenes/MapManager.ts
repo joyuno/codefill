@@ -16,15 +16,7 @@ import {
   FARM_OFFSET_Y,
   FARM_MAX_SIZE,
 } from '../config/gameConfig';
-import { DEPTH, getBuildingDepth } from '../config/depthConfig';
-import {
-  DECORATION_PATH,
-  GRASS_DECORATIONS,
-  TREE_DECORATIONS,
-  FRUIT_TREE_DECORATIONS,
-  HAY_DECORATIONS,
-  FLOWER_DECORATIONS,
-} from '../config/decorationConfig';
+import { DEPTH } from '../config/depthConfig';
 
 export class MapManager {
   private scene: Phaser.Scene;
@@ -36,7 +28,9 @@ export class MapManager {
   }
 
   /**
-   * 에셋 프리로드 (씬 재시작 시 중복 로드 방지)
+   * 에셋 프리로드 (지연 로딩 적용)
+   * 필수 에셋만 로드하여 초기 로딩 시간 단축
+   * 장식 에셋은 UnifiedPlacementManager에서 필요 시 로드
    */
   preload(): void {
     // 타일셋 (밭 타일용)
@@ -47,45 +41,14 @@ export class MapManager {
       });
     }
 
-    // 바닥 잔디 이미지
+    // 바닥 잔디 이미지 (필수)
     if (!this.scene.textures.exists('grass_floor')) {
       this.scene.load.image('grass_floor', '/farm/terrains/grass_floor.png');
     }
 
-    // 잔디/꽃
-    GRASS_DECORATIONS.forEach(grass => {
-      if (!this.scene.textures.exists(grass.key)) {
-        this.scene.load.image(grass.key, DECORATION_PATH + grass.file);
-      }
-    });
-
-    // 나무
-    TREE_DECORATIONS.forEach(tree => {
-      if (!this.scene.textures.exists(tree.key)) {
-        this.scene.load.image(tree.key, DECORATION_PATH + tree.file);
-      }
-    });
-
-    // 과일나무
-    FRUIT_TREE_DECORATIONS.forEach(tree => {
-      if (!this.scene.textures.exists(tree.key)) {
-        this.scene.load.image(tree.key, DECORATION_PATH + tree.file);
-      }
-    });
-
-    // 건초
-    HAY_DECORATIONS.forEach(hay => {
-      if (!this.scene.textures.exists(hay.key)) {
-        this.scene.load.image(hay.key, DECORATION_PATH + hay.file);
-      }
-    });
-
-    // 꽃 (개별 이미지)
-    FLOWER_DECORATIONS.forEach(flower => {
-      if (!this.scene.textures.exists(flower.key)) {
-        this.scene.load.image(flower.key, DECORATION_PATH + flower.file);
-      }
-    });
+    // 장식 에셋은 더 이상 여기서 로드하지 않음
+    // - 잔디, 나무, 과일나무, 건초, 꽃 등은 UnifiedPlacementManager에서 배치 시 로드
+    console.log('[MapManager] Loading essential assets only (2 assets)');
   }
 
   /**

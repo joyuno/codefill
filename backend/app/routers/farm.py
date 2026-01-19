@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 import random
 import json
+import time
 
 from ..database import get_db
 from ..dependencies import get_current_user_id
@@ -40,15 +41,48 @@ router = APIRouter()
 
 
 # =====================================================
+# Simple TTL Cache for Static Data
+# =====================================================
+
+class TTLCache:
+    """간단한 TTL 캐시 (정적 데이터용)"""
+    def __init__(self, ttl_seconds: int = 3600):
+        self._cache = {}
+        self._timestamps = {}
+        self._ttl = ttl_seconds
+
+    def get(self, key: str):
+        if key not in self._cache:
+            return None
+        if time.time() - self._timestamps[key] > self._ttl:
+            del self._cache[key]
+            del self._timestamps[key]
+            return None
+        return self._cache[key]
+
+    def set(self, key: str, value):
+        self._cache[key] = value
+        self._timestamps[key] = time.time()
+
+    def clear(self):
+        self._cache.clear()
+        self._timestamps.clear()
+
+
+# 정적 데이터 캐시 (farm_items: 1시간 TTL)
+_farm_items_cache = TTLCache(ttl_seconds=3600)
+
+
+# =====================================================
 # Helper Functions
 # =====================================================
 
 def get_or_create_farm(db, user_id: UUID) -> dict:
-    """사용자 농장 조회 또는 생성"""
+    """사용자 농장 조회 또는 생성 (farm_slots 포함)"""
     result = db.table("user_farm").select(
         "id, user_id, character_created, character_data, "
         "farm_unlocked, farm_level, gold, farm_size, house_level, "
-        "created_at, updated_at"
+        "farm_slots, created_at, updated_at"
     ).eq("user_id", str(user_id)).execute()
 
     if result.data and len(result.data) > 0:
@@ -133,14 +167,11 @@ def calculate_crop_stage(planted_at_str: str, grow_time_seconds: int) -> int:
         return 0
 
 
-def get_farm_slots(db, user_id: UUID) -> List[FarmSlot]:
-    """farm_slots 조회 및 stage 계산"""
-    result = db.table("user_farm").select("farm_slots").eq("user_id", str(user_id)).execute()
-
-    if not result.data or not result.data[0].get("farm_slots"):
+def parse_farm_slots_from_data(raw_slots) -> List[FarmSlot]:
+    """farm_slots 데이터를 파싱하고 stage 계산 (DB 쿼리 없음)"""
+    if not raw_slots:
         return []
 
-    raw_slots = result.data[0]["farm_slots"]
     if isinstance(raw_slots, str):
         raw_slots = json.loads(raw_slots)
 
@@ -163,6 +194,16 @@ def get_farm_slots(db, user_id: UUID) -> List[FarmSlot]:
         ))
 
     return slots
+
+
+def get_farm_slots(db, user_id: UUID) -> List[FarmSlot]:
+    """farm_slots 조회 및 stage 계산 (레거시 - 다른 엔드포인트용)"""
+    result = db.table("user_farm").select("farm_slots").eq("user_id", str(user_id)).execute()
+
+    if not result.data or not result.data[0].get("farm_slots"):
+        return []
+
+    return parse_farm_slots_from_data(result.data[0]["farm_slots"])
 
 
 def update_farm_slots(db, user_id: UUID, slots: List[FarmSlot]):
@@ -196,7 +237,7 @@ async def get_farm(
     user_id: UUID = Depends(get_current_user_id),
     db=Depends(get_db)
 ):
-    """농장 상태 조회 (farm_slots 포함)"""
+    """농장 상태 조회 (farm_slots 포함) - 최적화: 1개 쿼리로 통합"""
     farm = get_or_create_farm(db, user_id)
 
     # character_data 파싱
@@ -208,8 +249,8 @@ async def get_farm(
     if farm.get("character_created") and char_data:
         character_data = CharacterData(**char_data)
 
-    # farm_slots 조회 (stage 계산 포함)
-    farm_slots = get_farm_slots(db, user_id)
+    # farm_slots 파싱 (별도 쿼리 대신 farm 데이터에서 직접 파싱)
+    farm_slots = parse_farm_slots_from_data(farm.get("farm_slots"))
 
     return UserFarmResponse(
         id=farm["id"],
@@ -330,12 +371,24 @@ async def update_character(
 
 @router.get("/items", response_model=List[FarmItemResponse])
 async def get_farm_items(db=Depends(get_db)):
-    """작물 목록 조회 (farm_items 테이블)"""
+    """작물 목록 조회 (farm_items 테이블) - 캐싱 적용 (1시간 TTL)"""
+    # 캐시 확인
+    cached = _farm_items_cache.get("farm_items")
+    if cached:
+        return cached
+
+    # 캐시 미스: DB 조회
     result = db.table("farm_items").select(
         "id, code, name, name_ko, type, rarity, image_url, "
         "seed_cost, sell_price, xp_reward, grow_time_seconds"
     ).eq("type", "crop").execute()
-    return [FarmItemResponse(**item) for item in (result.data or [])]
+
+    items = [FarmItemResponse(**item) for item in (result.data or [])]
+
+    # 캐시 저장
+    _farm_items_cache.set("farm_items", items)
+
+    return items
 
 
 @router.get("/inventory", response_model=InventoryResponse)

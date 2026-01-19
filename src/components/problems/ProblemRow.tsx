@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Eye, Play, Check, MessageSquare, LogIn, Heart, Users } from 'lucide-react';
 import Link from 'next/link';
@@ -33,7 +32,7 @@ const sourceLabels: Record<string, string> = {
   hackerrank: 'HR',
 };
 
-export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
+export const ProblemRow = memo(function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
   const router = useRouter();
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const tier = getTierInfo(problem.difficulty);
@@ -80,10 +79,7 @@ export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    <motion.tr
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ delay: index * 0.02 }}
+    <tr
       className="group border-b border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
       onClick={() => onPreview(problem.original_id)}
     >
@@ -196,7 +192,7 @@ export function ProblemRow({ problem, index, onPreview }: ProblemRowProps) {
           </Button>
         </div>
       </td>
-    </motion.tr>
+    </tr>
     </>
   );
-}
+});

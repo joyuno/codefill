@@ -10,11 +10,11 @@ import {
 } from '@/components/challenge';
 import {
   rankingApi,
-  usersApi,
   missionsApi,
   type MyRankingSummary,
   type DailyMissionsResponse,
   type WeeklyChallengesResponse,
+  type ChallengePageData,
 } from '@/lib/api';
 import { apiClient } from '@/lib/api/client';
 import { toast } from 'sonner';
@@ -52,75 +52,80 @@ export default function ChallengePage() {
 
   // Ranking
   const [myRanking, setMyRanking] = useState<MyRankingSummary | null>(null);
-  const [isMyRankingLoading, setIsMyRankingLoading] = useState(true);
 
   // Missions
   const [dailyData, setDailyData] = useState<DailyMissionsResponse | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyChallengesResponse | null>(null);
-  const [isMissionsLoading, setIsMissionsLoading] = useState(true);
+
+  // Combined loading state (optimized: single API call)
+  const [isPageDataLoading, setIsPageDataLoading] = useState(true);
 
   // Leaderboard total
   const [leaderboardTotal, setLeaderboardTotal] = useState(0);
 
-  // Fetch current user ID
-  useEffect(() => {
-    const fetchUserId = async () => {
-      if (!isAuthenticated) return;
-      try {
-        const profile = await usersApi.getProfile();
-        setCurrentUserId(profile.id);
-      } catch {
-        // Ignore error
-      }
-    };
-    fetchUserId();
-  }, [isAuthenticated]);
+  // Transform backend mission format to frontend format
+  const transformMissions = (missions: ChallengePageData['daily']['missions']): DailyMissionsResponse['missions'] => {
+    return missions.map(m => ({
+      id: m.id,
+      missionId: m.mission_id,
+      code: m.code,
+      name: m.name,
+      description: m.description,
+      conditionType: m.condition_type as 'problems' | 'blank' | 'puzzle' | 'guided' | 'implementation',
+      conditionValue: m.condition_value,
+      difficulty: m.difficulty as 'easy' | 'medium' | 'hard' | null,
+      currentProgress: m.current_progress,
+      targetValue: m.target_value,
+      status: m.status as 'active' | 'completed' | 'claimed',
+      rewardGold: m.reward_gold,
+      rewardXp: m.reward_xp,
+      rewardSeeds: m.reward_seeds,
+      category: null,
+      requireAllTypes: false,
+    }));
+  };
 
-  // Fetch my ranking
-  const fetchMyRanking = useCallback(async () => {
+  // Fetch all challenge page data in single API call (optimized)
+  const fetchChallengePageData = useCallback(async () => {
     if (!isAuthenticated) {
-      setIsMyRankingLoading(false);
+      setIsPageDataLoading(false);
       return;
     }
 
-    setIsMyRankingLoading(true);
+    setIsPageDataLoading(true);
     try {
-      const response = await rankingApi.getMyRanking();
-      setMyRanking(response);
-    } catch (error) {
-      console.error('Failed to fetch my ranking:', error);
-    } finally {
-      setIsMyRankingLoading(false);
-    }
-  }, [isAuthenticated]);
+      const data = await rankingApi.getChallengePageData();
 
-  // Fetch missions
-  const fetchMissions = useCallback(async () => {
-    if (!isAuthenticated) {
-      setIsMissionsLoading(false);
-      return;
-    }
+      // Set user ID from combined response
+      setCurrentUserId(data.user_id);
 
-    setIsMissionsLoading(true);
-    try {
-      const allData = await missionsApi.getAllMissions();
-      if (allData) {
-        setDailyData(allData.daily);
-        setWeeklyData(allData.weekly);
-      }
+      // Set ranking data
+      setMyRanking(data.ranking);
+
+      // Transform and set missions data
+      setDailyData({
+        missions: transformMissions(data.daily.missions),
+        todayCompleted: data.daily.today_completed,
+        todayClaimed: data.daily.today_claimed,
+      });
+
+      setWeeklyData({
+        challenges: transformMissions(data.weekly.challenges),
+        weekCompleted: data.weekly.week_completed,
+        weekClaimed: data.weekly.week_claimed,
+      });
     } catch (error) {
-      console.error('Failed to fetch missions:', error);
+      console.error('Failed to fetch challenge page data:', error);
     } finally {
-      setIsMissionsLoading(false);
+      setIsPageDataLoading(false);
     }
   }, [isAuthenticated]);
 
   useEffect(() => {
-    fetchMyRanking();
-    fetchMissions();
-  }, [fetchMyRanking, fetchMissions]);
+    fetchChallengePageData();
+  }, [fetchChallengePageData]);
 
-  // Handle mission claim
+  // Handle mission claim with optimistic update
   const handleClaim = async (missionId: string) => {
     try {
       const result = await missionsApi.claimMissionReward(missionId);
@@ -149,8 +154,37 @@ export default function ChallengePage() {
             </div>
           </div>
         );
-        // Refresh data
-        await Promise.all([fetchMissions(), fetchMyRanking()]);
+
+        // Optimistic update: mark mission as claimed locally
+        if (dailyData) {
+          setDailyData({
+            ...dailyData,
+            missions: dailyData.missions.map(m =>
+              m.id === missionId ? { ...m, status: 'claimed' as const } : m
+            ),
+            todayClaimed: dailyData.todayClaimed + 1,
+          });
+        }
+        if (weeklyData) {
+          setWeeklyData({
+            ...weeklyData,
+            challenges: weeklyData.challenges.map(m =>
+              m.id === missionId ? { ...m, status: 'claimed' as const } : m
+            ),
+            weekClaimed: weeklyData.weekClaimed + 1,
+          });
+        }
+
+        // Update XP in ranking (optimistic)
+        if (myRanking && result.xpEarned > 0) {
+          setMyRanking({
+            ...myRanking,
+            my_total_xp: myRanking.my_total_xp + result.xpEarned,
+          });
+        }
+
+        // Background refresh to sync with server
+        fetchChallengePageData();
       } else {
         toast.error(result?.error || '보상 수령에 실패했습니다.');
       }
@@ -275,7 +309,7 @@ export default function ChallengePage() {
                   ranking={myRanking}
                   dailyMissions={dailyMissions}
                   weeklyMissions={weeklyMissions}
-                  isLoading={isMyRankingLoading || isMissionsLoading}
+                  isLoading={isPageDataLoading}
                   onViewRanking={() => setActiveTab('leaderboard')}
                 />
 
@@ -286,7 +320,7 @@ export default function ChallengePage() {
                     title="Today's Quests"
                     variant="daily"
                     quests={dailyMissions}
-                    isLoading={isMissionsLoading}
+                    isLoading={isPageDataLoading}
                     onClaim={handleClaim}
                   />
 
@@ -295,7 +329,7 @@ export default function ChallengePage() {
                     title="Weekly Challenge"
                     variant="weekly"
                     quests={weeklyMissions}
-                    isLoading={isMissionsLoading}
+                    isLoading={isPageDataLoading}
                     onClaim={handleClaim}
                     remainingTime={remainingTime}
                   />

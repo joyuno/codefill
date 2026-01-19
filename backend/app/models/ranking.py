@@ -82,3 +82,15 @@ class MyRankingSummary(BaseModel):
     my_problems_solved: int = 0
     my_longest_streak: int = 0
     my_level: int = 1
+
+
+# =====================================================
+# Challenge Page Combined Response
+# =====================================================
+
+class ChallengePageDataResponse(BaseModel):
+    """Challenge 페이지 통합 응답 (성능 최적화)."""
+    ranking: MyRankingSummary
+    daily: dict  # DailyMissionsResponse를 dict로 반환
+    weekly: dict  # WeeklyChallengesResponse를 dict로 반환
+    user_id: str

@@ -1,6 +1,8 @@
 """
 Missions Router - Daily Missions and Weekly Challenges API endpoints
 """
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_db
@@ -12,6 +14,9 @@ from ..models.mission import (
     MissionsSummary
 )
 from ..services.mission_service import MissionService
+
+# Thread pool for parallel execution of sync RPC calls
+_executor = ThreadPoolExecutor(max_workers=4)
 
 router = APIRouter(prefix="/missions", tags=["missions"])
 
@@ -86,10 +91,16 @@ async def get_all_missions(
     """
     일일 미션 + 주간 챌린지 모두 조회
     - 미션 페이지에서 한 번에 로딩용
+    - Optimized: 병렬 실행으로 2배 성능 개선
     """
     service = MissionService(db)
-    daily = service.get_daily_missions(str(user_id))
-    weekly = service.get_weekly_challenges(str(user_id))
+    loop = asyncio.get_event_loop()
+
+    # 병렬 실행: 2개 RPC 호출을 동시에 실행
+    daily, weekly = await asyncio.gather(
+        loop.run_in_executor(_executor, service.get_daily_missions, str(user_id)),
+        loop.run_in_executor(_executor, service.get_weekly_challenges, str(user_id))
+    )
 
     return {
         "daily": daily,

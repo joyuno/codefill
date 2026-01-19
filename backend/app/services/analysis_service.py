@@ -168,8 +168,8 @@ class AnalysisService:
 
         data = result.data[0]  # 첫 번째 row 사용
 
-        # 실시간 시각화 데이터 조회
-        viz_data = await self._get_visualization_data(user_id)
+        # 실시간 시각화 데이터 조회 (LLM 분석 스킵 - DB 저장값 사용)
+        viz_data = await self._get_visualization_data(user_id, skip_llm=True)
 
         return {
             "id": data.get("id"),
@@ -199,12 +199,20 @@ class AnalysisService:
             # ELO 성장 데이터
             "eloHistory": data.get("elo_history", []),
             "eloOverall": data.get("elo_overall"),
-            # 실시간 시각화 데이터
-            **viz_data,
+            # 시각화 데이터 (DB 통계 + 저장된 LLM 분석)
+            "problemTypeStats": viz_data.get("problemTypeStats", []),
+            "recent10Attempts": viz_data.get("recent10Attempts", []),
+            "recent10Analysis": data.get("recent_10_analysis"),  # DB에서 가져옴
+            "hintIndependence": viz_data.get("hintIndependence", {}),
         }
 
-    async def _get_visualization_data(self, user_id: UUID) -> Dict[str, Any]:
-        """실시간 시각화 데이터 조회 (캐시 없이 항상 새로 계산)."""
+    async def _get_visualization_data(self, user_id: UUID, skip_llm: bool = False) -> Dict[str, Any]:
+        """실시간 시각화 데이터 조회.
+
+        Args:
+            user_id: 사용자 ID
+            skip_llm: True면 LLM 분석 스킵 (페이지 로딩 시 사용)
+        """
 
         # 1. 문제 유형별 정답률 (상위 5개)
         problem_type_result = self.db.table("attempts").select(
@@ -262,8 +270,10 @@ class AnalysisService:
                 for a in recent_attempts_result.data
             ]
 
-        # 최근 10문제 LLM 분석
-        recent_analysis = await self._analyze_recent_attempts(recent_10_attempts)
+        # 최근 10문제 LLM 분석 (skip_llm이면 스킵)
+        recent_analysis = None
+        if not skip_llm:
+            recent_analysis = await self._analyze_recent_attempts(recent_10_attempts)
 
         # 3. 힌트 없이 해결 비율
         hint_result = self.db.table("attempts").select(
@@ -318,16 +328,19 @@ class AnalysisService:
     async def generate_analysis(self, user_id: UUID) -> Dict[str, Any]:
         """AI 분석 실행 및 저장."""
 
-        # 1. 사용자 데이터 수집
+        # 1. 사용자 데이터 수집 (분석용)
         user_data = await self._collect_user_data(user_id)
 
-        # ============ DEBUG: user_data 콘솔 출력 (나중에 삭제할 것) ============
-        print("\n" + "=" * 80)
-        print("🔍 [DEBUG] user_data for analysis:")
-        print("=" * 80)
-        print(json.dumps(user_data, indent=2, ensure_ascii=False, default=str))
-        print("=" * 80 + "\n")
-        # ============ DEBUG END ============
+        # 1-1. ELO 데이터 직접 조회 (분석 로직과 독립 - 시각화용)
+        elo_result = self.db.table("user_analysis_reports").select(
+            "elo_history, elo_overall"
+        ).eq("user_id", str(user_id)).execute()
+
+        elo_history = []
+        elo_overall = None
+        if elo_result.data and len(elo_result.data) > 0:
+            elo_history = elo_result.data[0].get("elo_history") or []
+            elo_overall = elo_result.data[0].get("elo_overall")
 
         # 2. 데이터 충분한지 확인 (BKT 신뢰도를 위해 최소 10문제 필요)
         problems_solved = user_data.get("problems_solved", 0)
@@ -374,6 +387,8 @@ class AnalysisService:
             # BKT 기반 강점/약점 토픽
             "weak_topics": user_data.get("weak_topics", []),
             "strong_topics": user_data.get("strong_topics", []),
+            # 최근 10문제 LLM 분석 결과
+            "recent_10_analysis": recent_analysis,
         }
 
         # Update or Insert (ELO 필드는 건드리지 않음 - update_user_elo()가 관리)
@@ -416,9 +431,9 @@ class AnalysisService:
             "recent10Attempts": user_data.get("recent_10_attempts", []),
             "recent10Analysis": recent_analysis,
             "hintIndependence": user_data.get("hint_independence", {}),
-            # ELO 성장 데이터
-            "eloHistory": user_data.get("elo_history", []),
-            "eloOverall": user_data.get("elo_overall"),
+            # ELO 성장 데이터 (DB에서 직접 조회한 값 사용)
+            "eloHistory": elo_history,
+            "eloOverall": elo_overall,
         }
 
     async def recommend_problems(self, user_id: UUID) -> List[Dict[str, Any]]:
