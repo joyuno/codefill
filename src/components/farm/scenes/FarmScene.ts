@@ -19,7 +19,7 @@ import { PlayerController } from './PlayerController';
 import { InteractionSystem } from './InteractionSystem';
 import { UnifiedPlacementManager } from './UnifiedPlacementManager';
 import { FarmGridManager, FarmSlot } from './FarmGridManager';
-import type { PlacedItem } from '@/lib/api/farm';
+import type { PlacedItem, CharacterData } from '@/lib/api/farm';
 
 // 인벤토리 아이템 타입
 interface InventoryItem {
@@ -34,6 +34,8 @@ interface FarmSceneData {
   inventory: InventoryItem[];
   onNotify: (message: string, type: 'success' | 'error') => void;
   selectedSeed: string;
+  // 캐릭터 데이터 (레이어 기반 렌더링용)
+  characterData?: CharacterData | null;
   // 통합 배치 시스템
   placedItems: PlacedItem[];
   onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => string | null;
@@ -111,7 +113,8 @@ export class FarmScene extends Phaser.Scene {
     }
 
     try {
-      await this.playerController.playHarvestAnimation();
+      // 심기는 dig(땅파기) 애니메이션 사용
+      await this.playerController.playDigAnimation();
       console.log('[FarmScene] Calling onPlantOnSlot...');
       const result = await this.farmData.onPlantOnSlot(slot, cropCode);
       console.log('[FarmScene] onPlantOnSlot result:', result);
@@ -168,9 +171,9 @@ export class FarmScene extends Phaser.Scene {
    * 에셋 프리로드
    */
   preload(): void {
-    // 매니저 생성
+    // 매니저 생성 (PlayerController에 characterData 전달)
     this.mapManager = new MapManager(this);
-    this.playerController = new PlayerController(this);
+    this.playerController = new PlayerController(this, this.farmData.characterData);
     this.unifiedPlacementManager = new UnifiedPlacementManager(this);
     this.farmGridManager = new FarmGridManager(this);
 
@@ -297,7 +300,7 @@ export class FarmScene extends Phaser.Scene {
 
     const slotData = this.farmSlots.find(s => s.slot === slot);
 
-    if (slotData?.cropCode && slotData.stage >= 4) {
+    if (slotData?.cropCode && slotData.stage >= 6) {
       // 수확 가능한 작물이 있으면 수확
       await this.harvestCrop(slot);
     } else if (!slotData?.cropCode && this.selectedSeed) {
@@ -343,7 +346,7 @@ export class FarmScene extends Phaser.Scene {
         this.farmData.onNotify('수확할 작물이 없습니다!', 'error');
         return;
       }
-      if (slotData.stage < 4) {
+      if (slotData.stage < 6) {
         this.farmData.onNotify('아직 다 자라지 않았습니다!', 'error');
         return;
       }

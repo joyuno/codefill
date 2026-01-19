@@ -20,7 +20,8 @@ export type HotbarMode = 'seed' | 'placement';
 interface HotbarItem {
   code: string;
   name: string;
-  emoji: string;
+  icon?: string;  // 이미지 경로 (씨앗용)
+  emoji?: string; // 이모지 (배치 아이템용)
   quantity: number;
 }
 
@@ -94,7 +95,7 @@ export function UnifiedHotbar({
         return {
           code: seedCode,
           name: info.name,
-          emoji: info.emoji,
+          icon: info.icon,
           quantity,
         };
       })
@@ -206,7 +207,16 @@ export function UnifiedHotbar({
                       )}
                       title={`${item.name} (${item.quantity}개)`}
                     >
-                      <span className="text-xl">{item.emoji}</span>
+                      {item.icon ? (
+                        <img
+                          src={item.icon}
+                          alt={item.name}
+                          className="w-8 h-8 object-contain"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                      ) : (
+                        <span className="text-xl">{item.emoji}</span>
+                      )}
                       <span className="text-[10px] font-bold text-white">
                         {item.quantity}
                       </span>

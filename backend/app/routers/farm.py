@@ -114,18 +114,23 @@ def calculate_crop_stage(planted_at_str: str, grow_time_seconds: int) -> int:
         elapsed = (now - planted_at).total_seconds()
         progress = elapsed / grow_time_seconds if grow_time_seconds > 0 else 1.0
 
+        # 7단계 성장 (0~6)
         if progress >= 1.0:
+            return 6
+        elif progress >= 0.833:
+            return 5
+        elif progress >= 0.667:
             return 4
-        elif progress >= 0.75:
-            return 3
         elif progress >= 0.5:
+            return 3
+        elif progress >= 0.333:
             return 2
-        elif progress >= 0.25:
+        elif progress >= 0.167:
             return 1
         else:
-            return 1  # 최소 1단계
+            return 0  # 씨앗
     except:
-        return 1
+        return 0
 
 
 def get_farm_slots(db, user_id: UUID) -> List[FarmSlot]:
@@ -244,14 +249,16 @@ async def create_character(
             detail="캐릭터가 이미 생성되어 있습니다"
         )
 
-    # 캐릭터 데이터 저장
+    # 캐릭터 데이터 저장 (body, accessory 포함)
     character_data = {
         "name": request.name,
+        "body": request.body,
         "hair": request.hair,
         "hair_color": request.hair_color,
         "face": request.face,
         "outfit": request.outfit,
         "outfit_color": request.outfit_color,
+        "accessory": request.accessory,
         "farm_name": request.farm_name,
     }
 
@@ -279,6 +286,45 @@ async def create_character(
             update_inventory(db, user_id, f"seed_{random_crop}", 1)
 
     # 업데이트된 농장 반환
+    return await get_farm(user_id, db)
+
+
+@router.patch("/character", response_model=UserFarmResponse)
+async def update_character(
+    request: CharacterCreateRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """캐릭터 외형 수정
+
+    - 이미 생성된 캐릭터의 외형/이름 변경
+    - 농장 이름도 변경 가능
+    """
+    farm = get_or_create_farm(db, user_id)
+
+    if not farm.get("character_created"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="캐릭터가 아직 생성되지 않았습니다"
+        )
+
+    # 캐릭터 데이터 업데이트 (body, accessory 포함)
+    character_data = {
+        "name": request.name,
+        "body": request.body,
+        "hair": request.hair,
+        "hair_color": request.hair_color,
+        "face": request.face,
+        "outfit": request.outfit,
+        "outfit_color": request.outfit_color,
+        "accessory": request.accessory,
+        "farm_name": request.farm_name,
+    }
+
+    db.table("user_farm").update({
+        "character_data": json.dumps(character_data),
+    }).eq("user_id", str(user_id)).execute()
+
     return await get_farm(user_id, db)
 
 
@@ -533,7 +579,7 @@ async def plant_on_slot(
     target_slot.cropCode = request.crop_code
     target_slot.plantedAt = now
     target_slot.growTimeSeconds = grow_time
-    target_slot.stage = 1
+    target_slot.stage = 0
 
     # DB 업데이트
     update_farm_slots(db, user_id, current_slots)
@@ -586,8 +632,8 @@ async def harvest_from_slot(
             detail="수확할 작물이 없습니다"
         )
 
-    # 수확 가능 여부 확인 (stage 4)
-    if target_slot.stage < 4:
+    # 수확 가능 여부 확인 (stage 6)
+    if target_slot.stage < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="아직 수확할 수 없습니다 (성장 중)"

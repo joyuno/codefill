@@ -12,6 +12,7 @@ import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
 import { AICoachingSection } from '@/components/analysis/AICoachingSection';
 import { RecentAttemptsCard } from '@/components/analysis/RecentAttemptsCard';
 import { HintIndependenceCard } from '@/components/analysis/HintIndependenceCard';
+import { EloGrowthCard } from '@/components/analysis/EloGrowthCard';
 import { analysisApi, type AnalysisReport } from '@/lib/api';
 
 // 종합 점수 계산 (0-100)
@@ -56,11 +57,6 @@ export default function AnalysisPage() {
 
     try {
       const response = await analysisApi.getReport();
-      console.log('📊 [DEBUG] getReport response:', response);
-      console.log('📊 [DEBUG] report data:', response.data?.report);
-      console.log('📊 [DEBUG] problemTypeStats:', response.data?.report?.problemTypeStats);
-      console.log('📊 [DEBUG] recent10Attempts:', response.data?.report?.recent10Attempts);
-      console.log('📊 [DEBUG] hintIndependence:', response.data?.report?.hintIndependence);
       if (response.data?.hasReport && response.data.report) {
         setReport(response.data.report);
       } else {
@@ -80,10 +76,6 @@ export default function AnalysisPage() {
 
     try {
       const response = await analysisApi.generateAnalysis();
-      console.log('📊 [DEBUG] generateAnalysis response:', response);
-      console.log('📊 [DEBUG] problemTypeStats:', response.data?.problemTypeStats);
-      console.log('📊 [DEBUG] recent10Attempts:', response.data?.recent10Attempts);
-      console.log('📊 [DEBUG] hintIndependence:', response.data?.hintIndependence);
       if (response.data) {
         setReport(response.data);
       } else {
@@ -237,9 +229,76 @@ export default function AnalysisPage() {
           />
         </div>
 
-        {/* 빈 카드 - TODO: 새로운 콘텐츠 추가 예정 */}
-        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 min-h-[280px] flex items-center justify-center">
-          <p className="text-zinc-600 text-sm">새로운 콘텐츠 예정</p>
+        {/* ELO 성장 그래프 */}
+        <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-zinc-800">
+            <h3 className="text-sm font-bold text-zinc-100">실력 성장</h3>
+            <div className="flex items-center gap-1 mt-0.5">
+              <p className="text-[10px] text-zinc-500">
+                ELO 기반 토픽별 성장 추이
+              </p>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5">
+                    <HelpCircle className="w-3.5 h-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-80 p-0 bg-zinc-900 border-zinc-700"
+                >
+                  <div className="px-4 py-3 border-b border-zinc-800">
+                    <h4 className="text-sm font-semibold text-zinc-100">ELO 레이팅이란?</h4>
+                    <p className="text-[10px] text-zinc-500 mt-0.5">체스에서 유래한 실력 측정 시스템</p>
+                  </div>
+                  <div className="px-4 py-3 space-y-3 text-xs text-zinc-400">
+                    <p>
+                      <span className="text-zinc-200 font-medium">상대적 난이도 기반 점수입니다.</span>{' '}
+                      문제의 ELO와 내 ELO를 비교해 <span className="text-primary">예상 정답률</span>을 계산하고,
+                      결과에 따라 점수가 변동됩니다.
+                    </p>
+                    <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
+                      <p className="text-zinc-300 font-medium text-[11px]">점수 변동 원리</p>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400">▲</span>
+                          <span className="text-zinc-400">어려운 문제 정답 → 큰 상승</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400/60">▲</span>
+                          <span className="text-zinc-400">쉬운 문제 정답 → 작은 상승</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-rose-400/60">▼</span>
+                          <span className="text-zinc-400">어려운 문제 오답 → 작은 하락</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-rose-400">▼</span>
+                          <span className="text-zinc-400">쉬운 문제 오답 → 큰 하락</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-zinc-800/50 rounded-lg p-3 space-y-2">
+                      <p className="text-zinc-300 font-medium text-[11px]">그래프 읽는 법</p>
+                      <div className="space-y-1.5 text-[11px]">
+                        <p><span className="text-zinc-300">• 상단 숫자:</span> 현재 전체 ELO (기본 1000)</p>
+                        <p><span className="text-zinc-300">• 라인 차트:</span> 시간순 ELO 변화 추이</p>
+                        <p><span className="text-emerald-400">• 녹색 점:</span> 정답 / <span className="text-rose-400">빨간 점:</span> 오답</p>
+                        <p><span className="text-zinc-300">• 막대 차트:</span> 토픽별 총 성장량</p>
+                      </div>
+                    </div>
+                    <p className="text-zinc-500 text-[11px]">
+                      토픽마다 독립적인 ELO가 있어 분야별 실력을 정밀하게 추적합니다.
+                    </p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          <EloGrowthCard
+            eloHistory={report.eloHistory || []}
+            eloOverall={report.eloOverall}
+          />
         </div>
       </motion.div>
 
@@ -356,6 +415,8 @@ export default function AnalysisPage() {
         <AICoachingSection
           detailedFeedback={report.detailedFeedback}
           commonErrorPatterns={report.commonErrorPatterns}
+          recommendations={report.recommendations}
+          studyPlan={report.studyPlan}
         />
       </motion.div>
 

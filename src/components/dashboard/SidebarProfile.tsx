@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { usersApi, publicProfileApi, type PublicFarm, type PublicBadge } from '@/lib/api/users';
 import { farmApi, type InventoryItem } from '@/lib/api/farm';
 import type { Badge as BadgeType } from '@/lib/types';
-import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck, Sprout, Package } from 'lucide-react';
+import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck, Sprout, Package, Settings } from 'lucide-react';
 import { BadgeIcon } from '@/components/ui/badge-icon';
 import { BadgeDetailModal, type BadgeRarity } from '@/components/ui/badge-detail-modal';
 import { Button } from '@/components/ui/button';
@@ -134,7 +134,7 @@ function calculateRemainingSeconds(slot: MinimapSlot): number {
   return Math.max(0, remaining);
 }
 
-// 실시간 stage 계산 (plantedAt, growTimeSeconds 기반)
+// 실시간 stage 계산 (plantedAt, growTimeSeconds 기반) - 7단계 (0~6)
 function calculateStage(slot: MinimapSlot): number {
   if (!slot.cropCode) return 0;
   if (!slot.plantedAt || !slot.growTimeSeconds) return slot.stage;
@@ -144,19 +144,21 @@ function calculateStage(slot: MinimapSlot): number {
   const elapsedSeconds = Math.floor((now - plantedTime) / 1000);
   const progress = elapsedSeconds / slot.growTimeSeconds;
 
-  if (progress >= 1) return 4; // 수확 가능
-  if (progress >= 0.75) return 3;
-  if (progress >= 0.5) return 2;
-  if (progress >= 0.25) return 1;
-  return 1; // 최소 stage 1 (씨앗)
+  if (progress >= 1) return 6; // 수확 가능
+  if (progress >= 0.833) return 5;
+  if (progress >= 0.667) return 4;
+  if (progress >= 0.5) return 3;
+  if (progress >= 0.333) return 2;
+  if (progress >= 0.167) return 1;
+  return 0; // 씨앗
 }
 
 // 작물 슬롯 정렬 (수확 가능 우선 → 남은 시간 짧은 순)
 function sortCropSlots(slots: MinimapSlot[]): MinimapSlot[] {
   return [...slots].sort((a, b) => {
-    // 1. 수확 가능(실시간 stage >= 4)한 작물 우선
-    const aReady = calculateStage(a) >= 4;
-    const bReady = calculateStage(b) >= 4;
+    // 1. 수확 가능(실시간 stage >= 6)한 작물 우선
+    const aReady = calculateStage(a) >= 6;
+    const bReady = calculateStage(b) >= 6;
     if (aReady && !bReady) return -1;
     if (!aReady && bReady) return 1;
 
@@ -219,6 +221,7 @@ const RARITY_ORDER: Record<string, number> = {
 export function SidebarProfile({ username, publicData, badges: propBadges }: SidebarProfileProps) {
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
+  const [isEditingCharacter, setIsEditingCharacter] = useState(false);
   // 본인 프로필: 캐시에서 초기값 로드 (즉시 표시)
   const [farm, setFarm] = useState<UserFarm | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -436,13 +439,18 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
         ? newCharacter.appearance.color
         : COLOR_MAP[newCharacter.appearance.color] || '#8B4513';
 
+      // 헤어스타일 파일명 조합: Hairstyle_Short_Brown_Dark 형태
+      const hairStyleFull = `${newCharacter.appearance.hair}_${newCharacter.appearance.hairColor}`;
+
       const updatedFarm = await farmApi.createCharacter({
         name: newCharacter.name,
-        hair: newCharacter.appearance.hair,
+        body: newCharacter.appearance.body,
+        hair: hairStyleFull,
         hairColor,
         face: newCharacter.appearance.face,
         outfit: newCharacter.appearance.clothes,
         outfitColor: hairColor,
+        accessory: newCharacter.appearance.accessory,
         farmName: newCharacter.farmName,
       });
       setFarm(updatedFarm);
@@ -454,6 +462,41 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
       localStorage.setItem('codefill_character', JSON.stringify(newCharacter));
       setShowCharacterModal(false);
     }
+  };
+
+  // 캐릭터 수정 핸들러
+  const handleCharacterUpdate = async (updatedCharacter: CharacterData) => {
+    try {
+      const hairColor = updatedCharacter.appearance.color.startsWith('#')
+        ? updatedCharacter.appearance.color
+        : COLOR_MAP[updatedCharacter.appearance.color] || '#8B4513';
+
+      const hairStyleFull = `${updatedCharacter.appearance.hair}_${updatedCharacter.appearance.hairColor}`;
+
+      const updatedFarm = await farmApi.updateCharacter({
+        name: updatedCharacter.name,
+        body: updatedCharacter.appearance.body,
+        hair: hairStyleFull,
+        hairColor,
+        face: updatedCharacter.appearance.face,
+        outfit: updatedCharacter.appearance.clothes,
+        outfitColor: hairColor,
+        accessory: updatedCharacter.appearance.accessory,
+        farmName: updatedCharacter.farmName,
+      });
+      setFarm(updatedFarm);
+      setFarmToCache(updatedFarm);
+      setShowCharacterModal(false);
+      setIsEditingCharacter(false);
+    } catch (error) {
+      console.error('캐릭터 수정 실패:', error);
+    }
+  };
+
+  // 캐릭터 수정 모달 열기
+  const handleOpenEditCharacter = () => {
+    setIsEditingCharacter(true);
+    setShowCharacterModal(true);
   };
 
   // farm 데이터에서 캐릭터 정보 추출 (본인 또는 타인)
@@ -483,6 +526,28 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const gold = isOwnProfile ? (farm?.gold || 0) : (publicFarm?.gold || 0);
 
   const characterColor = character ? COLOR_MAP[character.appearance.color] || COLOR_MAP.brown : COLOR_MAP.brown;
+
+  // 수정 모달용 초기 데이터 (CharacterData 형식)
+  const editInitialData: CharacterData | null = farm?.characterData ? (() => {
+    // hair가 "Short_Brown_Dark" 형태 → "Short"와 "Brown_Dark"로 분리
+    const hairParts = farm.characterData.hair?.split('_') || ['Short', 'Brown', 'Dark'];
+    const hairStyle = hairParts[0] || 'Short'; // Short, Long, Tuft 등
+    const hairColorId = hairParts.slice(1).join('_') || 'Brown_Dark'; // Brown_Dark 등
+
+    return {
+      name: farm.characterData.name,
+      appearance: {
+        body: farm.characterData.body || 'Body_1',
+        hair: hairStyle,
+        hairColor: hairColorId,
+        face: farm.characterData.face,
+        clothes: farm.characterData.outfit,
+        accessory: farm.characterData.accessory || 'none',
+        color: farm.characterData.hairColor || '#3d2314',
+      },
+      farmName: farm.characterData.farmName,
+    };
+  })() : null;
 
   // 표시할 레벨/XP (본인 또는 타인)
   const displayLevel = isOwnProfile ? level : (publicProfile?.level || 1);
@@ -547,11 +612,16 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
 
   return (
     <div className="space-y-4 p-4">
-      {/* Character Creation Modal */}
+      {/* Character Creation/Edit Modal */}
       <CharacterCreationModal
         open={showCharacterModal}
-        onClose={() => setShowCharacterModal(false)}
-        onComplete={handleCharacterCreate}
+        onClose={() => {
+          setShowCharacterModal(false);
+          setIsEditingCharacter(false);
+        }}
+        onComplete={isEditingCharacter ? handleCharacterUpdate : handleCharacterCreate}
+        initialData={isEditingCharacter ? editInitialData : null}
+        isEditing={isEditingCharacter}
       />
 
       {/* 농장 미니맵 섹션 */}
@@ -591,7 +661,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
             >
               {/* 농장 이름 헤더 */}
               <div className={cn(
-                'flex items-center justify-between px-3 py-2 rounded-t-xl',
+                'flex items-center justify-between px-3 py-1.5 rounded-t-xl',
                 'bg-amber-600 border-4 border-b-0 border-amber-800'
               )}>
                 <div className="flex items-center gap-2">
@@ -600,9 +670,24 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                     {character.farmName || '나의 농장'}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 text-xs text-amber-200">
-                  <Coins className="h-3 w-3" />
-                  <span>{gold.toLocaleString()}G</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 text-xs text-amber-200">
+                    <Coins className="h-3 w-3" />
+                    <span>{gold.toLocaleString()}G</span>
+                  </div>
+                  {/* 캐릭터 수정 버튼 (본인 프로필만) */}
+                  {isOwnProfile && (
+                    <button
+                      onClick={handleOpenEditCharacter}
+                      className={cn(
+                        'p-1 rounded hover:bg-amber-500/50 transition-colors',
+                        'text-amber-200 hover:text-amber-100'
+                      )}
+                      title="캐릭터 수정"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
               
@@ -630,7 +715,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                     isOwnProfile ? farm?.farmSlots : undefined,
                     !isOwnProfile ? publicFarm?.slots : undefined
                   );
-                  const readyCount = slots.filter(s => calculateStage(s) >= 4).length;
+                  const readyCount = slots.filter(s => calculateStage(s) >= 6).length;
                   return readyCount > 0 ? (
                     <div className="text-xs text-green-400 flex items-center gap-1">
                       <TrendingUp className="h-3 w-3" />
@@ -749,54 +834,50 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                       cropsWithData.length === 0 ? (
                         <p className="text-xs text-amber-600 text-center py-2">아직 심은 작물이 없어요</p>
                       ) : (
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-6 gap-1">
-                            {cropsWithData.slice(0, 6).map((slot, i) => {
-                              const cropInfo = slot.cropCode ? CROP_INFO[slot.cropCode as keyof typeof CROP_INFO] : null;
-                              const currentStage = calculateStage(slot);
-                              const isReady = currentStage >= 4;
-                              const remaining = calculateRemainingSeconds(slot);
-                              const timeText = isReady ? '완료' : formatRemainingTime(remaining);
-                              return (
-                                <motion.div
-                                  key={i}
-                                  whileHover={{ scale: 1.05 }}
-                                  className={cn(
-                                    'flex flex-col items-center cursor-default',
-                                    isReady && 'animate-pulse'
+                        <div
+                          className="flex gap-2 overflow-x-auto pb-1"
+                          style={{ scrollbarWidth: 'thin', scrollbarColor: '#fcd34d #fef3c7' }}
+                        >
+                          {cropsWithData.map((slot, i) => {
+                            const cropInfo = slot.cropCode ? CROP_INFO[slot.cropCode as keyof typeof CROP_INFO] : null;
+                            const currentStage = calculateStage(slot);
+                            const isReady = currentStage >= 6;
+                            const remaining = calculateRemainingSeconds(slot);
+                            const timeText = isReady ? '완료' : formatRemainingTime(remaining);
+                            return (
+                              <motion.div
+                                key={i}
+                                whileHover={{ scale: 1.05 }}
+                                title={cropInfo?.name || '작물'}
+                                className={cn(
+                                  'flex flex-col items-center cursor-default flex-shrink-0',
+                                  isReady && 'animate-pulse'
+                                )}
+                              >
+                                <div className="relative w-8 h-8">
+                                  {cropInfo?.icon ? (
+                                    <img
+                                      src={cropInfo.icon}
+                                      alt={cropInfo.name}
+                                      className="w-8 h-8 object-contain"
+                                      style={{ imageRendering: 'pixelated' }}
+                                    />
+                                  ) : (
+                                    <span className="text-lg">🌱</span>
                                   )}
-                                >
-                                  <div
-                                    className="text-lg relative"
-                                    style={{
-                                      textShadow: `
-                                        -1px -1px 0 #78350f,
-                                        1px -1px 0 #78350f,
-                                        -1px 1px 0 #78350f,
-                                        1px 1px 0 #78350f
-                                      `,
-                                    }}
-                                  >
-                                    {cropInfo?.emoji || '🌱'}
-                                    {isReady && (
-                                      <span className="absolute -top-1 -right-2 text-[8px]">✨</span>
-                                    )}
-                                  </div>
-                                  <span className={cn(
-                                    'text-[9px] font-medium leading-none mt-0.5',
-                                    isReady ? 'text-green-600' : 'text-amber-700'
-                                  )}>
-                                    {timeText}
-                                  </span>
-                                </motion.div>
-                              );
-                            })}
-                          </div>
-                          {cropsWithData.length > 6 && (
-                            <p className="text-[10px] text-amber-600 text-center">
-                              +{cropsWithData.length - 6}개 더 있음
-                            </p>
-                          )}
+                                  {isReady && (
+                                    <span className="absolute -top-1 -right-2 text-[8px]">✨</span>
+                                  )}
+                                </div>
+                                <span className={cn(
+                                  'text-[9px] font-medium leading-none mt-0.5',
+                                  isReady ? 'text-green-600' : 'text-amber-700'
+                                )}>
+                                  {timeText}
+                                </span>
+                              </motion.div>
+                            );
+                          })}
                         </div>
                       )
                     ) : (
@@ -804,8 +885,11 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                       seedItems.length === 0 ? (
                         <p className="text-xs text-green-600 text-center py-2">보유한 씨앗이 없어요</p>
                       ) : (
-                        <div className="space-y-1">
-                          {seedItems.slice(0, 4).map((item) => {
+                        <div
+                          className="space-y-1 max-h-[140px] overflow-y-auto overflow-x-hidden pr-1"
+                          style={{ scrollbarWidth: 'thin', scrollbarColor: '#86efac #dcfce7' }}
+                        >
+                          {seedItems.map((item) => {
                             // seed_tomato → tomato 형태로 변환하여 CROP_INFO 조회
                             const cropCode = item.itemCode.replace('seed_', '').replace('_seed', '');
                             const cropInfo = CROP_INFO[cropCode as keyof typeof CROP_INFO];
@@ -815,7 +899,16 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                                 className="flex items-center justify-between px-2 py-1 bg-green-100 rounded-lg"
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-lg">{cropInfo?.emoji || '🌱'}</span>
+                                  {cropInfo?.icon ? (
+                                    <img
+                                      src={cropInfo.icon}
+                                      alt={cropInfo.name}
+                                      className="w-5 h-5 object-contain"
+                                      style={{ imageRendering: 'pixelated' }}
+                                    />
+                                  ) : (
+                                    <span className="text-lg">🌱</span>
+                                  )}
                                   <span className="text-xs font-medium text-green-800">
                                     {cropInfo?.name || item.itemCode} 씨앗
                                   </span>
@@ -826,11 +919,6 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                               </div>
                             );
                           })}
-                          {seedItems.length > 4 && (
-                            <p className="text-[10px] text-green-600 text-center">
-                              +{seedItems.length - 4}종류 더 있음
-                            </p>
-                          )}
                         </div>
                       )
                     )}

@@ -176,6 +176,8 @@ class AnalysisService:
             "summaryText": data.get("summary_text"),
             "strengths": data.get("strengths", []),
             "weaknesses": data.get("weaknesses", []),
+            "recommendations": data.get("recommendations", []),
+            "studyPlan": data.get("study_plan", ""),
             "skillSnapshot": data.get("skill_snapshot", {}),
             "statsSnapshot": data.get("stats_snapshot", {}),
             "difficultySnapshot": data.get("difficulty_snapshot", {}),
@@ -194,6 +196,9 @@ class AnalysisService:
             # 학습 분석 프레임워크 메트릭
             "bktMastery": data.get("bkt_mastery", {}),
             "bloomMetrics": data.get("bloom_metrics", {}),
+            # ELO 성장 데이터
+            "eloHistory": data.get("elo_history", []),
+            "eloOverall": data.get("elo_overall"),
             # 실시간 시각화 데이터
             **viz_data,
         }
@@ -342,6 +347,8 @@ class AnalysisService:
             "summary_text": analysis["summary"],
             "strengths": analysis["strengths"],
             "weaknesses": analysis["weaknesses"],
+            "recommendations": analysis.get("recommendations", []),
+            "study_plan": analysis.get("study_plan", ""),
             "skill_snapshot": user_data.get("skill_by_topic", {}),
             "stats_snapshot": {
                 "level": user_data.get("level", 1),
@@ -369,17 +376,23 @@ class AnalysisService:
             "strong_topics": user_data.get("strong_topics", []),
         }
 
-        # Upsert (insert or update)
-        self.db.table("user_analysis_reports").upsert(
-            report_data,
-            on_conflict="user_id"
-        ).execute()
+        # Update or Insert (ELO 필드는 건드리지 않음 - update_user_elo()가 관리)
+        existing = self.db.table("user_analysis_reports").select("user_id").eq("user_id", str(user_id)).execute()
+
+        if existing.data and len(existing.data) > 0:
+            # 기존 데이터 있으면 update (ELO 필드 제외)
+            self.db.table("user_analysis_reports").update(report_data).eq("user_id", str(user_id)).execute()
+        else:
+            # 새 사용자면 insert
+            self.db.table("user_analysis_reports").insert(report_data).execute()
 
         return {
             "id": None,  # Will be generated
             "summaryText": analysis["summary"],
             "strengths": analysis["strengths"],
             "weaknesses": analysis["weaknesses"],
+            "recommendations": analysis.get("recommendations", []),
+            "studyPlan": analysis.get("study_plan", ""),
             "skillSnapshot": user_data.get("skill_by_topic", {}),
             "statsSnapshot": report_data["stats_snapshot"],
             "difficultySnapshot": user_data.get("difficulty_stats", {}),
@@ -403,6 +416,9 @@ class AnalysisService:
             "recent10Attempts": user_data.get("recent_10_attempts", []),
             "recent10Analysis": recent_analysis,
             "hintIndependence": user_data.get("hint_independence", {}),
+            # ELO 성장 데이터
+            "eloHistory": user_data.get("elo_history", []),
+            "eloOverall": user_data.get("elo_overall"),
         }
 
     async def recommend_problems(self, user_id: UUID) -> List[Dict[str, Any]]:
@@ -447,7 +463,7 @@ class AnalysisService:
             "stats_by_problem_type, total_problems_solved, total_problems_attempted, "
             "avg_solve_time_seconds, avg_hints_per_problem, current_streak, longest_streak, "
             "preferred_problem_type, preferred_language, recent_topics, recent_difficulties, "
-            "learning_style, common_error_patterns"
+            "learning_style, common_error_patterns, elo_history, elo_overall"
         ).eq("user_id", str(user_id)).execute()
 
         use_cached_skill = (
@@ -479,6 +495,12 @@ class AnalysisService:
             data["recent_difficulties"] = skill.get("recent_difficulties", [])
             data["existing_learning_style"] = skill.get("learning_style")
             data["existing_error_patterns"] = skill.get("common_error_patterns")
+
+            # ELO 성장 데이터
+            data["elo_history"] = skill.get("elo_history", [])
+            data["elo_overall"] = skill.get("elo_overall")
+            logger.debug(f"[ELO DEBUG] skill.elo_history: {skill.get('elo_history')}")
+            logger.debug(f"[ELO DEBUG] skill.elo_overall: {skill.get('elo_overall')}")
 
             # difficulty_stats 변환
             diff_raw = skill.get("success_rate_by_difficulty", {})
@@ -993,10 +1015,22 @@ class AnalysisService:
         if not error_patterns:
             error_patterns = user_data.get("existing_error_patterns", [])
 
+        # recommendations 정규화
+        recommendations = result.get("recommendations", [])
+        if not recommendations:
+            recommendations = ["꾸준히 문제를 풀며 실력을 쌓아가세요!"]
+
+        # study_plan 정규화
+        study_plan = result.get("study_plan", "")
+        if not study_plan:
+            study_plan = "다양한 유형의 문제에 도전해보세요!"
+
         return {
             "summary": result.get("summary", "분석 결과를 생성했습니다."),
             "strengths": strengths,
             "weaknesses": weaknesses,
+            "recommendations": recommendations,
+            "study_plan": study_plan,
             "common_error_patterns": error_patterns,
             "detailed_feedback": result.get("detailed_feedback", ""),
         }
@@ -1112,6 +1146,25 @@ class AnalysisService:
         else:
             summary = "아직 분석할 데이터가 충분하지 않습니다. 더 많은 문제를 풀어보세요!"
 
+        # Recommendations
+        recommendations = []
+        if streak > 0:
+            recommendations.append(f"현재 {streak}일 연속 학습 중입니다! 이 페이스를 유지하세요.")
+        if accuracy < 0.5 and problems_solved > 5:
+            recommendations.append("정답률이 낮은 편입니다. 쉬운 문제부터 차근차근 풀어보세요.")
+        if weaknesses:
+            weak_topic = weaknesses[0]["topic"]
+            recommendations.append(f"{weak_topic} 기초 문제부터 시작해보세요.")
+        if not recommendations:
+            recommendations.append("꾸준히 문제를 풀며 실력을 쌓아가세요!")
+
+        # Study plan
+        if weaknesses:
+            plan_topics = " → ".join([w["topic"] for w in weaknesses[:3]])
+            study_plan = f"추천 학습 경로: {plan_topics}"
+        else:
+            study_plan = "다양한 유형의 문제에 도전해보세요!"
+
         # Common error patterns (기존 데이터 유지 또는 빈 배열)
         error_patterns = user_data.get("existing_error_patterns", [])
 
@@ -1138,6 +1191,8 @@ class AnalysisService:
             "summary": summary,
             "strengths": strengths,
             "weaknesses": weaknesses,
+            "recommendations": recommendations,
+            "study_plan": study_plan,
             "common_error_patterns": error_patterns,
             "detailed_feedback": detailed_feedback,
         }

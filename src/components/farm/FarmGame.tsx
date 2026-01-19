@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as Phaser from 'phaser';
 import { FarmScene } from './scenes/FarmScene';
 import type { PlacementChanges } from './scenes/UnifiedPlacementManager';
-import type { InventoryItem, PlacedItem, ItemMetadata, FarmSlot } from '@/lib/api/farm';
+import type { InventoryItem, PlacedItem, ItemMetadata, FarmSlot, CharacterData } from '@/lib/api/farm';
 
 // 외부에서 접근 가능한 메서드
 export interface FarmGameHandle {
@@ -33,6 +33,8 @@ interface FarmGameProps {
   inventory: InventoryItem[];
   selectedSeed: string | null;
   onNotify: (message: string, type: 'success' | 'error') => void;
+  // 캐릭터 데이터 (레이어 기반 렌더링용)
+  characterData?: CharacterData | null;
   // 배치 시스템 상태
   placementMode: boolean;
   selectedPlacementItem?: string | null;
@@ -56,6 +58,7 @@ export function FarmGame({
   inventory,
   selectedSeed,
   onNotify,
+  characterData,
   placementMode,
   selectedPlacementItem,
   placedItems,
@@ -112,6 +115,8 @@ export function FarmGame({
           inventory,
           onNotify,
           selectedSeed,
+          // 캐릭터 데이터 (레이어 기반 렌더링용)
+          characterData,
           placementMode,
           deleteMode: false, // 우클릭 삭제로 변경됨
           selectedPlacementItem,

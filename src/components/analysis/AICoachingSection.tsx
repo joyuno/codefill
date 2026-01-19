@@ -5,6 +5,9 @@ import {
   Bot,
   AlertTriangle,
   BookOpen,
+  Lightbulb,
+  Route,
+  ChevronRight,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,12 +15,24 @@ import remarkGfm from 'remark-gfm';
 interface AICoachingSectionProps {
   detailedFeedback?: string;
   commonErrorPatterns?: string[];
+  recommendations?: string[];
+  studyPlan?: string;
 }
 
 export function AICoachingSection({
   detailedFeedback,
   commonErrorPatterns = [],
+  recommendations = [],
+  studyPlan,
 }: AICoachingSectionProps) {
+  // 이스케이프된 문자열을 실제 줄바꿈으로 변환
+  const normalizeMarkdown = (text: string): string => {
+    return text
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\');
+  };
+
   return (
     <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
       {/* Header */}
@@ -34,6 +49,69 @@ export function AICoachingSection({
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Study Plan - 학습 경로 */}
+        {studyPlan && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-3"
+          >
+            <div className="flex items-center gap-2">
+              <Route className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+                학습 경로
+              </h3>
+            </div>
+            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border border-emerald-500/20">
+              <div className="flex items-center gap-2 flex-wrap">
+                {studyPlan.split('→').map((step, index, arr) => (
+                  <span key={index} className="flex items-center gap-2">
+                    <span className="px-3 py-1.5 rounded-lg bg-zinc-800/80 text-sm text-zinc-200 font-medium">
+                      {step.trim()}
+                    </span>
+                    {index < arr.length - 1 && (
+                      <ChevronRight className="w-4 h-4 text-emerald-400" />
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Recommendations - 추천 액션 */}
+        {recommendations.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="space-y-3"
+          >
+            <div className="flex items-center gap-2">
+              <Lightbulb className="w-4 h-4 text-blue-400" />
+              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+                추천 액션
+              </h3>
+            </div>
+            <div className="space-y-2">
+              {recommendations.map((rec, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, x: -5 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 + index * 0.05 }}
+                  className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10"
+                >
+                  <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-xs font-medium text-blue-400">{index + 1}</span>
+                  </div>
+                  <p className="text-sm text-zinc-300">{rec}</p>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
         {/* Detailed Feedback - Markdown */}
         {detailedFeedback && (
           <motion.div
@@ -45,7 +123,7 @@ export function AICoachingSection({
             <div className="flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-amber-400" />
               <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
-                Detailed Feedback
+                상세 피드백
               </h3>
             </div>
             <div className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700/50">
@@ -57,7 +135,7 @@ export function AICoachingSection({
                 prose-ul:my-2 prose-ol:my-2
               ">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {detailedFeedback}
+                  {normalizeMarkdown(detailedFeedback)}
                 </ReactMarkdown>
               </div>
             </div>
@@ -75,7 +153,7 @@ export function AICoachingSection({
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-yellow-400" />
               <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
-                Patterns to Watch
+                주의 패턴
               </h3>
             </div>
             <div className="space-y-2">

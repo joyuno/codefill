@@ -25,6 +25,9 @@ from ..models.analysis import (
     ProblemTypeStat,
     RecentAttempt,
     HintIndependence,
+    # ELO 성장 데이터
+    EloChange,
+    EloHistoryEntry,
 )
 from ..services.analysis_service import AnalysisService, InsufficientDataError
 
@@ -64,6 +67,31 @@ def _transform_error_analysis(error_data: Optional[dict]) -> Optional[ErrorAnaly
         total_errors=error_data.get("total_errors", 0),
         patterns=patterns,
     )
+
+
+def _transform_elo_history(elo_data: Optional[list]) -> Optional[List[EloHistoryEntry]]:
+    """ELO 히스토리 데이터를 모델로 변환."""
+    if not elo_data:
+        return None
+    return [
+        EloHistoryEntry(
+            date=entry.get("date", ""),
+            topics=entry.get("topics", []),
+            is_correct=entry.get("is_correct", False),
+            problem_elo=entry.get("problem_elo", 1000),
+            changes=[
+                EloChange(
+                    topic=c.get("topic", ""),
+                    before=c.get("before", 1000),
+                    after=c.get("after", 1000),
+                    change=c.get("change", 0),
+                    expected=c.get("expected", 0.5),
+                )
+                for c in entry.get("changes", [])
+            ],
+        )
+        for entry in elo_data
+    ]
 
 
 @router.get("/report", response_model=AnalysisReportResponse)
@@ -126,6 +154,9 @@ async def get_analysis_report(
             ],
             recent10Analysis=report_data.get("recent10Analysis"),
             hintIndependence=HintIndependence(**report_data["hintIndependence"]) if report_data.get("hintIndependence") else None,
+            # ELO 성장 데이터
+            eloHistory=_transform_elo_history(report_data.get("eloHistory")),
+            eloOverall=report_data.get("eloOverall"),
         )
 
         return AnalysisReportResponse(hasReport=True, report=report)
@@ -194,6 +225,9 @@ async def generate_analysis(
             ],
             recent10Analysis=report_data.get("recent10Analysis"),
             hintIndependence=HintIndependence(**report_data["hintIndependence"]) if report_data.get("hintIndependence") else None,
+            # ELO 성장 데이터
+            eloHistory=_transform_elo_history(report_data.get("eloHistory")),
+            eloOverall=report_data.get("eloOverall"),
         )
 
     except InsufficientDataError as e:

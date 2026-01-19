@@ -115,7 +115,7 @@ export function CropPixel({ stage, type = 'tomato', size = 48, className, onClic
         </>
       )}
 
-      {stage === 4 && (
+      {stage === 6 && (
         /* 수확 가능 */
         <>
           {/* 줄기 */}

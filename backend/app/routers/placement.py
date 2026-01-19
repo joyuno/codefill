@@ -150,16 +150,21 @@ def calculate_crop_stage(planted_at: datetime, grow_time_seconds: int) -> int:
     elapsed = (now - planted_at).total_seconds()
     progress = elapsed / grow_time_seconds
 
+    # 7단계 성장 (0~6)
     if progress >= 1.0:
-        return 4  # 수확 가능
-    elif progress >= 0.75:
-        return 3
+        return 6  # 수확 가능
+    elif progress >= 0.833:
+        return 5
+    elif progress >= 0.667:
+        return 4
     elif progress >= 0.5:
+        return 3
+    elif progress >= 0.333:
         return 2
-    elif progress >= 0.25:
+    elif progress >= 0.167:
         return 1
     else:
-        return 1  # 최소 1단계
+        return 0  # 씨앗
 
 
 # =====================================================
@@ -503,12 +508,12 @@ async def harvest_crop(
         )
     crop_info = crop_result.data[0]
 
-    # 성장 완료 확인
+    # 성장 완료 확인 (stage 6)
     planted_at_str = data.get("plantedAt")
     if planted_at_str:
         planted_at = datetime.fromisoformat(planted_at_str.replace("Z", "+00:00"))
         stage = calculate_crop_stage(planted_at, crop_info["grow_time_seconds"])
-        if stage < 4:
+        if stage < 6:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="아직 수확할 수 없습니다"

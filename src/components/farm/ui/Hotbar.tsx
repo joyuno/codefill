@@ -11,37 +11,49 @@ import { cn } from '@/lib/utils';
 import type { InventoryItem } from '@/lib/api/farm';
 import { getSeedCount } from '@/hooks/useFarm';
 
-// 작물 타입
-export type CropVariety = 'carrot' | 'tomato' | 'corn' | 'strawberry' | 'potato' | 'wheat' | 'pumpkin' | 'cabbage' | 'onion' | 'radish';
+// 작물 타입 (18종)
+export type CropVariety =
+  | 'carrot' | 'radish' | 'turnip' | 'onion' | 'tomato' | 'grain'  // Common
+  | 'cauliflower' | 'corn' | 'chili_pepper' | 'strawberry' | 'zucchini' | 'cotton'  // Uncommon
+  | 'pumpkin' | 'grape' | 'coffee' | 'prickly_pear'  // Rare
+  | 'watermelon' | 'pineapple';  // Epic
 
-// 작물 정보 (DB farm_items 순서와 동일하게 정렬: rarity 기준)
-export const CROP_INFO: Record<CropVariety, { name: string; emoji: string; sellPrice: number; seedCost: number }> = {
-  // Common
-  carrot: { name: '당근', emoji: '🥕', sellPrice: 25, seedCost: 10 },
-  radish: { name: '무', emoji: '🫚', sellPrice: 22, seedCost: 10 },
-  potato: { name: '감자', emoji: '🥔', sellPrice: 30, seedCost: 12 },
-  wheat: { name: '밀', emoji: '🌾', sellPrice: 20, seedCost: 8 },
-  // Uncommon
-  tomato: { name: '토마토', emoji: '🍅', sellPrice: 35, seedCost: 15 },
-  onion: { name: '양파', emoji: '🧅', sellPrice: 35, seedCost: 14 },
-  cabbage: { name: '양배추', emoji: '🥬', sellPrice: 45, seedCost: 18 },
-  // Rare
-  strawberry: { name: '딸기', emoji: '🍓', sellPrice: 60, seedCost: 25 },
-  corn: { name: '옥수수', emoji: '🌽', sellPrice: 50, seedCost: 20 },
-  // Epic
-  pumpkin: { name: '호박', emoji: '🎃', sellPrice: 120, seedCost: 50 },
+// 작물 정보 (18종, rarity 기준 정렬)
+export const CROP_INFO: Record<CropVariety, { name: string; icon: string; sellPrice: number; seedCost: number; rarity: string }> = {
+  // Common (6종) - 판매가 30~50
+  carrot: { name: '당근', icon: '/farm/icons/crops/Carrot/icon.png', sellPrice: 38, seedCost: 8, rarity: 'common' },
+  radish: { name: '무', icon: '/farm/icons/crops/Radish/icon.png', sellPrice: 30, seedCost: 6, rarity: 'common' },
+  turnip: { name: '순무', icon: '/farm/icons/crops/Turnip/icon.png', sellPrice: 34, seedCost: 7, rarity: 'common' },
+  onion: { name: '양파', icon: '/farm/icons/crops/Onion/icon.png', sellPrice: 42, seedCost: 10, rarity: 'common' },
+  tomato: { name: '토마토', icon: '/farm/icons/crops/Tomato/icon.png', sellPrice: 50, seedCost: 12, rarity: 'common' },
+  grain: { name: '밀', icon: '/farm/icons/crops/Grain/icon.png', sellPrice: 32, seedCost: 5, rarity: 'common' },
+  // Uncommon (6종) - 판매가 150~200
+  cauliflower: { name: '콜리플라워', icon: '/farm/icons/crops/Cauliflower/icon.png', sellPrice: 160, seedCost: 18, rarity: 'uncommon' },
+  corn: { name: '옥수수', icon: '/farm/icons/crops/Corn/icon.png', sellPrice: 175, seedCost: 22, rarity: 'uncommon' },
+  chili_pepper: { name: '고추', icon: '/farm/icons/crops/Chili_Pepper/icon.png', sellPrice: 185, seedCost: 25, rarity: 'uncommon' },
+  strawberry: { name: '딸기', icon: '/farm/icons/crops/Strawberry/icon.png', sellPrice: 200, seedCost: 28, rarity: 'uncommon' },
+  zucchini: { name: '주키니', icon: '/farm/icons/crops/Zucchini/icon.png', sellPrice: 150, seedCost: 16, rarity: 'uncommon' },
+  cotton: { name: '목화', icon: '/farm/icons/crops/Cotton/icon.png', sellPrice: 155, seedCost: 15, rarity: 'uncommon' },
+  // Rare (4종) - 판매가 700~900
+  pumpkin: { name: '호박', icon: '/farm/icons/crops/Pumpkin/icon.png', sellPrice: 750, seedCost: 45, rarity: 'rare' },
+  grape: { name: '포도', icon: '/farm/icons/crops/Grape/icon.png', sellPrice: 820, seedCost: 52, rarity: 'rare' },
+  coffee: { name: '커피', icon: '/farm/icons/crops/Coffee/icon.png', sellPrice: 900, seedCost: 60, rarity: 'rare' },
+  prickly_pear: { name: '백년초', icon: '/farm/icons/crops/Prickly_Pear/icon.png', sellPrice: 700, seedCost: 40, rarity: 'rare' },
+  // Epic (2종) - 판매가 2300~2500
+  watermelon: { name: '수박', icon: '/farm/icons/crops/Watermelon/icon.png', sellPrice: 2300, seedCost: 100, rarity: 'epic' },
+  pineapple: { name: '파인애플', icon: '/farm/icons/crops/Pineapple/icon.png', sellPrice: 2500, seedCost: 150, rarity: 'epic' },
 };
 
 // DB farm_items INSERT 순서와 동일 (rarity 기준)
 export const ALL_CROPS: CropVariety[] = [
   // Common
-  'carrot', 'radish', 'potato', 'wheat',
+  'carrot', 'radish', 'turnip', 'onion', 'tomato', 'grain',
   // Uncommon
-  'tomato', 'onion', 'cabbage',
+  'cauliflower', 'corn', 'chili_pepper', 'strawberry', 'zucchini', 'cotton',
   // Rare
-  'strawberry', 'corn',
+  'pumpkin', 'grape', 'coffee', 'prickly_pear',
   // Epic
-  'pumpkin',
+  'watermelon', 'pineapple',
 ];
 
 interface HotbarProps {
@@ -84,7 +96,12 @@ export function Hotbar({ inventory, selectedSeed, onSelectSeed, gold }: HotbarPr
                     : 'bg-amber-900/50 border-2 border-amber-700 hover:bg-amber-800/50'
                 )}
               >
-                <span className="text-lg">{info.emoji}</span>
+                <img
+                  src={info.icon}
+                  alt={info.name}
+                  className="w-7 h-7 object-contain pixelated"
+                  style={{ imageRendering: 'pixelated' }}
+                />
                 <span className={cn(
                   'text-[10px] font-bold',
                   count > 0 ? 'text-white' : 'text-red-400'

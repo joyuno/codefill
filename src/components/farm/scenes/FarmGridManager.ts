@@ -70,7 +70,11 @@ export class FarmGridManager {
     Object.values(CROPS).forEach(crop => {
       const key = getCropSpriteKey(crop.code);
       if (!this.scene.textures.exists(key)) {
-        this.scene.load.spritesheet(key, CROP_ASSET_PATH + crop.spritesheet, {
+        // spritesheet 경로가 절대 경로이면 그대로 사용, 아니면 CROP_ASSET_PATH 추가
+        const spritePath = crop.spritesheet.startsWith('/')
+          ? crop.spritesheet
+          : CROP_ASSET_PATH + crop.spritesheet;
+        this.scene.load.spritesheet(key, spritePath, {
           frameWidth: crop.frameWidth,
           frameHeight: crop.frameHeight,
         });
@@ -116,8 +120,8 @@ export class FarmGridManager {
         // 작물 스프라이트
         const cropConfig = getCropConfig(slotData.cropCode);
         if (cropConfig) {
-          // stage가 0이면 1로 보정 (새로 심은 작물)
-          const stage = slotData.stage === 0 ? 1 : slotData.stage;
+          // stage 그대로 사용 (0 = 씨앗)
+          const stage = slotData.stage;
           const frame = getCropFrame(slotData.cropCode, stage);
           cropSprite = this.scene.add.sprite(
             worldX,
@@ -128,7 +132,7 @@ export class FarmGridManager {
           cropSprite.setDepth(getCropDepth(worldY, MAP_HEIGHT));
 
           // 성장 중인 경우 타이머 표시 (보정된 stage 사용)
-          if (stage < 4 && slotData.plantedAt && slotData.growTimeSeconds) {
+          if (stage < 6 && slotData.plantedAt && slotData.growTimeSeconds) {
             timerText = this.createTimerText(worldX, worldY, slotData);
           }
         }
@@ -285,7 +289,7 @@ export class FarmGridManager {
         console.log('[FarmGridManager] Crop sprite created with depth:', depth);
 
         // 성장 중인 경우 타이머 표시
-        if (stage < 4 && slotData.plantedAt && slotData.growTimeSeconds) {
+        if (stage < 6 && slotData.plantedAt && slotData.growTimeSeconds) {
           sprites.timer = this.createTimerText(worldX, worldY, slotData);
           console.log('[FarmGridManager] Timer created');
         }
@@ -345,7 +349,7 @@ export class FarmGridManager {
       if (!sprites) continue;
 
       // 성장 완료 체크
-      if (slotData.stage < 4 && slotData.plantedAt && slotData.growTimeSeconds) {
+      if (slotData.stage < 6 && slotData.plantedAt && slotData.growTimeSeconds) {
         const remaining = this.calculateRemainingTime(slotData);
 
         // 성장 완료시 stage 업데이트 (프론트에서 계산)
@@ -354,11 +358,15 @@ export class FarmGridManager {
         const elapsed = now - plantedAt;
         const progress = elapsed / growTimeMs;
 
-        let newStage = 1;
-        if (progress >= 1.0) newStage = 4;
-        else if (progress >= 0.75) newStage = 3;
-        else if (progress >= 0.5) newStage = 2;
-        else if (progress >= 0.25) newStage = 1;
+        // 7단계 성장 (0~6)
+        let newStage = 0;
+        if (progress >= 1.0) newStage = 6;
+        else if (progress >= 0.833) newStage = 5;
+        else if (progress >= 0.667) newStage = 4;
+        else if (progress >= 0.5) newStage = 3;
+        else if (progress >= 0.333) newStage = 2;
+        else if (progress >= 0.167) newStage = 1;
+        else newStage = 0;
 
         // 스테이지 변경 시 작물 프레임 업데이트
         if (sprites.crop && slotData.cropCode && newStage !== slotData.stage) {
@@ -369,7 +377,7 @@ export class FarmGridManager {
 
         // 타이머 텍스트 업데이트
         if (sprites.timer) {
-          if (remaining <= 0 || newStage >= 4) {
+          if (remaining <= 0 || newStage >= 6) {
             sprites.timer.destroy();
             sprites.timer = null;
           } else {
