@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScoreOverview } from '@/components/analysis/ScoreOverview';
 import { TopicMasteryChart } from '@/components/analysis/TopicMasteryChart';
-import { RecommendedProblems } from '@/components/analysis/RecommendedProblems';
+import { WrongProblems } from '@/components/analysis/WrongProblems';
 import { AICoachingSection } from '@/components/analysis/AICoachingSection';
 import { RecentAttemptsCard } from '@/components/analysis/RecentAttemptsCard';
 import { HintIndependenceCard } from '@/components/analysis/HintIndependenceCard';
@@ -420,14 +420,14 @@ export default function AnalysisPage() {
         />
       </motion.div>
 
-      {/* Row 5: RecommendedProblems */}
+      {/* Row 5: 틀린 문제 복습 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18 }}
         className="rounded-2xl bg-zinc-900/80 border border-zinc-800"
       >
-        <RecommendedProblems initialProblems={report.recommendedProblems} />
+        <WrongProblems />
       </motion.div>
     </div>
   );

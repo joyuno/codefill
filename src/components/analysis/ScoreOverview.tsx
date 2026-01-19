@@ -3,6 +3,13 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, Target, Flame, Zap, FileCode, Puzzle, BookOpen, Code2 } from 'lucide-react';
+import {
+  SilverIcon,
+  GoldIcon,
+  PlatinumIcon,
+  DiamondIcon,
+  MasterIcon,
+} from '@/components/icons/tiers';
 
 interface StatsData {
   level: number;
@@ -14,7 +21,9 @@ interface StatsData {
 interface DifficultyData {
   easy?: number;
   medium?: number;
+  medium_hard?: number;
   hard?: number;
+  very_hard?: number;
 }
 
 interface ProblemTypeStat {
@@ -42,11 +51,13 @@ function getGradeInfo(score: number) {
   return { grade: 'F', label: 'Starting', color: '#6b7280', bg: 'from-zinc-500/10 to-zinc-600/5' };
 }
 
-// 난이도 색상
-const DIFFICULTY_COLORS = {
-  easy: { color: '#22c55e', label: 'Easy' },
-  medium: { color: '#eab308', label: 'Medium' },
-  hard: { color: '#ef4444', label: 'Hard' },
+// 난이도 색상 (5단계)
+const DIFFICULTY_CONFIG = {
+  easy: { color: '#22c55e', label: '실버', Icon: SilverIcon },
+  medium: { color: '#eab308', label: '골드', Icon: GoldIcon },
+  medium_hard: { color: '#06b6d4', label: '플래티넘', Icon: PlatinumIcon },
+  hard: { color: '#8b5cf6', label: '다이아', Icon: DiamondIcon },
+  very_hard: { color: '#ef4444', label: '마스터', Icon: MasterIcon },
 };
 
 // 문제 유형 설정
@@ -167,14 +178,16 @@ export function ScoreOverview({ score, stats, difficultySnapshot, problemTypeSta
             <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
               Difficulty
             </div>
-            <div className="space-y-2">
-              {(['easy', 'medium', 'hard'] as const).map((difficulty) => {
+            <div className="space-y-1.5">
+              {(['easy', 'medium', 'medium_hard', 'hard', 'very_hard'] as const).map((difficulty) => {
                 const rate = difficultySnapshot[difficulty] ?? 0;
-                const config = DIFFICULTY_COLORS[difficulty];
+                const config = DIFFICULTY_CONFIG[difficulty];
                 const percentage = Math.round(rate * 100);
+                const Icon = config.Icon;
 
                 return (
                   <div key={difficulty} className="flex items-center gap-2">
+                    <Icon size={14} className="flex-shrink-0" />
                     <span
                       className="text-[10px] font-medium w-12"
                       style={{ color: config.color }}

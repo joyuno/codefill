@@ -12,6 +12,8 @@ from ..models.analysis import (
     TopicScore,
     StatsSnapshot,
     RecommendedProblem,
+    WrongProblem,
+    WrongProblemsResponse,
     HintUsage,
     LearningStyle,
     SkillSnapshot,
@@ -250,6 +252,51 @@ async def recommend_problems(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"추천 문제 조회 실패: {str(e)}")
+
+
+@router.get("/wrong-problems", response_model=WrongProblemsResponse)
+async def get_wrong_problems(
+    limit: int = 10,
+    offset: int = 0,
+    sort_by: str = "recent",  # recent, difficulty, hints
+    difficulty: Optional[str] = None,
+    topic: Optional[str] = None,
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    틀린 문제 목록 조회 (복습용).
+
+    - 사용자가 틀린 문제 중 아직 맞추지 못한 문제들
+    - 같은 문제를 여러 번 틀렸으면 가장 최근 시도 기준
+    - 이미 맞춘 문제는 제외 (복습 완료)
+
+    Query params:
+    - limit: 한 번에 가져올 개수 (기본 10)
+    - offset: 건너뛸 개수 (페이지네이션)
+    - sort_by: 정렬 기준 (recent, difficulty, hints)
+    - difficulty: 난이도 필터 (easy, medium, medium_hard, hard, very_hard)
+    - topic: 토픽 필터
+    """
+    try:
+        service = AnalysisService(db)
+        result = await service.get_wrong_problems(
+            user_id,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            difficulty_filter=difficulty,
+            topic_filter=topic,
+        )
+
+        return WrongProblemsResponse(
+            problems=[WrongProblem(**p) for p in result["problems"]],
+            total=result["total"],
+            hasMore=result["hasMore"],
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"틀린 문제 조회 실패: {str(e)}")
 
 
 # ============================================================

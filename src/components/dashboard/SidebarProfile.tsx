@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Progress } from '@/components/ui/progress';
@@ -279,8 +279,8 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const requiredXP = profile?.required_xp || 100;
   const xpProgress = (currentXP / requiredXP) * 100;
 
-  // Load farm data from API (with caching for own profile)
-  const loadFarmData = async (forceRefresh = false) => {
+  // Load farm data from API (with caching for own profile) - useCallback으로 최적화
+  const loadFarmData = useCallback(async (forceRefresh = false) => {
     setFarmError(null);
 
     try {
@@ -335,7 +335,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
     } finally {
       setFarmLoading(false);
     }
-  };
+  }, [isOwnProfile, isAuthenticated, farm, username]);
 
   // publicData prop이 있으면 사용, 없으면 API 호출
   useEffect(() => {
@@ -499,9 +499,11 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
     setShowCharacterModal(true);
   };
 
-  // farm 데이터에서 캐릭터 정보 추출 (본인 또는 타인)
-  const character = isOwnProfile
-    ? (farm?.characterData ? {
+  // farm 데이터에서 캐릭터 정보 추출 (본인 또는 타인) - useMemo로 최적화
+  const character = useMemo(() => {
+    if (isOwnProfile) {
+      if (!farm?.characterData) return null;
+      return {
         name: farm.characterData.name,
         appearance: {
           hair: farm.characterData.hair,
@@ -510,25 +512,45 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
           color: Object.entries(COLOR_MAP).find(([_, v]) => v === farm.characterData?.hairColor)?.[0] || 'brown',
         },
         farmName: farm.characterData.farmName,
-      } : null)
-    : (publicFarm?.hasCharacter && publicFarm.character ? {
-        name: publicFarm.character.name,
-        appearance: {
-          hair: publicFarm.character.hair,
-          face: publicFarm.character.face,
-          clothes: publicFarm.character.outfit,
-          color: Object.entries(COLOR_MAP).find(([_, v]) => v === publicFarm.character?.hairColor)?.[0] || 'brown',
-        },
-        farmName: publicFarm.character.farmName,
-      } : null);
+      };
+    }
+    if (!publicFarm?.hasCharacter || !publicFarm.character) return null;
+    return {
+      name: publicFarm.character.name,
+      appearance: {
+        hair: publicFarm.character.hair,
+        face: publicFarm.character.face,
+        clothes: publicFarm.character.outfit,
+        color: Object.entries(COLOR_MAP).find(([_, v]) => v === publicFarm.character?.hairColor)?.[0] || 'brown',
+      },
+      farmName: publicFarm.character.farmName,
+    };
+  }, [isOwnProfile, farm?.characterData, publicFarm?.hasCharacter, publicFarm?.character]);
 
   const farmLevel = isOwnProfile ? (farm?.farmLevel || 1) : (publicFarm?.farmLevel || 1);
   const gold = isOwnProfile ? (farm?.gold || 0) : (publicFarm?.gold || 0);
 
+  // minimapSlots 계산 (useMemo로 최적화 - JSX에서 여러 번 사용됨)
+  const minimapSlots = useMemo(() => convertToMinimapSlots(
+    isOwnProfile ? farm?.farmSlots : undefined,
+    !isOwnProfile ? publicFarm?.slots : undefined
+  ), [isOwnProfile, farm?.farmSlots, publicFarm?.slots]);
+
+  // 수확 가능한 작물 수 계산 (useMemo로 최적화)
+  const readyCount = useMemo(() =>
+    minimapSlots.filter(s => calculateStage(s) >= 6).length
+  , [minimapSlots]);
+
+  // 정렬된 작물 슬롯 (useMemo로 최적화)
+  const sortedCropSlots = useMemo(() =>
+    sortCropSlots(minimapSlots.filter(s => s.cropCode))
+  , [minimapSlots]);
+
   const characterColor = character ? COLOR_MAP[character.appearance.color] || COLOR_MAP.brown : COLOR_MAP.brown;
 
-  // 수정 모달용 초기 데이터 (CharacterData 형식)
-  const editInitialData: CharacterData | null = farm?.characterData ? (() => {
+  // 수정 모달용 초기 데이터 (CharacterData 형식) - useMemo로 최적화
+  const editInitialData: CharacterData | null = useMemo(() => {
+    if (!farm?.characterData) return null;
     // hair가 "Short_Brown_Dark" 형태 → "Short"와 "Brown_Dark"로 분리
     const hairParts = farm.characterData.hair?.split('_') || ['Short', 'Brown', 'Dark'];
     const hairStyle = hairParts[0] || 'Short'; // Short, Long, Tuft 등
@@ -547,7 +569,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
       },
       farmName: farm.characterData.farmName,
     };
-  })() : null;
+  }, [farm?.characterData]);
 
   // 표시할 레벨/XP (본인 또는 타인)
   const displayLevel = isOwnProfile ? level : (publicProfile?.level || 1);
@@ -555,15 +577,18 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const displayRequiredXP = isOwnProfile ? requiredXP : (publicProfile?.requiredXP || 100);
   const displayXpProgress = (displayCurrentXP / displayRequiredXP) * 100;
 
-  // 표시할 뱃지 (본인 또는 타인) - 희귀도 내림차순 정렬
-  const displayBadges = (isOwnProfile ? badges : publicBadges.map(b => ({
-    id: b.id,
-    name: b.name,
-    icon: b.icon,
-    iconUrl: b.iconUrl,
-    description: b.description,
-    rarity: b.rarity as 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary',
-  }))).sort((a, b) => (RARITY_ORDER[b.rarity] || 0) - (RARITY_ORDER[a.rarity] || 0));
+  // 표시할 뱃지 (본인 또는 타인) - 희귀도 내림차순 정렬 (useMemo로 최적화)
+  const displayBadges = useMemo(() => {
+    const badgeList = isOwnProfile ? badges : publicBadges.map(b => ({
+      id: b.id,
+      name: b.name,
+      icon: b.icon,
+      iconUrl: b.iconUrl,
+      description: b.description,
+      rarity: b.rarity as 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary',
+    }));
+    return badgeList.sort((a, b) => (RARITY_ORDER[b.rarity] || 0) - (RARITY_ORDER[a.rarity] || 0));
+  }, [isOwnProfile, badges, publicBadges]);
 
   // 사이드바에 표시할 뱃지 (12개 제한 또는 전체)
   const BADGE_DISPLAY_LIMIT = 12;
@@ -694,10 +719,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
               {/* 농장 미니맵 - 실제 데이터 연동 */}
               <FarmMinimap
                 level={farmLevel}
-                farmSlots={convertToMinimapSlots(
-                  isOwnProfile ? farm?.farmSlots : undefined,
-                  !isOwnProfile ? publicFarm?.slots : undefined
-                )}
+                farmSlots={minimapSlots}
                 farmSize={isOwnProfile ? (farm?.farmSize || 9) : 9}
                 className="rounded-t-none"
               />
@@ -710,23 +732,16 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
               )}>
                 <span className="font-bold text-sm text-white truncate">{character.name}</span>
                 <span className="text-xs text-amber-300">Lv.{displayLevel} 농부</span>
-                {(() => {
-                  const slots = convertToMinimapSlots(
-                    isOwnProfile ? farm?.farmSlots : undefined,
-                    !isOwnProfile ? publicFarm?.slots : undefined
-                  );
-                  const readyCount = slots.filter(s => calculateStage(s) >= 6).length;
-                  return readyCount > 0 ? (
-                    <div className="text-xs text-green-400 flex items-center gap-1">
-                      <TrendingUp className="h-3 w-3" />
-                      <span>{readyCount} 수확</span>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-amber-200/70">
-                      농장 Lv.{farmLevel}
-                    </div>
-                  );
-                })()}
+                {readyCount > 0 ? (
+                  <div className="text-xs text-green-400 flex items-center gap-1">
+                    <TrendingUp className="h-3 w-3" />
+                    <span>{readyCount} 수확</span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-amber-200/70">
+                    농장 Lv.{farmLevel}
+                  </div>
+                )}
               </div>
             </motion.div>
             
@@ -782,12 +797,6 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
             
             {/* 씨앗/작물 탭 UI */}
             {(() => {
-              const slots = convertToMinimapSlots(
-                isOwnProfile ? farm?.farmSlots : undefined,
-                !isOwnProfile ? publicFarm?.slots : undefined
-              );
-              const cropsWithData = sortCropSlots(slots.filter(s => s.cropCode));
-
               // 씨앗 인벤토리 필터링 (seed_ 또는 _seed로 시작하는 아이템)
               const seedItems = inventory.filter(item =>
                 item.itemCode.startsWith('seed_') || item.itemCode.includes('_seed')
@@ -811,7 +820,7 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                       )}
                     >
                       <Leaf className="h-3 w-3" />
-                      작물 ({cropsWithData.length})
+                      작물 ({sortedCropSlots.length})
                     </button>
                     <button
                       onClick={() => setFarmTabActive('seeds')}
@@ -831,14 +840,14 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
                   <div className="p-3">
                     {farmTabActive === 'crops' ? (
                       // 작물 현황 탭
-                      cropsWithData.length === 0 ? (
+                      sortedCropSlots.length === 0 ? (
                         <p className="text-xs text-amber-600 text-center py-2">아직 심은 작물이 없어요</p>
                       ) : (
                         <div
                           className="flex gap-2 overflow-x-auto pb-1"
                           style={{ scrollbarWidth: 'thin', scrollbarColor: '#fcd34d #fef3c7' }}
                         >
-                          {cropsWithData.map((slot, i) => {
+                          {sortedCropSlots.map((slot, i) => {
                             const cropInfo = slot.cropCode ? CROP_INFO[slot.cropCode as keyof typeof CROP_INFO] : null;
                             const currentStage = calculateStage(slot);
                             const isReady = currentStage >= 6;

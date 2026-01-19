@@ -1,21 +1,15 @@
 'use client';
 
-import { useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { StatCards } from '@/components/dashboard/StatCards';
 import { GrassHeatmap } from '@/components/dashboard/GrassHeatmap';
 import { Button } from '@/components/ui/button';
 import { Play, Sparkles } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
 
 export default function HomePage() {
-  const { refreshProfile } = useAuth();
-
-  // 홈 페이지 진입 시 프로필 갱신 (최신 데이터 반영)
-  useEffect(() => {
-    refreshProfile();
-  }, [refreshProfile]);
+  // useAuth 훅에서 이미 프로필을 로드하므로 refreshProfile() 호출 제거
+  // 프로필 갱신이 필요한 경우 (문제 풀이 후 등) 해당 페이지에서 직접 호출
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

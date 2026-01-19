@@ -44,6 +44,25 @@ class RecommendedProblem(BaseModel):
     reason: str
 
 
+class WrongProblem(BaseModel):
+    """틀린 문제 (복습용)."""
+    id: str
+    originalId: Optional[str] = None  # 문제 페이지 이동용
+    name: str
+    problemType: Optional[str] = None
+    difficulty: str
+    topics: List[str] = []
+    hintsUsed: int = 0
+    lastAttemptAt: Optional[str] = None
+
+
+class WrongProblemsResponse(BaseModel):
+    """틀린 문제 목록 응답."""
+    problems: List[WrongProblem] = []
+    total: int = 0
+    hasMore: bool = False
+
+
 # ============================================================
 # Learning Analytics Framework Types
 # ============================================================

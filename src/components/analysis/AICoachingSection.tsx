@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Bot,
   AlertTriangle,
@@ -9,7 +8,6 @@ import {
   Lightbulb,
   Route,
   ChevronRight,
-  ChevronDown,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -27,9 +25,6 @@ export function AICoachingSection({
   recommendations = [],
   studyPlan,
 }: AICoachingSectionProps) {
-  const [isDetailedOpen, setIsDetailedOpen] = useState(false);
-
-  // 이스케이프된 문자열을 실제 줄바꿈으로 변환
   const normalizeMarkdown = (text: string): string => {
     return text
       .replace(/\\n/g, '\n')
@@ -38,47 +33,45 @@ export function AICoachingSection({
   };
 
   return (
-    <div className="rounded-2xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
+    <div className="rounded-xl bg-zinc-900/80 border border-zinc-800 overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-zinc-800/50 bg-gradient-to-r from-amber-500/5 to-transparent">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-            <Bot className="w-4 h-4 text-amber-400" />
+          <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+            <Bot className="w-3.5 h-3.5 text-amber-400" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-zinc-100">AI Coach</h2>
-            <p className="text-[10px] text-zinc-500">Personalized learning insights</p>
+            <h2 className="text-xs font-semibold text-zinc-100">AI Coach</h2>
+            <p className="text-[9px] text-zinc-500">맞춤형 학습 인사이트</p>
           </div>
         </div>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="p-3 space-y-3">
         {/* Study Plan - 학습 경로 */}
         {studyPlan && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-3"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/15"
           >
-            <div className="flex items-center gap-2">
-              <Route className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Route className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
                 학습 경로
-              </h3>
+              </span>
             </div>
-            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border border-emerald-500/20">
-              <div className="flex items-center gap-2 flex-wrap">
-                {studyPlan.split('→').map((step, index, arr) => (
-                  <span key={index} className="flex items-center gap-2">
-                    <span className="px-3 py-1.5 rounded-lg bg-zinc-800/80 text-sm text-zinc-200 font-medium">
-                      {step.trim()}
-                    </span>
-                    {index < arr.length - 1 && (
-                      <ChevronRight className="w-4 h-4 text-emerald-400" />
-                    )}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {studyPlan.split('→').map((step, index, arr) => (
+                <span key={index} className="flex items-center gap-1.5">
+                  <span className="px-2.5 py-1 rounded text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                    {step.trim()}
                   </span>
-                ))}
-              </div>
+                  {index < arr.length - 1 && (
+                    <ChevronRight className="w-3 h-3 text-emerald-400" />
+                  )}
+                </span>
+              ))}
             </div>
           </motion.div>
         )}
@@ -86,117 +79,78 @@ export function AICoachingSection({
         {/* Recommendations - 추천 액션 */}
         {recommendations.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={{ delay: 0.05 }}
-            className="space-y-3"
+            className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/15"
           >
-            <div className="flex items-center gap-2">
-              <Lightbulb className="w-4 h-4 text-blue-400" />
-              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Lightbulb className="w-3.5 h-3.5 text-blue-400" />
+              <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">
                 추천 액션
-              </h3>
+              </span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {recommendations.map((rec, index) => (
-                <motion.div
+                <div
                   key={index}
-                  initial={{ opacity: 0, x: -5 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.1 + index * 0.05 }}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10"
+                  className="flex items-start gap-2"
                 >
-                  <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-xs font-medium text-blue-400">{index + 1}</span>
-                  </div>
-                  <p className="text-sm text-zinc-300">{rec}</p>
-                </motion.div>
+                  <span className="w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                    {index + 1}
+                  </span>
+                  <p className="text-xs leading-relaxed text-zinc-300">
+                    {rec}
+                  </p>
+                </div>
               ))}
             </div>
           </motion.div>
         )}
 
-        {/* Detailed Feedback - Accordion */}
-        {detailedFeedback && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="space-y-2"
-          >
-            <button
-              onClick={() => setIsDetailedOpen(!isDetailedOpen)}
-              className="w-full flex items-center justify-between gap-2 p-3 rounded-xl bg-zinc-800/50 border border-zinc-700/50 hover:bg-zinc-800/70 hover:border-amber-500/30 transition-all duration-200 group"
-            >
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-medium text-zinc-300">
-                  상세 피드백
-                </h3>
-              </div>
-              <motion.div
-                animate={{ rotate: isDetailedOpen ? 180 : 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ChevronDown className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 transition-colors" />
-              </motion.div>
-            </button>
-
-            <AnimatePresence>
-              {isDetailedOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: 'easeInOut' }}
-                  className="overflow-hidden"
-                >
-                  <div className="p-4 rounded-xl bg-zinc-800/30 border border-zinc-700/30">
-                    <div className="prose prose-sm prose-invert prose-zinc max-w-none
-                      prose-headings:text-zinc-200 prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
-                      prose-p:text-zinc-300 prose-p:leading-relaxed prose-p:my-2
-                      prose-li:text-zinc-300 prose-li:my-0.5
-                      prose-strong:text-amber-300 prose-strong:font-medium
-                      prose-ul:my-2 prose-ol:my-2
-                    ">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {normalizeMarkdown(detailedFeedback)}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        )}
-
-        {/* Common Error Patterns */}
+        {/* Common Error Patterns - 주의 패턴 */}
         {commonErrorPatterns.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="space-y-3"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="p-3 rounded-lg bg-rose-500/5 border border-rose-500/15"
           >
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-yellow-400" />
-              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
+            <div className="flex items-center gap-1.5 mb-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              <span className="text-[10px] font-semibold text-rose-400 uppercase tracking-wider">
                 주의 패턴
-              </h3>
+              </span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {commonErrorPatterns.slice(0, 3).map((pattern, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -5 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.25 + index * 0.05 }}
-                  className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/10"
-                >
-                  <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-zinc-400">{pattern}</p>
-                </motion.div>
+                <div key={index} className="flex items-start gap-2">
+                  <div className="w-1 h-1 rounded-full bg-rose-400 mt-1.5 flex-shrink-0" />
+                  <p className="text-xs text-zinc-400 leading-relaxed">{pattern}</p>
+                </div>
               ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Detailed Feedback - 상세 피드백 */}
+        {detailedFeedback && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.15 }}
+            className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/15"
+          >
+            <div className="flex items-center gap-1.5 mb-2">
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">
+                상세 피드백
+              </span>
+            </div>
+            <div className="text-[11px] leading-relaxed text-zinc-300 [&_h1]:text-xs [&_h1]:font-semibold [&_h1]:text-zinc-200 [&_h1]:mt-2 [&_h1]:mb-1 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:text-zinc-200 [&_h2]:mt-2 [&_h2]:mb-1 [&_h3]:text-[11px] [&_h3]:font-semibold [&_h3]:text-zinc-200 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_strong]:text-amber-300 [&_strong]:font-medium [&_code]:text-[10px] [&_code]:text-amber-400 [&_code]:bg-amber-500/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {normalizeMarkdown(detailedFeedback)}
+              </ReactMarkdown>
             </div>
           </motion.div>
         )}
