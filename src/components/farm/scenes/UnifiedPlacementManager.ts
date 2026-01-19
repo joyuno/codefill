@@ -136,19 +136,70 @@ export class UnifiedPlacementManager {
   }
 
   /**
-   * 에셋 프리로드 (기본 에셋)
-   * 씬 재시작 시 중복 로드 방지
-   * 참고: 밭/작물 에셋은 FarmGridManager에서 로드
+   * 에셋 프리로드 (지연 로딩 적용)
+   * 배치된 아이템만 로드하여 초기 로딩 시간 단축
+   * @param placedItems 현재 배치된 아이템 목록
    */
-  preload(): void {
-    // 모든 에셋 로드 (SPRITE_FILES 기반, 중복 체크)
-    Object.entries(SPRITE_FILES).forEach(([key, info]) => {
-      const assetKey = this.getAssetKey(key);
+  preload(placedItems?: PlacedItem[]): void {
+    // 필요한 스프라이트만 추출
+    const neededSprites = new Set<string>();
+
+    // 기본 건물 (항상 로드 - 초기 배치 아이템)
+    const defaultSprites = ['buildings/house', 'buildings/well', 'buildings/chickenCoop', 'buildings/scarecrow'];
+    defaultSprites.forEach(s => neededSprites.add(s));
+
+    // 배치된 아이템의 스프라이트
+    if (placedItems) {
+      placedItems.forEach(item => {
+        if (item.itemCode !== 'farm_plot' && item.metadata?.sprite) {
+          neededSprites.add(item.metadata.sprite);
+        }
+      });
+    }
+
+    console.log('[UnifiedPlacementManager] Loading sprites:', neededSprites.size, '/', Object.keys(SPRITE_FILES).length);
+
+    // 필요한 에셋만 로드
+    neededSprites.forEach(spriteKey => {
+      const info = SPRITE_FILES[spriteKey];
+      if (!info) return;
+
+      const assetKey = this.getAssetKey(spriteKey);
       if (!this.scene.textures.exists(assetKey)) {
         const fullPath = FARM_BASE_PATH + info.path + info.file;
         this.scene.load.image(assetKey, fullPath);
       }
       this.loadedAssets.add(assetKey);
+    });
+  }
+
+  /**
+   * 런타임 중 에셋 로드 (새 아이템 배치 시)
+   */
+  loadAsset(spriteKey: string): Promise<void> {
+    return new Promise((resolve) => {
+      const info = SPRITE_FILES[spriteKey];
+      if (!info) {
+        resolve();
+        return;
+      }
+
+      const assetKey = this.getAssetKey(spriteKey);
+      if (this.scene.textures.exists(assetKey)) {
+        resolve();
+        return;
+      }
+
+      const fullPath = FARM_BASE_PATH + info.path + info.file;
+      this.scene.load.image(assetKey, fullPath);
+
+      this.scene.load.once('complete', () => {
+        this.loadedAssets.add(assetKey);
+        console.log('[UnifiedPlacementManager] Loaded asset:', spriteKey);
+        resolve();
+      });
+
+      this.scene.load.start();
     });
   }
 

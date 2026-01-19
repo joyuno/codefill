@@ -3,6 +3,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from ..database import get_db
+from ..dependencies import get_current_user_id_optional
 from ..models.problem import (
     Problem,
     ProblemDetail,
@@ -45,27 +46,12 @@ async def list_base_problems(
     - tags: 태그 필터 (쉼표 구분)
     """
     try:
-        # 먼저 전체 개수 조회
-        count_query = db.table("base_problems").select("id", count="exact")
-
-        if difficulty:
-            count_query = count_query.eq("difficulty", difficulty)
-        if source:
-            count_query = count_query.eq("source", source)
-        if search:
-            count_query = count_query.ilike("name", f"%{search}%")
-        if tags:
-            tag_list = [t.strip() for t in tags.split(",")]
-            count_query = count_query.overlaps("tags", tag_list)
-
-        count_result = count_query.execute()
-        total = count_result.count if count_result.count else 0
-
-        # 실제 데이터 조회 (solve_count, like_count 포함)
+        # 단일 쿼리로 데이터 + count 조회 (최적화)
         query = db.table("base_problems")\
-            .select("id, original_id, name, difficulty, tags, source, input_output, solve_count, like_count")\
+            .select("id, original_id, name, difficulty, tags, source, input_output, solve_count, like_count", count="exact")\
             .order("original_id")
 
+        # 필터 적용
         if difficulty:
             query = query.eq("difficulty", difficulty)
         if source:
@@ -82,9 +68,11 @@ async def list_base_problems(
 
         result = query.execute()
 
-        items = []
-        for item in (result.data or []):
-            items.append(BaseProblemListItem(
+        # count="exact" 옵션으로 전체 개수도 함께 조회됨
+        total = result.count if result.count is not None else 0
+
+        items = [
+            BaseProblemListItem(
                 id=item["id"],
                 original_id=item.get("original_id", ""),
                 name=item.get("name", "Untitled"),
@@ -94,7 +82,9 @@ async def list_base_problems(
                 input_output=item.get("input_output"),
                 solve_count=item.get("solve_count", 0),
                 like_count=item.get("like_count", 0),
-            ))
+            )
+            for item in (result.data or [])
+        ]
 
         has_more = (page * limit) < total
 
@@ -114,16 +104,21 @@ async def list_base_problems(
 
 
 @router.get("/base/{original_id}", response_model=BaseProblemDetail)
-async def get_base_problem(original_id: str, db=Depends(get_db)):
+async def get_base_problem(
+    original_id: str,
+    db=Depends(get_db),
+    user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
     """
     base_problems 테이블에서 문제 상세 조회 (Preview용).
 
     original_id로 조회 (예: "baekjoon_1001", "taco_1")
+    통계 정보(solve_count, like_count, is_liked)도 함께 반환.
     """
     try:
-        # 필요한 컬럼만 선택
+        # 문제 상세 + 통계 조회 (단일 쿼리)
         result = db.table("base_problems")\
-            .select("id, original_id, name, question, difficulty, tags, source, url, input_output, explanation, solutions")\
+            .select("id, original_id, name, question, difficulty, tags, source, url, input_output, explanation, solutions, solve_count, like_count")\
             .eq("original_id", original_id)\
             .single()\
             .execute()
@@ -135,8 +130,20 @@ async def get_base_problem(original_id: str, db=Depends(get_db)):
             )
 
         item = result.data
+        problem_id = item["id"]
+
+        # 현재 사용자의 좋아요 여부 확인 (로그인한 경우만)
+        is_liked = False
+        if user_id:
+            like_check = db.table("problem_likes")\
+                .select("id")\
+                .eq("user_id", str(user_id))\
+                .eq("base_problem_id", problem_id)\
+                .execute()
+            is_liked = bool(like_check.data)
+
         return BaseProblemDetail(
-            id=item["id"],
+            id=problem_id,
             original_id=item.get("original_id", ""),
             name=item.get("name", "Untitled"),
             question=item.get("question", ""),
@@ -147,6 +154,9 @@ async def get_base_problem(original_id: str, db=Depends(get_db)):
             input_output=item.get("input_output"),
             explanation=item.get("explanation"),
             solutions=item.get("solutions") or [],
+            solve_count=item.get("solve_count", 0),
+            like_count=item.get("like_count", 0),
+            is_liked=is_liked,
         )
 
     except HTTPException:

@@ -1,16 +1,22 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import {
   ProblemFilters,
   type ProblemFiltersState,
 } from '@/components/problems/ProblemFilters';
 import { ProblemRow } from '@/components/problems/ProblemRow';
-import { PreviewModal } from '@/components/problems/PreviewModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { problemsApi, type BaseProblemListItem } from '@/lib/api';
 import { Inbox, RefreshCw, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+
+// PreviewModal lazy load (react-markdown, katex 등 무거운 의존성 분리)
+const PreviewModal = dynamic(
+  () => import('@/components/problems/PreviewModal').then(mod => mod.PreviewModal),
+  { ssr: false }
+);
 
 export default function ProblemsPage() {
   const [filters, setFilters] = useState<ProblemFiltersState>({
@@ -82,9 +88,15 @@ export default function ProblemsPage() {
     setPageInput(String(page));
   }, [page]);
 
-  const handlePreview = (originalId: string) => {
+  // useCallback으로 메모이제이션 (ProblemRow의 memo가 효과를 발휘하도록)
+  const handlePreview = useCallback((originalId: string) => {
     setPreviewId(originalId);
-  };
+  }, []);
+
+  // ProblemFilters의 memo가 효과를 발휘하도록
+  const handleFiltersChange = useCallback((newFilters: ProblemFiltersState) => {
+    setFilters(newFilters);
+  }, []);
 
   const totalPages = Math.ceil(total / limit);
 
@@ -113,7 +125,7 @@ export default function ProblemsPage() {
       {/* Filters */}
       <ProblemFilters
         filters={filters}
-        onFiltersChange={setFilters}
+        onFiltersChange={handleFiltersChange}
         resultCount={problems.length}
         totalCount={total}
       />

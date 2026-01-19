@@ -46,6 +46,55 @@ export interface MyRankingSummary {
 }
 
 // =====================================================
+// Challenge Page Combined Data (Performance Optimized)
+// =====================================================
+
+export interface ChallengePageData {
+  ranking: MyRankingSummary;
+  daily: {
+    missions: Array<{
+      id: string;
+      mission_id: string;
+      code: string;
+      name: string;
+      description: string | null;
+      condition_type: string;
+      condition_value: number;
+      difficulty: string | null;
+      current_progress: number;
+      target_value: number;
+      status: string;
+      reward_gold: number;
+      reward_xp: number;
+      reward_seeds: Record<string, number> | null;
+    }>;
+    today_completed: number;
+    today_claimed: number;
+  };
+  weekly: {
+    challenges: Array<{
+      id: string;
+      mission_id: string;
+      code: string;
+      name: string;
+      description: string | null;
+      condition_type: string;
+      condition_value: number;
+      difficulty: string | null;
+      current_progress: number;
+      target_value: number;
+      status: string;
+      reward_gold: number;
+      reward_xp: number;
+      reward_seeds: Record<string, number> | null;
+    }>;
+    week_completed: number;
+    week_claimed: number;
+  };
+  user_id: string;
+}
+
+// =====================================================
 // API Functions
 // =====================================================
 
@@ -112,6 +161,17 @@ export const rankingApi = {
    */
   async getMyRanking(): Promise<MyRankingSummary> {
     const response = await api.get<MyRankingSummary>('/ranking/me');
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
+
+  /**
+   * Challenge 페이지 통합 데이터 조회 (성능 최적화)
+   * - 내 랭킹 + 일일미션 + 주간챌린지 + userId 한번에 반환
+   * - 3개 API 호출 → 1개로 통합하여 지연 시간 3배 감소
+   */
+  async getChallengePageData(): Promise<ChallengePageData> {
+    const response = await api.get<ChallengePageData>('/ranking/challenge-page-data');
     if (response.error) throw new Error(response.error.message);
     return response.data!;
   },

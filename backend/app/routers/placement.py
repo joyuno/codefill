@@ -4,10 +4,11 @@ Unified Placement API Router
 """
 
 from fastapi import APIRouter, HTTPException, Depends, status
-from typing import Optional
+from typing import Optional, Dict
 from uuid import UUID
 from datetime import datetime, timezone
 import json
+import time
 
 from ..database import get_db
 from ..dependencies import get_current_user_id
@@ -29,6 +30,68 @@ from ..models.placement import (
 from ..services.farm_service import FarmService
 
 router = APIRouter()
+
+
+# =====================================================
+# Simple TTL Cache for Static Data
+# =====================================================
+
+class TTLCache:
+    """간단한 TTL 캐시 (정적 데이터용)"""
+    def __init__(self, ttl_seconds: int = 3600):
+        self._cache: Dict = {}
+        self._timestamps: Dict[str, float] = {}
+        self._ttl = ttl_seconds
+
+    def get(self, key: str):
+        if key not in self._cache:
+            return None
+        if time.time() - self._timestamps[key] > self._ttl:
+            del self._cache[key]
+            del self._timestamps[key]
+            return None
+        return self._cache[key]
+
+    def set(self, key: str, value):
+        self._cache[key] = value
+        self._timestamps[key] = time.time()
+
+
+# 정적 데이터 캐시 (1시간 TTL)
+_crop_grow_times_cache = TTLCache(ttl_seconds=3600)
+_shop_metadata_cache = TTLCache(ttl_seconds=3600)
+
+
+def get_cached_crop_grow_times(db) -> Dict[str, int]:
+    """캐싱된 작물 성장 시간 조회"""
+    cached = _crop_grow_times_cache.get("crop_grow_times")
+    if cached:
+        return cached
+
+    result = db.table("farm_items").select("code, grow_time_seconds").eq("type", "crop").execute()
+    grow_times = {item["code"]: item["grow_time_seconds"] for item in (result.data or [])}
+    _crop_grow_times_cache.set("crop_grow_times", grow_times)
+    return grow_times
+
+
+def get_cached_shop_metadata(db, item_codes: list) -> Dict[str, ItemMetadata]:
+    """캐싱된 상점 아이템 메타데이터 조회"""
+    # 캐시 키 생성 (아이템 코드 정렬하여 일관성 유지)
+    cache_key = "shop_metadata_all"
+
+    # 전체 메타데이터 캐시 확인
+    all_metadata = _shop_metadata_cache.get(cache_key)
+    if all_metadata is None:
+        # 캐시 미스: 전체 shop_items 메타데이터 로드
+        result = db.table("shop_items").select("code, metadata").execute()
+        all_metadata = {
+            item["code"]: FarmService.parse_metadata(item.get("metadata", {}))
+            for item in (result.data or [])
+        }
+        _shop_metadata_cache.set(cache_key, all_metadata)
+
+    # 필요한 아이템만 필터링하여 반환
+    return {code: all_metadata.get(code, ItemMetadata(sprite="default")) for code in item_codes}
 
 
 # =====================================================
@@ -182,7 +245,7 @@ async def get_placed_items(
     - 모든 배치된 아이템과 메타데이터 반환
     - 밭의 경우 작물 정보(data) 포함
     """
-    # 배치된 아이템 조회 (shop_items와 JOIN)
+    # 배치된 아이템 조회 (사용자별 - 캐싱 불가)
     placed_result = db.table("user_placed_items").select("*").eq("user_id", str(user_id)).execute()
 
     if not placed_result.data:
@@ -191,13 +254,11 @@ async def get_placed_items(
     # 아이템 코드 목록
     item_codes = list(set(item["item_code"] for item in placed_result.data))
 
-    # 상점 아이템 메타데이터 조회
-    shop_result = db.table("shop_items").select("code, metadata").in_("code", item_codes).execute()
-    metadata_map = {item["code"]: FarmService.parse_metadata(item.get("metadata", {})) for item in (shop_result.data or [])}
+    # 상점 아이템 메타데이터 조회 (캐싱 적용)
+    metadata_map = get_cached_shop_metadata(db, item_codes)
 
-    # 작물 성장 정보 조회 (밭에 심은 작물용)
-    crop_result = db.table("farm_items").select("code, grow_time_seconds").eq("type", "crop").execute()
-    crop_grow_times = {item["code"]: item["grow_time_seconds"] for item in (crop_result.data or [])}
+    # 작물 성장 정보 조회 (캐싱 적용)
+    crop_grow_times = get_cached_crop_grow_times(db)
 
     items = []
     for placed in placed_result.data:

@@ -168,7 +168,7 @@ export class FarmScene extends Phaser.Scene {
   }
 
   /**
-   * 에셋 프리로드
+   * 에셋 프리로드 (지연 로딩 적용)
    */
   preload(): void {
     // 매니저 생성 (PlayerController에 characterData 전달)
@@ -177,11 +177,15 @@ export class FarmScene extends Phaser.Scene {
     this.unifiedPlacementManager = new UnifiedPlacementManager(this);
     this.farmGridManager = new FarmGridManager(this);
 
-    // 각 매니저 에셋 로드
+    // 각 매니저 에셋 로드 (지연 로딩: 필요한 것만)
     this.mapManager.preload();
     this.playerController.preload();
-    this.unifiedPlacementManager.preload();
-    this.farmGridManager.preload();
+
+    // 배치된 아이템만 로드
+    this.unifiedPlacementManager.preload(this.farmData.placedItems);
+
+    // 심어진 작물 + 보유 씨앗만 로드
+    this.farmGridManager.preload(this.farmSlots, this.inventory);
   }
 
   /**

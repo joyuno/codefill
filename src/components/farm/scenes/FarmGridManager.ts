@@ -31,7 +31,8 @@ export interface FarmSlot {
 interface SlotSprites {
   soil: Phaser.GameObjects.Sprite;
   crop: Phaser.GameObjects.Sprite | null;
-  timer: Phaser.GameObjects.Text | null;
+  timerContainer: Phaser.GameObjects.Container | null;
+  timerProgress: Phaser.GameObjects.Graphics | null;
 }
 
 export class FarmGridManager {
@@ -55,9 +56,11 @@ export class FarmGridManager {
   }
 
   /**
-   * 에셋 프리로드
+   * 에셋 프리로드 (지연 로딩 적용)
+   * @param farmSlots 현재 심어진 작물 슬롯
+   * @param inventory 보유한 씨앗 목록
    */
-  preload(): void {
+  preload(farmSlots?: FarmSlot[], inventory?: { itemCode: string; quantity: number }[]): void {
     // 밭 타일셋
     if (!this.scene.textures.exists(FARM_TILESET.key)) {
       this.scene.load.spritesheet(FARM_TILESET.key, FARM_TILESET.path, {
@@ -66,11 +69,41 @@ export class FarmGridManager {
       });
     }
 
-    // 작물 스프라이트시트
-    Object.values(CROPS).forEach(crop => {
+    // 필요한 작물만 추출 (심어진 작물 + 보유 씨앗)
+    const neededCrops = new Set<string>();
+
+    // 1. 심어진 작물
+    if (farmSlots) {
+      farmSlots.forEach(slot => {
+        if (slot.cropCode) {
+          neededCrops.add(slot.cropCode);
+        }
+      });
+    }
+
+    // 2. 보유한 씨앗 (seed_tomato -> tomato)
+    if (inventory) {
+      inventory.forEach(item => {
+        if (item.itemCode.startsWith('seed_') && item.quantity > 0) {
+          const cropCode = item.itemCode.replace('seed_', '');
+          neededCrops.add(cropCode);
+        }
+      });
+    }
+
+    // 필요한 작물만 로드 (없으면 기본 3종만)
+    const cropsToLoad = neededCrops.size > 0
+      ? Array.from(neededCrops)
+      : ['carrot', 'tomato', 'radish']; // 기본 작물
+
+    console.log('[FarmGridManager] Loading crops:', cropsToLoad.length, '/', Object.keys(CROPS).length);
+
+    cropsToLoad.forEach(cropCode => {
+      const crop = CROPS[cropCode];
+      if (!crop) return;
+
       const key = getCropSpriteKey(crop.code);
       if (!this.scene.textures.exists(key)) {
-        // spritesheet 경로가 절대 경로이면 그대로 사용, 아니면 CROP_ASSET_PATH 추가
         const spritePath = crop.spritesheet.startsWith('/')
           ? crop.spritesheet
           : CROP_ASSET_PATH + crop.spritesheet;
@@ -79,6 +112,41 @@ export class FarmGridManager {
           frameHeight: crop.frameHeight,
         });
       }
+    });
+  }
+
+  /**
+   * 런타임 중 추가 작물 로드 (새 씨앗 획득 시)
+   */
+  loadCropAsset(cropCode: string): Promise<void> {
+    return new Promise((resolve) => {
+      const crop = CROPS[cropCode];
+      if (!crop) {
+        resolve();
+        return;
+      }
+
+      const key = getCropSpriteKey(crop.code);
+      if (this.scene.textures.exists(key)) {
+        resolve();
+        return;
+      }
+
+      const spritePath = crop.spritesheet.startsWith('/')
+        ? crop.spritesheet
+        : CROP_ASSET_PATH + crop.spritesheet;
+
+      this.scene.load.spritesheet(key, spritePath, {
+        frameWidth: crop.frameWidth,
+        frameHeight: crop.frameHeight,
+      });
+
+      this.scene.load.once('complete', () => {
+        console.log('[FarmGridManager] Loaded crop asset:', cropCode);
+        resolve();
+      });
+
+      this.scene.load.start();
     });
   }
 
@@ -114,7 +182,8 @@ export class FarmGridManager {
       // 슬롯 데이터 확인
       const slotData = farmSlots.find(s => s.slot === i);
       let cropSprite: Phaser.GameObjects.Sprite | null = null;
-      let timerText: Phaser.GameObjects.Text | null = null;
+      let timerContainer: Phaser.GameObjects.Container | null = null;
+      let timerProgress: Phaser.GameObjects.Graphics | null = null;
 
       if (slotData?.cropCode) {
         // 작물 스프라이트
@@ -133,7 +202,9 @@ export class FarmGridManager {
 
           // 성장 중인 경우 타이머 표시 (보정된 stage 사용)
           if (stage < 6 && slotData.plantedAt && slotData.growTimeSeconds) {
-            timerText = this.createTimerText(worldX, worldY, slotData);
+            const timerResult = this.createTimerIndicator(worldX, worldY, slotData);
+            timerContainer = timerResult.container;
+            timerProgress = timerResult.progress;
           }
         }
       }
@@ -141,7 +212,8 @@ export class FarmGridManager {
       this.slotSprites.set(i, {
         soil: soilSprite,
         crop: cropSprite,
-        timer: timerText,
+        timerContainer,
+        timerProgress,
       });
     }
 
@@ -187,23 +259,75 @@ export class FarmGridManager {
   }
 
   /**
-   * 타이머 텍스트 생성
+   * 타이머 인디케이터 생성 (시계 아이콘 + 원형 프로그레스)
    */
-  private createTimerText(worldX: number, worldY: number, slotData: FarmSlot): Phaser.GameObjects.Text {
-    const remaining = this.calculateRemainingTime(slotData);
-    const text = this.formatTime(remaining);
+  private createTimerIndicator(
+    worldX: number,
+    worldY: number,
+    slotData: FarmSlot
+  ): { container: Phaser.GameObjects.Container; progress: Phaser.GameObjects.Graphics } {
+    const radius = 8;
+    const posX = worldX;
+    const posY = worldY - TILE_SIZE / 2 - radius - 2;
 
-    const timerText = this.scene.add.text(worldX, worldY - TILE_SIZE / 2 - 5, text, {
-      fontSize: '10px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
-      backgroundColor: '#000000aa',
-      padding: { x: 3, y: 2 },
-    });
-    timerText.setOrigin(0.5, 1);
-    timerText.setDepth(DEPTH.INDICATOR);
+    // 컨테이너 생성
+    const container = this.scene.add.container(posX, posY);
+    container.setDepth(DEPTH.INDICATOR);
 
-    return timerText;
+    // 배경 원 (어두운 배경)
+    const bgCircle = this.scene.add.graphics();
+    bgCircle.fillStyle(0x000000, 0.6);
+    bgCircle.fillCircle(0, 0, radius);
+    container.add(bgCircle);
+
+    // 프로그레스 링
+    const progress = this.scene.add.graphics();
+    container.add(progress);
+
+    // 시계 아이콘 (중앙에 작은 원 + 시계 바늘)
+    const clockIcon = this.scene.add.graphics();
+    clockIcon.lineStyle(1.5, 0xffffff, 1);
+    clockIcon.strokeCircle(0, 0, 4);
+    // 시계 바늘
+    clockIcon.lineStyle(1, 0xffffff, 1);
+    clockIcon.lineBetween(0, 0, 0, -2.5); // 분침
+    clockIcon.lineBetween(0, 0, 2, 0); // 시침
+    container.add(clockIcon);
+
+    // 초기 프로그레스 그리기
+    this.drawProgress(progress, slotData, radius);
+
+    return { container, progress };
+  }
+
+  /**
+   * 원형 프로그레스 그리기
+   */
+  private drawProgress(graphics: Phaser.GameObjects.Graphics, slotData: FarmSlot, radius: number): void {
+    graphics.clear();
+
+    if (!slotData.plantedAt || !slotData.growTimeSeconds) return;
+
+    const plantedAt = new Date(slotData.plantedAt).getTime();
+    const growTimeMs = slotData.growTimeSeconds * 1000;
+    const elapsed = Date.now() - plantedAt;
+    const progressPercent = Math.min(1, elapsed / growTimeMs);
+
+    // 프로그레스 색상 (진행률에 따라 변화)
+    let color = 0xfbbf24; // 노란색 (기본)
+    if (progressPercent >= 0.75) {
+      color = 0x22c55e; // 녹색 (거의 완료)
+    } else if (progressPercent >= 0.5) {
+      color = 0x84cc16; // 연두색
+    }
+
+    // 원형 프로그레스 (시계 방향, 12시부터 시작)
+    graphics.lineStyle(2, color, 1);
+    const startAngle = -Math.PI / 2; // 12시 방향
+    const endAngle = startAngle + (progressPercent * Math.PI * 2);
+    graphics.beginPath();
+    graphics.arc(0, 0, radius - 1, startAngle, endAngle, false);
+    graphics.strokePath();
   }
 
   /**
@@ -216,16 +340,6 @@ export class FarmGridManager {
     const growTimeMs = slotData.growTimeSeconds * 1000;
     const elapsed = Date.now() - plantedAt;
     return Math.max(0, growTimeMs - elapsed);
-  }
-
-  /**
-   * 시간 포맷팅 (mm:ss)
-   */
-  private formatTime(ms: number): string {
-    const seconds = Math.ceil(ms / 1000);
-    const min = Math.floor(seconds / 60);
-    const sec = seconds % 60;
-    return `${min}:${sec.toString().padStart(2, '0')}`;
   }
 
   /**
@@ -253,9 +367,10 @@ export class FarmGridManager {
       sprites.crop.destroy();
       sprites.crop = null;
     }
-    if (sprites.timer) {
-      sprites.timer.destroy();
-      sprites.timer = null;
+    if (sprites.timerContainer) {
+      sprites.timerContainer.destroy();
+      sprites.timerContainer = null;
+      sprites.timerProgress = null;
     }
 
     // 새 작물 스프라이트
@@ -290,8 +405,10 @@ export class FarmGridManager {
 
         // 성장 중인 경우 타이머 표시
         if (stage < 6 && slotData.plantedAt && slotData.growTimeSeconds) {
-          sprites.timer = this.createTimerText(worldX, worldY, slotData);
-          console.log('[FarmGridManager] Timer created');
+          const timerResult = this.createTimerIndicator(worldX, worldY, slotData);
+          sprites.timerContainer = timerResult.container;
+          sprites.timerProgress = timerResult.progress;
+          console.log('[FarmGridManager] Timer indicator created');
         }
       } else {
         console.error('[FarmGridManager] No crop config for:', slotData.cropCode);
@@ -375,13 +492,14 @@ export class FarmGridManager {
           slotData.stage = newStage; // 로컬 업데이트
         }
 
-        // 타이머 텍스트 업데이트
-        if (sprites.timer) {
+        // 타이머 프로그레스 업데이트
+        if (sprites.timerContainer && sprites.timerProgress) {
           if (remaining <= 0 || newStage >= 6) {
-            sprites.timer.destroy();
-            sprites.timer = null;
+            sprites.timerContainer.destroy();
+            sprites.timerContainer = null;
+            sprites.timerProgress = null;
           } else {
-            sprites.timer.setText(this.formatTime(remaining));
+            this.drawProgress(sprites.timerProgress, slotData, 8);
           }
         }
       }
@@ -403,7 +521,7 @@ export class FarmGridManager {
     this.slotSprites.forEach(sprites => {
       sprites.soil.destroy();
       if (sprites.crop) sprites.crop.destroy();
-      if (sprites.timer) sprites.timer.destroy();
+      if (sprites.timerContainer) sprites.timerContainer.destroy();
     });
     this.slotSprites.clear();
 

@@ -174,6 +174,7 @@ export type {
   RankingItem,
   RankingListResponse,
   MyRankingSummary,
+  ChallengePageData,
 } from './ranking';
 export {
   missionsApi,

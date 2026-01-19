@@ -114,22 +114,15 @@ class HintIndependence(BaseModel):
     independence_rate: float = 0.0
 
 
-class EloChange(BaseModel):
-    """ELO 변화 기록 (단일 토픽)."""
+class EloHistoryEntry(BaseModel):
+    """ELO 히스토리 엔트리 (DB update_user_elo() 함수 형식)."""
+    date: str
     topic: str
     before: float
     after: float
     change: float
-    expected: float
-
-
-class EloHistoryEntry(BaseModel):
-    """ELO 히스토리 엔트리 (단일 문제 풀이)."""
-    date: str
-    topics: List[str] = []
-    is_correct: bool = False
     problem_elo: float = 1000
-    changes: List[EloChange] = []
+    expected: float = 0.5
 
 
 class AnalysisReport(BaseModel):
