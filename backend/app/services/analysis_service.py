@@ -944,10 +944,11 @@ class AnalysisService:
                 model=settings.llm_model_analysis,
                 messages=[
                     {"role": "system", "content": prompt},
-                    {"role": "user", "content": "위 데이터를 분석하고 JSON으로 응답하세요."}
+                    {"role": "user", "content": "위 데이터를 분석해주세요."}
                 ],
                 temperature=0.7,
                 max_tokens=3000,
+                response_format={"type": "json_object"},
             )
 
             content = openrouter_service.get_content(response)

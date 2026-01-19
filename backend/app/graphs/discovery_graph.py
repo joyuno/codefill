@@ -39,6 +39,73 @@ from .discovery_state import (
     GENERATE_INTENTS,
 )
 from .nodes.confirm import confirm_generation_node, should_confirm_generation
+from ..services.edge_case_logger import edge_case_logger
+
+
+# ============================================================
+# 관련 주제 확장 매핑 (재시도 폴백용)
+# ============================================================
+RELATED_TOPICS_MAP = {
+    "DP": ["그리디", "분할정복", "메모이제이션"],
+    "그리디": ["DP", "정렬"],
+    "그래프": ["BFS", "DFS", "최단경로", "트리"],
+    "BFS": ["DFS", "그래프", "최단경로"],
+    "DFS": ["BFS", "그래프", "백트래킹"],
+    "정렬": ["이진탐색", "투포인터"],
+    "이진탐색": ["정렬", "투포인터"],
+    "문자열": ["구현", "해시"],
+    "구현": ["시뮬레이션", "문자열"],
+    "백트래킹": ["DFS", "완전탐색"],
+    "트리": ["그래프", "DFS", "BFS"],
+    "스택": ["큐", "구현"],
+    "큐": ["스택", "BFS"],
+}
+
+
+def _parse_requested_count(message: str) -> Optional[int]:
+    """
+    사용자 메시지에서 요청한 결과 개수를 파싱
+
+    예: "10개 보여줘" → 10
+        "20개 더 찾아줘" → 20
+        "5개만" → 5
+
+    Returns:
+        요청된 개수 (없으면 None)
+    """
+    if not message:
+        return None
+
+    # 숫자 + 개 패턴
+    count_match = re.search(r'(\d+)\s*개', message)
+    if count_match:
+        return int(count_match.group(1))
+
+    return None
+
+
+# 검색 결과 최대 개수 (한 번에 보여줄 수 있는 최대)
+MAX_SEARCH_LIMIT = 10
+DEFAULT_SEARCH_LIMIT = 5
+
+
+def _expand_related_topics(topics: list) -> list:
+    """
+    검색 결과가 없을 때 관련 주제로 확장
+
+    예: ["DP"] → ["DP", "그리디", "분할정복"]
+    """
+    if not topics:
+        return ["구현", "정렬"]  # 기본 확장
+
+    expanded = list(topics)
+    for topic in topics:
+        related = RELATED_TOPICS_MAP.get(topic, [])
+        for r in related[:2]:  # 관련 주제 최대 2개씩 추가
+            if r not in expanded:
+                expanded.append(r)
+
+    return expanded[:5]  # 최대 5개로 제한
 
 
 # ============================================================
@@ -53,10 +120,14 @@ async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
     이 노드는 state에 전달된 intent와 selection_index를 기반으로 라우팅만 수행.
     """
     intent = state.get("intent", "")
+    message = state.get("message", "")
     search_results = state.get("search_results", [])
     collected_info = state.get("collected_info", {})
     current_offset = state.get("search_offset", 0)
     selection_index = state.get("selection_index")
+
+    # 🔢 사용자 요청 개수 파싱 (예: "10개 보여줘", "20개 더 찾아줘")
+    requested_limit = _parse_requested_count(message)
 
     # 0. 문제 질문 의도 (inquire_problem)
     inquiry_target = state.get("inquiry_target")
@@ -77,11 +148,14 @@ async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
             "next_node": "generate_problem",
         }
 
-    # 3. 더 찾아보기 의도 (다음 5개)
+    # 3. 더 찾아보기 의도 (다음 N개)
     if intent == "more_search" or intent == "show_more":
-        new_offset = current_offset + 5
+        # 사용자 요청 개수가 있으면 사용, 없으면 기본 5개
+        fetch_count = requested_limit if requested_limit else 5
+        new_offset = current_offset + fetch_count
         return {
             "search_offset": new_offset,
+            "requested_limit": requested_limit,  # 사용자 요청 개수 전달
             "next_node": "search_problems",
         }
 
@@ -118,12 +192,31 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     - topics + difficulty가 명확하면 메타데이터 검색만 (임베딩 비용 0)
     - 불명확하면 시맨틱 검색 (임베딩 사용)
     - offset을 사용하여 다음 결과를 가져올 수 있습니다.
+    - 🔄 검색 실패 시 조건 완화 후 재시도 (difficulty → language → topics 순)
+    - 🔢 사용자 요청 개수에 따라 동적 limit 적용 (최대 10개)
     """
     from ..services.rag import rag_service
 
     collected_info = state.get("collected_info", {})
     user_context = state.get("user_context", {})
     search_offset = state.get("search_offset", 0)
+    message = state.get("message", "")
+
+    # 🔢 사용자 요청 개수 확인 (state에서 전달받거나 메시지에서 파싱)
+    requested_limit = state.get("requested_limit") or _parse_requested_count(message)
+    limit_exceeded = False
+    original_request = None
+
+    if requested_limit:
+        if requested_limit > MAX_SEARCH_LIMIT:
+            # 최대 개수 초과 → 최대값으로 제한하고 안내 메시지 준비
+            original_request = requested_limit
+            requested_limit = MAX_SEARCH_LIMIT
+            limit_exceeded = True
+            print(f"[DiscoveryGraph:Search] Requested {original_request} items, limiting to {MAX_SEARCH_LIMIT}")
+        per_page = requested_limit
+    else:
+        per_page = DEFAULT_SEARCH_LIMIT
 
     # 검색 파라미터
     topics = collected_info.get("topics", [])
@@ -131,7 +224,7 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     language = collected_info.get("language", "python")
 
     # 디버그 로깅
-    print(f"[DiscoveryGraph:Search] Params: topics={topics}, difficulty={difficulty}, language={language}")
+    print(f"[DiscoveryGraph:Search] Params: topics={topics}, difficulty={difficulty}, language={language}, per_page={per_page}")
 
     # 검색 쿼리 생성 (시맨틱 검색 폴백용)
     query_parts = []
@@ -141,25 +234,76 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
         query_parts.append(f"{difficulty} difficulty")
     query = " ".join(query_parts) if query_parts else "기초 알고리즘 문제"
 
-    # Agentic RAG: 스마트 검색 (메타데이터 vs 시맨틱 자동 판단)
-    try:
-        # offset + 5개를 가져와서 offset 이후 5개만 사용
-        fetch_limit = search_offset + 5
+    # offset + N개를 가져와서 offset 이후 N개만 사용
+    fetch_limit = search_offset + per_page
 
-        # 🚀 Agentic RAG: search_problems_smart 사용
-        results, should_fallback, search_method = await rag_service.search_problems_smart(
-            query=query,
-            topics=topics,
-            difficulty=difficulty,
-            language=language,
+    # 🔄 조건 완화 재시도 로직
+    retry_info = None  # 재시도 시 사용자에게 알릴 정보
+
+    async def _do_search(t, d, lang):
+        """실제 검색 수행"""
+        q = " ".join(t) if t else "기초 알고리즘 문제"
+        return await rag_service.search_problems_smart(
+            query=q,
+            topics=t,
+            difficulty=d,
+            language=lang,
             limit=fetch_limit,
             user_context=user_context,
         )
 
-        print(f"[DiscoveryGraph:Search] Method: {search_method}, Results: {len(results)}")
+    try:
+        # 1차 시도: 원본 조건으로 검색
+        results, should_fallback, search_method = await _do_search(topics, difficulty, language)
+        print(f"[DiscoveryGraph:Search] 1st try - Method: {search_method}, Results: {len(results)}")
 
-        # offset 이후 결과만 사용
-        results = results[search_offset:search_offset + 5]
+        # 결과가 없고 offset이 0일 때만 재시도 (더보기 요청은 재시도 안함)
+        if len(results) == 0 and search_offset == 0:
+
+            # 2차 시도: difficulty 제거
+            if difficulty:
+                print(f"[DiscoveryGraph:Search] 2nd try - Removing difficulty filter")
+                results, should_fallback, search_method = await _do_search(topics, None, language)
+                print(f"[DiscoveryGraph:Search] 2nd try - Results: {len(results)}")
+
+                if len(results) > 0:
+                    retry_info = {
+                        "relaxed": "difficulty",
+                        "original": difficulty,
+                        "message": f"'{difficulty}' 난이도에는 문제가 없어서 난이도 조건을 완화했어요."
+                    }
+
+            # 3차 시도: language도 제거 (python 외 요청 시)
+            if len(results) == 0 and language and language != "python":
+                print(f"[DiscoveryGraph:Search] 3rd try - Removing language filter")
+                results, should_fallback, search_method = await _do_search(topics, None, None)
+                print(f"[DiscoveryGraph:Search] 3rd try - Results: {len(results)}")
+
+                if len(results) > 0:
+                    retry_info = {
+                        "relaxed": "language",
+                        "original": language,
+                        "message": f"'{language}' 언어 조건을 완화해서 다른 언어 문제도 포함했어요."
+                    }
+
+            # 4차 시도: topics 확장 (관련 주제 추가)
+            if len(results) == 0 and topics:
+                expanded_topics = _expand_related_topics(topics)
+                if expanded_topics != topics:
+                    print(f"[DiscoveryGraph:Search] 4th try - Expanding topics: {topics} → {expanded_topics}")
+                    results, should_fallback, search_method = await _do_search(expanded_topics, None, None)
+                    print(f"[DiscoveryGraph:Search] 4th try - Results: {len(results)}")
+
+                    if len(results) > 0:
+                        retry_info = {
+                            "relaxed": "topics",
+                            "original": topics,
+                            "expanded": expanded_topics,
+                            "message": f"'{', '.join(topics)}' 주제를 확장해서 관련 문제를 찾았어요."
+                        }
+
+        # offset 이후 결과만 사용 (per_page 적용)
+        results = results[search_offset:search_offset + per_page]
 
         # 더 이상 결과가 없으면 fallback 여부 확인
         if len(results) == 0 and search_offset > 0:
@@ -170,6 +314,7 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
         print(f"[DiscoveryGraph:Search] RAG error: {e}")
         results = []
         should_fallback = True
+        search_method = "error"
 
     # ProblemInfo 형식으로 변환
     search_results: List[ProblemInfo] = []
@@ -221,6 +366,10 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
         "search_results": search_results,
         "should_generate": should_generate,
         "search_method": search_method,  # 🚀 Agentic RAG: metadata | semantic | hybrid
+        "retry_info": retry_info,  # 🔄 조건 완화 재시도 정보
+        "per_page": per_page,  # 🔢 실제 적용된 페이지당 개수
+        "limit_exceeded": limit_exceeded,  # 🔢 최대 개수 초과 여부
+        "original_request": original_request,  # 🔢 원래 요청한 개수
         "next_node": next_node,
     }
 
@@ -230,13 +379,28 @@ async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
     검색 결과를 필터링하고 응답을 생성합니다.
 
     Note: RAG 검색이 이미 유사도 기반 정렬을 하므로 추가 reranking 불필요.
-    단순히 상위 5개를 사용합니다.
+    동적 per_page에 따라 결과 개수 조정.
     """
     search_results = state.get("search_results", [])
     search_offset = state.get("search_offset", 0)
+    retry_info = state.get("retry_info")  # 🔄 조건 완화 재시도 정보
+    per_page = state.get("per_page", DEFAULT_SEARCH_LIMIT)  # 🔢 페이지당 개수
+    limit_exceeded = state.get("limit_exceeded", False)  # 🔢 최대 개수 초과 여부
+    original_request = state.get("original_request")  # 🔢 원래 요청한 개수
 
-    # RAG 결과에서 상위 5개 사용 (이미 유사도 정렬됨)
-    filtered_results = search_results[:5]
+    # RAG 결과에서 per_page개 사용 (이미 유사도 정렬됨)
+    filtered_results = search_results[:per_page]
+
+    # 🔄 조건 완화 메시지 (있으면 앞에 추가)
+    notices = []
+    if retry_info and retry_info.get("message"):
+        notices.append(f"⚠️ {retry_info['message']}")
+
+    # 🔢 최대 개수 초과 안내
+    if limit_exceeded and original_request:
+        notices.append(f"📢 한 번에 최대 {MAX_SEARCH_LIMIT}개까지 보여드릴 수 있어요. ({original_request}개 요청 → {MAX_SEARCH_LIMIT}개 표시)")
+
+    notice_text = "\n".join(notices) + "\n\n" if notices else ""
 
     # 응답 메시지 생성
     if filtered_results:
@@ -248,19 +412,23 @@ async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
                 f"  {start_num + i}. {p.get('name') or p.get('title', 'Unknown')} ({p.get('difficulty', 'medium')})"
                 for i, p in enumerate(filtered_results)
             ])
-            response_message = f"추가로 찾은 문제들이에요 ({start_num}~{end_num}번):\n{problem_list}\n\n어떤 문제를 풀어볼까요?"
+            response_message = f"{notice_text}추가로 찾은 문제들이에요 ({start_num}~{end_num}번):\n{problem_list}\n\n어떤 문제를 풀어볼까요?"
         else:
             problem_list = "\n".join([
                 f"  {i+1}. {p.get('name') or p.get('title', 'Unknown')} ({p.get('difficulty', 'medium')})"
                 for i, p in enumerate(filtered_results)
             ])
-            response_message = f"찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요? 번호로 선택해주세요!"
+            # 최대 개수 안내
+            more_hint = f"\n\n💡 더 보려면 \"더 보여줘\" 또는 \"N개 더 보여줘\"라고 말해주세요! (최대 {MAX_SEARCH_LIMIT}개)"
+            response_message = f"{notice_text}찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요? 번호로 선택해주세요!{more_hint}"
 
         action_data = {
             "status": "found",
             "problems": filtered_results,
             "search_offset": search_offset,
-            "has_more": len(filtered_results) == 5,  # 5개가 있으면 더 있을 수 있음
+            "per_page": per_page,
+            "has_more": len(filtered_results) == per_page,  # per_page개가 있으면 더 있을 수 있음
+            "retry_info": retry_info,  # 🔄 조건 완화 정보 포함
         }
         action_trigger = "search_problems"
     else:
@@ -391,10 +559,15 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
             selected_name = name_match.group(1)
 
     # 5. 문제 찾기 (인덱스 기반)
+    index_out_of_range = False
     if not selected_problem and selected_index and search_results:
         idx = selected_index - 1
         if 0 <= idx < len(search_results):
             selected_problem = search_results[idx]
+        else:
+            # EC-D03: 선택 인덱스 범위 초과
+            index_out_of_range = True
+            print(f"[DiscoveryGraph] Index out of range: {selected_index} (max: {len(search_results)})")
 
     # 6. 문제 찾기 (이름 기반)
     if not selected_problem and selected_name and search_results:
@@ -418,9 +591,35 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
         next_node = "confirm_problem"
     else:
         next_node = "respond"
-        response_message = "어떤 문제를 선택하셨는지 잘 모르겠어요. 번호나 이름으로 다시 말씀해주세요!"
+        # EC-D03: 인덱스 범위 초과 시 구체적인 안내
+        if index_out_of_range and search_results:
+            max_index = len(search_results)
+            response_message = (
+                f"**{selected_index}번** 문제는 없어요! "
+                f"현재 검색 결과는 **1~{max_index}번**까지 있어요. "
+                f"범위 내에서 선택해주세요! 🔢"
+            )
+            # EC-D03: 엣지케이스 로깅
+            await edge_case_logger.log(
+                code="EC-D03",
+                user_id=state.get("user_context", {}).get("user_id"),
+                session_id=state.get("session_id"),
+                current_node="handle_selection",
+                user_message=message,
+                state_snapshot={
+                    "selected_index": selected_index,
+                    "max_index": max_index,
+                    "search_results_count": len(search_results),
+                },
+                fallback_triggered=True,
+                response_message=response_message,
+                was_recovered=True,
+            )
+        else:
+            response_message = "어떤 문제를 선택하셨는지 잘 모르겠어요. 번호나 이름으로 다시 말씀해주세요!"
         return {
             "response_message": response_message,
+            "awaiting_selection": True,  # 선택 대기 상태 유지
             "next_node": next_node,
         }
 
@@ -534,6 +733,22 @@ async def fallback_clarify_node(state: DiscoveryState) -> Dict[str, Any]:
             "어떤 주제의 문제를 풀고 싶으신가요?"
         )
 
+    # EC-D01: 의도 파악 실패 로깅
+    await edge_case_logger.log(
+        code="EC-D01",
+        user_id=state.get("user_context", {}).get("user_id"),
+        session_id=state.get("session_id"),
+        current_node="fallback_clarify",
+        user_message=state.get("message"),
+        state_snapshot={
+            "fallback_reason": fallback_reason,
+            "search_results_count": len(search_results),
+        },
+        fallback_triggered=True,
+        response_message=response_message,
+        was_recovered=True,
+    )
+
     return {
         "response_message": response_message,
         "awaiting_selection": True,
@@ -602,13 +817,17 @@ async def respond_node(state: DiscoveryState) -> Dict[str, Any]:
 # ============================================================
 
 def _is_selection_message(message: str) -> bool:
-    """메시지가 문제 선택을 의미하는지 확인"""
+    """
+    메시지가 문제 선택을 의미하는지 확인 (숫자 패턴만)
+
+    Note: 키워드 기반 감지는 intent_tool에서 LLM 기반으로 처리됨.
+          여기서는 구조적인 숫자 패턴만 확인 (fallback용).
+    """
     selection_patterns = [
         r'\d+\s*번',  # 1번, 2번
-        r'첫|두|세|네|다섯',  # 첫번째 등
+        r'첫|두|세|네|다섯',  # 첫번째 등 (숫자 표현)
         r'\b[1-5]\b',  # 숫자만
-        r'할게|풀게|좋아|네|응|그거',  # 확인 표현
-        r'taco_\d+',  # 문제 이름
+        r'taco_\d+',  # 문제 이름 패턴
     ]
     message_lower = message.lower()
     return any(re.search(p, message_lower) for p in selection_patterns)

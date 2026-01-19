@@ -640,24 +640,21 @@ export const agentApi = {
   },
 
   /**
-   * Generate Code (Streaming) - SSE 스트리밍으로 새 문제 생성
+   * Generate Problem (Streaming) - SSE 스트리밍으로 문제 유형별 생성
+   * 실시간 상태 업데이트 + 힌트 사전 생성
    *
-   * @param request - 생성 요청 (collected_info, similar_problems, user_context)
-   * @param onStatus - 상태 업데이트 콜백 (status, message)
-   * @param onChunk - LLM 청크 콜백 (content)
-   * @param onResult - 최종 결과 콜백 (generated problem)
-   * @param onError - 에러 콜백 (error message)
+   * @param request - 생성 요청 (base_problem, problem_type, user_level, language)
+   * @param callbacks - 콜백 함수들
+   *   - onStatus: 상태 업데이트 콜백 (status, message)
+   *   - onResult: 최종 결과 콜백 (generated problem data)
+   *   - onError: 에러 콜백 (error message)
+   *   - onDone: 완료 콜백
    */
-  async generateCodeStream(
-    request: {
-      collectedInfo: CollectedInfo;
-      similarProblems?: BaseProblemInfo[];
-      userContext?: Record<string, unknown>;
-    },
+  async generateProblemStream(
+    request: ProblemGenerationRequest,
     callbacks: {
       onStatus?: (status: string, message: string) => void;
-      onChunk?: (content: string) => void;
-      onResult?: (result: BaseProblemInfo) => void;
+      onResult?: (result: BlankProblemResponse | PuzzleProblemResponse | GuidedProblemResponse) => void;
       onError?: (error: string) => void;
       onDone?: () => void;
     }
@@ -665,19 +662,29 @@ export const agentApi = {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
     try {
-      const response = await fetch(`${API_URL}/agent/generate/codegen/stream`, {
+      const token = localStorage.getItem('access_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${API_URL}/agent/generate/problem/stream`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
-          collected_info: request.collectedInfo,
-          similar_problems: request.similarProblems || [],
-          user_context: request.userContext,
+          base_problem: request.base_problem,
+          problem_type: request.problem_type,
+          user_level: request.user_level || 'intermediate',
+          language: request.language || 'python',
         }),
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('로그인 토큰이 만료되었어요. 다시 로그인해주세요.');
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -718,9 +725,6 @@ export const agentApi = {
               switch (event.type) {
                 case 'status':
                   callbacks.onStatus?.(event.status, event.message);
-                  break;
-                case 'chunk':
-                  callbacks.onChunk?.(event.content);
                   break;
                 case 'result':
                   callbacks.onResult?.(event.data);

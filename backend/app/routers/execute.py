@@ -8,7 +8,14 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, List, Any
 
-from ..services.judge0 import judge0_service
+from ..services.judge0 import (
+    judge0_service,
+    detect_function_definition,
+    has_function_call,
+    wrap_function_code,
+    parse_variable_assignment_string,
+)
+import json
 
 router = APIRouter()
 
@@ -105,12 +112,68 @@ async def execute_code(request: ExecuteCodeRequest):
     코드 실행
 
     소스 코드를 Judge0 API를 통해 실행하고 결과를 반환합니다.
+    함수형 코드의 경우 자동으로 함수 호출 래퍼를 추가합니다.
     """
     try:
+        source_code = request.source_code
+        stdin = request.stdin
+
+        # 함수형 코드 자동 래핑
+        func_info = detect_function_definition(source_code, request.language)
+        if func_info:
+            func_name, params = func_info
+            if not has_function_call(source_code, func_name):
+                test_input = None
+
+                # 1. 변수 할당 형식 파싱 시도: "n = 5, connections = [[0,1]]"
+                if stdin and '=' in stdin:
+                    test_input = parse_variable_assignment_string(stdin)
+                    if test_input:
+                        print(f"[Execute] Parsed variable assignment: {test_input}")
+
+                # 2. JSON 파싱 시도
+                if test_input is None and stdin:
+                    try:
+                        test_input = json.loads(stdin)
+                        print(f"[Execute] Parsed JSON: {test_input}")
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                # 3. 줄 단위로 JSON 파싱 시도
+                if test_input is None and stdin:
+                    lines = stdin.strip().split('\n')
+                    parsed_lines = []
+                    for line in lines:
+                        # 각 줄도 변수 할당 형식인지 확인
+                        if '=' in line:
+                            parsed = parse_variable_assignment_string(line)
+                            if parsed:
+                                parsed_lines.append(parsed)
+                                continue
+                        try:
+                            parsed_lines.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            parsed_lines.append(line)
+                    if parsed_lines:
+                        # 단일 딕셔너리면 그대로 사용
+                        if len(parsed_lines) == 1 and isinstance(parsed_lines[0], dict):
+                            test_input = parsed_lines[0]
+                        else:
+                            test_input = parsed_lines
+                    print(f"[Execute] Parsed lines: {test_input}")
+
+                # 래퍼 코드 추가
+                if test_input is not None:
+                    source_code = wrap_function_code(
+                        source_code, request.language, test_input, func_name, params
+                    )
+                    stdin = ""  # 래핑된 코드는 stdin 불필요
+                    print(f"[Execute] Wrapped function code with input: {test_input}")
+
         result = await judge0_service.submit_code(
-            source_code=request.source_code,
+            source_code=source_code,
             language=request.language,
-            stdin=request.stdin,
+            stdin=stdin,
             expected_output=request.expected_output,
             cpu_time_limit=request.cpu_time_limit,
             memory_limit=request.memory_limit,

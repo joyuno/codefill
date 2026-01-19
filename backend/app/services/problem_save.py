@@ -352,9 +352,11 @@ class ProblemSaveService:
                 copy_data["blocks"] = source_problem.get("blocks")
 
             elif problem_type == "guided":
-                copy_data["concepts"] = source_problem.get("concepts")
-                copy_data["flow"] = source_problem.get("flow")
-                copy_data["checkpoints"] = source_problem.get("checkpoints")
+                # 새 스키마 (2026-01-12 리팩토링)
+                copy_data["concept_explanation"] = source_problem.get("concept_explanation", "")
+                copy_data["variables_guide"] = source_problem.get("variables_guide", {})
+                copy_data["approach_guide"] = source_problem.get("approach_guide", "")
+                copy_data["starter_code"] = source_problem.get("starter_code", "")
 
             # 새 레코드 삽입
             result = self.supabase.table(table_name).insert(copy_data).execute()
@@ -438,20 +440,34 @@ class ProblemSaveService:
         self,
         base_problem_id: str,
         language: str,
-        concepts: list,
-        flow: list,
-        checkpoints: list,
         creator_id: str,
+        concept_explanation: str = "",
+        variables_guide: dict = None,
+        approach_guide: str = "",
+        starter_code: str = "",
+        # Legacy 파라미터 (하위 호환)
+        concepts: list = None,
+        flow: list = None,
+        checkpoints: list = None,
     ) -> Dict[str, Any]:
-        """1대1 대화형 문제 저장"""
+        """
+        1대1 대화형 문제 저장
+
+        새 스키마 (2026-01-12 리팩토링):
+        - concept_explanation: 핵심 개념 설명
+        - variables_guide: 변수 가이드 (JSON)
+        - approach_guide: 접근법 가이드
+        - starter_code: 맛보기 코드
+        """
         try:
             data = {
                 "base_problem_id": base_problem_id,
                 "language": language,
-                "concepts": concepts,
-                "flow": flow,
-                "checkpoints": checkpoints,
                 "creator_id": creator_id,
+                "concept_explanation": concept_explanation or "개념 설명이 제공되지 않았습니다.",
+                "variables_guide": variables_guide or {"variables": []},
+                "approach_guide": approach_guide or "접근법 가이드가 제공되지 않았습니다.",
+                "starter_code": starter_code or f"# {language} 코드",
             }
 
             result = self.supabase.table("problems_guided").insert(data).execute()
@@ -461,6 +477,8 @@ class ProblemSaveService:
 
         except Exception as e:
             logger.error(f"[ProblemSave] Failed to save guided problem: {e}")
+            import traceback
+            traceback.print_exc()
             return {"success": False, "error": str(e)}
 
     async def save_generated_problem(
@@ -504,13 +522,15 @@ class ProblemSaveService:
             )
 
         elif problem_type == "guided":
+            # 새 스키마 (2026-01-12 리팩토링)
             return await self.save_guided_problem(
                 base_problem_id=base_problem_id,
                 language=language,
-                concepts=generated_data.get("concepts", []),
-                flow=generated_data.get("flow", []),
-                checkpoints=generated_data.get("checkpoints", []),
                 creator_id=creator_id,
+                concept_explanation=generated_data.get("concept_explanation", ""),
+                variables_guide=generated_data.get("variables_guide", {}),
+                approach_guide=generated_data.get("approach_guide", ""),
+                starter_code=generated_data.get("starter_code", ""),
             )
 
         else:

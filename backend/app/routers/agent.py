@@ -610,10 +610,17 @@ class ChatResponse(BaseModel):
     is_complete: bool = Field(default=False, description="대화 완료 여부")
     awaiting_confirmation: bool = Field(default=False, description="네/아니오 응답 대기 중")
     suggested_value: Optional[str] = Field(default=None, description="AI가 추천한 값")
+    rejected_values: Optional[List[str]] = Field(default=None, description="거절된 값 목록 (재추천 방지)")
     suggested_actions: Optional[List[Dict[str, str]]] = Field(default=None, description="선택 가능한 액션 목록")
     hint_level: Optional[int] = Field(default=None, description="현재 힌트 레벨 (1-4)")
     is_correct: Optional[bool] = Field(default=None, description="정답 여부")
     session_id: Optional[str] = Field(default=None, description="세션 ID (다음 요청에 재사용)")
+    # 다중 의도 처리
+    is_multi_intent: bool = Field(default=False, description="다중 의도 요청 여부")
+    multi_intent_conflict: bool = Field(default=False, description="다중 의도 충돌 여부 (서로 다른 분기)")
+    total_intents: Optional[int] = Field(default=None, description="감지된 총 의도 수")
+    processed_intents: Optional[List[Dict[str, Any]]] = Field(default=None, description="처리된 의도 목록")
+    detected_intents: Optional[List[Dict[str, Any]]] = Field(default=None, description="감지된 의도 목록 (충돌 시)")
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -721,8 +728,10 @@ async def chat_agent(
                             # 확인 대기 상태
                             "awaiting_confirmation": inner_state.get("awaiting_confirmation", False),
                             "suggested_value": inner_state.get("suggested_value"),
+                            # 거절된 값 복원 (주제 재추천 방지)
+                            "rejected_values": inner_state.get("rejected_values", []),
                         }
-                        print(f"[Chat] Loaded session state from DB: stage={session_state.get('stage')}, has_problem={bool(session_state.get('selected_problem'))}")
+                        print(f"[Chat] Loaded session state from DB: stage={session_state.get('stage')}, has_problem={bool(session_state.get('selected_problem'))}, rejected={session_state.get('rejected_values')}")
 
                 # 사용자 메시지 DB에 저장
                 await chat_session_service.add_message(
@@ -811,6 +820,8 @@ async def chat_agent(
                     "route_to": result.get("route_to"),
                     # 문제 유형 선택 상태
                     "action_trigger": result.get("action_trigger"),
+                    # 거절된 값 추적 (주제 재추천 방지)
+                    "rejected_values": result.get("rejected_values", []),
                 }
 
                 # selected_problem 또는 generated_problem 저장
@@ -844,12 +855,20 @@ async def chat_agent(
             # 정보 수집 단계: 네/아니오 응답 대기
             awaiting_confirmation=result.get("awaiting_confirmation", False),
             suggested_value=result.get("suggested_value"),
+            # 거절된 값 추적 (주제 재추천 방지)
+            rejected_values=result.get("rejected_values"),
             # 🚀 동적 선택지 (Agentic 추천)
             suggested_actions=result.get("suggested_actions"),
             hint_level=result.get("hint_level"),
             is_correct=result.get("is_correct"),
             # 세션 추적 (클라이언트가 다음 요청에 사용)
             session_id=session_id,
+            # 🚀 다중 의도 처리
+            is_multi_intent=result.get("is_multi_intent", False),
+            multi_intent_conflict=result.get("multi_intent_conflict", False),
+            total_intents=result.get("total_intents"),
+            processed_intents=result.get("processed_intents"),
+            detected_intents=result.get("detected_intents"),
         )
 
     except Exception as e:
@@ -952,6 +971,132 @@ async def resume_graph(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Resume error: {str(e)}"
+        )
+
+
+# ============================================================
+# Pending Intent Endpoint - 다중 의도 순차 처리
+# ============================================================
+
+class PendingIntentRequest(BaseModel):
+    """대기 중인 의도 처리 요청"""
+    pending_intent: Dict[str, Any] = Field(..., description="처리할 대기 중인 의도")
+    session_state: Optional[Dict[str, Any]] = Field(default=None, description="세션 상태")
+    session_id: Optional[str] = Field(default=None, description="세션 ID")
+
+
+class PendingIntentResponse(BaseModel):
+    """대기 중인 의도 처리 응답"""
+    stage: str
+    message: str
+    intent: Optional[str] = None
+    collected_info: Optional[CollectedInfo] = None
+    search_results: Optional[List[Dict[str, Any]]] = None
+    selected_problem: Optional[Dict[str, Any]] = None
+    action_trigger: Optional[str] = None
+    action_data: Optional[Dict[str, Any]] = None
+    next_stage: Optional[str] = None
+    is_complete: bool = False
+    from_pending_intent: bool = True
+    processed_action: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+@router.post("/process-pending-intent", response_model=PendingIntentResponse)
+async def process_pending_intent(
+    request: PendingIntentRequest,
+    db=Depends(get_db),
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
+    """
+    대기 중인 의도 처리 (다중 의도 순차 처리)
+
+    /chat 응답에서 pending_intents가 있을 때, 클라이언트가 각 의도를
+    순차적으로 처리하기 위해 호출합니다.
+
+    Flow:
+        1. /chat에서 다중 의도 감지 → pending_intents 반환
+        2. 첫 번째 의도 처리 완료 후
+        3. 클라이언트가 pending_intents[0]을 이 엔드포인트로 전송
+        4. 해당 의도 처리 후 결과 반환
+        5. 모든 pending_intents 처리될 때까지 반복
+
+    Example:
+        POST /process-pending-intent
+        {
+            "pending_intent": {
+                "category": "general",
+                "action": "progress_check",
+                "confidence": 0.85,
+                "extracted_values": {},
+                "suggested_route": "respond"
+            },
+            "session_state": {...},
+            "session_id": "..."
+        }
+    """
+    try:
+        orchestrator = get_chat_orchestrator_main()
+        chat_session_service = get_chat_session_service(db)
+
+        user_id = str(current_user_id) if current_user_id else None
+        user_context = {}
+        if user_id:
+            user_context["user_id"] = user_id
+
+        # 세션에서 히스토리 로드
+        conversation_history = []
+        session_state = request.session_state or {}
+
+        if user_id and request.session_id:
+            try:
+                conversation_history = await chat_session_service.convert_to_langchain_messages(
+                    session_id=request.session_id,
+                    limit=10
+                )
+            except Exception as e:
+                print(f"[PendingIntent] Failed to load history: {e}")
+
+        # pending intent 처리
+        result = await orchestrator.process_pending_intent(
+            pending_intent=request.pending_intent,
+            conversation_history=conversation_history,
+            user_context=user_context,
+            session_state=session_state,
+        )
+
+        # collected_info 변환
+        collected_info_data = result.get("collected_info", {})
+        collected_info = None
+        if collected_info_data:
+            collected_info = CollectedInfo(
+                topics=collected_info_data.get("topics") or [],
+                difficulty=collected_info_data.get("difficulty"),
+                language=collected_info_data.get("language"),
+            )
+
+        return PendingIntentResponse(
+            stage=result.get("stage", "respond"),
+            message=result.get("response_message", ""),
+            intent=result.get("intent"),
+            collected_info=collected_info,
+            search_results=result.get("search_results"),
+            selected_problem=result.get("selected_problem"),
+            action_trigger=result.get("action_trigger"),
+            action_data=result.get("action_data"),
+            next_stage=result.get("next_stage"),
+            is_complete=result.get("is_complete", False),
+            from_pending_intent=result.get("from_pending_intent", True),
+            processed_action=result.get("processed_action"),
+            session_id=request.session_id,
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Pending intent processing error: {str(e)}"
         )
 
 
@@ -1182,7 +1327,7 @@ async def generate_blank_problem(
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_blank_gen,
                 messages=messages,
-                temperature=0.7 + (attempt * 0.1),  # 재시도시 온도 약간 증가
+                temperature=0.3 + (attempt * 0.15),  # 코드는 정확해야 함 (0.3 → 0.45 → 0.6)
                 response_format={"type": "json_object"},
             )
 
@@ -1384,7 +1529,7 @@ async def generate_puzzle_problem(
                 response = await openrouter_service.chat_completion(
                     model=settings.llm_model_puzzle_gen,
                     messages=messages,
-                    temperature=0.7 + (attempt * 0.1),
+                    temperature=0.3 + (attempt * 0.15),  # 코드는 정확해야 함 (0.3 → 0.45 → 0.6)
                     response_format={"type": "json_object"},
                 )
 
@@ -1638,7 +1783,7 @@ async def generate_guided_problem(
                 response = await openrouter_service.chat_completion(
                     model=settings.llm_model_guided_gen,
                     messages=messages,
-                    temperature=0.7 + (attempt * 0.1),
+                    temperature=0.5 + (attempt * 0.1),  # 설명 포함이라 약간 높게 (0.5 → 0.6 → 0.7)
                     response_format={"type": "json_object"},
                 )
 
@@ -1894,146 +2039,163 @@ async def generate_code(request: CodeGenerationRequest, db=Depends(get_db)):
 # Code Generation Streaming (SSE)
 # ============================================================
 
-class CodeGenStreamRequest(BaseModel):
-    """스트리밍 코드 생성 요청"""
-    collected_info: Dict[str, Any]  # topics, difficulty, language
-    similar_problems: List[Dict[str, Any]] = []
-    user_context: Optional[Dict[str, Any]] = None
+class ProblemGenStreamRequest(BaseModel):
+    """문제 유형별 스트리밍 생성 요청"""
+    base_problem: Dict[str, Any]  # BaseProblemInfo
+    problem_type: str  # 'blank' | 'puzzle' | 'guided'
+    user_level: str = "intermediate"
+    language: str = "python"
 
 
-@router.post("/generate/codegen/stream")
-async def generate_codegen_stream(
-    request: CodeGenStreamRequest,
-    db=Depends(get_db)
+@router.post("/generate/problem/stream")
+async def generate_problem_stream(
+    request: ProblemGenStreamRequest,
+    db=Depends(get_db),
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
 ):
     """
-    SSE 스트리밍으로 새 문제를 생성합니다.
+    문제 유형(blank/puzzle/guided)을 SSE 스트리밍으로 생성합니다.
 
-    프론트엔드에서 실시간으로 생성 과정을 확인할 수 있습니다.
+    프론트엔드에서 실시간으로 진행 상태를 확인할 수 있습니다.
+    생성 완료 후 백그라운드에서 힌트를 미리 생성합니다.
 
     이벤트 타입:
-    - status: 진행 상태 업데이트
-    - chunk: LLM 응답 청크
+    - status: 진행 상태 업데이트 (cache_check, generating, saving, preparing_hints)
     - result: 최종 결과 (JSON)
     - error: 에러 발생
     """
     import asyncio
+    from ..services.hint_service import get_hint_service
 
     async def generate():
-        accumulated_content = ""
-
         try:
-            # 1. 시작 상태 전송
-            yield f"data: {json.dumps({'type': 'status', 'status': 'starting', 'message': '문제 생성을 시작합니다...'}, ensure_ascii=False)}\n\n"
+            bp = request.base_problem
+            problem_type = request.problem_type
+            language = request.language
+            user_level = request.user_level
+            original_id = bp.get("original_id") or bp.get("id") or bp.get("name")
+            creator_id = str(current_user_id) if current_user_id else None
+
+            print(f"[Stream Gen] type={problem_type}, original_id={original_id}, creator_id={creator_id}")
+
+            # 1. 캐시 확인 상태
+            yield f"data: {json.dumps({'type': 'status', 'status': 'cache_check', 'message': '캐시를 확인하고 있어요...'}, ensure_ascii=False)}\n\n"
             await asyncio.sleep(0.1)
 
-            # 2. 유사 문제 분석 상태
-            yield f"data: {json.dumps({'type': 'status', 'status': 'analyzing', 'message': '유사 문제를 분석하고 있습니다...'}, ensure_ascii=False)}\n\n"
-
-            # 3. 프롬프트 준비
-            collected_info = request.collected_info
-            similar_problems = request.similar_problems
-            user_context = request.user_context or {}
-
-            # 유사 문제 컨텍스트 포맷팅
-            similar_context = []
-            preferred_lang = collected_info.get("language", "python")
-
-            for p in similar_problems[:3]:
-                solutions = p.get("solutions", [])
-                solution_code = None
-
-                for sol in solutions:
-                    if sol.get("language") == preferred_lang:
-                        solution_code = sol.get("code", "")[:2000]
-                        break
-
-                if not solution_code and solutions:
-                    solution_code = solutions[0].get("code", "")[:2000]
-
-                similar_context.append({
-                    "title": p.get("name", ""),
-                    "question": p.get("question", ""),
-                    "tags": p.get("tags", []),
-                    "difficulty": p.get("difficulty", ""),
-                    "solution_code": solution_code,
-                })
-
-            user_request = {
-                "topics": collected_info.get("topics", ["기초"]),
-                "difficulty": collected_info.get("difficulty", "easy"),
-                "language": preferred_lang,
-                "specific_needs": collected_info.get("specific_needs", ""),
-            }
-
-            system_prompt = CODE_GEN_SYSTEM_PROMPT.format(
-                user_request=json.dumps(user_request, ensure_ascii=False),
-                similar_problems=json.dumps(similar_context, ensure_ascii=False),
-                user_status=user_context.get("status", "unknown"),
-                user_goal=user_context.get("goal", "unknown"),
-                user_level=user_context.get("level", "intermediate"),
-                strong_algorithms=", ".join(user_context.get("strong_algorithms", [])) or "없음",
-            )
-
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "사용자 요청에 맞는 교육용 코드를 생성해주세요."},
-            ]
-
-            # 4. LLM 스트리밍 시작
-            yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제를 생성하고 있습니다...'}, ensure_ascii=False)}\n\n"
-
-            chunk_count = 0
-            async for chunk in openrouter_service.chat_completion_stream(
-                model=settings.llm_model_code_gen,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=8192,
-            ):
-                accumulated_content += chunk
-                chunk_count += 1
-
-                # 50청크마다 또는 특정 키워드 발견 시 상태 업데이트
-                if chunk_count % 50 == 0:
-                    # 진행 상태 추정
-                    if '"title"' in accumulated_content and '"description"' not in accumulated_content:
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제 제목 생성 완료...'}, ensure_ascii=False)}\n\n"
-                    elif '"description"' in accumulated_content and '"code"' not in accumulated_content:
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제 설명 작성 중...'}, ensure_ascii=False)}\n\n"
-                    elif '"code"' in accumulated_content:
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'coding', 'message': '솔루션 코드 작성 중...'}, ensure_ascii=False)}\n\n"
-
-                # 청크 전송 (너무 자주 보내지 않도록 조절)
-                if chunk_count % 10 == 0:
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
-
-            # 5. 결과 파싱
-            yield f"data: {json.dumps({'type': 'status', 'status': 'finalizing', 'message': '결과를 정리하고 있습니다...'}, ensure_ascii=False)}\n\n"
-
-            result = openrouter_service.parse_json_response(accumulated_content)
-
-            # 6. DB에 저장
             problem_save_service = get_problem_save_service()
-            saved_base_id = await problem_save_service.save_codegen_to_base_problems(
-                generated_problem=result,
-                collected_info=collected_info,
+            base_problem_id = problem_save_service.get_base_problem_id(original_id)
+
+            # 캐시 확인
+            cached_result = None
+            if base_problem_id:
+                # 유저가 이미 가지고 있는지 확인
+                if creator_id:
+                    cached_result = problem_save_service.check_user_has_problem(
+                        problem_type=problem_type,
+                        base_problem_id=base_problem_id,
+                        language=language,
+                        creator_id=creator_id,
+                    )
+
+                # 다른 유저가 만든 문제 확인
+                if not cached_result:
+                    cached_result = problem_save_service.find_existing_problem(
+                        problem_type=problem_type,
+                        base_problem_id=base_problem_id,
+                        language=language,
+                    )
+                    # 복사해서 사용
+                    if cached_result and creator_id:
+                        await problem_save_service.copy_problem_for_user(
+                            problem_type=problem_type,
+                            source_problem=cached_result,
+                            creator_id=creator_id,
+                        )
+
+            if cached_result:
+                yield f"data: {json.dumps({'type': 'status', 'status': 'cache_hit', 'message': '기존 문제를 불러왔어요!'}, ensure_ascii=False)}\n\n"
+
+                # 결과 정규화
+                result = _normalize_problem_result(cached_result, problem_type, original_id, language)
+
+                # 힌트 사전 생성 (백그라운드)
+                if base_problem_id:
+                    yield f"data: {json.dumps({'type': 'status', 'status': 'preparing_hints', 'message': '힌트를 준비하고 있어요...'}, ensure_ascii=False)}\n\n"
+                    hint_service = get_hint_service()
+                    asyncio.create_task(
+                        hint_service.pregenerate_all_hints(
+                            problem_type=problem_type,
+                            problem_id=base_problem_id,
+                            problem_data=result,
+                        )
+                    )
+
+                yield f"data: {json.dumps({'type': 'result', 'status': 'complete', 'data': result}, ensure_ascii=False)}\n\n"
+                return
+
+            # 2. LLM 생성 상태
+            yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제를 생성하고 있어요...'}, ensure_ascii=False)}\n\n"
+
+            # 코드 추출
+            title = bp.get("title") or bp.get("name", "")
+            description = bp.get("description") or bp.get("question", "")
+            code = bp.get("code") or ""
+            if not code:
+                solutions = bp.get("solutions", [])
+                if solutions:
+                    # 언어에 맞는 솔루션 찾기
+                    matching_sol = next((s for s in solutions if s.get("language") == language), None)
+                    if matching_sol:
+                        code = matching_sol.get("code", "")
+                    elif solutions:
+                        code = solutions[0].get("code", "")
+
+            if not code:
+                yield f"data: {json.dumps({'type': 'error', 'status': 'error', 'message': '이 문제에는 솔루션 코드가 없습니다.'}, ensure_ascii=False)}\n\n"
+                return
+
+            # 문제 유형별 LLM 호출
+            result = await _generate_problem_by_type(
+                problem_type=problem_type,
+                title=title,
+                description=description,
+                code=code,
+                difficulty=bp.get("difficulty", "medium"),
+                topics=bp.get("topics") or bp.get("tags", []),
+                language=language,
+                user_level=user_level,
+                original_id=original_id,
             )
 
-            if saved_base_id:
-                result["id"] = saved_base_id
-                # original_id 조회
-                try:
-                    db_result = problem_save_service.supabase.table("base_problems") \
-                        .select("original_id") \
-                        .eq("id", saved_base_id) \
-                        .limit(1) \
-                        .execute()
-                    if db_result.data:
-                        result["original_id"] = db_result.data[0].get("original_id")
-                except Exception:
-                    pass
+            # 3. DB 저장 상태
+            yield f"data: {json.dumps({'type': 'status', 'status': 'saving', 'message': '저장하고 있어요...'}, ensure_ascii=False)}\n\n"
 
-            # 7. 최종 결과 전송
+            if base_problem_id and creator_id:
+                try:
+                    save_result = await problem_save_service.save_generated_problem(
+                        problem_type=problem_type,
+                        generated_data=result,
+                        base_problem_id=base_problem_id,
+                        creator_id=creator_id,
+                    )
+                    if save_result.get("success"):
+                        print(f"[Stream Gen] Saved: {original_id}")
+                except Exception as save_err:
+                    print(f"[Stream Gen] Save error: {save_err}")
+
+            # 4. 힌트 사전 생성 (백그라운드)
+            if base_problem_id:
+                yield f"data: {json.dumps({'type': 'status', 'status': 'preparing_hints', 'message': '힌트를 준비하고 있어요...'}, ensure_ascii=False)}\n\n"
+                hint_service = get_hint_service()
+                asyncio.create_task(
+                    hint_service.pregenerate_all_hints(
+                        problem_type=problem_type,
+                        problem_id=base_problem_id,
+                        problem_data=result,
+                    )
+                )
+
+            # 5. 최종 결과
             yield f"data: {json.dumps({'type': 'result', 'status': 'complete', 'data': result}, ensure_ascii=False)}\n\n"
 
         except Exception as e:
@@ -2053,6 +2215,99 @@ async def generate_codegen_stream(
             "X-Accel-Buffering": "no",
         }
     )
+
+
+def _normalize_problem_result(cached: Dict[str, Any], problem_type: str, original_id: str, language: str) -> Dict[str, Any]:
+    """캐시된 문제를 응답 형식으로 정규화"""
+    result = {
+        "original_id": cached.get("original_id", original_id),
+        "language": cached.get("language", language),
+    }
+
+    if problem_type == "blank":
+        result["code_template"] = cached.get("code_template", "")
+        result["answers"] = cached.get("answers", [])
+    elif problem_type == "puzzle":
+        result["fixed_start"] = cached.get("fixed_start", "")
+        result["fixed_end"] = cached.get("fixed_end", "")
+        result["blocks"] = cached.get("blocks", [])
+    elif problem_type == "guided":
+        result["concept_explanation"] = cached.get("concept_explanation", "")
+        result["variables_guide"] = cached.get("variables_guide", {"total_count": 0, "variables": []})
+        result["approach_guide"] = cached.get("approach_guide", "")
+        result["starter_code"] = cached.get("starter_code", "")
+        result["guided_problem_id"] = cached.get("id", "")
+
+    return result
+
+
+async def _generate_problem_by_type(
+    problem_type: str,
+    title: str,
+    description: str,
+    code: str,
+    difficulty: str,
+    topics: List[str],
+    language: str,
+    user_level: str,
+    original_id: str,
+) -> Dict[str, Any]:
+    """문제 유형별 LLM 호출"""
+    base_problem_json = json.dumps({
+        "title": title,
+        "description": description,
+        "code": code,
+        "difficulty": difficulty,
+        "topics": topics,
+    }, ensure_ascii=False)
+
+    if problem_type == "blank":
+        system_prompt = BLANK_PROBLEM_SYSTEM_PROMPT \
+            .replace("{base_problem}", base_problem_json) \
+            .replace("{user_level}", user_level) \
+            .replace("{language}", language)
+        user_msg = "위 문제를 빈칸 채우기 문제로 변환해주세요."
+        model = settings.llm_model_blank_gen
+    elif problem_type == "puzzle":
+        system_prompt = PUZZLE_PROBLEM_SYSTEM_PROMPT \
+            .replace("{base_problem}", base_problem_json) \
+            .replace("{user_level}", user_level) \
+            .replace("{language}", language)
+        user_msg = "위 문제를 블록 정렬 문제로 변환해주세요."
+        model = settings.llm_model_puzzle_gen
+    else:  # guided
+        system_prompt = GUIDED_PROBLEM_SYSTEM_PROMPT \
+            .replace("{base_problem}", base_problem_json) \
+            .replace("{user_level}", user_level) \
+            .replace("{language}", language)
+        user_msg = "위 문제의 초기 가이드를 생성해주세요."
+        model = settings.llm_model_guided_gen
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_msg},
+    ]
+
+    # 문제 유형별 temperature (코드 정확성 vs 설명 다양성)
+    temp = 0.5 if problem_type == "guided" else 0.3
+
+    response = await openrouter_service.chat_completion(
+        model=model,
+        messages=messages,
+        temperature=temp,
+        response_format={"type": "json_object"},
+    )
+
+    content = openrouter_service.get_content(response)
+    result = openrouter_service.parse_json_response(content)
+
+    # 필수 필드 보정
+    if not result.get("original_id"):
+        result["original_id"] = original_id
+    if not result.get("language"):
+        result["language"] = language
+
+    return result
 
 
 # ============================================================

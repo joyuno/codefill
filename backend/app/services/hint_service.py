@@ -954,8 +954,10 @@ class HintService:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_hint,
                 messages=messages,
-                temperature=0.7,
+                temperature=0.5,  # 힌트는 일관성 있게
+                max_tokens=500,   # 힌트는 간결하게
                 response_format={"type": "json_object"},
+                frequency_penalty=0.3,  # 반복 방지
             )
 
             content = openrouter_service.get_content(response)
@@ -1396,8 +1398,10 @@ class HintService:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_hint,
                 messages=messages,
-                temperature=0.7,
+                temperature=0.5,  # 힌트는 일관성 있게
+                max_tokens=500,   # 힌트는 간결하게
                 response_format={"type": "json_object"},
+                frequency_penalty=0.3,  # 반복 방지
             )
 
             content = openrouter_service.get_content(response)
@@ -1615,8 +1619,10 @@ class HintService:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_hint,
                 messages=messages,
-                temperature=0.7,
+                temperature=0.5,  # 힌트는 일관성 있게
+                max_tokens=500,   # 힌트는 간결하게
                 response_format={"type": "json_object"},
+                frequency_penalty=0.3,  # 반복 방지
             )
 
             content = openrouter_service.get_content(response)
@@ -1678,6 +1684,214 @@ class HintService:
             "next_step_preview": f"다음 단계에서는 더 심화된 내용을 배울 거예요." if current_step + 1 < total_steps else None,
             "encouragement": "포기하지 마세요! 한 단계씩 차근차근 진행하면 완성할 수 있어요.",
         }
+
+    # ============================================================
+    # 힌트 사전 생성 (백그라운드 태스크)
+    # ============================================================
+
+    async def pregenerate_all_hints(
+        self,
+        problem_type: str,
+        problem_id: str,
+        problem_data: Dict[str, Any],
+    ) -> None:
+        """
+        문제 생성 직후 모든 힌트를 백그라운드에서 미리 생성
+
+        Args:
+            problem_type: 'blank' | 'puzzle' | 'guided'
+            problem_id: base_problem_id (UUID)
+            problem_data: 생성된 문제 데이터
+
+        힌트 개수:
+            - blank: answers 배열 길이만큼
+            - puzzle: blocks 배열 길이만큼
+            - guided: variables_guide.variables 배열 길이만큼
+        """
+        import asyncio
+
+        try:
+            print(f"[HintPregen] Starting pregeneration for {problem_type}/{problem_id[:8]}...")
+
+            if problem_type == "blank":
+                await self._pregenerate_blank_hints(problem_id, problem_data)
+            elif problem_type == "puzzle":
+                await self._pregenerate_puzzle_hints(problem_id, problem_data)
+            elif problem_type == "guided":
+                await self._pregenerate_guided_hints(problem_id, problem_data)
+            else:
+                print(f"[HintPregen] Unknown problem type: {problem_type}")
+
+        except Exception as e:
+            # 백그라운드 태스크이므로 에러는 로깅만
+            print(f"[HintPregen] Error: {e}")
+            logger.error(f"[HintPregen] Failed for {problem_type}/{problem_id}: {e}")
+
+    async def _pregenerate_blank_hints(
+        self,
+        problem_id: str,
+        problem_data: Dict[str, Any],
+    ) -> None:
+        """Blank 문제 힌트 사전 생성 - answers 배열 길이만큼"""
+        import asyncio
+
+        answers = problem_data.get("answers", [])
+        code_template = problem_data.get("code_template", "")
+        total = len(answers)
+
+        if total == 0:
+            print(f"[HintPregen] No answers found for blank problem")
+            return
+
+        print(f"[HintPregen] Generating {total} blank hints...")
+
+        # 3개씩 배치 처리
+        BATCH_SIZE = 3
+        for i in range(0, total, BATCH_SIZE):
+            batch_indices = list(range(i, min(i + BATCH_SIZE, total)))
+            tasks = []
+
+            for idx in batch_indices:
+                # 이미 캐시에 있는지 확인
+                cached = self.get_cached_hint(
+                    problem_id=problem_id,
+                    problem_type="blank",
+                    hint_index=idx,
+                )
+
+                if cached:
+                    print(f"[HintPregen] Blank hint {idx} already cached, skipping")
+                    continue
+
+                # 힌트 생성 태스크 추가
+                tasks.append(
+                    self.generate_blank_hint(
+                        problem_id=problem_id,
+                        blank_index=idx,
+                        code_template=code_template,
+                        additional_info={"answers": answers, "code_template": code_template},
+                    )
+                )
+
+            if tasks:
+                await asyncio.gather(*tasks)
+                print(f"[HintPregen] Batch {i//BATCH_SIZE + 1} complete ({len(tasks)} hints)")
+
+        print(f"[HintPregen] ✓ Blank hints pregeneration complete ({total} hints)")
+
+    async def _pregenerate_puzzle_hints(
+        self,
+        problem_id: str,
+        problem_data: Dict[str, Any],
+    ) -> None:
+        """Puzzle 문제 힌트 사전 생성 - blocks 배열 길이만큼"""
+        import asyncio
+
+        blocks = problem_data.get("blocks", [])
+        total = len(blocks)
+
+        if total == 0:
+            print(f"[HintPregen] No blocks found for puzzle problem")
+            return
+
+        print(f"[HintPregen] Generating {total} puzzle hints...")
+
+        # 3개씩 배치 처리
+        BATCH_SIZE = 3
+        for i in range(0, total, BATCH_SIZE):
+            batch_indices = list(range(i, min(i + BATCH_SIZE, total)))
+            tasks = []
+
+            for idx in batch_indices:
+                # 이미 캐시에 있는지 확인
+                cached = self.get_cached_hint(
+                    problem_id=problem_id,
+                    problem_type="puzzle",
+                    hint_index=idx,
+                )
+
+                if cached:
+                    print(f"[HintPregen] Puzzle hint {idx} already cached, skipping")
+                    continue
+
+                # 힌트 생성 태스크 추가
+                tasks.append(
+                    self.generate_puzzle_block_hint(
+                        problem_id=problem_id,
+                        block_index=idx,
+                        blocks=blocks,
+                    )
+                )
+
+            if tasks:
+                await asyncio.gather(*tasks)
+                print(f"[HintPregen] Batch {i//BATCH_SIZE + 1} complete ({len(tasks)} hints)")
+
+        print(f"[HintPregen] ✓ Puzzle hints pregeneration complete ({total} hints)")
+
+    async def _pregenerate_guided_hints(
+        self,
+        problem_id: str,
+        problem_data: Dict[str, Any],
+    ) -> None:
+        """Guided 문제 힌트 사전 생성 - variables_guide.variables 배열 길이만큼"""
+        import asyncio
+
+        # variables_guide에서 variables 추출
+        variables_guide = problem_data.get("variables_guide", {})
+        if isinstance(variables_guide, str):
+            import json as json_module
+            try:
+                variables_guide = json_module.loads(variables_guide)
+            except Exception:
+                variables_guide = {}
+
+        variables = variables_guide.get("variables", [])
+        total = len(variables)
+
+        if total == 0:
+            print(f"[HintPregen] No variables found for guided problem")
+            return
+
+        print(f"[HintPregen] Generating {total} guided hints...")
+
+        # 3개씩 배치 처리
+        BATCH_SIZE = 3
+        for i in range(0, total, BATCH_SIZE):
+            batch_indices = list(range(i, min(i + BATCH_SIZE, total)))
+            tasks = []
+
+            for idx in batch_indices:
+                # 이미 캐시에 있는지 확인
+                cached = self.get_cached_hint(
+                    problem_id=problem_id,
+                    problem_type="guided",
+                    hint_index=idx,
+                )
+
+                if cached:
+                    print(f"[HintPregen] Guided hint {idx} already cached, skipping")
+                    continue
+
+                # 힌트 생성 태스크 추가
+                # guided는 variables를 steps로 변환하여 처리
+                variable_info = variables[idx] if idx < len(variables) else {}
+                steps = [variable_info]  # 단일 변수를 step으로 취급
+
+                tasks.append(
+                    self.generate_guided_step_hint(
+                        problem_id=problem_id,
+                        step_index=idx,
+                        steps=steps,
+                        additional_info={"variables_guide": variables_guide},
+                    )
+                )
+
+            if tasks:
+                await asyncio.gather(*tasks)
+                print(f"[HintPregen] Batch {i//BATCH_SIZE + 1} complete ({len(tasks)} hints)")
+
+        print(f"[HintPregen] ✓ Guided hints pregeneration complete ({total} hints)")
 
 
 # Singleton instance

@@ -747,7 +747,8 @@ export function UnifiedPractice({
       const { practiceApi } = await import('@/lib/api/practice');
 
       const result = await practiceApi.getBlankHint({
-        problemId: problem.id,
+        // baseProblemId 우선 사용 (사전 생성된 힌트 캐시 매칭을 위해)
+        problemId: problem.baseProblemId || problem.id,
         blankIndex,
         codeTemplate: problem.codeSnippet || '',
         attemptId,  // attempt tracking
@@ -805,7 +806,8 @@ export function UnifiedPractice({
       const { practiceApi } = await import('@/lib/api/practice');
 
       const result = await practiceApi.getPuzzleHint({
-        problemId: problem.id,
+        // baseProblemId 우선 사용 (사전 생성된 힌트 캐시 매칭을 위해)
+        problemId: problem.baseProblemId || problem.id,
         blockIndex: targetBlockIdx,
         blocks: blocks.map(b => ({ id: b.id, code: b.code })),
         attemptId,  // attempt tracking

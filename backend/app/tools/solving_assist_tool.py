@@ -72,9 +72,15 @@ ASSIST_SYSTEM_PROMPT = """당신은 코딩 교육 전문가입니다. 학생이 
 {assist_type_guide}
 
 ## 응답 형식
-- 2-4문장으로 간결하게
+- 1-2문장으로 매우 간결하게 (최대 100토큰)
 - 격려하는 톤 유지
-- 필요시 관련 개념 링크/키워드 제공
+- 필요시 관련 개념 키워드만 언급
+
+## 절대 금지 (Guardrails)
+- 새로운 문제를 생성하거나 만들어내지 마세요
+- DB에 있는 문제 내용을 직접 출력하지 마세요
+- 정답 코드를 생성하지 마세요
+- **난이도**, **주제** 같은 메타데이터 형식으로 출력하지 마세요
 """
 
 ASSIST_TYPE_GUIDES = {
@@ -166,8 +172,7 @@ class SolvingAssistTool:
                 model=settings.llm_model_hint,  # 가벼운 모델 사용
                 messages=messages,
                 temperature=0.7,
-                max_tokens=400,
-            )
+                max_tokens=250,  
 
             content = openrouter_service.get_content(response)
 

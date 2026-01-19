@@ -147,6 +147,7 @@ class InfoCollectionGraph:
         existing_language: str = None,
         existing_awaiting_confirmation: bool = False,
         existing_suggested_value: str = None,
+        existing_rejected_values: List[str] = None,
     ) -> Dict[str, Any]:
         """
         그래프 실행
@@ -160,6 +161,7 @@ class InfoCollectionGraph:
             existing_language: 이전에 수집된 언어
             existing_awaiting_confirmation: 네/아니오 응답 대기 상태
             existing_suggested_value: 추천된 값
+            existing_rejected_values: 이전에 거절된 값들
 
         Returns:
             {
@@ -186,11 +188,14 @@ class InfoCollectionGraph:
             existing_language=existing_language,
         )
 
-        # 기존 상태 병합 (awaiting_confirmation, suggested_value)
+        # 기존 상태 병합 (awaiting_confirmation, suggested_value, rejected_values)
         if existing_awaiting_confirmation:
             initial_state["awaiting_confirmation"] = existing_awaiting_confirmation
         if existing_suggested_value:
             initial_state["suggested_value"] = existing_suggested_value
+        if existing_rejected_values:
+            initial_state["rejected_values"] = existing_rejected_values
+            print(f"[InfoCollectionGraph] Restoring rejected_values: {existing_rejected_values}")
 
         # 그래프 실행
         result = await self.graph.ainvoke(initial_state)
@@ -237,6 +242,11 @@ class InfoCollectionGraph:
         print(f"[InfoCollectionGraph] Result: topic={result.get('topic')}, difficulty={result.get('difficulty')}, language={result.get('language')}")
         print(f"[InfoCollectionGraph] Final: topic={final_topic}, difficulty={final_difficulty}, language={final_language}")
 
+        # rejected_values 상태 보존 (중요: 다음 턴에서 참조 필요)
+        rejected_values = result.get("rejected_values", [])
+        if rejected_values:
+            print(f"[InfoCollectionGraph] rejected_values: {rejected_values}")
+
         return {
             "message": result.get("response_message", ""),
             "collected_info": {
@@ -249,4 +259,5 @@ class InfoCollectionGraph:
             "awaiting_confirmation": awaiting_confirmation,
             "suggested_value": suggested_value,
             "action_data": action_data,
+            "rejected_values": rejected_values,  # 거절된 값 전달
         }

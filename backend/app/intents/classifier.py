@@ -237,15 +237,15 @@ class IntentClassifier:
 - 최근 푼 문제 있음: {bool(session_context.get('last_solved_problem'))}
 - 코드 포함: {'```' in message}
 
-가장 적절한 의도를 선택하고 JSON으로 응답하세요:
-{{"intent": "의도값", "confidence": 0.0-1.0, "reason": "선택 이유"}}"""
+응답: {{"intent": "의도값", "confidence": 0.0-1.0}}"""
 
         try:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_intent,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=200,
+                temperature=0.0,  # 분류는 결정적이어야 함
+                max_tokens=100,   # 간단한 JSON 응답
+                response_format={"type": "json_object"},
             )
             content = openrouter_service.get_content(response)
             result = openrouter_service.parse_json_response(content)
@@ -295,17 +295,16 @@ class IntentClassifier:
 - "기초 싫다", "쉬운거 말고" 등 특정 조건 거부 → negation
 - 주제/난이도 변경 원할 때도 → negation (다른 대안 제시 필요)
 
-가장 적절한 의도를 JSON으로 응답하세요:
-{{"intent": "의도값", "confidence": 0.0-1.0, "reason": "선택 이유"}}
-
-의도가 불명확하면 "clarification_needed"를 반환하세요."""
+응답: {{"intent": "의도값", "confidence": 0.0-1.0}}
+불명확 시 "clarification_needed" 사용."""
 
         try:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_intent,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=200,
+                temperature=0.0,  # 분류는 결정적이어야 함
+                max_tokens=100,   # 간단한 JSON 응답
+                response_format={"type": "json_object"},
             )
             content = openrouter_service.get_content(response)
             result = openrouter_service.parse_json_response(content)

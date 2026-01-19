@@ -190,43 +190,31 @@ async def resolve_base_problem_id(db, problem_id: str) -> Optional[str]:
             if bp_result.data and len(bp_result.data) > 0:
                 return bp_result.data[0]["id"]
 
-            # 1-2. problems_blank에서 original_id로 base_problems 찾기
+            # 1-2. problems_blank에서 base_problem_id 직접 조회
             blank_result = db.table("problems_blank")\
-                .select("original_id")\
+                .select("base_problem_id")\
                 .eq("id", uuid_str)\
                 .limit(1)\
                 .execute()
 
             if blank_result.data and len(blank_result.data) > 0:
-                original_id = blank_result.data[0].get("original_id")
-                if original_id:
-                    bp_result = db.table("base_problems")\
-                        .select("id")\
-                        .eq("original_id", original_id)\
-                        .limit(1)\
-                        .execute()
-                    if bp_result.data:
-                        return bp_result.data[0]["id"]
+                base_problem_id = blank_result.data[0].get("base_problem_id")
+                if base_problem_id:
+                    return base_problem_id  # 이미 base_problems.id임
 
-            # 1-3. problems_puzzle에서 찾기
+            # 1-3. problems_puzzle에서 base_problem_id 직접 조회
             puzzle_result = db.table("problems_puzzle")\
-                .select("original_id")\
+                .select("base_problem_id")\
                 .eq("id", uuid_str)\
                 .limit(1)\
                 .execute()
 
             if puzzle_result.data and len(puzzle_result.data) > 0:
-                original_id = puzzle_result.data[0].get("original_id")
-                if original_id:
-                    bp_result = db.table("base_problems")\
-                        .select("id")\
-                        .eq("original_id", original_id)\
-                        .limit(1)\
-                        .execute()
-                    if bp_result.data:
-                        return bp_result.data[0]["id"]
+                base_problem_id = puzzle_result.data[0].get("base_problem_id")
+                if base_problem_id:
+                    return base_problem_id  # 이미 base_problems.id임
 
-            # 1-4. problems_guided에서 찾기 (base_problem_id 사용)
+            # 1-4. problems_guided에서 base_problem_id 직접 조회
             guided_result = db.table("problems_guided")\
                 .select("base_problem_id")\
                 .eq("id", uuid_str)\
@@ -318,8 +306,13 @@ async def start_practice(
             resolved_problem_id = await resolve_base_problem_id(db, request.problem_id)
             if resolved_problem_id:
                 attempt_data["base_problem_id"] = resolved_problem_id
-                print(f"[StartPractice] Resolved base_problem_id: {request.problem_id} -> {resolved_problem_id}")
+                # ✅ attempt_number 계산 (확인 버튼 누를 때마다 카운트)
+                attempt_data["attempt_number"] = get_next_attempt_number(
+                    db, str(user_id), resolved_problem_id
+                )
+                print(f"[StartPractice] Resolved base_problem_id: {request.problem_id} -> {resolved_problem_id}, attempt_number: {attempt_data['attempt_number']}")
             else:
+                attempt_data["attempt_number"] = 1
                 print(f"[StartPractice] WARNING: Could not resolve to base_problems.id: {request.problem_id}")
 
         # attempts 테이블에 pending 레코드 생성
@@ -839,6 +832,84 @@ async def run_code(request: CodeExecutionRequest):
 
 VALID_DIFFICULTIES = {"easy", "medium", "medium_hard", "hard", "very_hard"}
 
+# 난이도별 보너스 XP
+DIFFICULTY_BONUS = {
+    "easy": 0,
+    "medium": 5,
+    "medium_hard": 10,
+    "hard": 20,
+    "very_hard": 40,
+}
+
+
+def calculate_feedback(
+    is_correct: bool,
+    hints_used: int,
+    time_spent: Optional[int],
+    difficulty: str,
+    already_solved: bool,
+) -> tuple:
+    """
+    피드백 등급과 데이터를 계산합니다.
+
+    Returns:
+        (feedback_grade, feedback_data_dict)
+    """
+    if not is_correct:
+        return "learning", {
+            "grade": "learning",
+            "grade_emoji": "🌱",
+            "grade_message": "계속 도전해보세요!",
+            "encouragement": "실패는 성공의 어머니입니다. 다시 시도해보세요!",
+        }
+
+    # 점수 계산 (0-100)
+    score = 100
+
+    # 힌트 사용 페널티 (-15점씩)
+    score -= (hints_used or 0) * 15
+
+    # 반복 풀이 페널티 (-20점)
+    if already_solved:
+        score -= 20
+
+    # 난이도 보너스
+    difficulty_scores = {"easy": 0, "medium": 5, "medium_hard": 10, "hard": 15, "very_hard": 20}
+    score += difficulty_scores.get(difficulty, 0)
+
+    # 등급 결정
+    if score >= 95:
+        grade = "perfect"
+        emoji = "🌟"
+        message = "완벽해요!"
+    elif score >= 80:
+        grade = "excellent"
+        emoji = "✨"
+        message = "훌륭해요!"
+    elif score >= 60:
+        grade = "good"
+        emoji = "👍"
+        message = "좋아요!"
+    elif score >= 40:
+        grade = "keep_going"
+        emoji = "💪"
+        message = "잘 하고 있어요!"
+    else:
+        grade = "learning"
+        emoji = "🌱"
+        message = "성장 중이에요!"
+
+    feedback_data = {
+        "grade": grade,
+        "grade_emoji": emoji,
+        "grade_message": message,
+        "efficiency_score": max(0, min(100, score)),
+        "hints_used": hints_used or 0,
+        "encouragement": f"{message} 계속 연습하세요!",
+    }
+
+    return grade, feedback_data
+
 
 @router.post("/submit/record", response_model=RecordResponse)
 async def record_solve(
@@ -919,6 +990,21 @@ async def record_solve(
             except Exception as check_err:
                 print(f"[RecordSolve] Error checking previous solve: {check_err}")
 
+        # difficulty_bonus 계산 및 XP에 추가
+        difficulty_bonus = DIFFICULTY_BONUS.get(difficulty, 0) if submission.is_correct else 0
+        xp_earned += difficulty_bonus
+
+        # feedback 계산
+        feedback_grade, feedback_data = calculate_feedback(
+            is_correct=submission.is_correct,
+            hints_used=submission.hints_used or 0,
+            time_spent=submission.time_spent,
+            difficulty=difficulty,
+            already_solved=already_solved,
+        )
+        import json as json_lib
+        feedback_data_json = feedback_data  # dict로 저장
+
         # attempts 테이블에 기록 시도
         attempt_id_used = None
         try:
@@ -940,6 +1026,10 @@ async def record_solve(
                         # ✅ 추가 필드
                         "submitted_code": submission.submitted_code,
                         "time_spent": submission.time_spent,
+                        # ✅ 피드백 및 보너스 필드
+                        "difficulty_bonus": difficulty_bonus,
+                        "feedback_grade": feedback_grade,
+                        "feedback_data": feedback_data_json,
                     }
                     # session_id가 있으면 업데이트 (없으면 기존 유지)
                     if submission.session_id:
@@ -978,6 +1068,10 @@ async def record_solve(
                     "submitted_code": submission.submitted_code,
                     "time_spent": submission.time_spent,
                     "session_id": submission.session_id,
+                    # ✅ 피드백 및 보너스 필드
+                    "difficulty_bonus": difficulty_bonus,
+                    "feedback_grade": feedback_grade,
+                    "feedback_data": feedback_data_json,
                 }
 
                 # base_problem_id에 base_problems.id를 저장

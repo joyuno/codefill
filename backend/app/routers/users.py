@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 import uuid as uuid_module
 
@@ -989,14 +989,16 @@ def get_user_by_username(db, username: str):
 
 def fetch_solved_problems_with_names(db, user_id: str, start_of_day: str, end_of_day: str) -> list:
     """
-    Helper: attempts에서 푼 문제를 가져와서 base_problems.name과 JOIN하여 반환.
+    Helper: attempts에서 푼 문제를 가져와서 문제 이름과 함께 반환.
 
-    단순화된 JOIN 경로:
-    attempts.base_problem_id -> base_problems.name
+    우선순위:
+    1. attempts.problem_name (직접 저장된 이름)
+    2. base_problems.name (base_problem_id로 조회)
+    3. "Unknown Problem" (fallback)
     """
-    # 1. attempts에서 정답 제출 기록 가져오기 (base_problem_id 포함)
+    # 1. attempts에서 정답 제출 기록 가져오기 (problem_name 포함)
     attempts_result = db.table("attempts")\
-        .select("id, base_problem_id, problem_type, xp_earned, submitted_at, difficulty")\
+        .select("id, base_problem_id, problem_name, problem_type, xp_earned, submitted_at, difficulty")\
         .eq("user_id", user_id)\
         .eq("is_correct", True)\
         .gte("submitted_at", start_of_day)\
@@ -1007,14 +1009,14 @@ def fetch_solved_problems_with_names(db, user_id: str, start_of_day: str, end_of
     if not attempts_result.data:
         return []
 
-    # 2. base_problem_id 목록 수집
+    # 2. problem_name이 없는 경우만 base_problem_id로 조회
     base_ids = list(set(
         str(a["base_problem_id"])
         for a in attempts_result.data
-        if a.get("base_problem_id")
+        if a.get("base_problem_id") and not a.get("problem_name")
     ))
 
-    # 3. base_problems에서 name 조회
+    # 3. base_problems에서 name 조회 (필요한 경우만)
     base_to_name = {}
     if base_ids:
         base_result = db.table("base_problems")\
@@ -1027,8 +1029,11 @@ def fetch_solved_problems_with_names(db, user_id: str, start_of_day: str, end_of
     # 4. SolvedProblem 리스트 생성
     problems = []
     for attempt in attempts_result.data:
-        base_problem_id = attempt.get("base_problem_id")
-        problem_name = base_to_name.get(str(base_problem_id), "Unknown Problem") if base_problem_id else "Unknown Problem"
+        # 우선순위: attempts.problem_name > base_problems.name > fallback
+        problem_name = attempt.get("problem_name")
+        if not problem_name:
+            base_problem_id = attempt.get("base_problem_id")
+            problem_name = base_to_name.get(str(base_problem_id), "Unknown Problem") if base_problem_id else "Unknown Problem"
 
         problems.append(SolvedProblem(
             id=str(attempt["id"]),
@@ -1542,3 +1547,99 @@ async def get_public_profile_all(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get public profile: {str(e)}"
         )
+
+
+# ============================================================
+# Batch Interaction API (프론트엔드 로컬 버퍼링용)
+# ============================================================
+
+from pydantic import BaseModel
+
+
+class InteractionItem(BaseModel):
+    """단일 상호작용 아이템"""
+    type: str  # click, select, view, etc.
+    data: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {}
+    timestamp: Optional[str] = None  # ISO format
+
+
+class BatchInteractionsRequest(BaseModel):
+    """배치 상호작용 요청"""
+    interactions: List[InteractionItem]
+    session_id: Optional[str] = None
+
+
+class BatchInteractionsResponse(BaseModel):
+    """배치 상호작용 응답"""
+    success: bool
+    logged_count: int
+    message: str
+
+
+@router.post("/interactions/batch", response_model=BatchInteractionsResponse)
+async def log_interactions_batch(
+    request: BatchInteractionsRequest,
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """
+    프론트엔드에서 로컬에 버퍼링한 상호작용들을 배치로 전송
+
+    프론트엔드 사용 예시:
+    ```javascript
+    // 로컬 버퍼에 쌓기
+    interactionBuffer.push({ type: 'click', data: { ... }, timestamp: new Date().toISOString() });
+
+    // 주기적으로 또는 페이지 이탈 시 전송
+    if (interactionBuffer.length >= 10) {
+        await fetch('/api/users/interactions/batch', {
+            method: 'POST',
+            body: JSON.stringify({ interactions: interactionBuffer })
+        });
+        interactionBuffer.length = 0;
+    }
+    ```
+    """
+    from ..services.stats_cache import get_stats_cache
+
+    try:
+        cache = get_stats_cache()
+        interactions_dicts = [
+            {
+                "type": item.type,
+                "data": item.data,
+                "metadata": item.metadata,
+                "timestamp": item.timestamp,
+            }
+            for item in request.interactions
+        ]
+
+        logged_count = await cache.log_interactions_batch(
+            user_id=str(user_id),
+            interactions=interactions_dicts,
+            session_id=request.session_id,
+        )
+
+        return BatchInteractionsResponse(
+            success=True,
+            logged_count=logged_count,
+            message=f"{logged_count}개의 상호작용이 기록되었습니다",
+        )
+
+    except Exception as e:
+        return BatchInteractionsResponse(
+            success=False,
+            logged_count=0,
+            message=f"기록 실패: {str(e)}",
+        )
+
+
+@router.get("/interactions/buffer-status")
+async def get_buffer_status(
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """캐시 버퍼 상태 조회 (디버깅/모니터링용)"""
+    from ..services.stats_cache import get_stats_cache
+
+    cache = get_stats_cache()
+    return cache.get_buffer_status()

@@ -6,6 +6,10 @@ User Tools - 사용자 프로필 조회 및 DB 기반 개인화 추천
 2. get_topic_recommendations: DB 태그 분석 기반 주제 추천 (칩 UI 포함)
 3. get_difficulty_recommendations: 사용자 레벨 기반 난이도 추천 (칩 UI 포함)
 
+태그 정규화:
+- scripts/update_tag_normalization.py 실행하면 data/tag_normalization.json 생성
+- 백준 등 새 데이터 추가 시 스크립트 재실행으로 태그 매핑 업데이트
+
 대기업 코테 빈출 유형 (실제 데이터 + 전문 지식):
 - DP (동적 프로그래밍): 삼성, 카카오, 네이버 필수
 - 그래프 (BFS/DFS): 거의 모든 기업 출제
@@ -25,6 +29,34 @@ import os
 from ..database import get_supabase_client
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# 태그 정규화 데이터 로드
+# ============================================================
+def _load_tag_normalization() -> Dict[str, Any]:
+    """
+    태그 정규화 JSON 파일 로드
+
+    scripts/update_tag_normalization.py 실행 시 생성됨
+    파일이 없으면 하드코딩된 기본값 사용
+    """
+    json_path = os.path.join(os.path.dirname(__file__), "data", "tag_normalization.json")
+
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                logger.info(f"[UserTools] Loaded tag normalization from JSON: {len(data.get('normalization', {}))} mappings")
+                return data
+        except Exception as e:
+            logger.warning(f"[UserTools] Failed to load tag normalization JSON: {e}")
+
+    return None
+
+
+# JSON 파일 로드 시도
+_TAG_DATA = _load_tag_normalization()
 
 
 # ============================================================
@@ -60,6 +92,200 @@ STARTUP_ALGORITHMS = ["구현", "정렬", "문자열", "DP", "자료구조", "�
 
 # 실력 향상용 기초 알고리즘
 SKILL_UP_ALGORITHMS = ["기초", "정렬", "구현", "문자열", "스택/큐", "수학"]
+
+# ============================================================
+# 태그 정규화 (의미 중복 병합) - 기본값
+# ============================================================
+# JSON 파일이 있으면 그것을 사용, 없으면 아래 기본값 사용
+# scripts/update_tag_normalization.py 실행 시 JSON 파일 생성됨
+_DEFAULT_TAG_NORMALIZATION = {
+    # ============================================================
+    # 영문 태그 → 한글 정규화 (DB 실제 태그 기반)
+    # ============================================================
+    "Mathematics": "수학",
+    "Data structures": "자료구조",
+    "Implementation": "구현",
+    "Greedy algorithms": "그리디",
+    "String algorithms": "문자열",
+    "Sorting": "정렬",
+    "Dynamic programming": "DP",
+    "Complete search": "완전탐색",
+    "Fundamentals": "기초",
+    "Constructive algorithms": "구현",
+    "Number theory": "정수론",
+    "Graph algorithms": "그래프",
+    "Ad-hoc": "구현",
+    "Graph traversal": "BFS/DFS",
+    "Bit manipulation": "비트마스킹",
+    "Combinatorics": "조합론",
+    "Tree algorithms": "트리",
+    "Amortized analysis": "분할상환",
+    "Geometry": "기하학",
+    "Game theory": "게임이론",
+    "Matrices": "행렬",
+    "Range queries": "구간쿼리",
+    "Spanning trees": "최소신장트리",
+    "Shortest paths": "최단경로",
+    "Probability": "확률",
+    "Divide and conquer": "분할정복",
+    "Preprocessing": "전처리",
+    "Segment trees revisited": "세그먼트트리",
+    "Flows and cuts": "네트워크플로우",
+    "Tree queries": "트리쿼리",
+    "Polynomials and generating functions": "다항식",
+    "Square root algorithms": "제곱근분할",
+    "Strong connectivity": "강한연결요소",
+    "Sweep line algorithms": "스위핑",
+    "Unbounded Knapsack": "배낭문제",
+    "Parametric Search": "파라메트릭서치",
+    "Binary Search": "이분탐색",
+    "Graph Theory": "그래프",
+    "Graph": "그래프",
+    "Hash Table": "해시",
+    "Array": "배열",
+    "Queue": "큐",
+    "String": "문자열",
+
+    # ============================================================
+    # BFS/DFS 계열 통합
+    # ============================================================
+    "bfs": "BFS/DFS",
+    "dfs": "BFS/DFS",
+    "BFS": "BFS/DFS",
+    "DFS": "BFS/DFS",
+    "너비 우선 탐색": "BFS/DFS",
+    "깊이 우선 탐색": "BFS/DFS",
+
+    # ============================================================
+    # 스택/큐 계열 통합
+    # ============================================================
+    "스택": "스택/큐",
+    "큐": "스택/큐",
+    "stack": "스택/큐",
+    "queue": "스택/큐",
+
+    # ============================================================
+    # DP 별칭
+    # ============================================================
+    "동적 프로그래밍": "DP",
+    "동적프로그래밍": "DP",
+    "다이나믹 프로그래밍": "DP",
+    "동적계획법": "DP",
+    "dp": "DP",
+
+    # ============================================================
+    # 기타 한글 별칭
+    # ============================================================
+    "이진 탐색": "이분탐색",
+    "이진탐색": "이분탐색",
+    "binary search": "이분탐색",
+    "two pointer": "투포인터",
+    "two pointers": "투포인터",
+    "graph": "그래프",
+    "sort": "정렬",
+    "sorting": "정렬",
+    "string": "문자열",
+    "strings": "문자열",
+    "implementation": "구현",
+    "시뮬레이션": "구현",
+    "brute force": "완전탐색",
+    "bruteforce": "완전탐색",
+    "브루트포스": "완전탐색",
+    "backtracking": "백트래킹",
+    "greedy": "그리디",
+    "그리디 알고리즘": "그리디",
+    "탐욕법": "그리디",
+    "math": "수학",
+    "mathematics": "수학",
+    "매개 변수 탐색": "파라메트릭서치",
+    "파라메트릭 서치": "파라메트릭서치",
+    "누적 합": "누적합",
+    "해시테이블": "해시",
+    "딕셔너리": "해시",
+}
+
+# 제외할 태그 (추천에서 제외) - 기본값
+_DEFAULT_EXCLUDED_TAGS = {
+    "기타", "etc", "기타 알고리즘", "미분류", "uncategorized",
+    "출처", "source", "언어", "language",
+    "asgsag",  # DB에 있는 의미없는 태그
+}
+
+# ============================================================
+# 주제 간 연관성 맵 (학습 경로 기반) - 기본값
+# ============================================================
+# 각 주제에서 다음으로 추천할 연관 주제들
+# base_problems.tags의 실제 태그를 정규화한 값 기준
+_DEFAULT_TOPIC_RELATIONS = {
+    # ============================================================
+    # 기초 → 응용
+    # ============================================================
+    "기초": ["구현", "정렬", "수학", "문자열"],
+    "수학": ["정렬", "구현", "DP", "정수론", "조합론"],
+    "정수론": ["수학", "조합론", "DP"],
+    "조합론": ["수학", "DP", "백트래킹"],
+
+    # ============================================================
+    # 탐색 계열
+    # ============================================================
+    "BFS/DFS": ["그래프", "백트래킹", "최단경로", "완전탐색", "트리"],
+    "그래프": ["BFS/DFS", "최단경로", "최소신장트리", "트리"],
+    "백트래킹": ["BFS/DFS", "완전탐색", "조합론"],
+    "완전탐색": ["백트래킹", "구현", "BFS/DFS"],
+    "최단경로": ["그래프", "BFS/DFS", "DP"],
+    "최소신장트리": ["그래프", "그리디"],
+    "트리": ["그래프", "BFS/DFS", "DP"],
+
+    # ============================================================
+    # DP 계열
+    # ============================================================
+    "DP": ["그리디", "분할정복", "이분탐색", "트리"],
+    "그리디": ["DP", "정렬", "이분탐색"],
+    "분할정복": ["DP", "이분탐색"],
+
+    # ============================================================
+    # 자료구조 계열
+    # ============================================================
+    "자료구조": ["해시", "트리", "구간쿼리", "세그먼트트리"],
+    "해시": ["문자열", "자료구조"],
+    "구간쿼리": ["세그먼트트리", "자료구조", "DP"],
+    "세그먼트트리": ["구간쿼리", "트리", "자료구조"],
+
+    # ============================================================
+    # 문자열 계열
+    # ============================================================
+    "문자열": ["해시", "구현", "DP"],
+    "정렬": ["이분탐색", "그리디", "자료구조"],
+
+    # ============================================================
+    # 고급 기법
+    # ============================================================
+    "이분탐색": ["정렬", "파라메트릭서치", "그리디"],
+    "파라메트릭서치": ["이분탐색", "그리디"],
+    "비트마스킹": ["DP", "완전탐색"],
+    "기하학": ["구현", "수학"],
+
+    # ============================================================
+    # 구현
+    # ============================================================
+    "구현": ["완전탐색", "문자열", "BFS/DFS", "정렬"],
+}
+
+# ============================================================
+# 실제 사용되는 상수 (JSON 파일 우선, 없으면 기본값)
+# ============================================================
+if _TAG_DATA:
+    # JSON 파일에서 로드된 데이터 사용
+    TAG_NORMALIZATION = {**_DEFAULT_TAG_NORMALIZATION, **_TAG_DATA.get("normalization", {}), **_TAG_DATA.get("semantic_merge", {})}
+    EXCLUDED_TAGS = set(_TAG_DATA.get("excluded_tags", [])) | _DEFAULT_EXCLUDED_TAGS
+    TOPIC_RELATIONS = _TAG_DATA.get("topic_relations", _DEFAULT_TOPIC_RELATIONS)
+    logger.info(f"[UserTools] Using JSON tag data: {len(TAG_NORMALIZATION)} mappings, {len(TOPIC_RELATIONS)} relations")
+else:
+    # 기본값 사용
+    TAG_NORMALIZATION = _DEFAULT_TAG_NORMALIZATION
+    EXCLUDED_TAGS = _DEFAULT_EXCLUDED_TAGS
+    TOPIC_RELATIONS = _DEFAULT_TOPIC_RELATIONS
+
 
 # 레벨별 권장 난이도 (온보딩 기준)
 # beginner (입문자): 거의 안 풀어봄 → 실버
@@ -229,7 +455,154 @@ class UserTools:
     def __init__(self):
         self.supabase = get_supabase_client()
         self._tag_cache: Optional[Dict[str, int]] = None
+        self._available_tags_cache: Optional[set] = None  # DB에 있는 정규화된 태그
         self._cache_timestamp: float = 0
+
+    # ============================================================
+    # 태그 정규화 헬퍼
+    # ============================================================
+
+    def _normalize_tag(self, tag: str) -> Optional[str]:
+        """
+        태그를 정규화된 형태로 변환
+
+        예: "BFS" → "BFS/DFS", "동적프로그래밍" → "DP"
+
+        Returns:
+            정규화된 태그명, 제외 대상이면 None
+        """
+        if not tag:
+            return None
+
+        tag = tag.strip()
+
+        # 제외 태그 체크
+        if tag.lower() in {t.lower() for t in EXCLUDED_TAGS}:
+            return None
+
+        # 정규화 맵에서 찾기
+        normalized = TAG_NORMALIZATION.get(tag)
+        if normalized:
+            return normalized
+
+        # 소문자로도 확인
+        normalized = TAG_NORMALIZATION.get(tag.lower())
+        if normalized:
+            return normalized
+
+        # 정규화 맵에 없으면 원본 반환
+        return tag
+
+    def _normalize_tags(self, tags: List[str]) -> List[str]:
+        """
+        태그 목록을 정규화하고 중복 제거
+
+        Returns:
+            정규화된 유니크 태그 목록
+        """
+        normalized = set()
+        for tag in tags:
+            norm = self._normalize_tag(tag)
+            if norm:
+                normalized.add(norm)
+        return list(normalized)
+
+    async def _get_available_tags_from_db(self, force_refresh: bool = False) -> set:
+        """
+        base_problems 테이블에서 사용 가능한 정규화된 태그 목록 조회
+
+        Returns:
+            정규화된 유니크 태그 set
+        """
+        import time
+
+        # 캐시 유효시간: 1시간
+        if not force_refresh and self._available_tags_cache and (time.time() - self._cache_timestamp < 3600):
+            return self._available_tags_cache
+
+        try:
+            # base_problems에서 tags 컬럼 조회
+            result = self.supabase.table("base_problems") \
+                .select("tags") \
+                .execute()
+
+            if not result.data:
+                logger.warning("[UserTools] No data in base_problems")
+                return set()
+
+            # 정규화된 태그 수집
+            available_tags = set()
+            for row in result.data:
+                tags = row.get("tags", [])
+                if tags:
+                    for tag in tags:
+                        normalized = self._normalize_tag(tag)
+                        if normalized:
+                            available_tags.add(normalized)
+
+            self._available_tags_cache = available_tags
+            logger.info(f"[UserTools] Available tags from DB: {len(available_tags)} unique tags")
+            return available_tags
+
+        except Exception as e:
+            logger.error(f"[UserTools] Failed to get available tags: {e}")
+            return set()
+
+    async def _get_user_solved_tags(self, user_id: str) -> set:
+        """
+        사용자가 풀어본 문제들의 정규화된 태그 목록 조회
+
+        attempts + base_problems 조인으로 정확한 태그 추출
+
+        Returns:
+            사용자가 풀어본 정규화된 태그 set
+        """
+        try:
+            # attempts에서 base_problem_id 조회
+            attempts_result = self.supabase.table("attempts") \
+                .select("base_problem_id") \
+                .eq("user_id", user_id) \
+                .not_.is_("base_problem_id", "null") \
+                .execute()
+
+            if not attempts_result.data:
+                return set()
+
+            # base_problem_id 목록 추출
+            base_problem_ids = list(set(
+                row.get("base_problem_id")
+                for row in attempts_result.data
+                if row.get("base_problem_id")
+            ))
+
+            if not base_problem_ids:
+                return set()
+
+            # base_problems에서 해당 문제들의 태그 조회
+            problems_result = self.supabase.table("base_problems") \
+                .select("tags") \
+                .in_("id", base_problem_ids) \
+                .execute()
+
+            if not problems_result.data:
+                return set()
+
+            # 정규화된 태그 수집
+            solved_tags = set()
+            for row in problems_result.data:
+                tags = row.get("tags", [])
+                if tags:
+                    for tag in tags:
+                        normalized = self._normalize_tag(tag)
+                        if normalized:
+                            solved_tags.add(normalized)
+
+            logger.info(f"[UserTools] User {user_id[:8]}... solved tags: {len(solved_tags)}")
+            return solved_tags
+
+        except Exception as e:
+            logger.error(f"[UserTools] Failed to get user solved tags: {e}")
+            return set()
 
     # ============================================================
     # Tool 1: 사용자 프로필 조회
@@ -579,10 +952,10 @@ class UserTools:
 
     async def _get_tag_distribution(self) -> Dict[str, int]:
         """
-        base_problems 테이블에서 태그 분포 조회 (캐싱)
+        base_problems 테이블에서 정규화된 태그 분포 조회 (캐싱)
 
         Returns:
-            {"DP": 150, "그래프": 120, ...}
+            {"DP": 150, "BFS/DFS": 120, ...} (정규화된 태그명)
         """
         import time
 
@@ -600,19 +973,24 @@ class UserTools:
                 logger.warning("[UserTools] No data in base_problems")
                 return {}
 
-            # 태그 카운트
+            # 정규화된 태그 카운트
             tag_counter: Counter = Counter()
             for row in result.data:
                 tags = row.get("tags", [])
                 if tags:
                     for tag in tags:
-                        if tag:
-                            tag_counter[tag] += 1
+                        # 정규화 적용
+                        normalized = self._normalize_tag(tag)
+                        if normalized:
+                            tag_counter[normalized] += 1
 
             self._tag_cache = dict(tag_counter.most_common(50))
             self._cache_timestamp = time.time()
 
-            logger.info(f"[UserTools] Tag distribution cached: {len(self._tag_cache)} tags")
+            # 사용 가능한 태그도 캐시
+            self._available_tags_cache = set(self._tag_cache.keys())
+
+            logger.info(f"[UserTools] Tag distribution cached: {len(self._tag_cache)} normalized tags")
             return self._tag_cache
 
         except Exception as e:
@@ -720,6 +1098,202 @@ class UserTools:
                 "error": str(e),
                 "topics": [],
             }
+
+    # ============================================================
+    # Tool 6: 풀이 이력 기반 개인화 추천
+    # ============================================================
+
+    async def get_history_based_recommendation(
+        self,
+        user_id: str,
+        rejected_topics: List[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        사용자 풀이 이력을 기반으로 다음 주제를 추천합니다.
+
+        핵심 로직:
+        1. base_problems 테이블에서 실제 존재하는 태그 목록 조회 (정규화됨)
+        2. 사용자가 풀어본 문제의 태그 조회 (attempts + base_problems 조인)
+        3. 안 풀어본 태그 중에서:
+           - 연관 태그 우선 추천 (TOPIC_RELATIONS 기반)
+           - 거절 시 비연관 태그 랜덤 추천
+
+        Args:
+            user_id: 사용자 UUID
+            rejected_topics: 거절된 주제 목록 (제외)
+
+        Returns:
+            {
+                "success": True,
+                "recommended_topic": "그래프",
+                "recommendation_type": "related" | "unrelated" | "default",
+                "reason": "BFS/DFS를 잘 푸셨네요! 연관된 그래프 문제에 도전해보세요.",
+                "solved_tags": [...],  # 사용자가 푼 태그들
+                "unsolved_tags": [...],  # 안 푼 태그들
+                "alternative_topics": ["백트래킹", "최단경로"],  # 대안 추천
+            }
+        """
+        import random
+
+        # 거절된 주제 정규화
+        rejected = set()
+        for t in (rejected_topics or []):
+            norm = self._normalize_tag(t)
+            if norm:
+                rejected.add(norm.lower())
+
+        try:
+            # 1. DB에서 사용 가능한 태그 목록 조회 (정규화됨)
+            available_tags = await self._get_available_tags_from_db()
+            if not available_tags:
+                logger.warning("[UserTools] No tags available in DB")
+                return await self._get_default_recommendation_async(rejected)
+
+            # 2. 사용자가 풀어본 태그 조회
+            solved_tags = await self._get_user_solved_tags(user_id)
+
+            # 3. 안 풀어본 태그 계산
+            unsolved_tags = available_tags - solved_tags
+
+            # 거절된 태그 제외
+            unsolved_tags = {t for t in unsolved_tags if t.lower() not in rejected}
+
+            logger.info(
+                f"[UserTools] User {user_id[:8]}... - "
+                f"solved: {len(solved_tags)}, unsolved: {len(unsolved_tags)}, rejected: {len(rejected)}"
+            )
+
+            # 풀이 이력이 없으면 기본 추천
+            if not solved_tags:
+                return await self._get_default_recommendation_async(rejected)
+
+            # 4. 연관 태그 찾기 (풀어본 태그들의 연관 태그)
+            related_unsolved = set()
+            base_topics_for_related = []
+
+            for solved in solved_tags:
+                related = TOPIC_RELATIONS.get(solved, [])
+                for r in related:
+                    # 정규화된 연관 태그가 DB에 있고, 안 풀어봤으면 추가
+                    normalized_r = self._normalize_tag(r)
+                    if normalized_r and normalized_r in unsolved_tags:
+                        related_unsolved.add(normalized_r)
+                        base_topics_for_related.append(solved)
+
+            # 5. 추천 결정
+            if related_unsolved:
+                # 연관 태그 중 랜덤 선택
+                recommended = random.choice(list(related_unsolved))
+                # 이 추천의 기반이 된 풀어본 태그 찾기
+                base_topic = None
+                for solved in solved_tags:
+                    if recommended in [self._normalize_tag(r) for r in TOPIC_RELATIONS.get(solved, [])]:
+                        base_topic = solved
+                        break
+
+                alternatives = [t for t in related_unsolved if t != recommended][:2]
+
+                return {
+                    "success": True,
+                    "recommended_topic": recommended,
+                    "recommendation_type": "related",
+                    "reason": f"{base_topic}를 푸셨네요! 연관된 {recommended} 문제에 도전해보세요." if base_topic else f"{recommended} 주제를 추천해요!",
+                    "solved_tags": list(solved_tags),
+                    "unsolved_tags": list(unsolved_tags),
+                    "alternative_topics": alternatives,
+                }
+
+            # 6. 연관 태그가 없으면 비연관 태그 랜덤 추천
+            if unsolved_tags:
+                recommended = random.choice(list(unsolved_tags))
+                alternatives = [t for t in unsolved_tags if t != recommended][:2]
+
+                return {
+                    "success": True,
+                    "recommended_topic": recommended,
+                    "recommendation_type": "unrelated",
+                    "reason": f"새로운 유형인 {recommended}에 도전해보세요! 다양한 문제를 풀어보면 실력이 늘어요.",
+                    "solved_tags": list(solved_tags),
+                    "unsolved_tags": list(unsolved_tags),
+                    "alternative_topics": alternatives,
+                }
+
+            # 7. 모든 태그를 다 풀어봤거나 거절됨 → 가장 적게 푼 태그 추천 (복습)
+            # 이 경우는 드물지만 처리
+            available_for_review = {t for t in available_tags if t.lower() not in rejected}
+            if available_for_review:
+                recommended = random.choice(list(available_for_review))
+                return {
+                    "success": True,
+                    "recommended_topic": recommended,
+                    "recommendation_type": "review",
+                    "reason": f"대단해요! 다양한 주제를 다 풀어보셨네요. {recommended} 복습은 어때요?",
+                    "solved_tags": list(solved_tags),
+                    "unsolved_tags": [],
+                    "alternative_topics": [],
+                }
+
+            return await self._get_default_recommendation_async(rejected)
+
+        except Exception as e:
+            logger.error(f"[UserTools] Failed to get history-based recommendation: {e}")
+            return await self._get_default_recommendation_async(rejected)
+
+    async def _get_default_recommendation_async(self, rejected: set) -> Dict[str, Any]:
+        """
+        기본 추천 (풀이 이력 없을 때) - DB 태그 기반
+
+        Args:
+            rejected: 거절된 정규화 태그 set (소문자)
+
+        Returns:
+            추천 결과 dict
+        """
+        import random
+
+        try:
+            # DB에서 사용 가능한 태그 조회
+            available_tags = await self._get_available_tags_from_db()
+
+            if available_tags:
+                # 거절 태그 제외
+                available = [t for t in available_tags if t.lower() not in rejected]
+
+                if available:
+                    recommended = random.choice(available)
+                    alternatives = [t for t in available if t != recommended][:2]
+
+                    return {
+                        "success": True,
+                        "recommended_topic": recommended,
+                        "recommendation_type": "default",
+                        "reason": f"{recommended}부터 시작해볼까요? 다양한 문제가 준비되어 있어요.",
+                        "solved_tags": [],
+                        "unsolved_tags": list(available),
+                        "alternative_topics": alternatives,
+                    }
+
+        except Exception as e:
+            logger.error(f"[UserTools] Failed to get default recommendation: {e}")
+
+        # DB 조회 실패 시 하드코딩 폴백
+        fallback_topics = ["구현", "정렬", "문자열", "수학", "BFS/DFS", "그리디"]
+        available = [t for t in fallback_topics if t.lower() not in rejected]
+
+        if not available:
+            available = fallback_topics
+
+        recommended = random.choice(available)
+
+        return {
+            "success": True,
+            "recommended_topic": recommended,
+            "recommendation_type": "default",
+            "reason": f"{recommended}부터 시작해볼까요? 기초를 다지기 좋은 주제예요.",
+            "solved_tags": [],
+            "unsolved_tags": [],
+            "alternative_topics": [t for t in available if t != recommended][:2],
+        }
 
 
 # ============================================================

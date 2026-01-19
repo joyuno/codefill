@@ -922,7 +922,7 @@ export function PracticeChatPanel({
     }
   }, [recommendedProblems, selectedBaseProblem, handleGuidedProgress, showGuidedFinalCode, resetToNewProblem, showProblemTypeSelection, handleGenerateNewProblem]);
 
-  // Handle problem type selection and generate problem
+  // Handle problem type selection and generate problem (Streaming version)
   const handleProblemTypeSelect = useCallback(async (type: 'blank' | 'puzzle' | 'guided' | 'implementation') => {
     if (!selectedBaseProblem) return;
 
@@ -935,15 +935,23 @@ export function PracticeChatPanel({
       timestamp: new Date().toISOString(),
     };
 
+    const loadingMsgId = `loading-${Date.now()}`;
     const loadingMsg: Message = {
-      id: `loading-${Date.now()}`,
+      id: loadingMsgId,
       role: 'assistant',
-      content: `${PROBLEM_TYPE_LABELS[type]} 문제를 생성 중입니다...`,
+      content: `${PROBLEM_TYPE_LABELS[type]} 문제를 준비하고 있어요...`,
       timestamp: new Date().toISOString(),
     };
 
     setMessages(prev => [...prev, userMsg, loadingMsg]);
     setIsLoading(true);
+
+    // 로딩 메시지 실시간 업데이트 헬퍼
+    const updateLoadingMessage = (newContent: string) => {
+      setMessages(prev => prev.map(m =>
+        m.id === loadingMsgId ? { ...m, content: newContent } : m
+      ));
+    };
 
     try {
       // Extract code from solutions array if not directly available
@@ -957,30 +965,6 @@ export function PracticeChatPanel({
         throw new Error('이 문제에는 솔루션 코드가 없어요. 다른 문제를 선택해주세요!');
       }
 
-      // implementation 타입은 LLM 호출 없이 처리되므로 request는 blank/puzzle/guided 전용
-      const request = {
-        base_problem: {
-          ...selectedBaseProblem,
-          code: extractedCode,
-          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
-          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
-        },
-        problem_type: type as 'blank' | 'puzzle' | 'guided',  // implementation은 별도 처리
-        user_level: 'intermediate' as const,
-        language: targetLanguage,
-      };
-
-      let generatedProblem: ConvertedProblem;
-
-      // 디버그: selectedBaseProblem 데이터 확인
-      console.log('[handleProblemTypeSelect] selectedBaseProblem data:', {
-        id: selectedBaseProblem.id,
-        name: selectedBaseProblem.name,
-        tags: selectedBaseProblem.tags,
-        topics: selectedBaseProblem.topics,
-        input_output: (selectedBaseProblem as any).input_output,
-      });
-
       // input_output을 testCases로 변환
       const inputOutput = (selectedBaseProblem as any).input_output;
       const testCases = inputOutput?.inputs && inputOutput?.outputs
@@ -991,64 +975,10 @@ export function PracticeChatPanel({
           }))
         : undefined;
 
-      console.log('[handleProblemTypeSelect] Converted testCases:', testCases);
+      let generatedProblem: ConvertedProblem;
 
-      if (type === 'blank') {
-        const result = await agentApi.generateBlank(request);
-        // 새 형식: original_id, language, code_template, answers[]
-        // _0_, _1_, _2_ 형식을 그대로 유지 (UnifiedPractice에서 _N_ 패턴 매칭)
-        const codeSnippet = result.code_template;
-        generatedProblem = {
-          id: result.original_id || `generated-${Date.now()}`,
-          originalId: result.original_id,  // 잔디 클릭 시 문제 정보 표시용
-          baseProblemId: selectedBaseProblem.id,  // base_problems UUID
-          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
-          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
-          problemType: 'blank',
-          difficulty: selectedBaseProblem.difficulty,
-          topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
-          keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],  // tags 우선
-          framework: targetLanguage,
-          codeTemplate: result.code_template,
-          codeSnippet: codeSnippet,  // UnifiedPractice에서 사용
-          blanks: result.answers.map((answer, idx) => ({
-            id: `blank-${idx}`,
-            position: idx,
-            answer: answer,
-            placeholder: `_${idx}_`,
-          })),
-          testCases: testCases || [],  // undefined 대신 빈 배열
-        };
-      } else if (type === 'puzzle') {
-        const result = await agentApi.generatePuzzle(request);
-        // 새 형식: original_id, language, fixed_start?, fixed_end?, blocks[]
-        const sortedBlocks = [...result.blocks].sort((a, b) => a.id - b.id);
-        const convertedBlocks = sortedBlocks.map(b => ({
-          id: String(b.id),
-          code: b.code,
-          correctOrder: b.id,
-          indentation: b.indentation || b.indent || 0,  // API에서 받은 indentation 값 사용
-        }));
-        generatedProblem = {
-          id: result.original_id || `generated-${Date.now()}`,
-          originalId: result.original_id,  // 잔디 클릭 시 문제 정보 표시용
-          baseProblemId: selectedBaseProblem.id,  // base_problems UUID
-          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
-          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
-          problemType: 'puzzle',
-          difficulty: selectedBaseProblem.difficulty,
-          topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
-          keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],  // tags 우선
-          framework: targetLanguage,
-          puzzleBlocks: convertedBlocks,  // UnifiedPractice에서 사용
-          blocks: convertedBlocks,
-          correctOrder: sortedBlocks.map(b => String(b.id)),
-          fixedStart: result.fixed_start,
-          fixedEnd: result.fixed_end,
-          testCases: testCases || [],  // undefined 대신 빈 배열
-        };
-      } else if (type === 'implementation') {
-        // Implementation: LLM 호출 없이 base_problem을 그대로 사용
+      // Implementation: LLM 호출 없이 base_problem을 그대로 사용
+      if (type === 'implementation') {
         generatedProblem = {
           id: selectedBaseProblem.id || `impl-${Date.now()}`,
           originalId: selectedBaseProblem.original_id || selectedBaseProblem.id,
@@ -1060,45 +990,138 @@ export function PracticeChatPanel({
           topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
           keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],
           framework: targetLanguage,
-          solutionCode: extractedCode,  // 정답 코드 (채점용)
+          solutionCode: extractedCode,
           testCases: testCases || [],
         };
       } else {
-        // Guided: 새 스키마 API 호출 (concept_explanation, variables_guide, approach_guide, starter_code)
-        const guidedResult = await agentApi.generateGuided(request);
-
-        // 코드 추출 (정답 코드, code가 객체일 수 있음)
-        const extractedCode = typeof selectedBaseProblem.code === 'string'
-          ? selectedBaseProblem.code
-          : (selectedBaseProblem.code as Record<string, string>)?.[targetLanguage]
-            || selectedBaseProblem.solutions?.[0]?.code
-            || '';
-
-        generatedProblem = {
-          id: guidedResult.guided_problem_id || guidedResult.original_id || `generated-${Date.now()}`,
-          originalId: guidedResult.original_id,  // 잔디 클릭 시 문제 정보 표시용
-          baseProblemId: guidedResult.base_problem_id || selectedBaseProblem.id,  // base_problems UUID
-          guidedProblemId: guidedResult.guided_problem_id,  // problems_guided.id
-          title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
-          description: selectedBaseProblem.description || selectedBaseProblem.question || '',
-          problemType: 'guided',
-          difficulty: selectedBaseProblem.difficulty,
-          topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
-          keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],  // tags 우선
-          framework: targetLanguage,
-          // 새 스키마 필드 (2026-01-12)
-          conceptExplanation: guidedResult.concept_explanation,
-          variablesGuide: guidedResult.variables_guide,
-          approachGuide: guidedResult.approach_guide,
-          starterCode: guidedResult.starter_code,
-          // 레거시 호환
-          concepts: guidedResult.concepts,
-          flow: guidedResult.flow,
-          checkpoints: guidedResult.checkpoints,
-          finalCodeReveal: extractedCode,  // 원본 코드를 최종 코드로 사용
-          codeSnippet: guidedResult.starter_code,  // 에디터에 표시할 starter_code
-          testCases: testCases || [],  // undefined 대신 빈 배열
+        // Blank/Puzzle/Guided: 스트리밍 API 사용
+        const request = {
+          base_problem: {
+            ...selectedBaseProblem,
+            code: extractedCode,
+            description: selectedBaseProblem.description || selectedBaseProblem.question || '',
+            title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+          },
+          problem_type: type,
+          user_level: 'intermediate' as const,
+          language: targetLanguage,
         };
+
+        // 스트리밍 결과를 저장할 Promise
+        const streamResult = await new Promise<ConvertedProblem>((resolve, reject) => {
+          agentApi.generateProblemStream(request, {
+            onStatus: (status, message) => {
+              console.log(`[Stream] Status: ${status} - ${message}`);
+              updateLoadingMessage(message);
+            },
+            onResult: (result) => {
+              console.log('[Stream] Result received:', result);
+
+              // 결과를 ConvertedProblem으로 변환
+              let converted: ConvertedProblem;
+
+              if (type === 'blank') {
+                const blankResult = result as { original_id?: string; language: string; code_template: string; answers: string[] };
+                converted = {
+                  id: blankResult.original_id || `generated-${Date.now()}`,
+                  originalId: blankResult.original_id,
+                  baseProblemId: selectedBaseProblem.id,
+                  title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+                  description: selectedBaseProblem.description || selectedBaseProblem.question || '',
+                  problemType: 'blank',
+                  difficulty: selectedBaseProblem.difficulty,
+                  topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+                  keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],
+                  framework: targetLanguage,
+                  codeTemplate: blankResult.code_template,
+                  codeSnippet: blankResult.code_template,
+                  blanks: blankResult.answers.map((answer, idx) => ({
+                    id: `blank-${idx}`,
+                    position: idx,
+                    answer: answer,
+                    placeholder: `_${idx}_`,
+                  })),
+                  testCases: testCases || [],
+                };
+              } else if (type === 'puzzle') {
+                const puzzleResult = result as { original_id?: string; language: string; fixed_start?: string; fixed_end?: string; blocks: Array<{ id: number; code: string; indentation?: number; indent?: number }> };
+                const sortedBlocks = [...puzzleResult.blocks].sort((a, b) => a.id - b.id);
+                const convertedBlocks = sortedBlocks.map(b => ({
+                  id: String(b.id),
+                  code: b.code,
+                  correctOrder: b.id,
+                  indentation: b.indentation || b.indent || 0,
+                }));
+                converted = {
+                  id: puzzleResult.original_id || `generated-${Date.now()}`,
+                  originalId: puzzleResult.original_id,
+                  baseProblemId: selectedBaseProblem.id,
+                  title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+                  description: selectedBaseProblem.description || selectedBaseProblem.question || '',
+                  problemType: 'puzzle',
+                  difficulty: selectedBaseProblem.difficulty,
+                  topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+                  keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],
+                  framework: targetLanguage,
+                  puzzleBlocks: convertedBlocks,
+                  blocks: convertedBlocks,
+                  correctOrder: sortedBlocks.map(b => String(b.id)),
+                  fixedStart: puzzleResult.fixed_start,
+                  fixedEnd: puzzleResult.fixed_end,
+                  testCases: testCases || [],
+                };
+              } else {
+                // guided
+                const guidedResult = result as {
+                  original_id?: string;
+                  language: string;
+                  concept_explanation?: string;
+                  variables_guide?: { total_count: number; variables: Array<{ name: string; role: string; type: string; initial_value: string; why_needed: string }> };
+                  approach_guide?: string;
+                  starter_code?: string;
+                  guided_problem_id?: string;
+                  concepts?: string[];
+                  flow?: string[];
+                  checkpoints?: string[];
+                };
+                converted = {
+                  id: guidedResult.guided_problem_id || guidedResult.original_id || `generated-${Date.now()}`,
+                  originalId: guidedResult.original_id,
+                  baseProblemId: selectedBaseProblem.id,
+                  guidedProblemId: guidedResult.guided_problem_id,
+                  title: selectedBaseProblem.title || selectedBaseProblem.name || 'Problem',
+                  description: selectedBaseProblem.description || selectedBaseProblem.question || '',
+                  problemType: 'guided',
+                  difficulty: selectedBaseProblem.difficulty,
+                  topics: selectedBaseProblem.topics || selectedBaseProblem.tags || [],
+                  keyConcepts: selectedBaseProblem.tags || selectedBaseProblem.topics || [],
+                  framework: targetLanguage,
+                  conceptExplanation: guidedResult.concept_explanation,
+                  variablesGuide: guidedResult.variables_guide,
+                  approachGuide: guidedResult.approach_guide,
+                  starterCode: guidedResult.starter_code,
+                  concepts: guidedResult.concepts,
+                  flow: guidedResult.flow,
+                  checkpoints: guidedResult.checkpoints,
+                  finalCodeReveal: extractedCode,
+                  codeSnippet: guidedResult.starter_code,
+                  testCases: testCases || [],
+                };
+              }
+
+              resolve(converted);
+            },
+            onError: (error) => {
+              console.error('[Stream] Error:', error);
+              reject(new Error(error));
+            },
+            onDone: () => {
+              console.log('[Stream] Done');
+            },
+          });
+        });
+
+        generatedProblem = streamResult;
       }
 
       console.log('[handleProblemTypeSelect] Generated problem:', {

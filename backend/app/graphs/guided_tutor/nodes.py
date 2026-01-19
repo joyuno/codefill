@@ -122,10 +122,11 @@ async def grade_context_node(state: AgenticRAGState) -> Dict[str, Any]:
         response = await openrouter_service.chat_completion(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a relevance grader. Answer only 'relevant' or 'not_relevant'."},
+                {"role": "system", "content": "Relevance grader. Answer 'relevant' or 'not_relevant'."},
                 {"role": "user", "content": grade_prompt},
             ],
             temperature=0,
+            max_tokens=20,  # 단순 분류용
         )
 
         content = openrouter_service.get_content(response)
@@ -190,10 +191,11 @@ async def assess_understanding_node(state: AgenticRAGState) -> Dict[str, Any]:
         response = await openrouter_service.chat_completion(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an educational assessment expert. Respond only in JSON."},
+                {"role": "system", "content": "Educational assessment expert. JSON only."},
                 {"role": "user", "content": assess_prompt},
             ],
             temperature=0.3,
+            max_tokens=300,  # 평가 결과용
             response_format={"type": "json_object"},
         )
 
@@ -353,6 +355,8 @@ async def generate_response_node(state: AgenticRAGState) -> Dict[str, Any]:
             model="gpt-4o-mini",
             messages=chat_messages,
             temperature=0.7,
+            max_tokens=1000,  # 대화 응답용
+            frequency_penalty=0.3,  # 반복 방지
         )
 
         content = openrouter_service.get_content(response)
@@ -408,6 +412,9 @@ async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
     - 변수 설계 가이드 (개수, 타입, 초기값, 역할)
     - 학습 흐름 안내
     - 첫 번째 단계 유도
+
+    주의: orchestrator_v2에서 이미 concept_explanation/approach_guide가 생성된 경우
+          중복 LLM 호출을 방지하기 위해 기존 데이터를 재사용합니다.
     """
     from ...services.openrouter import openrouter_service
 
@@ -419,6 +426,62 @@ async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
     flow = problem_context.get("flow", [])
     checkpoints = problem_context.get("checkpoints", [])
 
+    # ============================================================
+    # 중복 호출 방지: 이미 생성된 데이터가 있으면 LLM 호출 스킵
+    # ============================================================
+    concept_explanation = problem_context.get("concept_explanation", "")
+    approach_guide = problem_context.get("approach_guide", "")
+    variables_guide = problem_context.get("variables_guide", {})
+
+    if concept_explanation and approach_guide:
+        # 이미 orchestrator에서 생성된 데이터가 있음 - LLM 호출 스킵
+        # 기존 데이터로 초기 가이드 메시지 구성
+        title = problem_context.get('title', '문제')
+        topics = problem_context.get('topics', [])
+
+        # variables_guide 포맷팅
+        variables_text = ""
+        if variables_guide:
+            if isinstance(variables_guide, dict):
+                var_items = []
+                for var_name, var_info in variables_guide.items():
+                    if isinstance(var_info, dict):
+                        var_items.append(f"- `{var_name}`: {var_info.get('purpose', var_info.get('description', ''))}")
+                    else:
+                        var_items.append(f"- `{var_name}`: {var_info}")
+                if var_items:
+                    variables_text = "\n\n**📦 사용할 변수들:**\n" + "\n".join(var_items)
+
+        message = (
+            f"**{title}** 문제를 함께 풀어볼게요! 🎯\n\n"
+            f"**💡 핵심 개념:**\n{concept_explanation}\n\n"
+            f"**🛠️ 문제 접근법:**\n{approach_guide}"
+            f"{variables_text}\n\n"
+            "준비되셨나요? 먼저 무엇부터 시작해볼까요?"
+        )
+
+        return {
+            "response": message,
+            "initial_guide": {
+                "message": message,
+                "concept_explanation": concept_explanation,
+                "approach_guide": approach_guide,
+                "variables_guide": variables_guide,
+            },
+            "is_initial_guide": True,
+            "student_progress": {
+                "understanding_score": 0.1,
+                "concepts_mastered": [],
+                "concepts_struggling": [],
+                "current_focus": flow[0] if flow else (concepts[0] if concepts else (topics[0] if topics else "")),
+                "hints_received": 0,
+                "attempts": 0,
+            },
+        }
+
+    # ============================================================
+    # 기존 로직: 데이터가 없으면 LLM으로 새로 생성
+    # ============================================================
     # GUIDED_INITIAL_PROMPT 사용
     system_prompt = GUIDED_INITIAL_PROMPT.format(
         title=problem_context.get('title', ''),
@@ -440,6 +503,7 @@ async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
                 {"role": "user", "content": "문제를 시작합니다. 초기 가이드를 제공해주세요."},
             ],
             temperature=0.7,
+            max_tokens=1500,  # 초기 가이드용
             response_format={"type": "json_object"},
         )
 

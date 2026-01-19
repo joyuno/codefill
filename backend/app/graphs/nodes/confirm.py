@@ -57,7 +57,30 @@ async def confirm_generation_node(state: DiscoveryState) -> Dict[str, Any]:
     # 첫 호출: 확인 UI 표시 요청
     topics = collected_info.get("topics", [])
     topics_str = ", ".join(topics) if topics else "기초"
-    difficulty = collected_info.get("difficulty", "easy")
+
+    # ============================================================
+    # difficulty가 None일 때 사용자 레벨 기반으로 실제 기본값 설정
+    # (이전에는 하드코딩 "easy"였으나, 이제 개인화 추천 사용)
+    # ============================================================
+    difficulty = collected_info.get("difficulty")
+    if not difficulty:
+        # user_context에서 experience_level 추출
+        experience_level = user_context.get("experience_level", "unknown")
+
+        # 레벨 → 난이도 매핑 (user_tools.py의 LEVEL_TO_DIFFICULTY와 동일)
+        LEVEL_TO_DIFFICULTY = {
+            "beginner": "easy",
+            "elementary": "easy",
+            "intermediate": "medium",
+            "advanced": "hard",
+            "unknown": "easy",
+        }
+        difficulty = LEVEL_TO_DIFFICULTY.get(experience_level, "easy")
+
+        # collected_info에 실제로 저장 (이후 검색에서 사용)
+        collected_info["difficulty"] = difficulty
+        print(f"[ConfirmGeneration] Auto-set difficulty based on user level: {experience_level} → {difficulty}")
+
     language = collected_info.get("language", "python")
 
     confirm_message = (

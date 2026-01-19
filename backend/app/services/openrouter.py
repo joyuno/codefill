@@ -48,6 +48,10 @@ class OpenRouterService:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         response_format: Optional[Dict] = None,
+        json_schema: Optional[Dict] = None,
+        stop: Optional[list] = None,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Call chat completion API.
@@ -58,6 +62,10 @@ class OpenRouterService:
             temperature: Sampling temperature
             max_tokens: Maximum tokens in response
             response_format: Optional response format (e.g., {"type": "json_object"})
+            json_schema: Optional JSON schema for structured output (OpenAI only)
+            stop: Optional list of stop sequences
+            frequency_penalty: Reduce repetition of same tokens (0.0-2.0)
+            presence_penalty: Encourage new topics (0.0-2.0)
 
         Returns:
             API response dict
@@ -74,9 +82,25 @@ class OpenRouterService:
             "max_tokens": max_tokens,
         }
 
-        # response_format은 OpenAI 모델에서만 지원
-        if response_format and model_id.startswith("openai/"):
+        # Structured Output with JSON Schema (OpenAI models)
+        if json_schema and model_id.startswith("openai/"):
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema
+            }
+        # Basic JSON mode (OpenAI, Google models)
+        elif response_format and (model_id.startswith("openai/") or model_id.startswith("google/")):
             payload["response_format"] = response_format
+
+        # Stop sequences
+        if stop:
+            payload["stop"] = stop
+
+        # Repetition control
+        if frequency_penalty > 0:
+            payload["frequency_penalty"] = frequency_penalty
+        if presence_penalty > 0:
+            payload["presence_penalty"] = presence_penalty
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(

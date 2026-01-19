@@ -63,6 +63,13 @@ class DiscoveryState(TypedDict, total=False):
     search_offset: int  # 검색 오프셋 (더 찾아보기용)
     force_generate: bool  # 강제 생성 (새 문제 생성 버튼)
     search_method: Optional[str]  # 🚀 Agentic RAG: metadata | semantic | hybrid
+    retry_info: Optional[Dict[str, Any]]  # 🔄 조건 완화 재시도 정보
+
+    # === 동적 페이지 크기 ===
+    requested_limit: Optional[int]  # 🔢 사용자 요청 개수
+    per_page: int  # 🔢 실제 적용된 페이지당 개수
+    limit_exceeded: bool  # 🔢 최대 개수 초과 여부
+    original_request: Optional[int]  # 🔢 원래 요청한 개수 (초과 시)
 
     # === 필터링 ===
     filtered_results: List[ProblemInfo]

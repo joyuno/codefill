@@ -13,8 +13,47 @@ Info Collection Node
 - 유사 사용자 기반 추천
 """
 import json
+import os
+import random
 from typing import Dict, Any, List, Optional
 from ..state import ChatState, CollectedInfo
+
+
+# ============================================================
+# 태그 정규화 데이터 로드
+# ============================================================
+
+_COLLECT_TAG_CACHE = None
+
+def _load_available_tags() -> List[str]:
+    """JSON 파일에서 사용 가능한 태그 목록 로드"""
+    global _COLLECT_TAG_CACHE
+
+    if _COLLECT_TAG_CACHE is not None:
+        return _COLLECT_TAG_CACHE
+
+    # JSON 파일 경로 (nodes/ → graphs/ → app/)
+    json_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "data", "tag_normalization.json"
+    )
+
+    # 기본값 (폴백)
+    default_tags = ["구현", "수학", "자료구조", "그리디", "DP", "정렬", "문자열",
+                    "완전탐색", "그래프", "BFS/DFS", "트리", "이분탐색"]
+
+    try:
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                tags = data.get("available_tags", default_tags)
+                _COLLECT_TAG_CACHE = tags
+                return tags
+    except Exception:
+        pass
+
+    _COLLECT_TAG_CACHE = default_tags
+    return default_tags
 
 
 # ============================================================
@@ -107,6 +146,10 @@ async def _generate_dynamic_topic_suggestions(
         "has_history": personalization.get("has_history", False),
     }
 
+    # 동적 태그 목록 생성 (하드코딩 제거)
+    available_tags = _load_available_tags()[:15]  # 상위 15개
+    topic_list_str = "\n".join([f"- {tag}" for tag in available_tags])
+
     # LLM 프롬프트
     system_prompt = """당신은 코딩 교육 플랫폼의 개인화 추천 엔진입니다.
 사용자 컨텍스트를 분석하여 맞춤형 주제 선택지를 생성하세요.
@@ -127,25 +170,18 @@ async def _generate_dynamic_topic_suggestions(
   "suggested_actions": [
     {{
       "label": "주제명 (짧게)",
-      "value": "topic_value",
+      "value": "topic_value (label과 동일하게)",
       "description": "개인화된 이유 설명 (10자 이내)"
     }}
   ]
 }}
 
-## 가능한 주제 값 (value)
-- dp: 동적 프로그래밍
-- graph: 그래프 (BFS, DFS)
-- implementation: 구현/시뮬레이션
-- sorting: 정렬
-- binary_search: 이분탐색
-- string: 문자열
-- greedy: 그리디
-- data_structure: 자료구조 (스택, 큐, 해시)
-- tree: 트리
-- recursion: 재귀
-- math: 수학
-""".format(context=json.dumps(context_info, ensure_ascii=False, indent=2))
+## 가능한 주제 (랜덤 순서로 추천)
+{topic_list}
+""".format(
+        context=json.dumps(context_info, ensure_ascii=False, indent=2),
+        topic_list=topic_list_str
+    )
 
     try:
         response = await openrouter_service.chat_completion(
@@ -198,12 +234,12 @@ def _get_fallback_topic_suggestions(
     personalization: dict,
 ) -> tuple[str, List[dict]]:
     """
-    LLM 실패 시 폴백 선택지 (규칙 기반)
+    LLM 실패 시 폴백 선택지 (동적 태그 기반)
     """
-    goal = user_context.get("goal", "")
     weak_topics = personalization.get("skill_summary", {}).get("weak_topics", [])
 
     suggested_actions = []
+    used_topics = set()
 
     # 약점 주제 우선
     if weak_topics:
@@ -213,33 +249,23 @@ def _get_fallback_topic_suggestions(
             "value": weak.lower().replace(" ", "_"),
             "description": "연습 필요"
         })
+        used_topics.add(weak)
 
-    # 대기업 목표면 필수 주제
-    if "대기업" in goal or "코테" in goal:
-        if not any(a.get("value") == "dp" for a in suggested_actions):
-            suggested_actions.append({
-                "label": "DP",
-                "value": "dp",
-                "description": "대기업 필수"
-            })
-        if not any(a.get("value") == "graph" for a in suggested_actions):
-            suggested_actions.append({
-                "label": "그래프",
-                "value": "graph",
-                "description": "빈출 유형"
-            })
+    # 동적 태그에서 랜덤 선택 (하드코딩 제거)
+    available_tags = _load_available_tags().copy()
+    random.shuffle(available_tags)
 
-    # 기본 추가
-    default_topics = [
-        {"label": "구현", "value": "implementation", "description": "기본기 연습"},
-        {"label": "정렬", "value": "sorting", "description": "정석 알고리즘"},
-    ]
-
-    for topic in default_topics:
+    # 사용되지 않은 태그 중에서 추가
+    for tag in available_tags:
         if len(suggested_actions) >= 4:
             break
-        if not any(a.get("value") == topic["value"] for a in suggested_actions):
-            suggested_actions.append(topic)
+        if tag not in used_topics:
+            suggested_actions.append({
+                "label": tag,
+                "value": tag.lower().replace("/", "_").replace(" ", "_"),
+                "description": "추천"
+            })
+            used_topics.add(tag)
 
     message = "어떤 알고리즘을 연습해볼까요?"
     return message, suggested_actions[:4]
@@ -489,9 +515,13 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
         print(f"[CollectInfo] Error: {e}")
         # 스마트 폴백: 현재 상태에 따라 적절한 안내 메시지 제공
         if not existing_info.get("topics"):
+            # 동적 태그에서 랜덤 선택 (하드코딩 제거)
+            sample_tags = _load_available_tags()[:8]
+            random.shuffle(sample_tags)
+            tag_examples = ", ".join([f"**{t}**" for t in sample_tags[:3]])
             fallback_message = (
-                "대기업 코테에서 가장 자주 출제되는 유형은 **DP**, **그래프**, **구현** 이에요!\n\n"
-                "어떤 주제로 해볼까요? 회원님의 목표에 맞게 추천해드릴게요."
+                f"다양한 알고리즘 주제가 있어요: {tag_examples} 등!\n\n"
+                "어떤 주제로 해볼까요?"
             )
         elif not existing_info.get("difficulty"):
             fallback_message = "난이도를 선택해주세요! 실버, 골드, 플래티넘, 다이아, 마스터 중에 어떤 게 좋을까요?"

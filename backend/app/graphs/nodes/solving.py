@@ -6,6 +6,7 @@ Problem Solving Nodes
 import json
 from typing import Dict, Any, List
 from ..solving_state import SolvingState
+from ...services.edge_case_logger import edge_case_logger
 
 
 async def provide_hint(state: SolvingState) -> Dict[str, Any]:
@@ -122,6 +123,20 @@ async def review_code(state: SolvingState) -> Dict[str, Any]:
     code = _extract_code(message) or user_progress.get("current_code", "")
 
     if not code:
+        # EC-S02: 코드 없이 리뷰 요청
+        await edge_case_logger.log(
+            code="EC-S02",
+            user_id=state.get("user_context", {}).get("user_id"),
+            session_id=state.get("session_id"),
+            current_node="review_code",
+            user_message=message,
+            state_snapshot={
+                "problem_type": problem_context.get("problem_type"),
+                "has_current_code": bool(user_progress.get("current_code")),
+            },
+            fallback_triggered=True,
+            was_recovered=True,
+        )
         return {
             "response_message": "리뷰할 코드가 없어요! 코드를 작성하고 다시 요청해주세요.",
             "next_node": "respond",
@@ -223,6 +238,20 @@ async def check_answer(state: SolvingState) -> Dict[str, Any]:
     user_answer = _extract_user_answer(message, user_progress, problem_type)
 
     if not user_answer:
+        # EC-S02: 답안 없이 제출
+        await edge_case_logger.log(
+            code="EC-S02",
+            user_id=state.get("user_context", {}).get("user_id"),
+            session_id=state.get("session_id"),
+            current_node="check_answer",
+            user_message=message,
+            state_snapshot={
+                "problem_type": problem_type,
+                "has_user_progress": bool(user_progress),
+            },
+            fallback_triggered=True,
+            was_recovered=True,
+        )
         return {
             "response_message": "제출할 답안이 없어요! 코드를 작성하고 제출해주세요.",
             "next_node": "respond",
@@ -440,11 +469,10 @@ async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
 2. 입력과 출력이 무엇인지 간단히 설명하세요
 3. 핵심 알고리즘/자료구조 힌트는 포함하지 마세요 (학생이 스스로 생각하게)
 4. 2-3문장으로 간결하게 요약하세요
+5. **난이도**, **주제** 같은 메타데이터 형식 출력 금지
 
-출력 형식:
-**문제 요약:** [요약 내용]
-
-**핵심 목표:** [한 줄로 정리]
+출력 형식 (마크다운 볼드 없이 자연스러운 문장으로):
+[문제 내용 요약 2-3문장]
 """
 
     messages = [
@@ -457,14 +485,12 @@ async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
             messages=messages,
             model="gpt-4o-mini",
             temperature=0.3,
+            max_tokens=150,  # 2-3문장 요약용
         )
         summary = openrouter_service.get_content(response)
 
-        # 추가 정보 포함
-        meta_info = f"\n\n**주제:** {', '.join(topics) if topics else '알고리즘'}\n**난이도:** {difficulty}"
-
         return {
-            "response_message": summary + meta_info,
+            "response_message": summary,  # 메타데이터 없이 요약만 반환
             "action_trigger": "problem_summarized",
             "action_data": {
                 "title": title,

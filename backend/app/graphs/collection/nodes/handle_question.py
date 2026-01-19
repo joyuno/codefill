@@ -9,8 +9,50 @@ Tool 기반 개인화:
 - get_personalized_recommendations: 프로필 기반 추천 생성
 """
 import json
-from typing import Dict, Any, Optional
+import os
+from typing import Dict, Any, Optional, List
 from ..state import CollectionState, DIFFICULTY_TO_TIER
+
+
+# ============================================================
+# 태그 정규화 데이터 로드
+# ============================================================
+
+_TAG_NORMALIZATION_CACHE = None
+
+def _load_available_tags() -> List[str]:
+    """
+    JSON 파일에서 사용 가능한 태그 목록 로드
+    캐시를 사용하여 반복 로드 방지
+    """
+    global _TAG_NORMALIZATION_CACHE
+
+    if _TAG_NORMALIZATION_CACHE is not None:
+        return _TAG_NORMALIZATION_CACHE
+
+    # JSON 파일 경로 (nodes/ → collection/ → graphs/ → app/)
+    json_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+        "data", "tag_normalization.json"
+    )
+
+    # 기본값 (폴백)
+    default_tags = ["구현", "수학", "자료구조", "그리디", "DP", "정렬", "문자열",
+                    "완전탐색", "그래프", "BFS/DFS", "트리", "이분탐색"]
+
+    try:
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                tags = data.get("available_tags", default_tags)
+                # 태그 개수 기준으로 정렬하여 자주 나오는 태그 우선 (하지만 random.shuffle에서 섞임)
+                _TAG_NORMALIZATION_CACHE = tags
+                return tags
+    except Exception:
+        pass
+
+    _TAG_NORMALIZATION_CACHE = default_tags
+    return default_tags
 
 
 # ============================================================
@@ -70,11 +112,11 @@ async def fetch_user_profile_and_recommendations(user_id: Optional[str], user_co
     }
 
 
-# 현재 단계별 추천 옵션 (UI 표시용)
+# 현재 단계별 추천 옵션 (UI 표시용) - topic은 동적 로드 필요
 STEP_RECOMMENDATIONS = {
     "topic": {
-        "options": ["DP", "그래프", "정렬", "구현", "기초"],
-        "default": "DP",
+        "options": None,  # 동적으로 _load_available_tags()에서 로드
+        "default": None,  # 랜덤 선택 (하드코딩 제거)
         "display_name": "주제",
     },
     "difficulty": {
@@ -155,12 +197,12 @@ QUESTION_PROMPTS = {
 
 중요: 답변 마지막에 반드시 하나의 구체적인 값을 추천하세요.
 예시:
-- topic 단계: "DP로 해볼까요?"
+- topic 단계: "[주제]로 해볼까요?" (다양한 주제 중 랜덤하게 선택)
 - difficulty 단계: "골드로 할까요?"
 - language 단계: "Python으로 할까요?"
 
 현재 단계에 맞는 추천:
-- topic: 기초, DP, 그래프, 정렬, 구현, 문자열 중 하나
+- topic: 다양한 알고리즘 주제 중 하나 (매번 다르게 추천!)
 - difficulty: 실버, 골드, 플래티넘, 다이아, 마스터 중 하나
 - language: Python, Java, C++ 중 하나
 """,
@@ -181,8 +223,8 @@ QUESTION_PROMPTS = {
 
 중요:
 - 질문의 핵심 내용에 먼저 답변하세요!
-- 답변 마지막에 구체적인 값을 추천하세요.
-예: "DP로 시작해볼까요?" 또는 "골드로 할까요?"
+- 답변 마지막에 구체적인 값을 추천하세요 (topic은 매번 다르게!).
+예: "[주제]로 시작해볼까요?" 또는 "골드로 할까요?"
 """,
     "comparison": """
 사용자가 비교/차이점을 물어봤습니다.
@@ -201,8 +243,8 @@ QUESTION_PROMPTS = {
 
 중요:
 - 질문에서 언급된 대상들을 비교해주세요!
-- 답변 마지막에 구체적인 값을 추천하세요.
-예: "그래프로 해볼까요?" 또는 "플래티넘으로 할까요?"
+- 답변 마지막에 구체적인 값을 추천하세요 (topic은 매번 다르게!).
+예: "[주제]로 해볼까요?" 또는 "플래티넘으로 할까요?"
 """,
     "difficulty_inquiry": """
 사용자가 난이도/티어에 대해 질문했습니다.
@@ -259,8 +301,8 @@ QUESTION_PROMPTS = {
 1. 친절하게 답변하세요 (1-2문장)
 2. 그리고 현재 단계({current_step})에 맞는 값을 하나 추천하세요
 
-중요: 답변 마지막에 반드시 구체적인 값을 추천하세요.
-예: "DP로 해볼까요?" 또는 "Python으로 할까요?"
+중요: 답변 마지막에 반드시 구체적인 값을 추천하세요 (topic은 매번 다르게!).
+예: "[주제]로 해볼까요?" 또는 "Python으로 할까요?"
 """,
     "off_topic": """
 사용자가 현재 정보 수집과 관련 없는 메시지를 보냈습니다.
@@ -387,6 +429,7 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
 
     rejection 타입일 때는 거절 맥락을 활용한 스마트 추천
     Tool 기반 사용자 프로필 조회 및 개인화 추천 적용
+    확장 의도(coding_concept, error_debug 등)는 extended_intent_service로 처리
     """
     # Import inside function to avoid circular imports
     from app.services.openrouter import openrouter_service
@@ -397,6 +440,16 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
     message = state.get("message", "")
     rejected_values = state.get("rejected_values", [])
     rejection_reason = state.get("rejection_reason")
+
+    # ============================================================
+    # 확장 의도 처리 (코딩 학습 관련이지만 정보 수집과 무관)
+    # ============================================================
+    extended_intents = ["coding_concept", "syntax_help", "error_debug", "learning_advice",
+                       "code_review", "hint_request", "progress_inquiry", "service_help",
+                       "account_inquiry", "greeting", "chitchat"]
+
+    if question_type in extended_intents:
+        return await _handle_extended_intent(state, question_type, message)
 
     # 🔧 FIX: 질문과 함께 추출된 값 확인 (동시 처리용)
     extracted_with_question = state.get("extracted_with_question", {})
@@ -420,6 +473,24 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
     # DB에서 프로필 조회 시도 (user_id가 있을 때)
     tool_result = await fetch_user_profile_and_recommendations(user_id, user_context)
     personalized = tool_result["recommendations"]
+
+    # ============================================================
+    # 풀이 이력 기반 스마트 추천 (user_id가 있을 때)
+    # ============================================================
+    history_recommendation = None
+    if user_id and current_step == "topic":
+        try:
+            from app.tools.user_tools import get_user_tools
+            user_tools = get_user_tools()
+            history_recommendation = await user_tools.get_history_based_recommendation(
+                user_id=user_id,
+                rejected_topics=rejected_values,
+            )
+            if history_recommendation.get("success"):
+                print(f"[handle_question] History-based: {history_recommendation.get('recommended_topic')} "
+                      f"({history_recommendation.get('recommendation_type')})")
+        except Exception as e:
+            print(f"[handle_question] History-based recommendation failed: {e}")
 
     # DB 프로필을 user_context에 병합 (LLM 프롬프트에서 사용)
     if tool_result["from_db"] and tool_result["profile"]:
@@ -517,8 +588,9 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
 
         # 현재 단계에 따른 추천 대상 결정 (개인화된 순서 사용)
         if current_step == "topic":
-            # 개인화된 주제 옵션 사용
-            valid_values = personalized.get("topic_options", []) + ["DP", "그래프", "정렬", "구현", "기초", "문자열", "이분탐색", "백트래킹", "BFS/DFS", "스택/큐"]
+            # 개인화된 주제 옵션 + JSON에서 로드한 태그 (하드코딩 제거)
+            available_tags = _load_available_tags()
+            valid_values = personalized.get("topic_options", []) + available_tags
             # 중복 제거
             seen = set()
             valid_values = [v for v in valid_values if not (v in seen or seen.add(v))]
@@ -583,7 +655,15 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
 
         # 개인화된 기본 추천값
         if current_step == "topic":
-            default_suggestion = personalized.get("recommended_topic", available_values[0] if available_values else "기초")
+            import random
+            recommended_topic = personalized.get("recommended_topic")
+            # recommended_topic이 없으면 랜덤 선택 (매번 다른 값 추천)
+            if recommended_topic:
+                default_suggestion = recommended_topic
+            elif available_values:
+                default_suggestion = random.choice(available_values)
+            else:
+                default_suggestion = "기초"
             if personalization_reason:
                 personalization_hint = f"\n\n개인화 힌트: 이 사용자에게는 {personalization_reason} 주제를 추천하세요."
         elif current_step == "difficulty":
@@ -604,12 +684,24 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
             else:
                 personalization_hint = f"\n\n개인화 힌트: 추천 난이도는 **{recommended_display}**입니다."
         else:
-            default_suggestion = personalized.get("recommended_language", available_values[0] if available_values else "python")
+            # language 단계: 추천 언어가 없으면 랜덤 선택
+            recommended_language = personalized.get("recommended_language")
+            if recommended_language:
+                default_suggestion = recommended_language
+            elif available_values:
+                default_suggestion = random.choice(available_values)
+            else:
+                default_suggestion = "python"
             personalization_hint = ""
 
-        # default_suggestion이 거절된 값이면 다른 값 사용
+        # default_suggestion이 거절된 값이면 다른 값 사용 (랜덤 선택)
         if default_suggestion.lower() in [r.lower() for r in rejected_values]:
-            default_suggestion = available_values[0] if available_values else valid_values[0]
+            if available_values:
+                default_suggestion = random.choice(available_values)
+            elif valid_values:
+                default_suggestion = random.choice(valid_values)
+            else:
+                default_suggestion = "구현"  # 최후 fallback
 
         system_prompt = f"""당신은 CodeFill 알고리즘 학습 도우미입니다.
 사용자 질문에 답변하고, 현재 단계에 맞는 값을 추천하세요.
@@ -636,7 +728,13 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
 - 거절된 값은 절대 추천하지 마세요
 - 사용자 프로필이 있으면 그에 맞는 추천을 하세요
 - difficulty일 때: easy/medium/medium_hard/hard/very_hard 중 하나 (한글 X)
-- language일 때: python/java/cpp 중 하나 (한글 X)"""
+- language일 때: python/java/cpp 중 하나 (한글 X)
+
+## 절대 금지 (Guardrails)
+- 새로운 문제를 생성하거나 만들어내지 마세요
+- 문제 내용을 직접 출력하지 마세요
+- **난이도**, **주제** 같은 마크다운 메타데이터 형식 금지
+- 2-3문장으로 간결하게 응답하세요"""
 
         response = await openrouter_service.chat_completion(
             model="gpt-4o-mini",
@@ -645,7 +743,7 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=400,
+            max_tokens=200,  # 간결한 응답 유도
             response_format={"type": "json_object"},
         )
 
@@ -661,7 +759,7 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
         # 추천값이 없거나 거절된 값이면 개인화된 옵션에서 선택
         if not suggested_value or suggested_value.lower() in [r.lower() for r in rejected_values]:
             personalized_options = personalized.get("topic_options") if current_step == "topic" else None
-            suggested_value = _get_non_rejected_default(current_step, rejected_values, personalized_options)
+            suggested_value = _get_non_rejected_default(current_step, rejected_values, personalized_options, history_recommendation)
             step_info = STEP_RECOMMENDATIONS.get(current_step, {})
             display_value = _get_display_value(suggested_value, current_step)
             answer += f"\n\n{display_value}{_get_particle(display_value)} 해볼까요?"
@@ -703,16 +801,26 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
             default_value = diff_result.recommended_difficulty
             display_value = diff_result.recommended_display
         else:
-            # 개인화된 추천값 우선 사용 (하드코딩 fallback 제거)
+            # 개인화된 추천값 우선 사용, 없으면 랜덤 선택
+            import random
             if current_step == "topic":
-                default_value = personalized.get("recommended_topic") or personalized.get("topic_options", ["DP"])[0]
+                personalized_options = personalized.get("topic_options", [])
+                # 거절되지 않은 개인화 옵션 필터링
+                available_personalized = [opt for opt in personalized_options if opt.lower() not in [r.lower() for r in rejected_values]]
+
+                recommended = personalized.get("recommended_topic")
+                if recommended and recommended.lower() not in [r.lower() for r in rejected_values]:
+                    default_value = recommended
+                elif available_personalized:
+                    default_value = random.choice(available_personalized)
+                else:
+                    default_value = _get_non_rejected_default(current_step, rejected_values, None, history_recommendation)
             else:
                 default_value = personalized.get("recommended_language") or "python"
 
-            # 거절된 값이면 개인화된 옵션에서 다른 값 선택
+            # 거절된 값이면 다른 값 선택 (랜덤) - 이중 체크
             if default_value.lower() in [r.lower() for r in rejected_values]:
-                personalized_options = personalized.get("topic_options") if current_step == "topic" else None
-                default_value = _get_non_rejected_default(current_step, rejected_values, personalized_options)
+                default_value = _get_non_rejected_default(current_step, rejected_values, None, history_recommendation)
 
             display_value = _get_display_value(default_value, current_step)
 
@@ -816,34 +924,52 @@ def _get_non_rejected_default(
     current_step: str,
     rejected_values: list = None,
     personalized_options: list = None,
+    history_recommendation: dict = None,
 ) -> str:
     """
     rejected_values를 피해서 기본값 반환 (DB 저장 형식)
-    개인화된 옵션이 있으면 그것을 우선 사용
+
+    우선순위:
+    1. history_recommendation (풀이 이력 기반 스마트 추천)
+    2. personalized_options (프로필 기반 개인화)
+    3. 랜덤 선택 (폴백)
     """
+    import random
+
     rejected_lower = [v.lower() for v in (rejected_values or [])]
 
-    # 개인화된 옵션이 있으면 우선 사용
-    if personalized_options:
-        for option in personalized_options:
-            if option.lower() not in rejected_lower:
-                return option
+    # 1순위: 풀이 이력 기반 추천 (topic 단계에서만)
+    if current_step == "topic" and history_recommendation:
+        recommended = history_recommendation.get("recommended_topic")
+        if recommended and recommended.lower() not in rejected_lower:
+            return recommended
+        # 대안 추천도 확인
+        alternatives = history_recommendation.get("alternative_topics", [])
+        for alt in alternatives:
+            if alt.lower() not in rejected_lower:
+                return alt
 
-    # 각 단계별 DB 값 리스트 (대기업 빈출 순서로 정렬)
+    # 2순위: 개인화된 옵션
+    if personalized_options:
+        available = [opt for opt in personalized_options if opt.lower() not in rejected_lower]
+        if available:
+            return random.choice(available)
+
+    # 3순위: 랜덤 선택 (topic은 JSON에서 동적 로드)
     if current_step == "topic":
-        # 대기업 빈출 순서: DP > 그래프 > 구현 > 이분탐색 > 문자열 > 정렬 > 기초
-        options = ["DP", "그래프", "구현", "이분탐색", "문자열", "정렬", "기초"]
+        # JSON 파일에서 available_tags 로드 (하드코딩 제거)
+        options = _load_available_tags().copy()
+        random.shuffle(options)  # 매번 순서 섞기
     elif current_step == "difficulty":
         options = ["easy", "medium", "medium_hard", "hard", "very_hard"]
     else:  # language
         options = ["python", "java", "cpp"]
 
-    for option in options:
-        if option.lower() not in rejected_lower:
-            return option
+    available = [opt for opt in options if opt.lower() not in rejected_lower]
+    if available:
+        return random.choice(available)
 
-    # 모든 옵션이 거절됐으면 첫 번째 옵션 반환
-    return options[0]
+    return random.choice(options)
 
 
 def _get_adjusted_difficulty(
@@ -1136,8 +1262,9 @@ async def _handle_topic_list(
         # 현재 단계에 맞는 안내 메시지 추가
         if current_step == "topic":
             topic_list_response += "\n\n이 중에서 어떤 주제로 연습해볼까요?"
-            # 추천 칩 생성 (개인화된 상위 6개)
-            recommended_topics = personalized.get("topic_options", ["DP", "그래프", "구현", "정렬", "문자열", "기초"])[:6]
+            # 추천 칩 생성 (개인화된 상위 6개, 폴백은 JSON에서 로드)
+            default_topics = _load_available_tags()[:6]
+            recommended_topics = personalized.get("topic_options", default_topics)[:6]
             chips = [
                 {"label": t, "value": t, "category": "topic"}
                 for t in recommended_topics
@@ -1159,10 +1286,12 @@ async def _handle_topic_list(
         }
 
     else:
-        # 주제 목록 조회 실패 시 fallback
-        fallback_topics = ["DP", "그래프", "구현", "정렬", "문자열", "기초", "BFS/DFS", "이분탐색"]
+        # 주제 목록 조회 실패 시 fallback (JSON에서 로드)
+        fallback_topics = _load_available_tags()[:12]  # 상위 12개
+        import random as rand_mod
+        rand_mod.shuffle(fallback_topics)
         return {
-            "response_message": f"현재 문제집에는 다양한 주제가 있어요: {', '.join(fallback_topics)} 등이 있습니다.\n\n이 중에서 어떤 주제로 연습해볼까요?",
+            "response_message": f"현재 문제집에는 다양한 주제가 있어요: {', '.join(fallback_topics[:8])} 등이 있습니다.\n\n이 중에서 어떤 주제로 연습해볼까요?",
             "suggested_value": None,
             "awaiting_confirmation": False,
             "is_question": False,
@@ -1263,3 +1392,119 @@ def _build_question_context(
         context_parts.append("\n→ 해당 주제의 학습 방법과 접근법을 조언해주세요!")
 
     return "\n".join(context_parts)
+
+
+# ============================================================
+# Extended Intent Handler (확장 의도 처리)
+# ============================================================
+
+async def _handle_extended_intent(
+    state: CollectionState,
+    intent_type: str,
+    message: str,
+) -> Dict[str, Any]:
+    """
+    확장 의도 처리 (extended_intent_service 호출)
+
+    정보 수집과 무관한 코딩 학습 관련 질문들을 처리:
+    - coding_concept: 알고리즘/자료구조 개념 질문
+    - syntax_help: 문법/구문 도움
+    - error_debug: 에러/디버깅 도움
+    - learning_advice: 학습 조언
+    - code_review: 코드 리뷰 요청
+    - hint_request: 힌트 요청
+    - progress_inquiry: 진행 상황 조회
+    - service_help: 서비스 이용 안내
+    - account_inquiry: 계정 관련 문의
+    - greeting: 인사
+    - chitchat: 잡담
+
+    Args:
+        state: 현재 Collection 상태
+        intent_type: 확장 의도 유형
+        message: 사용자 메시지
+
+    Returns:
+        그래프에서 예상하는 응답 형식
+    """
+    from app.services.extended_intent_service import extended_intent_service
+
+    # 상태에서 정보 추출
+    user_context = state.get("user_context", {}) or {}
+    user_id = user_context.get("user_id") or user_context.get("id")
+    extended_info = state.get("extended_info")
+    current_step = state.get("current_step", "topic")
+
+    try:
+        # extended_intent_service 호출
+        response = await extended_intent_service.handle_intent(
+            intent=intent_type,
+            message=message,
+            extended_info=extended_info,
+            user_id=user_id,
+            user_context=user_context,
+        )
+
+        # 응답 메시지 구성
+        response_message = response.message
+
+        # 칩은 이미 dict 형태로 반환됨
+        chips = response.chips or []
+
+        # 정보 수집으로 돌아갈 수 있는 안내 추가 (현재 단계 기반)
+        if not chips or response.needs_followup:
+            # 확장 의도 응답 후 정보 수집으로 자연스럽게 돌아가기
+            step_chips = await _get_step_chips(current_step, user_context)
+            chips = step_chips
+
+            # 자연스러운 전환 메시지 추가
+            step_guidance = {
+                "topic": "어떤 주제로 연습해볼까요?",
+                "difficulty": "어떤 난이도로 할까요?",
+                "language": "어떤 언어로 풀어볼까요?",
+            }
+            if current_step in step_guidance:
+                response_message += f"\n\n그럼 문제 추천으로 돌아갈게요! {step_guidance[current_step]}"
+
+        return {
+            "response_message": response_message,
+            "awaiting_confirmation": False,
+            "suggested_value": None,
+            "is_question": False,
+            "chips": chips,
+        }
+
+    except Exception as e:
+        print(f"[handle_question] Extended intent error: {e}")
+
+        # 에러 시 fallback 응답
+        fallback_messages = {
+            "greeting": "안녕하세요! 반가워요 😊",
+            "chitchat": "재미있는 얘기네요! 코딩 이야기도 해볼까요?",
+            "coding_concept": "좋은 질문이에요! 알고리즘 학습이 궁금하시군요.",
+            "syntax_help": "문법에 대해 궁금하시군요!",
+            "error_debug": "에러 해결을 도와드릴게요!",
+            "learning_advice": "학습 조언을 드릴게요!",
+            "progress_inquiry": "학습 현황을 확인해볼게요!",
+            "service_help": "서비스 이용에 대해 안내해드릴게요!",
+            "account_inquiry": "계정 관련 문의군요!",
+        }
+        fallback = fallback_messages.get(intent_type, "알겠어요!")
+
+        # 정보 수집으로 돌아가기
+        step_guidance = {
+            "topic": "어떤 주제로 연습해볼까요?",
+            "difficulty": "어떤 난이도로 할까요?",
+            "language": "어떤 언어로 풀어볼까요?",
+        }
+        guidance = step_guidance.get(current_step, "계속해볼까요?")
+
+        step_chips = await _get_step_chips(current_step, user_context)
+
+        return {
+            "response_message": f"{fallback}\n\n그럼 문제 추천으로 돌아갈게요! {guidance}",
+            "awaiting_confirmation": False,
+            "suggested_value": None,
+            "is_question": False,
+            "chips": step_chips,
+        }

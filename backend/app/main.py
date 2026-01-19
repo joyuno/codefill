@@ -10,6 +10,7 @@ from .services.collection_embeddings import initialize_collection_embeddings
 from .services.discovery_embeddings import initialize_discovery_embeddings
 from .graphs.orchestrator_v2 import initialize_orchestrator
 from .graphs.checkpointer import close_checkpointer
+from .services.stats_cache import get_stats_cache, shutdown_stats_cache
 
 # Initialize logging at module load
 setup_logging()
@@ -36,10 +37,18 @@ async def lifespan(app: FastAPI):
     # LangGraph Orchestrator 초기화 (Checkpointer 포함)
     asyncio.create_task(initialize_orchestrator_startup())
 
+    # Stats Cache 초기화 (백그라운드 flush 시작)
+    _ = get_stats_cache()
+    logger.info("Stats cache initialized with background flush")
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+
+    # Stats Cache 정리 (남은 데이터 flush)
+    await shutdown_stats_cache()
+    logger.info("Stats cache flushed and stopped")
 
     # Checkpointer 연결 정리
     await close_checkpointer()

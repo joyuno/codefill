@@ -9,9 +9,44 @@ Collection Tools
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, Literal
 import json
+import os
 
 from ..services.openrouter import openrouter_service
 from ..services.collection_embeddings import get_collection_embeddings_service
+
+
+# ============================================================
+# 동적 태그 로드
+# ============================================================
+
+_COLLECTION_TAG_CACHE = None
+
+def _load_available_tags() -> List[str]:
+    """JSON 파일에서 사용 가능한 태그 목록 로드"""
+    global _COLLECTION_TAG_CACHE
+
+    if _COLLECTION_TAG_CACHE is not None:
+        return _COLLECTION_TAG_CACHE
+
+    json_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data", "tag_normalization.json"
+    )
+
+    default_tags = ["구현", "수학", "자료구조", "그리디", "DP", "정렬", "문자열",
+                    "완전탐색", "그래프", "BFS/DFS", "트리", "이분탐색"]
+
+    try:
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                _COLLECTION_TAG_CACHE = data.get("available_tags", default_tags)
+                return _COLLECTION_TAG_CACHE
+    except Exception:
+        pass
+
+    _COLLECTION_TAG_CACHE = default_tags
+    return default_tags
 
 
 # ============================================================
@@ -62,55 +97,97 @@ class QuestionInfo:
         }
 
 
+@dataclass
+class ExtendedInfo:
+    """확장 의도 분석 정보 (코딩 학습 관련 질문)"""
+    category: Optional[str]            # "data_structure" | "algorithm" | "language_syntax" | "error" | "optimization" | "career" | "service"
+    keywords: List[str]                # 핵심 키워드 배열
+    language_context: Optional[str]    # "python" | "java" | "cpp" | "general"
+    needs_search: bool = False         # 웹 검색 필요 여부
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "category": self.category,
+            "keywords": self.keywords,
+            "language_context": self.language_context,
+            "needs_search": self.needs_search,
+        }
+
+
 # ============================================================
 # 프롬프트 정의 (통합)
 # ============================================================
 
-UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시지 분석기입니다.
+UNIFIED_ANALYSIS_PROMPT = """당신은 AI 코딩 학습 도우미 챗봇의 메시지 분석기입니다.
 사용자 메시지를 분석하여 의도, 값, 거부 여부, **관련성**을 한 번에 판단하세요.
 
 ## 0. 관련성 체크 (is_collection_related) - 중요!
 현재 "알고리즘 문제 추천을 위한 정보 수집" 단계입니다.
 메시지가 다음 중 하나에 해당하면 **true**:
-- 주제/난이도/언어 선택 관련 ("DP로 할게", "쉬운 거", "파이썬")
+- 주제/난이도/언어 선택 관련 ("정렬로 할게", "쉬운 거", "파이썬")
 - 추천 요청 ("추천해줘", "뭐가 좋아?", "알아서 골라줘")
 - 긍정/부정 응답 ("네", "좋아", "아니", "싫어", "다른 거")
-- 문제 풀이 관련 질문 ("DP가 뭐야?", "그래프 어려워?")
+- 문제 풀이 관련 질문 ("이분탐색이 뭐야?", "그리디 어려워?")
 
 메시지가 다음 중 하나에 해당하면 **false**:
-- 완전히 다른 주제 ("오늘 날씨 어때?", "안녕", "뭐해?")
-- 시스템 질문 ("뭐부터 해야해?", "이거 어떻게 써?", "도움말")
-- 일반 대화 ("심심해", "배고파", "힘들다")
+- 완전히 다른 주제 ("오늘 날씨 어때?")
+- 코딩/학습과 무관한 일반 대화
 
-## 1. 의도 분류 (intent)
+## 1. 의도 분류 (intent) - 확장된 분류
+### 정보 수집 관련
 - "positive": 긍정/동의 ("네", "응", "좋아", "그래", "ㅇㅇ", "굳", "할게", "해줘", "시작")
 - "negative": 부정/거절 ("아니", "싫어", "말고", "다른거", "패스", "ㄴㄴ", "별로")
-- "value_input": 새 값 제시 ("DP로 해줘", "정렬", "파이썬", "쉬운 거")
-- "question": 질문/설명 요청 ("DP가 뭐야?", "골드면 어려워?", "파이썬이랑 자바 차이가 뭐야?")
+- "value_input": 새 값 제시 ("구현으로 해줘", "정렬", "파이썬", "쉬운 거")
+- "question": 알고리즘/문제 관련 질문 ("그리디가 뭐야?", "골드면 어려워?")
 - "unclear": 애매한 응답 ("음...", "글쎄", "모르겠어")
-- "off_topic": 관련 없는 메시지 (is_collection_related=false일 때)
+
+### 코딩 학습 관련 (is_collection_related=false이지만 학습 도우미로서 대응 필요)
+- "coding_concept": 프로그래밍 개념 질문 ("재귀함수가 뭐야?", "빅오 표기법 설명해줘", "스택이랑 큐 차이", "객체지향이 뭔데?")
+- "syntax_help": 언어 문법/사용법 질문 ("파이썬 리스트 컴프리헨션 어떻게 써?", "자바 람다식 예시", "C++ 포인터 사용법")
+- "error_debug": 에러/디버깅 관련 ("IndexError가 뭐야?", "런타임 에러 해결법", "시간 초과 왜 나?", "메모리 초과 어떻게 해결해?")
+- "learning_advice": 학습 방법/조언 요청 ("알고리즘 공부 어떻게 해?", "코테 준비 순서", "초보자 로드맵", "취업 준비 어떻게?")
+- "code_review": 코드 리뷰/개선 요청 ("이 코드 개선점 알려줘", "더 효율적인 방법?", "코드 봐줘", "최적화 방법")
+- "hint_request": 현재 문제 힌트 요청 ("힌트 줘", "어떻게 접근해?", "모르겠어 도와줘", "막혔어")
+
+### 서비스/시스템 관련
+- "progress_inquiry": 학습 진도/통계 질문 ("내가 푼 문제 몇 개야?", "오늘 푼 문제", "내 레벨 뭐야?", "통계 보여줘", "학습 기록")
+- "service_help": 서비스 사용법 질문 ("이 서비스 뭐야?", "어떻게 사용해?", "기능 설명해줘", "도움말")
+- "account_inquiry": 계정/프로필 관련 ("내 프로필", "설정 바꾸고 싶어", "레벨업 어떻게 해?")
+
+### 일반 대화
+- "greeting": 인사/감사 ("안녕", "하이", "고마워", "감사합니다", "바이", "잘가")
+- "chitchat": 잡담/감정 표현 ("심심해", "배고파", "힘들다", "재밌다", "화이팅")
+- "off_topic": 완전히 관련 없는 주제 ("날씨 어때?", "점심 뭐 먹지?")
 
 ## 1-1. 질문 분석 (intent=question일 때 필수!)
 **question_type** (질문 유형):
-- "explanation": 개념/용어 설명 요청 ("DP가 뭐야?", "그래프 알고리즘이 뭔데?", "골드면 어느 정도야?")
-- "comparison": 비교 요청 ("DP랑 그리디 차이가 뭐야?", "파이썬이랑 자바 뭐가 좋아?")
+- "explanation": 개념/용어 설명 요청 ("그리디가 뭐야?", "이분탐색이 뭔데?", "골드면 어느 정도야?")
+- "comparison": 비교 요청 ("정렬이랑 구현 차이가 뭐야?", "파이썬이랑 자바 뭐가 좋아?")
 - "difficulty_inquiry": 난이도 관련 질문 ("골드면 얼마나 어려워?", "플래티넘 풀 수 있을까?")
 - "recommendation": 추천 요청 ("뭐가 좋아?", "초보자한테 뭐 추천해?")
-- "how_to": 방법 질문 ("DP 어떻게 공부해?", "그래프 잘하려면?")
+- "how_to": 방법 질문 ("구현 어떻게 공부해?", "문자열 잘하려면?")
+- "topic_list": 전체 목록/옵션 요청 ("주제 다 보여줘", "목록 보여줘", "전부 알려줘", "뭐뭐 있어?", "그중에 골라볼게")
 
 **question_target** (질문 대상 카테고리):
-- "topic": 알고리즘 주제 관련 ("DP가 뭐야?", "그래프 어려워?")
+- "topic": 알고리즘 주제 관련 ("그리디가 뭐야?", "정렬 어려워?")
 - "difficulty": 난이도 관련 ("골드면 어느 정도야?", "실버 쉬워?")
 - "language": 언어 관련 ("파이썬 좋아?", "C++ 빨라?")
 - "general": 일반적인 코딩/알고리즘 질문
 
 **question_subjects** (질문에서 언급된 구체적인 대상들, 배열):
-- 예: "DP가 뭐야?" → ["DP"]
-- 예: "DP랑 그래프 뭐가 달라?" → ["DP", "그래프"]
+- 예: "그리디가 뭐야?" → ["그리디"]
+- 예: "정렬이랑 구현 뭐가 달라?" → ["정렬", "구현"]
 - 예: "골드면 어려워?" → ["골드"]
 
+## 1-2. 확장 의도 분석 (coding_concept, syntax_help, error_debug 등일 때)
+**extended_info** (확장 정보):
+- "category": 질문 카테고리 ("data_structure", "algorithm", "language_syntax", "error", "optimization", "career", "service")
+- "keywords": 핵심 키워드 배열 (["재귀", "함수"], ["IndexError", "리스트"])
+- "language_context": 언어 맥락 ("python", "java", "cpp", "general")
+- "needs_search": 웹 검색이 필요한지 (true/false) - 최신 정보, 공식 문서 참조 필요 시
+
 ## 2. 값 추출 (원하는 값만!)
-- **topic**: DP, 그래프, BFS/DFS, 정렬, 이분탐색, 그리디, 구현, 문자열, 기초, 수학, 스택/큐, 트리, 해시, 백트래킹
+- **topic**: 다양한 알고리즘 주제 (구현, 수학, 자료구조, 그리디, DP, 정렬, 문자열, 완전탐색, 그래프, BFS/DFS, 트리, 이분탐색 등)
 - **difficulty**: easy(실버/쉬운), medium(골드/보통), medium_hard(플래티넘), hard(다이아/어려운), very_hard(마스터)
 - **language**: python(파이썬), java(자바), cpp(씨플플/C++)
 
@@ -130,16 +207,17 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
 ## 핵심 규칙
 1. 거부하는 값은 values에 넣지 말 것! (rejected에만 기록)
 2. "기초 싫다" → values.topic=null, rejected.topic="기초"
-3. "기초 말고 DP" → values.topic="DP", rejected.topic="기초"
+3. "기초 말고 정렬" → values.topic="정렬", rejected.topic="기초"
 4. 동의어 인식: "다이나믹"="DP", "실버"="easy"
+5. 확장 의도(coding_concept 등)는 is_collection_related=false로 설정
 
 ## JSON 응답 형식
 {
   "is_collection_related": true | false,
-  "intent": "positive" | "negative" | "value_input" | "question" | "unclear" | "off_topic",
+  "intent": "positive" | "negative" | "value_input" | "question" | "unclear" | "off_topic" | "coding_concept" | "syntax_help" | "error_debug" | "learning_advice" | "code_review" | "hint_request" | "progress_inquiry" | "service_help" | "account_inquiry" | "greeting" | "chitchat",
   "confidence": 0.0-1.0,
   "values": {
-    "topic": "DP" | null,
+    "topic": "주제명" | null,
     "difficulty": "easy" | "medium" | "medium_hard" | "hard" | "very_hard" | null,
     "language": "python" | "java" | "cpp" | null
   },
@@ -154,9 +232,15 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
     "step": "topic" | "difficulty" | "language" | null
   },
   "question_info": {
-    "question_type": "explanation" | "comparison" | "difficulty_inquiry" | "recommendation" | "how_to" | null,
+    "question_type": "explanation" | "comparison" | "difficulty_inquiry" | "recommendation" | "how_to" | "topic_list" | null,
     "question_target": "topic" | "difficulty" | "language" | "general" | null,
-    "question_subjects": ["DP", "골드"] | []
+    "question_subjects": ["정렬", "골드"] | []
+  },
+  "extended_info": {
+    "category": "data_structure" | "algorithm" | "language_syntax" | "error" | "optimization" | "career" | "service" | null,
+    "keywords": ["키워드1", "키워드2"] | [],
+    "language_context": "python" | "java" | "cpp" | "general" | null,
+    "needs_search": true | false
   }
 }"""
 
@@ -168,7 +252,7 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 코딩 문제 추천 시스템의 메시�
 @dataclass
 class UnifiedAnalysisResult:
     """통합 분석 결과"""
-    intent: Literal["positive", "negative", "value_input", "question", "unclear", "off_topic"]
+    intent: str  # 확장된 intent 타입들 포함
     confidence: float
     values: Dict[str, Optional[str]]      # {"topic": "DP", "difficulty": null, ...}
     rejected: Dict[str, Optional[str]]    # {"topic": "기초", ...}
@@ -176,6 +260,7 @@ class UnifiedAnalysisResult:
     alternative: Optional[Dict[str, str]] # {"value": "DP", "step": "topic"}
     is_collection_related: bool = True    # 정보 수집과 관련 있는 메시지인지
     question_info: Optional[QuestionInfo] = None  # 질문 분석 정보 (intent=question일 때)
+    extended_info: Optional[ExtendedInfo] = None  # 확장 의도 정보 (코딩 학습 관련)
 
 
 class CollectionTool:
@@ -267,6 +352,24 @@ class CollectionTool:
                     print(f"[CollectionTool] Question detected: type={question_info.question_type}, "
                           f"target={question_info.question_target}, subjects={question_info.question_subjects}")
 
+            # extended_info 파싱 (확장 의도일 때)
+            extended_info = None
+            extended_intents = ["coding_concept", "syntax_help", "error_debug", "learning_advice",
+                               "code_review", "hint_request", "progress_inquiry", "service_help",
+                               "account_inquiry", "greeting", "chitchat"]
+            if intent in extended_intents:
+                is_related = False  # 확장 의도는 정보 수집과 무관
+                e_info = result.get("extended_info", {})
+                if e_info:
+                    extended_info = ExtendedInfo(
+                        category=e_info.get("category"),
+                        keywords=e_info.get("keywords", []),
+                        language_context=e_info.get("language_context"),
+                        needs_search=e_info.get("needs_search", False),
+                    )
+                    print(f"[CollectionTool] Extended intent: {intent}, category={extended_info.category}, "
+                          f"keywords={extended_info.keywords}, needs_search={extended_info.needs_search}")
+
             analysis = UnifiedAnalysisResult(
                 intent=intent,
                 confidence=result.get("confidence", 0.5),
@@ -276,6 +379,7 @@ class CollectionTool:
                 alternative=alternative if alternative.get("value") else None,
                 is_collection_related=is_related,
                 question_info=question_info,
+                extended_info=extended_info,
             )
 
             # 캐시 저장 (최대 100개)
@@ -297,6 +401,7 @@ class CollectionTool:
                 alternative=None,
                 is_collection_related=True,  # 에러 시 기본값은 관련 있음으로
                 question_info=None,
+                extended_info=None,
             )
 
     # ============================================================
@@ -352,6 +457,11 @@ class CollectionTool:
                 details["is_question"] = True
                 details["question_info"] = analysis.question_info.to_dict()
                 print(f"[CollectionTool] Question info added to details: {details['question_info']}")
+
+            # 확장 의도면 extended_info 추가
+            if analysis.extended_info:
+                details["extended_info"] = analysis.extended_info.to_dict()
+                print(f"[CollectionTool] Extended info added: {analysis.intent}")
 
             # 신뢰도 높으면 바로 반환
             if analysis.confidence >= 0.60:

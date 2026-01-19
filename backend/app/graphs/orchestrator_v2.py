@@ -15,6 +15,41 @@ Flow:
                 ├─ discovery → DiscoveryGraph
                 ├─ solving → SolvingGraph
                 └─ general → 직접 응답
+
+============================================================
+가드레일 (Guardrails)
+============================================================
+1. 다중 의도 제한:
+   - MAX_INTENTS = 3 (intent_tools.py)
+   - 3개 초과 시 사용자에게 안내 메시지 표시
+   - Primary 충돌 시 선택 요청 (_process_multi_intents)
+
+2. Moderation API:
+   - 유해 콘텐츠 필터링 (별도 미들웨어에서 처리)
+
+============================================================
+엣지케이스 목록 (Edge Cases)
+============================================================
+[Discovery - 문제 탐색]
+- EC-D01: 의도 파악 실패 → fallback_clarify_node
+- EC-D02: 검색 결과 없음 → search_problems_node에서 "결과 없음" 안내
+- EC-D03: 선택 인덱스 범위 초과 → handle_selection_node에서 범위 확인
+- EC-D04: 문제 유형 생성 실패 → _process_problem_type_selection에서 에러 처리
+
+[Collection - 정보 수집]
+- EC-C01: 입력 파싱 실패 → handle_question_node로 폴백
+- EC-C02: 유효하지 않은 주제/난이도/언어 → 임베딩 매칭 실패 시 clarify
+- EC-C03: 빈 입력 → 기본 안내 메시지
+
+[Solving - 문제 풀이]
+- EC-S01: 의도 파악 실패 → respond_node의 solving_fallback
+- EC-S02: 코드 없이 제출 → check_answer에서 검증
+- EC-S03: 문제 컨텍스트 없음 → 현재 문제 없음 안내
+
+[Multi-Intent - 다중 의도]
+- EC-M01: Primary 충돌 → 선택 요청 메시지
+- EC-M02: 의도 초과 → 제한 안내 메시지
+- EC-M03: Secondary 응답 생성 실패 → 무시하고 메인만 처리
 """
 from typing import Dict, Any, Optional, List
 import logging
@@ -25,7 +60,8 @@ from .solving_graph import ProblemSolvingGraph
 from .checkpointer import get_checkpointer, create_thread_config
 from ..services.problem_save import get_problem_save_service
 from ..services.history_refiner import get_history_refiner
-from ..tools.intent_tools import intent_tool, IntentCategory, ActionType
+from ..services.edge_case_logger import edge_case_logger
+from ..tools.intent_tools import intent_tool, IntentCategory, ActionType, MultiIntentResult
 
 logger = logging.getLogger(__name__)
 
@@ -161,25 +197,76 @@ class ChatOrchestratorV2:
                 collected_info["difficulty"] = history_context["difficulty"]
 
         # ============================================================
-        # 통합 Intent Tool로 의도 분류 (한 번에 처리)
+        # 통합 Intent Tool로 의도 분류 (다중 의도 지원)
         # ============================================================
         # collected_info에서 topic 추출 (topics 배열에서 첫 번째 요소)
         topics_list = collected_info.get("topics", [])
         existing_topic = topics_list[0] if topics_list and isinstance(topics_list, list) and len(topics_list) > 0 else collected_info.get("topic")
 
-        intent_result = await intent_tool.classify(
+        intent_session_state = {
+            "current_step": collected_info.get("current_step"),
+            "topic": existing_topic,  # topics 배열에서 추출
+            "difficulty": collected_info.get("difficulty"),
+            "language": collected_info.get("language"),
+            "awaiting_confirmation": session_state.get("awaiting_confirmation"),
+            "suggested_value": session_state.get("suggested_value"),
+            "search_results": search_results,
+            "current_problem": user_context.get("current_problem"),
+        }
+
+        # ============================================================
+        # 🚀 다중 의도 분류 (Multi-Intent Classification)
+        # ============================================================
+        multi_intent_result = await intent_tool.classify_multi(
             message=message,
-            session_state={
-                "current_step": collected_info.get("current_step"),
-                "topic": existing_topic,  # topics 배열에서 추출
-                "difficulty": collected_info.get("difficulty"),
-                "language": collected_info.get("language"),
-                "awaiting_confirmation": session_state.get("awaiting_confirmation"),
-                "suggested_value": session_state.get("suggested_value"),
-                "search_results": search_results,
-                "current_problem": user_context.get("current_problem"),
-            },
+            session_state=intent_session_state,
         )
+
+        logger.debug(
+            f"MultiIntent: is_multi={multi_intent_result.is_multi_intent}, "
+            f"count={multi_intent_result.intent_count}, exceeded={multi_intent_result.exceeded_limit}"
+        )
+
+        # ============================================================
+        # 다중 의도 제한 초과 시 안내 (가드레일)
+        # ============================================================
+        if multi_intent_result.exceeded_limit:
+            logger.warning(
+                f"[Guardrail] Intent limit exceeded: {multi_intent_result.original_intent_count} > MAX_INTENTS"
+            )
+            # EC-M02: 엣지케이스 로깅
+            await edge_case_logger.log(
+                code="EC-M02",
+                user_id=user_context.get("user_id") if user_context else None,
+                session_id=session_id,
+                current_node="process",
+                user_message=message,
+                state_snapshot={
+                    "original_intent_count": multi_intent_result.original_intent_count,
+                    "processed_count": multi_intent_result.intent_count,
+                },
+                was_recovered=True,  # 제한된 의도만 처리하므로 복구됨
+            )
+            # 제한 초과 안내를 포함하여 처리 계속 (제한된 의도만 처리)
+
+        # 다중 의도인 경우 순차 처리
+        if multi_intent_result.is_multi_intent and multi_intent_result.intent_count > 1:
+            return await self._process_multi_intents(
+                multi_intent_result=multi_intent_result,
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                session_state=session_state,
+                collected_info=collected_info,
+                search_results=search_results,
+                selected_problem=selected_problem,
+            )
+
+        # 단일 의도 처리 (기존 로직)
+        intent_result = multi_intent_result.primary_intent
+        if not intent_result:
+            # fallback: 직접 분류
+            intent_result = await intent_tool.classify(message, intent_session_state)
 
         logger.debug(f"IntentTool: category={intent_result.category}, action={intent_result.action}, route={intent_result.suggested_route}")
 
@@ -407,9 +494,13 @@ class ChatOrchestratorV2:
         logger.debug(f"collected_info={collected_info}, extracted={extracted_values}")
         logger.debug(f"existing: topic={existing_topic}, difficulty={existing_difficulty}, language={existing_language}")
 
-        # 세션에서 awaiting_confirmation, suggested_value 가져오기
+        # 세션에서 awaiting_confirmation, suggested_value, rejected_values 가져오기
         existing_awaiting_confirmation = session_state.get("awaiting_confirmation", False)
         existing_suggested_value = session_state.get("suggested_value")
+        existing_rejected_values = session_state.get("rejected_values", [])
+
+        if existing_rejected_values:
+            logger.debug(f"Restoring rejected_values from session: {existing_rejected_values}")
 
         # InfoCollectionGraph 실행
         result = await self.collection_graph.invoke(
@@ -421,6 +512,7 @@ class ChatOrchestratorV2:
             existing_language=existing_language,
             existing_awaiting_confirmation=existing_awaiting_confirmation,
             existing_suggested_value=existing_suggested_value,
+            existing_rejected_values=existing_rejected_values,
         )
 
         # 수집된 정보 병합
@@ -443,7 +535,7 @@ class ChatOrchestratorV2:
                 search_results=[],
             )
 
-        # 응답에 awaiting_confirmation, suggested_value 포함
+        # 응답에 awaiting_confirmation, suggested_value, rejected_values 포함
         return {
             "stage": "collection",
             "intent": intent,
@@ -455,6 +547,8 @@ class ChatOrchestratorV2:
             "awaiting_confirmation": result.get("awaiting_confirmation", False),
             "suggested_value": result.get("suggested_value"),
             "action_data": result.get("action_data"),
+            # 거절된 값 추적 (다음 턴에서 재추천 방지)
+            "rejected_values": result.get("rejected_values", []),
         }
 
     async def _process_discovery(
@@ -470,6 +564,23 @@ class ChatOrchestratorV2:
         inquiry_question: str = None,
     ) -> Dict[str, Any]:
         """Discovery 그래프 실행"""
+        # ============================================================
+        # difficulty가 None일 때 사용자 레벨 기반으로 자동 설정
+        # 이를 통해 검색 시 difficulty=None 문제 방지
+        # ============================================================
+        if not collected_info.get("difficulty"):
+            experience_level = user_context.get("experience_level", "unknown")
+            LEVEL_TO_DIFFICULTY = {
+                "beginner": "easy",
+                "elementary": "easy",
+                "intermediate": "medium",
+                "advanced": "hard",
+                "unknown": "easy",
+            }
+            auto_difficulty = LEVEL_TO_DIFFICULTY.get(experience_level, "easy")
+            collected_info["difficulty"] = auto_difficulty
+            logger.info(f"[Discovery] Auto-set difficulty: {experience_level} → {auto_difficulty}")
+
         result = await self.discovery_graph.invoke(
             message=message,
             collected_info=collected_info,
@@ -523,6 +634,505 @@ class ChatOrchestratorV2:
             "next_stage": result.get("route_to", "solving"),
             "is_complete": result.get("is_complete", False),
         }
+
+    # ============================================================
+    # 다중 의도 병합 처리 (Multi-Intent Merged Processing)
+    # ============================================================
+
+    # Primary 의도: 메인 분기를 결정하는 의도
+    PRIMARY_ACTIONS = {
+        # info_collection
+        "set_topic", "set_difficulty", "set_language", "ask_recommendation",
+        # discovery
+        "select_problem", "show_more", "generate_new", "select_problem_type", "inquire_problem",
+        # solving
+        "request_hint", "submit_code", "give_up", "chat_assist", "concept_explain",
+        "approach_hint", "code_review", "ask_question",
+    }
+
+    # Secondary 의도: 메인 분기에 병합 가능한 의도
+    SECONDARY_ACTIONS = {
+        "greeting", "thanks", "help", "free_chat",
+        "progress_check", "weak_point", "study_plan",
+        "affirm", "negate",
+    }
+
+    async def _process_multi_intents(
+        self,
+        multi_intent_result: MultiIntentResult,
+        message: str,
+        conversation_history: list,
+        user_context: dict,
+        session_state: dict,
+        collected_info: dict,
+        search_results: list,
+        selected_problem: dict,
+    ) -> Dict[str, Any]:
+        """
+        다중 의도 병합 처리
+
+        여러 의도가 감지된 경우:
+        1. Primary/Secondary 분류
+        2. Primary가 1개 → 메인 분기로 처리, Secondary는 응답에 병합
+        3. Primary가 2개 이상 → 충돌 안내 (한 번에 하나씩)
+        4. Primary 없음 → Secondary 순차 병합
+
+        Args:
+            multi_intent_result: 다중 의도 분류 결과
+            기타: 컨텍스트 정보
+
+        Returns:
+            병합된 처리 결과
+        """
+        intents = multi_intent_result.intents
+        logger.info(f"[MultiIntent] Processing {len(intents)} intents with merge strategy")
+
+        # ============================================================
+        # 1. Primary / Secondary 분류
+        # ============================================================
+        primary_intents = []
+        secondary_intents = []
+
+        for intent in intents:
+            action = intent.action.value if intent.action else "free_chat"
+            if action in self.PRIMARY_ACTIONS:
+                primary_intents.append(intent)
+            else:
+                secondary_intents.append(intent)
+
+        logger.info(
+            f"[MultiIntent] Classified: primary={len(primary_intents)}, "
+            f"secondary={len(secondary_intents)}"
+        )
+
+        # ============================================================
+        # 2. Primary 충돌 체크 (2개 이상의 다른 분기)
+        # ============================================================
+        if len(primary_intents) >= 2:
+            # 같은 카테고리인지 확인
+            categories = set(i.category.value for i in primary_intents)
+            if len(categories) > 1:
+                # 다른 분기로 가는 primary가 2개 이상 → 충돌 안내
+                actions_str = ", ".join([i.action.value for i in primary_intents])
+
+                # EC-M01: Primary 충돌 로깅
+                await edge_case_logger.log(
+                    code="EC-M01",
+                    user_id=user_context.get("user_id") if user_context else None,
+                    session_id=session_state.get("session_id") if session_state else None,
+                    current_node="_process_multi_intents",
+                    user_message=message,
+                    state_snapshot={
+                        "primary_count": len(primary_intents),
+                        "categories": list(categories),
+                        "actions": actions_str,
+                    },
+                    fallback_triggered=True,
+                    response_message="충돌 안내 메시지 표시",
+                )
+
+                return {
+                    "stage": "intent",
+                    "response_message": (
+                        f"여러 요청이 감지됐어요: **{actions_str}**\n\n"
+                        "한 번에 하나씩 처리할게요! 먼저 어떤 걸 도와드릴까요?\n"
+                        "1. 문제 검색/추천\n"
+                        "2. 진행 상황/통계 확인"
+                    ),
+                    "is_multi_intent": True,
+                    "multi_intent_conflict": True,
+                    "detected_intents": [
+                        {"action": i.action.value, "category": i.category.value}
+                        for i in intents
+                    ],
+                    "is_complete": False,
+                }
+
+        # ============================================================
+        # 3. 메인 분기 결정 및 처리
+        # ============================================================
+        main_intent = primary_intents[0] if primary_intents else (secondary_intents[0] if secondary_intents else intents[0])
+
+        # 메인 의도 처리
+        main_result = await self._process_single_intent(
+            intent_result=main_intent,
+            message=message,
+            conversation_history=conversation_history,
+            user_context=user_context,
+            session_state=session_state,
+            collected_info=collected_info,
+            search_results=search_results,
+            selected_problem=selected_problem,
+        )
+
+        # ============================================================
+        # 4. Secondary 의도 응답 병합
+        # ============================================================
+        if secondary_intents:
+            merged_responses = await self._generate_secondary_responses(
+                secondary_intents=secondary_intents,
+                user_context=user_context,
+                conversation_history=conversation_history,
+            )
+
+            if merged_responses:
+                # 메인 응답 앞에 secondary 응답 추가
+                original_response = main_result.get("response_message", "")
+                merged_text = "\n".join(merged_responses)
+                main_result["response_message"] = f"{merged_text}\n\n---\n\n{original_response}"
+
+        # ============================================================
+        # 5. 다중 의도 메타데이터 추가
+        # ============================================================
+        main_result["is_multi_intent"] = True
+        main_result["total_intents"] = len(intents)
+        main_result["processed_intents"] = [
+            {"action": i.action.value, "category": i.category.value}
+            for i in intents
+        ]
+
+        # ============================================================
+        # 6. 의도 제한 초과 시 안내 메시지 추가 (가드레일)
+        # ============================================================
+        if multi_intent_result.exceeded_limit:
+            exceeded_count = multi_intent_result.original_intent_count
+            processed_count = multi_intent_result.intent_count
+            limit_notice = (
+                f"\n\n---\n💡 **참고**: {exceeded_count}개의 요청이 감지되었지만, "
+                f"한 번에 {processed_count}개까지만 처리할 수 있어요. "
+                f"나머지는 다음에 말씀해주세요!"
+            )
+            main_result["response_message"] = main_result.get("response_message", "") + limit_notice
+            main_result["exceeded_intent_limit"] = True
+            main_result["original_intent_count"] = exceeded_count
+
+        logger.info(
+            f"[MultiIntent] Merged response: main={main_intent.action.value}, "
+            f"secondary_merged={len(secondary_intents)}, exceeded={multi_intent_result.exceeded_limit}"
+        )
+
+        return main_result
+
+    async def _generate_secondary_responses(
+        self,
+        secondary_intents: list,
+        user_context: dict,
+        conversation_history: list,
+    ) -> list:
+        """
+        Secondary 의도들에 대한 간단한 응답 생성
+
+        메인 응답에 병합될 짧은 응답들
+        실제 user_stats 테이블 조회하여 정확한 레벨/통계 정보 제공
+        """
+        from ..services.dynamic_response import dynamic_response_generator
+        from ..tools.user_tools import get_user_tools
+
+        responses = []
+        user_id = user_context.get("user_id")
+
+        # user_stats 조회 (progress_check, weak_point에서 사용)
+        user_profile = None
+        if user_id:
+            try:
+                user_tools = get_user_tools()
+                profile_result = await user_tools.get_user_profile(user_id)
+                if profile_result.success:
+                    user_profile = profile_result
+                    logger.debug(f"[MultiIntent] User profile loaded: level={user_profile.level}, solved={user_profile.problems_solved}")
+            except Exception as e:
+                logger.warning(f"[MultiIntent] Failed to fetch user profile: {e}")
+
+        for intent in secondary_intents:
+            action = intent.action.value if intent.action else "free_chat"
+
+            try:
+                if action == "progress_check":
+                    # 실제 user_stats 테이블에서 조회한 데이터 사용
+                    if user_profile:
+                        level = user_profile.level
+                        total_xp = user_profile.total_xp
+                        solved = user_profile.problems_solved
+                        exp_level = user_profile.experience_level
+
+                        # 경험 레벨 한글 표시
+                        exp_display = {
+                            "beginner": "입문자",
+                            "elementary": "초급자",
+                            "intermediate": "중급자",
+                            "advanced": "고급자",
+                        }.get(exp_level, "")
+
+                        if exp_display:
+                            responses.append(
+                                f"📊 **현재 레벨**: Lv.{level} ({exp_display}) | "
+                                f"{solved}문제 풀이 | {total_xp:,} XP"
+                            )
+                        else:
+                            responses.append(
+                                f"📊 **현재 레벨**: Lv.{level} | "
+                                f"{solved}문제 풀이 | {total_xp:,} XP"
+                            )
+                    else:
+                        responses.append("📊 **진행 상황**: 로그인하면 상세 통계를 볼 수 있어요!")
+
+                elif action == "weak_point":
+                    # 약점 분석 - personalization 컨텍스트에서 가져오거나 안내
+                    personalization = user_context.get("personalization", {})
+                    skill_summary = personalization.get("skill_summary", {})
+                    weak = skill_summary.get("weak_topics", [])
+
+                    if weak:
+                        responses.append(f"📈 **약점 분석**: {', '.join(weak[:3])} 연습이 필요해요!")
+                    elif user_profile and user_profile.problems_solved >= 5:
+                        responses.append("📈 **약점 분석**: 분석 페이지에서 상세 내용을 확인해보세요!")
+                    else:
+                        responses.append("📈 **약점 분석**: 5문제 이상 풀면 약점을 분석해드릴게요!")
+
+                elif action == "greeting":
+                    responses.append("안녕하세요! 👋")
+
+                elif action == "thanks":
+                    responses.append("천만에요! 😊")
+
+                elif action == "study_plan":
+                    # 학습 계획은 분석 페이지로 안내
+                    if user_profile:
+                        goal = user_profile.learning_goal
+                        goal_display = {
+                            "big_tech": "대기업 코테",
+                            "mid_startup": "스타트업 취업",
+                            "skill_up": "실력 향상",
+                        }.get(goal, "")
+
+                        if goal_display:
+                            responses.append(f"📚 **학습 목표**: {goal_display} 준비 중! 분석 페이지에서 맞춤 계획을 확인해보세요.")
+                        else:
+                            responses.append("📚 **학습 계획**: 프로필에서 학습 목표를 설정하면 맞춤 계획을 제공해드려요!")
+                    else:
+                        responses.append("📚 **학습 계획**: 로그인하면 맞춤 학습 계획을 받을 수 있어요!")
+
+                else:
+                    # 기타 secondary는 동적 응답 생성
+                    dynamic_resp = await dynamic_response_generator.generate(
+                        message="",
+                        intent=action,
+                        conversation_history=conversation_history[-3:],
+                        user_context=user_context,
+                    )
+                    if dynamic_resp.message:
+                        responses.append(dynamic_resp.message)
+
+            except Exception as e:
+                logger.warning(f"[MultiIntent] Failed to generate secondary response for {action}: {e}")
+                continue
+
+        return responses
+
+    async def _process_single_intent(
+        self,
+        intent_result,
+        message: str,
+        conversation_history: list,
+        user_context: dict,
+        session_state: dict,
+        collected_info: dict,
+        search_results: list,
+        selected_problem: dict,
+    ) -> Dict[str, Any]:
+        """
+        단일 의도 처리 (기존 라우팅 로직 재사용)
+
+        다중 의도 처리에서 각 의도를 개별 처리할 때 사용
+        """
+        from ..services.dynamic_response import dynamic_response_generator
+
+        # ============================================================
+        # 카테고리별 라우팅
+        # ============================================================
+
+        # 1. Solving
+        if intent_result.category == IntentCategory.SOLVING:
+            if user_context.get("current_problem"):
+                return await self._process_solving(
+                    message=message,
+                    problem_context=user_context.get("current_problem"),
+                    user_progress=user_context.get("user_progress", {}),
+                    conversation_history=conversation_history,
+                    previous_hints=session_state.get("previous_hints", []),
+                    solving_intent=intent_result.action.value,
+                )
+            # 문제 없으면 안내
+            return {
+                "stage": "respond",
+                "response_message": "이 기능을 사용하려면 먼저 문제를 선택해주세요!",
+                "is_complete": False,
+            }
+
+        # 2. Confirmation
+        if intent_result.category == IntentCategory.CONFIRMATION:
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info=collected_info,
+                intent=intent_result.action.value,
+                session_state=session_state,
+                extracted_values=intent_result.extracted_values,
+            )
+
+        # 3. Discovery - 문제 선택
+        if intent_result.action == ActionType.SELECT_PROBLEM and search_results:
+            return await self._process_discovery(
+                message=message,
+                intent="problem_selection",
+                collected_info=collected_info,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                search_results=search_results,
+                selection_index=intent_result.selection_index,
+            )
+
+        # 4. Discovery - 문제 질문
+        if intent_result.action == ActionType.INQUIRE_PROBLEM and search_results:
+            return await self._process_discovery(
+                message=message,
+                intent="inquire_problem",
+                collected_info=collected_info,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                search_results=search_results,
+                inquiry_target=intent_result.inquiry_target,
+                inquiry_question=message,
+            )
+
+        # 5. Info Collection
+        if intent_result.category == IntentCategory.INFO_COLLECTION:
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info=collected_info,
+                intent=intent_result.action.value,
+                session_state=session_state,
+                extracted_values=intent_result.extracted_values,
+            )
+
+        # 6. Discovery 라우팅
+        if intent_result.suggested_route == "discovery":
+            if self._has_sufficient_info(collected_info):
+                return await self._process_discovery(
+                    message=message,
+                    intent=intent_result.action.value,
+                    collected_info=collected_info,
+                    conversation_history=conversation_history,
+                    user_context=user_context,
+                    search_results=search_results,
+                )
+            else:
+                return await self._process_info_collection(
+                    message=message,
+                    conversation_history=conversation_history,
+                    user_context=user_context,
+                    collected_info=collected_info,
+                    intent=intent_result.action.value,
+                    session_state=session_state,
+                )
+
+        # 7. General (인사, 감사, 진행상황 등)
+        if intent_result.category == IntentCategory.GENERAL:
+            dynamic_response = await dynamic_response_generator.generate(
+                message=message,
+                intent=intent_result.action.value if intent_result.action else "general",
+                conversation_history=conversation_history,
+                user_context=user_context,
+            )
+
+            return {
+                "stage": "intent",
+                "intent": intent_result.action.value,
+                "collected_info": collected_info,
+                "response_message": dynamic_response.message,
+                "next_stage": "respond",
+                "is_complete": True,
+            }
+
+        # 8. Fallback
+        return await self._process_info_collection(
+            message=message,
+            conversation_history=conversation_history,
+            user_context=user_context,
+            collected_info=collected_info,
+            intent=intent_result.action.value if intent_result.action else "ask_recommendation",
+            session_state=session_state,
+        )
+
+    async def process_pending_intent(
+        self,
+        pending_intent: dict,
+        conversation_history: list = None,
+        user_context: dict = None,
+        session_state: dict = None,
+    ) -> Dict[str, Any]:
+        """
+        대기 중인 의도 처리
+
+        클라이언트에서 pending_intents를 받아 순차적으로 처리할 때 호출
+
+        Args:
+            pending_intent: 직렬화된 의도 정보
+            conversation_history: 대화 히스토리
+            user_context: 사용자 컨텍스트
+            session_state: 세션 상태
+
+        Returns:
+            처리 결과
+        """
+        from ..tools.intent_tools import IntentResult, IntentCategory, ActionType
+
+        conversation_history = conversation_history or []
+        user_context = user_context or {}
+        session_state = session_state or {}
+
+        # 직렬화된 의도를 IntentResult로 복원
+        try:
+            intent_result = IntentResult(
+                category=IntentCategory(pending_intent.get("category", "general")),
+                action=ActionType(pending_intent.get("action", "free_chat")),
+                confidence=pending_intent.get("confidence", 0.7),
+                extracted_values=pending_intent.get("extracted_values", {}),
+                suggested_route=pending_intent.get("suggested_route"),
+            )
+        except (ValueError, KeyError) as e:
+            logger.error(f"[MultiIntent] Failed to restore pending intent: {e}")
+            return {
+                "stage": "error",
+                "response_message": "대기 중인 요청을 처리하는데 실패했습니다.",
+                "is_complete": False,
+            }
+
+        # 세션 상태에서 정보 추출
+        collected_info = session_state.get("collected_info", {})
+        search_results = session_state.get("search_results", [])
+        selected_problem = session_state.get("selected_problem")
+
+        # 의도 처리
+        result = await self._process_single_intent(
+            intent_result=intent_result,
+            message=f"[자동 처리] {intent_result.action.value}",
+            conversation_history=conversation_history,
+            user_context=user_context,
+            session_state=session_state,
+            collected_info=collected_info,
+            search_results=search_results,
+            selected_problem=selected_problem,
+        )
+
+        # pending intent 처리 표시
+        result["from_pending_intent"] = True
+        result["processed_action"] = pending_intent.get("action")
+
+        return result
 
     def _has_sufficient_info(self, collected_info: dict) -> bool:
         """정보 수집이 충분한지 확인"""
@@ -588,10 +1198,12 @@ class ChatOrchestratorV2:
             })
 
         elif problem_type == "guided":
+            # 새 스키마 (2026-01-12 리팩토링)
             base_data.update({
-                "concepts": cached_data.get("concepts", []),
-                "flow": cached_data.get("flow", []),
-                "checkpoints": cached_data.get("checkpoints", []),
+                "concept_explanation": cached_data.get("concept_explanation", ""),
+                "variables_guide": cached_data.get("variables_guide", {}),
+                "approach_guide": cached_data.get("approach_guide", ""),
+                "starter_code": cached_data.get("starter_code", ""),
                 "final_code": final_code,
             })
 
@@ -885,13 +1497,17 @@ class ChatOrchestratorV2:
                 content = openrouter_service.get_content(response)
                 result = openrouter_service.parse_json_response(content)
 
+                # 새 스키마 (2026-01-12 리팩토링)
                 generated_data = {
                     "problem_type": "guided",
                     "original_id": result.get("original_id") or selected_problem.get("id") or selected_problem.get("name"),
                     "language": result.get("language") or language,
-                    "concepts": result.get("concepts", []),
-                    "flow": result.get("flow", []),
-                    "checkpoints": result.get("checkpoints", []),
+                    # 새 스키마 필드
+                    "concept_explanation": result.get("concept_explanation", ""),
+                    "variables_guide": result.get("variables_guide", {}),
+                    "approach_guide": result.get("approach_guide", ""),
+                    "starter_code": result.get("starter_code", ""),
+                    # 추가 정보
                     "final_code": code,  # 원본 코드 포함
                     "title": title,
                     "description": description,

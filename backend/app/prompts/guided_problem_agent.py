@@ -6,7 +6,8 @@ Model: GPT-4o-mini via OpenRouter
 1. 개념 정의 (concept_explanation): 핵심 알고리즘/자료구조 설명
 2. 변수 가이드 (variables_guide): 필요한 변수들의 역할, 타입, 초기값
 3. 접근법 가이드 (approach_guide): 어떻게 시작할지
-4. 맛보기 코드 (starter_code): 함수 정의 제외 앞 2줄
+4. 스타터 코드 (starter_code): import, 함수 정의, 변수 초기화까지 모두 포함
+   - 핵심 알고리즘 로직(반복문, 조건문)만 유저가 작성하도록
 """
 
 # ============================================================
@@ -42,15 +43,14 @@ GUIDED_PROBLEM_SYSTEM_PROMPT = """
 ### 해야 할 것
 - ✅ 개념을 쉽게 설명 (비유, 예시 활용)
 - ✅ 변수가 왜 필요한지, 무슨 역할인지 설명
-- ✅ 시작점만 제시 (맛보기 코드 2줄)
+- ✅ **starter_code에 import, 함수 정의, 변수 초기화 모두 포함**
+- ✅ 핵심 알고리즘 로직(for/while 루프, 핵심 조건문)만 제외
 - ✅ 학생이 스스로 생각할 수 있도록 유도
 - ✅ **주석 금지**: starter_code에 주석(#, //, /* */) 포함 금지
 
 ---
 
-## 출력 형식 (필수!)
-
-반드시 아래 JSON 형식으로만 출력하세요. **설명 없이 순수 JSON만**:
+## 출력 형식
 
 ```json
 {{
@@ -68,7 +68,7 @@ GUIDED_PROBLEM_SYSTEM_PROMPT = """
     ]
   }},
   "approach_guide": "접근법 가이드 (2-3문장)",
-  "starter_code": "시작 코드 2줄"
+  "starter_code": "import문 + 함수 정의 + 변수 초기화까지 모두 포함 (핵심 로직만 제외)"
 }}
 ```
 
@@ -79,7 +79,7 @@ GUIDED_PROBLEM_SYSTEM_PROMPT = """
 ### 1. concept_explanation (개념 설명)
 - 이 문제를 풀기 위해 알아야 할 **핵심 알고리즘/자료구조** 설명
 - 비유나 일상 예시를 사용해 쉽게 설명
-- 2-4문장으로 간결하게
+- 2-3문장으로 간결하게
 - **코드 포함 금지**
 
 **좋은 예:**
@@ -123,25 +123,65 @@ GUIDED_PROBLEM_SYSTEM_PROMPT = """
 "dp[0] = 1, dp[1] = 1로 초기화하고, for문으로 dp[i] = dp[i-1] + dp[i-2]를 계산하세요."  // 정답 그대로
 ```
 
-### 4. starter_code (맛보기 코드)
-- **함수 정의(def) 제외**, 실행 코드의 **앞 2줄만**
-- 입력 받기 + 자료구조 초기화 정도
-- **핵심 로직 포함 금지**
+### 4. starter_code (스타터 코드) ⭐ 중요!
+- **정답 코드의 구조를 따라야 함**
+- **포함해야 할 것:**
+  - import문 (sys, collections 등 라이브러리 불러오기)
+  - 함수 정의 (def solve(): 등)
+  - 입력 처리 (input(), sys.stdin 등)
+  - 모든 변수 초기화 (리스트, 딕셔너리, 카운터 등)
+- **제외할 것 (학생이 작성):**
+  - 핵심 알고리즘 로직 (for/while 반복문, 핵심 조건문)
+  - 결과 계산 부분
+  - print/return 문
 
-**좋은 예 (Python):**
+**좋은 예 (함수형 - 변수 초기화까지 모두 포함):**
+```python
+import sys
+sys.setrecursionlimit(2000)
+
+def solve():
+    input_data = sys.stdin.read().split()
+    if not input_data:
+        return
+    X = int(input_data[0])
+    Y = int(input_data[1])
+    sX = str(X)
+    sY = str(Y)
+    min_len = len(sX)
+    max_len = len(sY)
+    LIMIT = 19
+    ones = [0] * LIMIT
+    powers = [1] * LIMIT
+    curr_one = 0
+    count = 0
+```
+→ 여기까지 제공하고, for 루프와 핵심 로직은 학생이 작성
+
+**좋은 예 (일반 형태 - 모든 초기화 포함):**
+```python
+from collections import deque
+
+n, m = map(int, input().split())
+graph = [[] for _ in range(n + 1)]
+visited = [False] * (n + 1)
+result = []
+```
+→ 여기까지 제공하고, BFS/DFS 로직은 학생이 작성
+
+**나쁜 예 (너무 짧음 - 변수 초기화 누락):**
 ```python
 n = int(input())
 dp = [0] * (n + 1)
 ```
+→ 이렇게 2줄만 주면 안됨! 모든 변수 초기화까지 포함해야 함
 
-**나쁜 예:**
+**나쁜 예 (핵심 로직 포함):**
 ```python
-n = int(input())
-dp = [0] * (n + 1)
-dp[1] = 1
 for i in range(2, n + 1):
-    dp[i] = dp[i-1] + dp[i-2]  // 핵심 로직 포함됨
+    dp[i] = dp[i-1] + dp[i-2]
 ```
+→ 핵심 알고리즘 로직은 제외!
 
 ---
 
@@ -173,13 +213,21 @@ for i in range(2, n + 1):
 
 ## 부정 예시 (절대 하지 말 것)
 
-### ❌ 정답 로직 포함
+### ❌ 정답 로직 포함 (for 루프, 핵심 조건문 포함)
 ```json
 {{
   "concept_explanation": "dp[i] = dp[i-1] + dp[i-2] 점화식을 사용합니다.",
   "starter_code": "dp[1] = 1\\nfor i in range(2, n+1): dp[i] = dp[i-1] + dp[i-2]"
 }}
 ```
+
+### ❌ 너무 짧은 starter_code (변수 초기화 누락)
+```json
+{{
+  "starter_code": "n = int(input())\\ndp = [0] * (n + 1)"
+}}
+```
+→ 2줄만 주면 안됨! import, 함수 정의, 모든 변수 초기화까지 포함해야 함
 
 ### ❌ 너무 추상적
 ```json
@@ -193,11 +241,10 @@ for i in range(2, n + 1):
 
 ## 출력 규칙
 
-1. **JSON만 출력** - 설명 없이 순수 JSON
-2. **한국어로 작성** - concept_explanation, approach_guide 등
-3. **코드는 해당 언어로** - starter_code는 {language}로
-4. **정답 로직 포함 금지** - 핵심 알고리즘 코드 없이
-5. **학생이 생각하게** - 답을 주지 않고 방향만 제시
+1. **한국어로 작성** - concept_explanation, approach_guide 등
+2. **코드는 해당 언어로** - starter_code는 {language}로
+3. **정답 로직 포함 금지** - 핵심 알고리즘 코드 없이
+4. **학생이 생각하게** - 답을 주지 않고 방향만 제시
 """
 
 # ============================================================
@@ -319,25 +366,25 @@ GUIDED_DIFFICULTY_CONFIG = {
     "easy": {
         "hint_detail": "상세하게",
         "max_hints": 10,
-        "starter_code_lines": 2,
+        "starter_code_coverage": "모든 변수 초기화까지",  # import + 함수 정의 + 변수 초기화 전부
         "encourage_level": "많이"
     },
     "medium": {
         "hint_detail": "적당히",
         "max_hints": 7,
-        "starter_code_lines": 2,
+        "starter_code_coverage": "모든 변수 초기화까지",  # import + 함수 정의 + 변수 초기화 전부
         "encourage_level": "보통"
     },
     "hard": {
         "hint_detail": "최소한",
         "max_hints": 5,
-        "starter_code_lines": 1,
+        "starter_code_coverage": "기본 변수 초기화까지",  # import + 함수 정의 + 핵심 변수만
         "encourage_level": "적게"
     },
     "very_hard": {
         "hint_detail": "힌트 최소화",
         "max_hints": 3,
-        "starter_code_lines": 1,
+        "starter_code_coverage": "함수 정의까지",  # import + 함수 정의만
         "encourage_level": "스스로"
     }
 }
