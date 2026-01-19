@@ -1,6 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bot,
   AlertTriangle,
@@ -8,6 +9,7 @@ import {
   Lightbulb,
   Route,
   ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -25,6 +27,8 @@ export function AICoachingSection({
   recommendations = [],
   studyPlan,
 }: AICoachingSectionProps) {
+  const [isDetailedOpen, setIsDetailedOpen] = useState(false);
+
   // 이스케이프된 문자열을 실제 줄바꿈으로 변환
   const normalizeMarkdown = (text: string): string => {
     return text
@@ -112,33 +116,57 @@ export function AICoachingSection({
           </motion.div>
         )}
 
-        {/* Detailed Feedback - Markdown */}
+        {/* Detailed Feedback - Accordion */}
         {detailedFeedback && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="space-y-3"
+            className="space-y-2"
           >
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-amber-400" />
-              <h3 className="text-sm font-medium text-zinc-300 uppercase tracking-wide">
-                상세 피드백
-              </h3>
-            </div>
-            <div className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700/50">
-              <div className="prose prose-sm prose-invert prose-zinc max-w-none
-                prose-headings:text-zinc-200 prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
-                prose-p:text-zinc-300 prose-p:leading-relaxed prose-p:my-2
-                prose-li:text-zinc-300 prose-li:my-0.5
-                prose-strong:text-amber-300 prose-strong:font-medium
-                prose-ul:my-2 prose-ol:my-2
-              ">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {normalizeMarkdown(detailedFeedback)}
-                </ReactMarkdown>
+            <button
+              onClick={() => setIsDetailedOpen(!isDetailedOpen)}
+              className="w-full flex items-center justify-between gap-2 p-3 rounded-xl bg-zinc-800/50 border border-zinc-700/50 hover:bg-zinc-800/70 hover:border-amber-500/30 transition-all duration-200 group"
+            >
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-medium text-zinc-300">
+                  상세 피드백
+                </h3>
               </div>
-            </div>
+              <motion.div
+                animate={{ rotate: isDetailedOpen ? 180 : 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ChevronDown className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 transition-colors" />
+              </motion.div>
+            </button>
+
+            <AnimatePresence>
+              {isDetailedOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                  className="overflow-hidden"
+                >
+                  <div className="p-4 rounded-xl bg-zinc-800/30 border border-zinc-700/30">
+                    <div className="prose prose-sm prose-invert prose-zinc max-w-none
+                      prose-headings:text-zinc-200 prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
+                      prose-p:text-zinc-300 prose-p:leading-relaxed prose-p:my-2
+                      prose-li:text-zinc-300 prose-li:my-0.5
+                      prose-strong:text-amber-300 prose-strong:font-medium
+                      prose-ul:my-2 prose-ol:my-2
+                    ">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {normalizeMarkdown(detailedFeedback)}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
 

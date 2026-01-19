@@ -222,6 +222,24 @@ export interface RemoveItemResponse {
   inventory: Record<string, number>;
 }
 
+// =====================================================
+// Farm Init Response (통합 API)
+// =====================================================
+
+export interface FarmInitResponse {
+  farm: UserFarm;
+  items: FarmItem[];
+  inventory: InventoryItem[];
+  placedItems: PlacedItem[];
+}
+
+interface BackendFarmInitResponse {
+  farm: BackendUserFarm;
+  items: BackendFarmItem[];
+  inventory: BackendInventoryItem[];
+  placedItems: PlacedItem[];  // 이미 camelCase로 반환됨
+}
+
 export interface PlantCropResponse {
   success: boolean;
   message: string;
@@ -392,6 +410,22 @@ function transformInventoryItem(data: BackendInventoryItem): InventoryItem {
 // =====================================================
 
 export const farmApi = {
+  /**
+   * Get farm initialization data (통합 API - 권장)
+   * 4개 API 호출을 1개로 통합하여 성능 개선
+   */
+  async getInit(): Promise<FarmInitResponse> {
+    const response = await api.get<BackendFarmInitResponse>('/farm/init');
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    return {
+      farm: transformUserFarm(data.farm),
+      items: (data.items || []).map(transformFarmItem),
+      inventory: (data.inventory || []).map(transformInventoryItem),
+      placedItems: data.placedItems || [],
+    };
+  },
+
   /**
    * Get farm status
    */

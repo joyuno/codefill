@@ -32,10 +32,13 @@ from ..models.farm import (
     PlantSlotRequest,
     PlantSlotResponse,
     HarvestSlotResponse,
+    FarmInitResponse,
     EXPANSION_COSTS,
     INITIAL_GOLD,
     INITIAL_SEEDS_COUNT,
 )
+from ..models.placement import PlacedItemResponse, ItemMetadata
+from ..services.farm_service import FarmService
 
 router = APIRouter()
 
@@ -266,6 +269,152 @@ async def get_farm(
         created_at=farm["created_at"],
         updated_at=farm["updated_at"],
     )
+
+
+@router.get("/init", response_model=FarmInitResponse)
+async def get_farm_init(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """
+    농장 초기화 통합 API - 1개 HTTP 요청으로 모든 데이터 반환
+
+    기존 4개 API 호출을 1개로 통합:
+    - GET /farm → farm
+    - GET /farm/items → items
+    - GET /farm/inventory → inventory
+    - GET /placement/items → placedItems
+
+    성능 최적화:
+    - 4 HTTP 요청 → 1 HTTP 요청
+    - 정적 데이터(items) 캐싱 적용
+    """
+    # 1. Farm 데이터 (1 쿼리)
+    farm_data = get_or_create_farm(db, user_id)
+
+    # character_data 파싱
+    char_data = farm_data.get("character_data", {})
+    if isinstance(char_data, str):
+        char_data = json.loads(char_data) if char_data else {}
+
+    character_data = None
+    if farm_data.get("character_created") and char_data:
+        character_data = CharacterData(**char_data)
+
+    farm_slots = parse_farm_slots_from_data(farm_data.get("farm_slots"))
+
+    farm_response = UserFarmResponse(
+        id=farm_data["id"],
+        user_id=farm_data["user_id"],
+        character_created=farm_data.get("character_created", False),
+        character_data=character_data,
+        farm_unlocked=farm_data.get("farm_unlocked", False),
+        farm_level=farm_data.get("farm_level", 1),
+        gold=farm_data.get("gold", 0),
+        farm_size=farm_data.get("farm_size", 1),
+        house_level=farm_data.get("house_level", 1),
+        farm_slots=farm_slots,
+        created_at=farm_data["created_at"],
+        updated_at=farm_data["updated_at"],
+    )
+
+    # 2. Farm Items (캐시에서 가져오거나 1 쿼리)
+    cached_items = _farm_items_cache.get("farm_items")
+    if cached_items:
+        items_response = cached_items
+    else:
+        items_result = db.table("farm_items").select(
+            "id, code, name, name_ko, type, rarity, image_url, "
+            "seed_cost, sell_price, xp_reward, grow_time_seconds"
+        ).eq("type", "crop").execute()
+        items_response = [FarmItemResponse(**item) for item in (items_result.data or [])]
+        _farm_items_cache.set("farm_items", items_response)
+
+    # 3. Inventory (1 쿼리)
+    inventory = get_inventory(db, user_id)
+
+    # 4. Placed Items (1-2 쿼리, 메타데이터 캐싱)
+    placed_items = get_placed_items_optimized(db, user_id)
+
+    return FarmInitResponse(
+        farm=farm_response,
+        items=items_response,
+        inventory=inventory,
+        placedItems=placed_items,
+    )
+
+
+def get_placed_items_optimized(db, user_id: UUID) -> list:
+    """배치된 아이템 조회 (최적화) - /farm/init용"""
+    placed_result = db.table("user_placed_items").select("*").eq("user_id", str(user_id)).execute()
+
+    if not placed_result.data:
+        return []
+
+    # 아이템 코드 목록
+    item_codes = list(set(item["item_code"] for item in placed_result.data))
+
+    # 캐싱된 메타데이터 사용
+    all_metadata = _shop_metadata_cache.get("shop_metadata_all")
+    if all_metadata is None:
+        shop_result = db.table("shop_items").select("code, metadata").execute()
+        all_metadata = {
+            item["code"]: FarmService.parse_metadata(item.get("metadata", {}))
+            for item in (shop_result.data or [])
+        }
+        _shop_metadata_cache.set("shop_metadata_all", all_metadata)
+
+    # 캐싱된 작물 성장 시간 사용
+    crop_grow_times = _crop_grow_times_cache.get("crop_grow_times")
+    if crop_grow_times is None:
+        crop_result = db.table("farm_items").select("code, grow_time_seconds").eq("type", "crop").execute()
+        crop_grow_times = {item["code"]: item["grow_time_seconds"] for item in (crop_result.data or [])}
+        _crop_grow_times_cache.set("crop_grow_times", crop_grow_times)
+
+    items = []
+    for placed in placed_result.data:
+        item_code = placed["item_code"]
+        metadata = all_metadata.get(item_code, ItemMetadata(sprite="default"))
+
+        # 데이터 파싱
+        data = placed.get("data", {})
+        if isinstance(data, str):
+            data = json.loads(data) if data else {}
+
+        # 밭인 경우 성장 단계 계산
+        if item_code == "farm_plot" and data.get("cropCode"):
+            crop_code = data["cropCode"]
+            planted_at_str = data.get("plantedAt")
+            if planted_at_str:
+                grow_time = crop_grow_times.get(crop_code, 120)
+                data["stage"] = calculate_crop_stage(planted_at_str, grow_time)
+
+        items.append({
+            "id": str(placed["id"]),
+            "itemCode": item_code,
+            "tileX": placed["tile_x"],
+            "tileY": placed["tile_y"],
+            "rotation": placed.get("rotation", 0),
+            "data": data,
+            "metadata": {
+                "sprite": metadata.sprite,
+                "width": metadata.width,
+                "height": metadata.height,
+                "depth": metadata.depth,
+                "canMove": metadata.canMove,
+                "canDelete": metadata.canDelete,
+                "anchor": metadata.anchor,
+                "collision": metadata.collision,
+            },
+            "placedAt": placed.get("placed_at"),
+        })
+
+    return items
+
+
+# shop_metadata 캐시 추가 (farm_items_cache와 동일한 패턴)
+_shop_metadata_cache = TTLCache(ttl_seconds=3600)
+_crop_grow_times_cache = TTLCache(ttl_seconds=3600)
 
 
 @router.post("/character", response_model=UserFarmResponse)

@@ -71,23 +71,19 @@ export function useFarm(): UseFarmReturn {
     placedItemsRef.current = placedItems;
   }, [placedItems]);
 
-  // Load initial data
+  // Load initial data (통합 API 사용 - 4 HTTP → 1 HTTP)
   const loadFarmData = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const [farmData, itemsData, inventoryData, placedItemsData] = await Promise.all([
-        farmApi.getFarm(),
-        farmApi.getItems(),
-        farmApi.getInventory(),
-        farmApi.getPlacedItems().catch(() => []),
-      ]);
+      // 통합 API로 모든 데이터를 한 번에 가져옴
+      const initData = await farmApi.getInit();
 
-      setFarm(farmData);
-      setItems(itemsData);
-      setInventory(inventoryData);
-      setPlacedItems(placedItemsData);
+      setFarm(initData.farm);
+      setItems(initData.items);
+      setInventory(initData.inventory);
+      setPlacedItems(initData.placedItems);
     } catch (err) {
       console.error('Farm data load error:', err);
       setError(err instanceof Error ? err.message : '농장 데이터를 불러오는데 실패했습니다');
