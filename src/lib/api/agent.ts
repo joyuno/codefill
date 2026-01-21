@@ -166,6 +166,13 @@ export interface CodeGenerationRequest {
   strong_algorithms: string[];
 }
 
+// Code Generation Stream Request (for PracticeChatPanel)
+export interface CodeGenerationStreamRequest {
+  collectedInfo: CollectedInfo;
+  similarProblems: BaseProblemInfo[];
+  userContext?: Record<string, unknown>;
+}
+
 export interface CodeGenerationResponse {
   title: string;
   title_en: string;
@@ -749,7 +756,7 @@ export const agentApi = {
    * 실시간 상태 업데이트를 제공하는 코드 생성
    */
   async generateCodeStream(
-    request: CodeGenerationRequest,
+    request: CodeGenerationStreamRequest,
     callbacks: {
       onStatus?: (status: string, message: string) => void;
       onChunk?: (content: string) => void;
@@ -762,12 +769,25 @@ export const agentApi = {
 
       callbacks.onStatus?.('analyzing', '문제를 분석하고 있어요...');
 
+      // Convert stream request to API request format
+      const apiRequest: CodeGenerationRequest = {
+        user_request: request.collectedInfo as unknown as Record<string, unknown>,
+        similar_problems: request.similarProblems as unknown as Record<string, unknown>[],
+        user_level: (request.userContext?.level as CodeGenerationRequest['user_level']) || 'intermediate',
+        strong_algorithms: (request.userContext?.strongAlgorithms as string[]) || [],
+        user_status: request.userContext?.status as string,
+        user_goal: request.userContext?.goal as string,
+      };
+
       callbacks.onStatus?.('generating', '코드를 생성하고 있어요...');
 
-      const result = await this.generateCode(request);
+      const result = await this.generateCode(apiRequest);
 
       if (result.code) {
-        callbacks.onChunk?.(result.code);
+        const codeStr = typeof result.code === 'string'
+          ? result.code
+          : JSON.stringify(result.code, null, 2);
+        callbacks.onChunk?.(codeStr);
       }
 
       callbacks.onStatus?.('finalizing', '마무리하고 있어요...');
