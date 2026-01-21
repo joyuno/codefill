@@ -23,13 +23,18 @@ def hash_password(password: str) -> str:
     """
     bcrypt를 사용하여 비밀번호를 해싱합니다.
 
+    bcrypt는 최대 72바이트까지만 처리하므로,
+    그 이상의 비밀번호는 자동으로 truncate합니다.
+
     Args:
         password: 평문 비밀번호
 
     Returns:
         해싱된 비밀번호 문자열
     """
-    return pwd_context.hash(password)
+    # bcrypt 72바이트 제한 처리
+    password_bytes = password.encode('utf-8')[:72]
+    return pwd_context.hash(password_bytes.decode('utf-8', errors='ignore'))
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -44,7 +49,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         비밀번호가 일치하면 True, 아니면 False
     """
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        # bcrypt 72바이트 제한 처리 (hash_password와 동일하게)
+        password_bytes = plain_password.encode('utf-8')[:72]
+        truncated_password = password_bytes.decode('utf-8', errors='ignore')
+        return pwd_context.verify(truncated_password, hashed_password)
     except Exception:
         return False
 
