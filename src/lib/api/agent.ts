@@ -763,6 +763,7 @@ export const agentApi = {
       onResult?: (result: BaseProblemInfo) => void;
       onComplete?: (result: CodeGenerationResponse) => void;
       onError?: (error: string) => void;
+      onDone?: () => void;
     }
   ): Promise<void> {
     try {
@@ -805,8 +806,10 @@ export const agentApi = {
       };
       callbacks.onResult?.(baseProblemInfo);
       callbacks.onComplete?.(result);
+      callbacks.onDone?.();
     } catch (error) {
       callbacks.onError?.(error instanceof Error ? error.message : 'Unknown error');
+      callbacks.onDone?.();
     }
   },
 };
