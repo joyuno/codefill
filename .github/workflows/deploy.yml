@@ -155,6 +155,9 @@ jobs:
               -e JUDGE0_URL=${{ secrets.JUDGE0_URL }} \
               -e JUDGE0_API_KEY=${{ secrets.JUDGE0_API_KEY }} \
               -e JUDGE0_API_HOST=${{ secrets.JUDGE0_API_HOST }} \
+              -e LANGCHAIN_TRACING_V2=${{ secrets.LANGCHAIN_TRACING_V2 }} \
+              -e LANGCHAIN_API_KEY=${{ secrets.LANGCHAIN_API_KEY }} \
+              -e LANGCHAIN_PROJECT=${{ secrets.LANGCHAIN_PROJECT }} \
               $ECR_REGISTRY/${{ env.ECR_REPOSITORY_BACKEND }}:latest
 
             # Frontend 실행
