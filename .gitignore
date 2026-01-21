@@ -5,6 +5,7 @@ node_modules
 
 #data
 data/
+!data/examples/
 # Testing
 coverage
 

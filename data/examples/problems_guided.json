@@ -1,0 +1,86 @@
+[
+  {
+    "original_id": "baekjoon_1001",
+    "language": "python",
+    "concepts": ["input().split()", "map(int, ...)", "print()"],
+    "flow": ["입력 방법", "형변환", "출력"],
+    "checkpoints": ["공백 구분 입력", "int 변환", "뺄셈 출력"]
+  },
+  {
+    "original_id": "baekjoon_1001",
+    "language": "java",
+    "concepts": ["Scanner", "nextInt()", "System.out.println()"],
+    "flow": ["Scanner 생성", "정수 입력", "출력"],
+    "checkpoints": ["Scanner import", "nextInt 사용", "a-b 출력"]
+  },
+  {
+    "original_id": "baekjoon_1001",
+    "language": "cpp",
+    "concepts": ["iostream", "cin", "cout"],
+    "flow": ["헤더 include", "입력", "출력"],
+    "checkpoints": ["iostream 헤더", "cin 사용", "cout으로 a-b"]
+  },
+  {
+    "original_id": "baekjoon_1002",
+    "language": "python",
+    "concepts": ["두 원의 위치 관계", "거리 공식", "경우의 수"],
+    "flow": ["문제 이해(두 원 교점)", "거리 계산", "5가지 경우 분류"],
+    "checkpoints": ["d = sqrt((x2-x1)^2 + (y2-y1)^2)", "동심원(-1)", "외접/내접(1)", "교점없음(0)", "두점(2)"]
+  },
+  {
+    "original_id": "baekjoon_1002",
+    "language": "java",
+    "concepts": ["Math.sqrt", "Math.pow", "Math.abs", "조건분기"],
+    "flow": ["거리 계산", "경우 분류", "조건문 작성"],
+    "checkpoints": ["Math.pow로 거리계산", "5가지 경우", "r1+r2와 abs(r1-r2) 비교"]
+  },
+  {
+    "original_id": "baekjoon_1002",
+    "language": "cpp",
+    "concepts": ["cmath", "sqrt", "pow", "abs"],
+    "flow": ["헤더 추가", "거리 계산", "조건 분기"],
+    "checkpoints": ["cmath include", "sqrt/pow 사용", "5가지 케이스"]
+  },
+  {
+    "original_id": "baekjoon_1003",
+    "language": "python",
+    "concepts": ["재귀의 비효율성", "DP", "점화식"],
+    "flow": ["재귀 문제점 파악", "DP 접근", "초기값 설정", "점화식"],
+    "checkpoints": ["시간초과 이해", "dp[0]=[1,0] dp[1]=[0,1]", "dp[i]=dp[i-1]+dp[i-2]"]
+  },
+  {
+    "original_id": "baekjoon_1003",
+    "language": "java",
+    "concepts": ["2차원 배열", "DP", "피보나치 패턴"],
+    "flow": ["DP 배열 선언", "초기값", "반복문으로 채우기"],
+    "checkpoints": ["int[41][2]", "dp[0][0]=1, dp[1][1]=1", "점화식 적용"]
+  },
+  {
+    "original_id": "baekjoon_1003",
+    "language": "cpp",
+    "concepts": ["2차원 배열", "DP 테이블", "Bottom-up"],
+    "flow": ["배열 선언", "초기화", "점화식"],
+    "checkpoints": ["dp[41][2]", "초기값 설정", "반복문 DP"]
+  },
+  {
+    "original_id": "baekjoon_1004",
+    "language": "python",
+    "concepts": ["점과 원의 관계", "XOR 조건", "카운팅"],
+    "flow": ["원 안/밖 판별", "출발/도착 상태 비교", "카운트"],
+    "checkpoints": ["거리^2 < 반지름^2", "in_start != in_end", "count 증가"]
+  },
+  {
+    "original_id": "baekjoon_1004",
+    "language": "java",
+    "concepts": ["isInside 함수", "boolean 비교", "반복문"],
+    "flow": ["판별 함수 작성", "각 원마다 체크", "결과 출력"],
+    "checkpoints": ["Math.pow 거리계산", "!= 비교", "count++"]
+  },
+  {
+    "original_id": "baekjoon_1004",
+    "language": "cpp",
+    "concepts": ["함수 분리", "오버플로우 방지", "조건 비교"],
+    "flow": ["isInside 함수", "long long 사용", "XOR 조건"],
+    "checkpoints": ["long long 캐스팅", "< r*r 비교", "!= 로 XOR"]
+  }
+]
