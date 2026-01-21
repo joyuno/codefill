@@ -49,6 +49,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Carrot_Stage_1_32x32.png',
     3: 'Crop_Carrot_Stage_1_32x32.png',
     4: 'Crop_Carrot_Ripe_1_32x32.png',
+    5: 'Crop_Carrot_Ripe_1_32x32.png',
+    6: 'Crop_Carrot_Ripe_1_32x32.png',  // 수확 가능
   },
   tomato: {
     0: 'Soil_Wet_1_32x32.png',
@@ -56,6 +58,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Tomato_Stage_1_32x32.png',
     3: 'Crop_Tomato_Fruitless_32x32.png',
     4: 'Crop_Tomato_Ripe_32x32.png',
+    5: 'Crop_Tomato_Ripe_32x32.png',
+    6: 'Crop_Tomato_Ripe_32x32.png',
   },
   corn: {
     0: 'Soil_Wet_1_32x32.png',
@@ -63,6 +67,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Corn_Stage_1_32x32.png',
     3: 'Crop_Corn_Fruitless_32x32.png',
     4: 'Crop_Corn_Ripe_32x32.png',
+    5: 'Crop_Corn_Ripe_32x32.png',
+    6: 'Crop_Corn_Ripe_32x32.png',
   },
   strawberry: {
     0: 'Soil_Wet_1_32x32.png',
@@ -70,6 +76,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Strawberry_Stage_1_32x32.png',
     3: 'Crop_Strawberry_Fruitless_32x32.png',
     4: 'Crop_Strawberry_Ripe_32x32.png',
+    5: 'Crop_Strawberry_Ripe_32x32.png',
+    6: 'Crop_Strawberry_Ripe_32x32.png',
   },
   potato: {
     0: 'Soil_Wet_1_32x32.png',
@@ -77,6 +85,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Radish_Stage_1_32x32.png',
     3: 'Crop_Radish_Stage_2_32x32.png',
     4: 'Crop_Radish_Ripe_1_32x32.png',
+    5: 'Crop_Radish_Ripe_1_32x32.png',
+    6: 'Crop_Radish_Ripe_1_32x32.png',
   },
   wheat: {
     0: 'Soil_Wet_1_32x32.png',
@@ -84,6 +94,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Grain_Stage_1_32x32.png',
     3: 'Crop_Grain_Stage_2_32x32.png',
     4: 'Crop_Grain_Ripe_32x32.png',
+    5: 'Crop_Grain_Ripe_32x32.png',
+    6: 'Crop_Grain_Ripe_32x32.png',
   },
   pumpkin: {
     0: 'Soil_Wet_1_32x32.png',
@@ -91,6 +103,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Pumpkin_Stage_1_32x32.png',
     3: 'Crop_Pumpkin_Fruitless_32x32.png',
     4: 'Crop_Pumpkin_Ripe_32x32.png',
+    5: 'Crop_Pumpkin_Ripe_32x32.png',
+    6: 'Crop_Pumpkin_Ripe_32x32.png',
   },
   cabbage: {
     0: 'Soil_Wet_1_32x32.png',
@@ -98,6 +112,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Cabbage_Stage_1_32x32.png',
     3: 'Crop_Cabbage_Stage_1_32x32.png',
     4: 'Crop_Cabbage_Ripe_32x32.png',
+    5: 'Crop_Cabbage_Ripe_32x32.png',
+    6: 'Crop_Cabbage_Ripe_32x32.png',
   },
   onion: {
     0: 'Soil_Wet_1_32x32.png',
@@ -105,6 +121,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Onion_Stage_1_32x32.png',
     3: 'Crop_Onion_Stage_1_32x32.png',
     4: 'Crop_Onion_Ripe_32x32.png',
+    5: 'Crop_Onion_Ripe_32x32.png',
+    6: 'Crop_Onion_Ripe_32x32.png',
   },
   radish: {
     0: 'Soil_Wet_1_32x32.png',
@@ -112,6 +130,8 @@ const CROP_IMAGE_MAP: Record<CropVariety, Record<CropStage, string>> = {
     2: 'Crop_Radish_Stage_1_32x32.png',
     3: 'Crop_Radish_Stage_2_32x32.png',
     4: 'Crop_Radish_Ripe_1_32x32.png',
+    5: 'Crop_Radish_Ripe_1_32x32.png',
+    6: 'Crop_Radish_Ripe_1_32x32.png',
   },
 };
 
