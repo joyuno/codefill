@@ -35,6 +35,9 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
+# Prisma 클라이언트 생성 (필요한 경우)
+RUN if [ -f "prisma/schema.prisma" ]; then npx prisma generate; fi
+
 # Next.js 빌드
 RUN npm run build
 
