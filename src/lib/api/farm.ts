@@ -111,6 +111,11 @@ export interface ItemMetadata {
   canDelete: boolean;
   anchor?: number[];
   collision?: boolean;
+  // 충돌 영역 (이미지와 별도로 정의, 없으면 width/height 사용)
+  collisionWidth?: number;
+  collisionHeight?: number;
+  collisionOffsetX?: number;  // 타일 기준 X 오프셋
+  collisionOffsetY?: number;  // 타일 기준 Y 오프셋
 }
 
 export interface UnifiedShopItem {

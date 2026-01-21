@@ -6,7 +6,7 @@
  */
 
 import * as Phaser from 'phaser';
-import { TILE_SIZE, INTERACTION_RADIUS } from '../config/gameConfig';
+import { TILE_SIZE } from '../config/gameConfig';
 import { DEPTH } from '../config/depthConfig';
 import { PlayerController } from './PlayerController';
 import type { FarmGridManager, FarmSlot } from './FarmGridManager';
@@ -22,19 +22,32 @@ export interface SlotInteraction {
   centerY: number;
 }
 
+// React로 상호작용 상태 전달을 위한 콜백 타입
+export type InteractionCallback = (interaction: {
+  type: InteractionType;
+  cropCode: string | null;
+  stage: number;
+} | null) => void;
+
 export class InteractionSystem {
   private scene: Phaser.Scene;
   private playerController: PlayerController;
   private farmGridManager: FarmGridManager | null = null;
 
   private highlightGraphics: Phaser.GameObjects.Graphics;
-  private indicatorText: Phaser.GameObjects.Text;
 
   private currentSlot: SlotInteraction | null = null;
   private currentInteraction: InteractionType = 'none';
 
   // 현재 farm_slots 데이터 (FarmScene에서 업데이트)
   private farmSlots: FarmSlot[] = [];
+
+  // React 콜백 (상호작용 상태 변경 시 호출)
+  private onInteractionChange: InteractionCallback | null = null;
+
+  // 코너 마커 애니메이션용
+  private cornerAlpha: number = 0.8;
+  private cornerAlphaDirection: number = -1;
 
   constructor(
     scene: Phaser.Scene,
@@ -43,21 +56,16 @@ export class InteractionSystem {
     this.scene = scene;
     this.playerController = playerController;
 
-    // 하이라이트 그래픽스
+    // 하이라이트 그래픽스 (흙 위, 작물/캐릭터 아래)
     this.highlightGraphics = scene.add.graphics();
-    this.highlightGraphics.setDepth(DEPTH.HIGHLIGHT);
+    this.highlightGraphics.setDepth(DEPTH.SOIL_TILES + 3);  // 15 + 3 = 18 (작물 20 아래)
+  }
 
-    // 인디케이터 텍스트
-    this.indicatorText = scene.add.text(0, 0, '', {
-      fontSize: '14px',
-      fontFamily: 'Arial',
-      color: '#ffffff',
-      backgroundColor: '#000000aa',
-      padding: { x: 8, y: 4 },
-    });
-    this.indicatorText.setOrigin(0.5, 1);
-    this.indicatorText.setDepth(DEPTH.INDICATOR);
-    this.indicatorText.setVisible(false);
+  /**
+   * React 콜백 설정
+   */
+  setInteractionCallback(callback: InteractionCallback): void {
+    this.onInteractionChange = callback;
   }
 
   /**
@@ -84,61 +92,79 @@ export class InteractionSystem {
     const playerPos = this.playerController.getPosition();
     const nearestSlot = this.findNearestSlot(playerPos.x, playerPos.y);
 
-    if (nearestSlot?.slot !== this.currentSlot?.slot) {
+    // 슬롯 변경 감지
+    const slotChanged = nearestSlot?.slot !== this.currentSlot?.slot;
+    if (slotChanged) {
       this.currentSlot = nearestSlot;
-      this.updateHighlight();
     }
 
     // 상호작용 타입 결정
+    const prevInteraction = this.currentInteraction;
     if (nearestSlot) {
       this.currentInteraction = this.determineInteraction(nearestSlot.slotData, selectedSeed);
-      this.updateIndicator(nearestSlot);
     } else {
       this.currentInteraction = 'none';
-      this.hideIndicator();
+    }
+
+    // 하이라이트 업데이트 (매 프레임 - 애니메이션용)
+    this.updateHighlight();
+
+    // React에 상호작용 상태 전달 (변경 시에만)
+    if (slotChanged || prevInteraction !== this.currentInteraction) {
+      this.notifyInteractionChange();
     }
   }
 
   /**
-   * 가장 가까운 밭 슬롯 찾기
+   * React에 상호작용 상태 변경 알림
+   */
+  private notifyInteractionChange(): void {
+    if (!this.onInteractionChange) return;
+
+    if (this.currentInteraction === 'none' || !this.currentSlot) {
+      this.onInteractionChange(null);
+    } else {
+      this.onInteractionChange({
+        type: this.currentInteraction,
+        cropCode: this.currentSlot.slotData.cropCode,
+        stage: this.currentSlot.slotData.stage,
+      });
+    }
+  }
+
+  /**
+   * 플레이어 중앙이 밭 슬롯 위에 있는지 확인
+   * (타일 영역 판정)
    */
   private findNearestSlot(playerX: number, playerY: number): SlotInteraction | null {
     if (!this.farmGridManager) return null;
 
-    const farmSize = this.farmGridManager.getFarmSize();
-    if (farmSize === 0) return null;
+    // 플레이어 판정 위치 (발에서 10px 위)
+    const centerY = playerY - 10;
+    const slotIndex = this.farmGridManager.getSlotAt(playerX, centerY);
 
-    let nearestSlot: SlotInteraction | null = null;
-    let nearestDistance = INTERACTION_RADIUS;
+    // 밭 위에 없으면 null
+    if (slotIndex === null) return null;
 
-    for (let i = 0; i < farmSize; i++) {
-      const center = this.farmGridManager.getSlotCenter(i);
-      if (!center) continue;
+    // 슬롯 중심 좌표 가져오기
+    const center = this.farmGridManager.getSlotCenter(slotIndex);
+    if (!center) return null;
 
-      const distance = Phaser.Math.Distance.Between(
-        playerX, playerY,
-        center.x, center.y
-      );
+    // 슬롯 데이터 조회
+    const slotData = this.farmSlots.find(s => s.slot === slotIndex) || {
+      slot: slotIndex,
+      cropCode: null,
+      plantedAt: null,
+      growTimeSeconds: null,
+      stage: 0,
+    };
 
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        const slotData = this.farmSlots.find(s => s.slot === i) || {
-          slot: i,
-          cropCode: null,
-          plantedAt: null,
-          growTimeSeconds: null,
-          stage: 0,
-        };
-        nearestSlot = {
-          slot: i,
-          slotData,
-          centerX: center.x,
-          centerY: center.y,
-        };
-      }
-    }
-
-    return nearestSlot;
+    return {
+      slot: slotIndex,
+      slotData,
+      centerX: center.x,
+      centerY: center.y,
+    };
   }
 
   /**
@@ -162,7 +188,7 @@ export class InteractionSystem {
   }
 
   /**
-   * 하이라이트 업데이트
+   * 하이라이트 업데이트 - 코너 마커 스타일
    */
   private updateHighlight(): void {
     this.highlightGraphics.clear();
@@ -171,56 +197,62 @@ export class InteractionSystem {
 
     const { centerX, centerY } = this.currentSlot;
 
-    // 노란색 테두리 하이라이트
-    this.highlightGraphics.lineStyle(3, 0xffff00, 0.8);
-    this.highlightGraphics.strokeRect(
-      centerX - TILE_SIZE / 2,
-      centerY - TILE_SIZE / 2,
-      TILE_SIZE,
-      TILE_SIZE
-    );
-
-    // 안쪽 약한 하이라이트
-    this.highlightGraphics.fillStyle(0xffff00, 0.15);
-    this.highlightGraphics.fillRect(
-      centerX - TILE_SIZE / 2,
-      centerY - TILE_SIZE / 2,
-      TILE_SIZE,
-      TILE_SIZE
-    );
-  }
-
-  /**
-   * 인디케이터 텍스트 업데이트
-   */
-  private updateIndicator(slotInfo: SlotInteraction): void {
-    if (this.currentInteraction === 'none') {
-      this.hideIndicator();
-      return;
+    // 알파값 애니메이션 (부드러운 펄스)
+    this.cornerAlpha += this.cornerAlphaDirection * 0.02;
+    if (this.cornerAlpha <= 0.4) {
+      this.cornerAlpha = 0.4;
+      this.cornerAlphaDirection = 1;
+    } else if (this.cornerAlpha >= 0.9) {
+      this.cornerAlpha = 0.9;
+      this.cornerAlphaDirection = -1;
     }
 
-    const { centerX, centerY } = slotInfo;
-    let text = '';
+    const halfSize = TILE_SIZE / 2;
+    const left = centerX - halfSize;
+    const right = centerX + halfSize;
+    const top = centerY - halfSize;
+    const bottom = centerY + halfSize;
 
-    switch (this.currentInteraction) {
-      case 'plant':
-        text = 'SPACE: 심기';
-        break;
-      case 'harvest':
-        text = 'SPACE: 수확';
-        break;
-    }
+    // 코너 마커 크기 (타일의 25%)
+    const cornerLen = TILE_SIZE * 0.25;
+    const lineWidth = 2;
 
-    this.indicatorText.setText(text);
-    this.indicatorText.setPosition(centerX, centerY - TILE_SIZE / 2 - 5);
-    this.indicatorText.setVisible(true);
-  }
+    // 상호작용 타입에 따른 색상
+    const color = this.currentInteraction === 'harvest'
+      ? 0xffd700  // 황금색 (수확)
+      : this.currentInteraction === 'plant'
+        ? 0x90ee90  // 연초록 (심기)
+        : 0xffffff; // 흰색 (기본)
 
-  /**
-   * 인디케이터 숨기기
-   */
-  private hideIndicator(): void {
-    this.indicatorText.setVisible(false);
+    this.highlightGraphics.lineStyle(lineWidth, color, this.cornerAlpha);
+
+    // 좌상단 코너 ◤
+    this.highlightGraphics.beginPath();
+    this.highlightGraphics.moveTo(left, top + cornerLen);
+    this.highlightGraphics.lineTo(left, top);
+    this.highlightGraphics.lineTo(left + cornerLen, top);
+    this.highlightGraphics.strokePath();
+
+    // 우상단 코너 ◥
+    this.highlightGraphics.beginPath();
+    this.highlightGraphics.moveTo(right - cornerLen, top);
+    this.highlightGraphics.lineTo(right, top);
+    this.highlightGraphics.lineTo(right, top + cornerLen);
+    this.highlightGraphics.strokePath();
+
+    // 좌하단 코너 ◣
+    this.highlightGraphics.beginPath();
+    this.highlightGraphics.moveTo(left, bottom - cornerLen);
+    this.highlightGraphics.lineTo(left, bottom);
+    this.highlightGraphics.lineTo(left + cornerLen, bottom);
+    this.highlightGraphics.strokePath();
+
+    // 우하단 코너 ◢
+    this.highlightGraphics.beginPath();
+    this.highlightGraphics.moveTo(right - cornerLen, bottom);
+    this.highlightGraphics.lineTo(right, bottom);
+    this.highlightGraphics.lineTo(right, bottom - cornerLen);
+    this.highlightGraphics.strokePath();
   }
 
   /**
@@ -256,6 +288,6 @@ export class InteractionSystem {
    */
   destroy(): void {
     this.highlightGraphics.destroy();
-    this.indicatorText.destroy();
+    this.onInteractionChange = null;
   }
 }

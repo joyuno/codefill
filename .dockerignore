@@ -1,0 +1,60 @@
+# ========================================
+# Docker 빌드 시 제외할 파일들
+# ========================================
+
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+.next
+out
+build
+dist
+
+# Testing
+coverage
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment (보안)
+.env
+.env.local
+.env.development
+.env.production
+.env*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Python (backend)
+backend/venv
+backend/__pycache__
+backend/*.pyc
+backend/.pytest_cache
+backend/.env
+
+# Misc
+*.log
+logs
+tmp
+temp

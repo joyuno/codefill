@@ -23,6 +23,10 @@ export class MapManager {
   private groundTileSprite: Phaser.GameObjects.TileSprite | null = null;
   private decorationSprites: Phaser.GameObjects.Image[] = [];
 
+  // 디버그 그리드
+  private debugGridGraphics: Phaser.GameObjects.Graphics | null = null;
+  private debugGridVisible: boolean = false;
+
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
   }
@@ -153,6 +157,79 @@ export class MapManager {
   }
 
   /**
+   * 디버그 그리드 토글
+   */
+  toggleDebugGrid(): void {
+    this.debugGridVisible = !this.debugGridVisible;
+    this.updateDebugGrid();
+  }
+
+  /**
+   * 디버그 그리드 표시
+   */
+  showDebugGrid(): void {
+    this.debugGridVisible = true;
+    this.updateDebugGrid();
+  }
+
+  /**
+   * 디버그 그리드 숨기기
+   */
+  hideDebugGrid(): void {
+    this.debugGridVisible = false;
+    this.updateDebugGrid();
+  }
+
+  /**
+   * 디버그 그리드 업데이트
+   */
+  private updateDebugGrid(): void {
+    if (!this.debugGridGraphics) {
+      this.debugGridGraphics = this.scene.add.graphics();
+      this.debugGridGraphics.setDepth(DEPTH.GRID_LINES);
+    }
+
+    this.debugGridGraphics.clear();
+
+    if (!this.debugGridVisible) return;
+
+    // 노란색 그리드 선
+    this.debugGridGraphics.lineStyle(1, 0xffff00, 0.3);
+
+    // 세로선
+    for (let col = 0; col <= MAP_COLS; col++) {
+      this.debugGridGraphics.lineBetween(
+        col * TILE_SIZE, 0,
+        col * TILE_SIZE, MAP_HEIGHT
+      );
+    }
+
+    // 가로선
+    for (let row = 0; row <= MAP_ROWS; row++) {
+      this.debugGridGraphics.lineBetween(
+        0, row * TILE_SIZE,
+        MAP_WIDTH, row * TILE_SIZE
+      );
+    }
+
+    // 타일 좌표 텍스트 (주요 위치만)
+    for (let col = 0; col < MAP_COLS; col += 5) {
+      for (let row = 0; row < MAP_ROWS; row += 5) {
+        const x = col * TILE_SIZE + 2;
+        const y = row * TILE_SIZE + 2;
+        const text = this.scene.add.text(x, y, `${col},${row}`, {
+          fontSize: '8px',
+          color: '#ffff00',
+        });
+        text.setDepth(DEPTH.GRID_LINES + 1);
+        text.setAlpha(0.5);
+        // 나중에 정리를 위해 태그 추가
+        text.setData('debugText', true);
+      }
+    }
+  }
+
+  /**
    * 정리
    */
   destroy(): void {
@@ -160,6 +237,14 @@ export class MapManager {
       this.groundTileSprite.destroy();
       this.groundTileSprite = null;
     }
+    if (this.debugGridGraphics) {
+      this.debugGridGraphics.destroy();
+      this.debugGridGraphics = null;
+    }
+    // 디버그 텍스트 정리
+    this.scene.children.list
+      .filter(child => child.getData('debugText'))
+      .forEach(child => child.destroy());
     this.decorationSprites.forEach(sprite => sprite.destroy());
     this.decorationSprites = [];
   }

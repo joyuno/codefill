@@ -136,11 +136,29 @@ ANALYSIS_SYSTEM_PROMPT = """
 
 ## 분석 지침
 
-### 필수 규칙
+### 필수 규칙 (데이터 일관성)
+
+⚠️ **BKT 데이터 사용 원칙: bkt_mastery의 토픽명과 수치를 변형 없이 그대로 사용**
+
 1. **strengths**: bkt_mastery에서 mastery >= 0.7인 토픽 **전부** (최대 6개, 높은 순)
+   - `topic`: bkt_mastery의 키값 그대로 (예: "Array", "String")
+   - `score`: bkt_mastery[토픽].mastery 값 그대로 (예: 0.92)
+
 2. **weaknesses**: bkt_mastery에서 mastery < 0.5인 토픽 **전부** (최대 6개, 낮은 순)
-3. **score**: 반드시 bkt_mastery의 mastery 값 사용
+   - `topic`: bkt_mastery의 키값 그대로 (예: "DP", "Graph")
+   - `score`: bkt_mastery[토픽].mastery 값 그대로 (예: 0.11)
+
+3. **detailed_feedback**: weaknesses에 포함된 토픽만 다룸
+   - weaknesses의 토픽 = detailed_feedback의 토픽 (정확히 일치)
+   - 토픽명과 수치는 bkt_mastery에서 가져온 값 그대로 사용
+
 4. **common_error_patterns**: 반드시 concepts_struggling 데이터를 분석하여 생성
+
+**검증 체크리스트:**
+- [ ] strengths의 모든 topic이 bkt_mastery에 존재하는가?
+- [ ] weaknesses의 모든 topic이 bkt_mastery에 존재하는가?
+- [ ] detailed_feedback에 언급된 토픽이 weaknesses와 일치하는가?
+- [ ] 모든 score/mastery 수치가 bkt_mastery 원본값과 일치하는가?
 
 ### 중요: 모든 해당 토픽에 insight 생성
 - 70% 이상 토픽이 5개면 strengths에 5개 모두 포함 (각각 insight 필수)
@@ -160,6 +178,14 @@ ANALYSIS_SYSTEM_PROMPT = """
 
 ### detailed_feedback 작성법 (간결하게)
 
+⚠️ **중요: detailed_feedback은 반드시 weaknesses의 토픽과 100% 일치해야 합니다**
+
+**데이터 일관성 규칙:**
+1. `weaknesses`에 나열된 토픽 = BKT mastery < 0.5인 토픽
+2. `detailed_feedback`에서 다루는 토픽 = `weaknesses`에 있는 토픽과 **정확히 동일**
+3. 토픽명은 bkt_mastery의 키값을 **그대로** 사용 (예: "Dynamic Programming"이 아닌 "DP")
+4. mastery 수치도 bkt_mastery 값을 **그대로** 사용 (임의로 변경 금지)
+
 **구조: 토픽별 1줄 요약 + 학습 패턴 1줄**
 
 각 약점 토픽에 대해 (1줄로):
@@ -168,7 +194,7 @@ ANALYSIS_SYSTEM_PROMPT = """
 마지막에 **학습 패턴** (1-2줄):
 - 힌트 의존도 + 감정 상태 + 권장 사항을 한 문장으로
 
-**예시:**
+**예시 (bkt_mastery에 DP: 0.11, Graph: 0.11이 있을 때):**
 ```
 ## 핵심 개선 포인트
 
@@ -180,6 +206,8 @@ ANALYSIS_SYSTEM_PROMPT = """
 
 **학습 패턴**: 힌트 평균 2.5개, 자기 주도 분석 시간 필요. String 문제로 자신감 회복 권장.
 ```
+
+⚠️ **위 예시에서 DP(11%), Graph(11%)는 bkt_mastery 데이터에서 직접 가져온 값입니다. 임의의 토픽이나 수치를 사용하지 마세요.**
 
 ---
 
@@ -222,4 +250,26 @@ ANALYSIS_SYSTEM_PROMPT = """
    - 빈 문자열 "" 금지
 
 6. **detailed_feedback** (필수) - 약점 중심 분석
+
+---
+
+## ⚠️ 최종 검증 (출력 전 반드시 확인)
+
+**BKT 데이터 일관성 검증:**
+
+출력 JSON 생성 후 다음을 반드시 확인하세요:
+
+1. **strengths의 각 topic** → bkt_mastery에 해당 키가 존재하고, score가 mastery 값과 일치
+2. **weaknesses의 각 topic** → bkt_mastery에 해당 키가 존재하고, score가 mastery 값과 일치
+3. **detailed_feedback의 각 토픽** → weaknesses에 포함된 토픽과 정확히 일치
+4. **summary에 언급된 토픽/수치** → bkt_mastery 데이터와 일치
+
+**올바른 예시 (bkt_mastery = {{"DP": {{"mastery": 0.11}}, "Graph": {{"mastery": 0.15}}}}):**
+- weaknesses: [{{"topic": "DP", "score": 0.11}}, {{"topic": "Graph", "score": 0.15}}]
+- detailed_feedback: "**DP (11%)** — ... **Graph (15%)** — ..."
+
+**잘못된 예시:**
+- weaknesses에 "Dynamic Programming" 사용 (bkt_mastery 키는 "DP")
+- detailed_feedback에서 "Recursion (30%)" 언급 (bkt_mastery에 없는 토픽)
+- score를 0.11 대신 0.15로 잘못 기재
 """
