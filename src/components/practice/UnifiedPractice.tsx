@@ -177,6 +177,7 @@ interface UnifiedPracticeProps {
   onGiveUp?: () => void;  // 포기하기
   attemptId?: string;  // attempt tracking for hint recording
   onCodeChange?: (code: string) => void;  // 코드 변경 콜백 (guided 모드 튜터에게 전달용)
+  onBlankHintUsed?: (index: number) => void;  // 빈칸/퍼즐 힌트 사용 시 콜백 (채팅 도움용)
 }
 
 export function UnifiedPractice({
@@ -188,6 +189,7 @@ export function UnifiedPractice({
   onGiveUp,
   attemptId,
   onCodeChange,
+  onBlankHintUsed,
 }: UnifiedPracticeProps) {
   // 공통 상태
   const [code, setCode] = useState('');
@@ -760,6 +762,9 @@ export function UnifiedPractice({
       // 힌트 사용 횟수 증가 (기록용, 캐시 여부와 관계없이 항상 증가)
       setBlankHintsUsedCount(prev => prev + 1);
 
+      // 상위 컴포넌트에 힌트 사용 알림 (채팅에서 해당 빈칸 답변 가능하도록)
+      onBlankHintUsed?.(blankIndex);
+
       console.log(`[BlankHint] blank=${blankIndex+1}, fromCache=${result.fromCache}, totalUsed=${blankHintsUsedCount + 1}`);
 
     } catch (error) {
@@ -820,6 +825,9 @@ export function UnifiedPractice({
 
       // 힌트 사용 횟수 증가 (기록용)
       setPuzzleHintsUsedCount(prev => prev + 1);
+
+      // 상위 컴포넌트에 힌트 사용 알림 (채팅에서 해당 블록 답변 가능하도록)
+      onBlankHintUsed?.(targetBlockIdx);
 
       console.log(`[PuzzleHint] blockIdx=${targetBlockIdx}, totalUsed=${puzzleHintsUsedCount + 1}`);
 
@@ -1004,7 +1012,7 @@ export function UnifiedPractice({
                   </PopoverTrigger>
                   <PopoverContent className="w-80 p-4">
                     {blankHints[blankIndex] ? (
-                      /* 힌트 내용 표시 (역할 설명만, 정답 없음) */
+                      /* 힌트 내용 표시 (정답 + 이유 설명) */
                       <div className="space-y-2">
                         <div className="flex items-start gap-2">
                           <Lightbulb className="h-4 w-4 mt-0.5 text-blue-400 flex-shrink-0" />
@@ -1013,7 +1021,7 @@ export function UnifiedPractice({
                           </p>
                         </div>
                         <p className="text-xs text-muted-foreground text-center pt-2 border-t border-border">
-                          정답은 직접 생각해보세요!
+                          이해가 됐다면 다음 빈칸도 도전해보세요!
                         </p>
                       </div>
                     ) : (
@@ -1037,7 +1045,7 @@ export function UnifiedPractice({
                           힌트 보기
                         </Button>
                         <p className="text-xs text-muted-foreground text-center">
-                          어떤 종류의 값이 필요한지 알려드려요
+                          정답과 이유를 알려드려요
                         </p>
                       </div>
                     )}

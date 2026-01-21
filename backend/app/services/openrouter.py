@@ -112,7 +112,20 @@ class OpenRouterService:
                 logger.error(f"Error response: {response.text[:500]}")
             response.raise_for_status()
 
-            return response.json()
+            result = response.json()
+
+            # LangSmith 토큰 사용량 로깅
+            usage = result.get("usage", {})
+            if usage:
+                from .langsmith_tracker import langsmith_tracker
+                langsmith_tracker.log_llm_usage(
+                    model=model_id,
+                    prompt_tokens=usage.get("prompt_tokens", 0),
+                    completion_tokens=usage.get("completion_tokens", 0),
+                    total_tokens=usage.get("total_tokens", 0),
+                )
+
+            return result
 
     async def chat_completion_stream(
         self,

@@ -4,13 +4,14 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from .config import get_settings, setup_logging, get_logger
-from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement, solvedac, analysis, ranking, missions, admin
+from .routers import auth, users, problems, practice, chat, execute, translate, farm, agent, solutions, friends, ws, shop, placement, solvedac, analysis, ranking, missions, admin, langsmith
 from .intents import intent_classifier
 from .services.collection_embeddings import initialize_collection_embeddings
 from .services.discovery_embeddings import initialize_discovery_embeddings
 from .graphs.orchestrator_v2 import initialize_orchestrator
 from .graphs.checkpointer import close_checkpointer
 from .services.stats_cache import get_stats_cache, shutdown_stats_cache
+from .core.langsmith_config import init_langsmith
 
 # Initialize logging at module load
 setup_logging()
@@ -40,6 +41,11 @@ async def lifespan(app: FastAPI):
     # Stats Cache 초기화 (백그라운드 flush 시작)
     _ = get_stats_cache()
     logger.info("Stats cache initialized with background flush")
+
+    # LangSmith 초기화
+    langsmith_status = init_langsmith()
+    if langsmith_status["configured"]:
+        logger.info(f"LangSmith enabled - project: {langsmith_status['project']}")
 
     yield
 
@@ -183,6 +189,7 @@ app.include_router(analysis.router, prefix="/analysis", tags=["Analysis"])
 app.include_router(ranking.router, prefix="/ranking", tags=["Ranking"])
 app.include_router(missions.router, tags=["Missions"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(langsmith.router, tags=["LangSmith"])
 
 
 @app.get("/")

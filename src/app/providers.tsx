@@ -5,10 +5,21 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { AnalyticsProvider } from '@/components/AnalyticsProvider';
 import { WebSocketProvider } from '@/contexts/WebSocketContext';
 
+// WebSocket을 비활성화할 경로 (문제 풀이 집중 모드)
+const WEBSOCKET_DISABLED_PATHS = ['/chat'];
+
 export function Providers({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  // /chat 페이지에서는 WebSocket 비활성화 (문제 풀이 집중)
+  const isWebSocketDisabled = WEBSOCKET_DISABLED_PATHS.some(
+    path => pathname?.startsWith(path)
+  );
+
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -30,7 +41,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WebSocketProvider>
+        <WebSocketProvider disabled={isWebSocketDisabled}>
           <AnalyticsProvider>
             {children}
           </AnalyticsProvider>

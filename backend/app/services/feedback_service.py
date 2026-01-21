@@ -1056,6 +1056,9 @@ class FeedbackService:
     # user_analysis_reports 업데이트 (실제 ELO 시스템)
     # ============================================================
 
+    # ELO 변화 없음 임계값 (이 횟수 초과 시도 후 정답이면 ELO 변화 없음)
+    ELO_NO_CHANGE_ATTEMPT_THRESHOLD = 5
+
     async def update_skill_profile(
         self,
         user_id: str,
@@ -1066,6 +1069,7 @@ class FeedbackService:
         time_spent: Optional[int] = None,     # 풀이 시간 (초)
         hints_used: Optional[int] = None,     # 힌트 사용 횟수
         base_problem_id: Optional[str] = None,  # 문제 UUID (ELO 조회용)
+        attempt_number: Optional[int] = None,  # 시도 횟수 (5회 초과 시 정답이어도 ELO 변화 없음)
     ) -> Dict[str, Any]:
         """
         사용자 스킬 프로필 업데이트 (실제 ELO 알고리즘)
@@ -1076,6 +1080,8 @@ class FeedbackService:
         - 정답/오답에 따라 ELO 변화
         - 시간/힌트 보정 팩터 적용
         - 🔒 이미 정답을 맞춘 문제는 ELO 변화 없음 (중복 방지)
+        - 🔒 5회 초과 시도 후 정답: ELO 변화 없음 (브루트포스 방지)
+        - 🔒 5회 초과 시도 후 포기/오답: ELO 감소 (정상 적용)
 
         Args:
             user_id: 사용자 UUID
@@ -1086,6 +1092,7 @@ class FeedbackService:
             time_spent: 풀이 시간 (초)
             hints_used: 힌트 사용 횟수
             base_problem_id: base_problems 테이블의 UUID
+            attempt_number: 시도 횟수 (5회 초과 시 정답이어도 ELO 변화 없음)
 
         Returns:
             업데이트된 스킬 정보 (ELO 포함)
@@ -1139,6 +1146,56 @@ class FeedbackService:
                         "elo_skipped": True,
                         "skip_reason": "already_solved",
                     }
+
+            # ============================================================
+            # 🔒 5회 초과 시도 후 정답 → ELO 변화 없음 (브루트포스 방지)
+            # 5회 초과 시도 후 오답/포기 → ELO 감소 (정상 적용)
+            # ============================================================
+            if attempt_number is not None and attempt_number > self.ELO_NO_CHANGE_ATTEMPT_THRESHOLD:
+                if is_correct:
+                    logger.info(
+                        f"[FeedbackService] Skipping ELO update - too many attempts: "
+                        f"user={user_id[:8]}, attempts={attempt_number}, threshold={self.ELO_NO_CHANGE_ATTEMPT_THRESHOLD}"
+                    )
+                    # 5회 초과 시도 후 정답 → ELO 변화 없이 현재 프로필 반환
+                    profile_result = self.supabase.table("user_analysis_reports") \
+                        .select("skill_by_topic, elo_by_topic, elo_overall, weak_topics") \
+                        .eq("user_id", user_id) \
+                        .limit(1) \
+                        .execute()
+
+                    if profile_result.data:
+                        profile = profile_result.data[0]
+                        return {
+                            "skill_by_topic": profile.get("skill_by_topic", {}),
+                            "elo_by_topic": profile.get("elo_by_topic", {}),
+                            "elo_overall": profile.get("elo_overall", ELO_DEFAULT),
+                            "elo_changes": [],  # 변화 없음
+                            "weak_topics": profile.get("weak_topics", []),
+                            "updated_topics": problem_topics,
+                            "elo_skipped": True,
+                            "skip_reason": "too_many_attempts",
+                            "attempt_number": attempt_number,
+                        }
+                    return {
+                        "skill_by_topic": {},
+                        "elo_by_topic": {},
+                        "elo_overall": ELO_DEFAULT,
+                        "elo_changes": [],
+                        "weak_topics": [],
+                        "updated_topics": problem_topics,
+                        "elo_skipped": True,
+                        "skip_reason": "too_many_attempts",
+                        "attempt_number": attempt_number,
+                    }
+                else:
+                    # 5회 초과 시도 후 오답/포기 → ELO 감소 정상 적용
+                    logger.info(
+                        f"[FeedbackService] Applying ELO decrease - too many attempts but incorrect: "
+                        f"user={user_id[:8]}, attempts={attempt_number}"
+                    )
+                    # 아래 로직으로 계속 진행 (is_correct=False로 ELO 감소)
+
             # 1. 현재 프로파일 조회 (없으면 생성)
             profile_result = self.supabase.table("user_analysis_reports") \
                 .select("*") \

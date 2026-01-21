@@ -50,6 +50,10 @@ interface PracticeChatPanelProps {
    * 현재 코드 (guided 모드에서 튜터에게 전달)
    */
   currentCode?: string;
+  /**
+   * 힌트 사용한 빈칸/블록 인덱스 배열 (채팅에서 해당 빈칸만 정답 설명 가능)
+   */
+  usedBlankHintIndices?: number[];
 }
 
 // Session state interface for LangGraph
@@ -209,6 +213,7 @@ export function PracticeChatPanel({
   onSessionIdChange,
   problemType,
   currentCode,
+  usedBlankHintIndices = [],
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile } = useAuth();
@@ -493,11 +498,19 @@ export function PracticeChatPanel({
         topics: problem.topics,
         keyConcepts: problem.keyConcepts,
         problem_type: problem.problemType,
+        code_template: problem.codeSnippet,  // 빈칸 위치 파악용
+        original_id: problem.baseProblemId || problem.id,  // DB 조회용
+      };
+
+      // 사용자 진행 상황 (힌트 사용 정보 포함)
+      context.user_progress = {
+        used_hint_indices: usedBlankHintIndices,
+        current_code: currentCode,
       };
     }
 
     return context;
-  }, [user, recommendedProblems, problem]);
+  }, [user, recommendedProblems, problem, usedBlankHintIndices, currentCode]);
 
   // Handle guided flow progression (새 형식: string[] 배열)
   const handleGuidedProgress = useCallback((understood: boolean) => {

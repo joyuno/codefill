@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
 import { CorrectAnswerPopup } from '@/components/practice/CorrectAnswerPopup';
+import { ExitWarningDialog } from '@/components/practice/ExitWarningDialog';
 // 온보딩은 소셜 회원가입 시 이미 완료됨 - 중복 제거
 import { BadgePopup } from '@/components/ui/badge-popup';
 
@@ -124,6 +125,15 @@ function ChatPageContent() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Exit warning dialog state
+  const [showExitWarning, setShowExitWarning] = useState(false);
+  const [isExitLoading, setIsExitLoading] = useState(false);
+  const pendingNavigationRef = useRef<string | null>(null);  // 이탈 후 이동할 경로
+
+  // Submission state (beforeunload에서 사용하므로 여기서 선언)
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [xpEarned, setXpEarned] = useState(0);
+
   // Guided 모드 튜터에게 전달할 현재 코드 상태
   const [currentCode, setCurrentCode] = useState<string>('');
 
@@ -180,11 +190,18 @@ function ChatPageContent() {
     };
   }, [sessionId, previousHints.length, attemptCount, toast]);
 
-  // Beforeunload handler - send abandon when user leaves
+  // Beforeunload handler - warn and send abandon when user leaves
   useEffect(() => {
     if (!sessionId) return;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // 문제 풀이 중일 때만 경고 표시
+      if (problem && !isSubmitted) {
+        // 브라우저 기본 경고 표시
+        e.preventDefault();
+        e.returnValue = '문제를 포기하시겠어요? 실력 측정에 불이익이 있을 수 있습니다.';
+      }
+
       // Send abandon request using sendBeacon for reliability
       const data = JSON.stringify({
         session_id: sessionId,
@@ -194,10 +211,6 @@ function ChatPageContent() {
 
       // Use sendBeacon for reliable delivery on page close
       navigator.sendBeacon('/api/practice/session/end', data);
-
-      // Show confirmation dialog (optional)
-      // e.preventDefault();
-      // e.returnValue = '';
     };
 
     const handleVisibilityChange = () => {
@@ -218,11 +231,7 @@ function ChatPageContent() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [sessionId, previousHints.length, attemptCount]);
-
-  // Submission state (not persisted - reset on page load)
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [xpEarned, setXpEarned] = useState(0);
+  }, [sessionId, previousHints.length, attemptCount, problem, isSubmitted]);
 
   // Initial problem (from URL parameter) - 정보수집 단계 생략용
   const [initialBaseProblem, setInitialBaseProblem] = useState<BaseProblemInfo | null>(null);
@@ -233,6 +242,7 @@ function ChatPageContent() {
   const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
   const [hints, setHints] = useState<string[]>([]);
   const [currentHintResponse, setCurrentHintResponse] = useState<HintAgentResponse | null>(null);
+  const [usedBlankHintIndices, setUsedBlankHintIndices] = useState<number[]>([]);  // 빈칸/퍼즐 힌트 사용 인덱스
 
   // Feedback popup state
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
@@ -386,6 +396,7 @@ function ChatPageContent() {
     setShowFeedbackPopup(false);
     setFeedbackData(null);
     setSessionId(null);  // Clear session ID
+    setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
   }, [resetSession, sessionId]);
 
   // 포기하기 (Give up)
@@ -423,7 +434,84 @@ function ChatPageContent() {
     setShowFeedbackPopup(false);
     setFeedbackData(null);
     setSessionId(null);
+    setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
   }, [problem, sessionId, resetSession, toast]);
+
+  // ============================================================
+  // 이탈 경고 핸들러
+  // ============================================================
+
+  // 이탈 시도 시 경고 팝업 표시 (문제 풀이 중일 때만)
+  const handleExitAttempt = useCallback((targetPath: string = '/') => {
+    // 문제가 없거나 이미 제출 완료된 경우 바로 이동
+    if (!problem || isSubmitted) {
+      router.push(targetPath);
+      return;
+    }
+
+    // 경고 팝업 표시
+    pendingNavigationRef.current = targetPath;
+    setShowExitWarning(true);
+  }, [problem, isSubmitted, router]);
+
+  // 이탈 확정 시 처리 (session_end 호출 후 이동)
+  const handleConfirmExit = useCallback(async () => {
+    setIsExitLoading(true);
+
+    // End session as abandon (ELO 감소)
+    if (sessionId) {
+      try {
+        await practiceApi.sessionEnd({
+          sessionId,
+          endType: 'abandon',
+          reason: 'user_exit_confirmed',
+          isCorrect: false,
+        });
+        console.log('[SessionTracker] Session abandoned (exit confirmed):', sessionId);
+      } catch (e) {
+        console.error('[SessionTracker] Failed to end session:', e);
+      }
+    }
+
+    // 세션 정리
+    resetSession();
+    setSessionId(null);
+    setShowExitWarning(false);
+    setIsExitLoading(false);
+
+    // 목표 경로로 이동
+    const targetPath = pendingNavigationRef.current || '/';
+    pendingNavigationRef.current = null;
+    router.push(targetPath);
+  }, [sessionId, resetSession, router]);
+
+  // 경고 팝업 닫기 (계속 풀기)
+  const handleCancelExit = useCallback(() => {
+    setShowExitWarning(false);
+    pendingNavigationRef.current = null;
+  }, []);
+
+  // 브라우저 뒤로가기 감지 (popstate)
+  useEffect(() => {
+    if (!problem || isSubmitted) return;
+
+    // 히스토리에 현재 상태 push (뒤로가기 감지용)
+    window.history.pushState({ chatPage: true }, '', window.location.href);
+
+    const handlePopState = (e: PopStateEvent) => {
+      // 문제 풀이 중이면 경고 표시
+      if (problem && !isSubmitted) {
+        // 히스토리 다시 push (뒤로가기 취소)
+        window.history.pushState({ chatPage: true }, '', window.location.href);
+        // 경고 팝업 표시
+        pendingNavigationRef.current = '/';
+        setShowExitWarning(true);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [problem, isSubmitted]);
 
   // Fetch feedback from API
   const fetchFeedback = useCallback(async (isCorrect: boolean, earnedXp: number) => {
@@ -503,19 +591,32 @@ function ChatPageContent() {
           }
         }
 
+        // 문제 유형별 problem_info 구성
+        const baseProblemInfo = {
+          title: problem.title,
+          description: problem.description,
+          difficulty: problem.difficulty,
+          topics: problem.topics || problem.keyConcepts,
+          code_template: problem.codeTemplate || problem.codeSnippet,
+          language: problem.framework || 'python',
+        };
+
+        // 퍼즐 문제일 때 추가 정보 포함
+        const problemInfo = problemType === 'puzzle' ? {
+          ...baseProblemInfo,
+          blocks: problem.puzzleBlocks || [],
+          fixed_start: problem.fixedStart || '',
+          fixed_end: problem.fixedEnd || '',
+          user_order: [],  // 현재 사용자 순서 (TODO: 상태에서 가져오기)
+          correct_blocks: [],  // 이미 맞은 블록들 (TODO: 상태에서 가져오기)
+        } : baseProblemInfo;
+
         // 힌트 API 호출
         const response = await agentApi.getHint({
           problem_id: problem.id,
-          base_problem_id: undefined,  // 프론트엔드에서는 base_problem_id를 알 수 없음, 백엔드에서 조회
+          base_problem_id: problem.baseProblemId || problem.originalId,
           problem_type: problemType as 'blank' | 'puzzle' | 'guided',
-          problem_info: {
-            title: problem.title,
-            description: problem.description,
-            difficulty: problem.difficulty,
-            topics: problem.topics || problem.keyConcepts,
-            code_template: problem.codeTemplate || problem.codeSnippet,
-            language: problem.framework || 'python',
-          },
+          problem_info: problemInfo,
           user_code: problem.codeSnippet,
           user_answers: blankAnswers,
           current_blank_index: currentBlankIndex,
@@ -902,6 +1003,10 @@ function ChatPageContent() {
         onGiveUp={handleGiveUp}  // 포기하기
         attemptId={attemptId || undefined}  // attempt tracking
         onCodeChange={setCurrentCode}  // guided 모드 튜터에게 현재 코드 전달
+        onBlankHintUsed={(index) => {
+          // 힌트 사용 시 인덱스 추가 (중복 방지)
+          setUsedBlankHintIndices(prev => prev.includes(index) ? prev : [...prev, index]);
+        }}
       />
     );
   };
@@ -966,11 +1071,14 @@ function ChatPageContent() {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => handleExitAttempt('/')}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
             {problem ? (
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-medium">{problem.title}</h1>
@@ -1055,6 +1163,7 @@ function ChatPageContent() {
                       onSessionIdChange={setChatSessionId}
                       problemType={problem?.problemType}
                       currentCode={currentCode}
+                      usedBlankHintIndices={usedBlankHintIndices}
                     />
                   )}
                 </div>
@@ -1081,6 +1190,14 @@ function ChatPageContent() {
           onClose={() => setEarnedBadges([])}
         />
       )}
+
+      {/* Exit Warning Dialog */}
+      <ExitWarningDialog
+        isOpen={showExitWarning}
+        onClose={handleCancelExit}
+        onConfirmExit={handleConfirmExit}
+        isLoading={isExitLoading}
+      />
     </div>
   );
 }

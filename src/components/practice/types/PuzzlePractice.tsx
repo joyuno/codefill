@@ -20,6 +20,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
 
 interface PuzzleBlock {
   id: string;
@@ -326,9 +327,19 @@ export function PuzzlePractice({
               <div className="space-y-2">
                 <p className="text-sm font-medium">힌트</p>
                 {hints.slice(0, hintLevel).map((hint, i) => (
-                  <p key={i} className="text-sm text-muted-foreground">
-                    Level {i + 1}: {hint}
-                  </p>
+                  <div key={i} className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">Level {i + 1}:</span>{' '}
+                    <ReactMarkdown
+                      components={{
+                        strong: ({ children }) => (
+                          <strong className="font-bold text-primary">{children}</strong>
+                        ),
+                        p: ({ children }) => <span className="inline">{children}</span>,
+                      }}
+                    >
+                      {hint}
+                    </ReactMarkdown>
+                  </div>
                 ))}
                 {hintLevel < 3 && (
                   <Button size="sm" variant="outline" onClick={handleGetHint}>

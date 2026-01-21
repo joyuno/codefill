@@ -40,6 +40,37 @@ router = APIRouter()
 settings = get_settings()
 
 
+# =====================================================
+# XP & Level Calculation Functions
+# =====================================================
+
+def calculate_required_xp(level: int) -> int:
+    """Calculate required XP for next level."""
+    # 100 XP for level 1, increasing by 50 each level
+    return level * 100 + (level - 1) * 50
+
+
+def calculate_level_from_total_xp(total_xp: int) -> int:
+    """Calculate correct level from total XP."""
+    level = 1
+    accumulated_xp = 0
+    while True:
+        required = calculate_required_xp(level)
+        if accumulated_xp + required > total_xp:
+            break
+        accumulated_xp += required
+        level += 1
+    return level
+
+
+def calculate_current_xp(total_xp: int, level: int) -> int:
+    """Calculate current XP within the level."""
+    xp_for_current_level = 0
+    for l in range(1, level):
+        xp_for_current_level += calculate_required_xp(l)
+    return total_xp - xp_for_current_level
+
+
 @router.get("/me", response_model=UserProfile)
 async def get_current_user(
     user_id: UUID = Depends(get_current_user_id),
@@ -80,6 +111,22 @@ async def get_current_user(
         user_data = user_result.data
         stats_data = stats_result.data or {}
         prefs_data = prefs_result.data or {}
+
+        # 레벨 재계산 (XP 기준으로 올바른 레벨 계산)
+        total_xp = stats_data.get("total_xp", 0)
+        db_level = stats_data.get("level", 1)
+        correct_level = calculate_level_from_total_xp(total_xp)
+
+        # DB 레벨이 잘못되어 있으면 수정
+        if correct_level != db_level:
+            try:
+                db.table("user_stats").update({
+                    "level": correct_level
+                }).eq("user_id", str(user_id)).execute()
+                print(f"[LevelFix] User {str(user_id)[:8]}... level corrected: {db_level} -> {correct_level}")
+                stats_data["level"] = correct_level
+            except Exception as e:
+                print(f"[LevelFix] Failed to update level: {e}")
 
         badges = []
         if badges_result.data:
@@ -439,20 +486,6 @@ async def get_recent_activity(
         )
 
 
-def calculate_required_xp(level: int) -> int:
-    """Calculate required XP for next level."""
-    # 100 XP for level 1, increasing by 50 each level
-    return level * 100 + (level - 1) * 50
-
-
-def calculate_current_xp(total_xp: int, level: int) -> int:
-    """Calculate current XP within the level."""
-    xp_for_current_level = 0
-    for l in range(1, level):
-        xp_for_current_level += calculate_required_xp(l)
-    return total_xp - xp_for_current_level
-
-
 @router.get("/me/profile", response_model=MypageProfile)
 async def get_mypage_profile(
     user_id: UUID = Depends(get_current_user_id),
@@ -484,8 +517,23 @@ async def get_mypage_profile(
         if sub_result.data and sub_result.data.get("plans"):
             subscription = sub_result.data["plans"].get("code", "free")
 
-        level = stats_data.get("level", 1)
+        db_level = stats_data.get("level", 1)
         total_xp = stats_data.get("total_xp", 0)
+
+        # 레벨 재계산 (XP 기준으로 올바른 레벨 계산)
+        correct_level = calculate_level_from_total_xp(total_xp)
+
+        # DB 레벨이 잘못되어 있으면 수정
+        if correct_level != db_level:
+            try:
+                db.table("user_stats").update({
+                    "level": correct_level
+                }).eq("user_id", str(user_id)).execute()
+                print(f"[LevelFix] User {str(user_id)[:8]}... level corrected: {db_level} -> {correct_level}")
+            except Exception as e:
+                print(f"[LevelFix] Failed to update level: {e}")
+
+        level = correct_level  # 올바른 레벨 사용
 
         return MypageProfile(
             id=str(user_data["id"]),

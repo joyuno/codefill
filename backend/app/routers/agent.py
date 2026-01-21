@@ -10,6 +10,7 @@ from typing import Optional, Union, List, Dict, Any
 from uuid import UUID
 import json
 import re
+import asyncio
 
 from ..database import get_db
 from ..config import get_settings
@@ -170,16 +171,83 @@ def _dedent_code(code: str) -> tuple[str, int]:
     return '\n'.join(dedented_lines), min_indent // 4
 
 
+# ============================================================
+# Python 들여쓰기 규칙 정의
+# ============================================================
+
+# 콜론(:)으로 끝나고 다음 줄 들여쓰기 증가시키는 키워드
+PYTHON_BLOCK_STARTERS = (
+    # 조건문
+    'if ', 'if(', 'elif ', 'elif(', 'else:', 'else :',
+    # 반복문
+    'for ', 'for(', 'while ', 'while(',
+    # 예외 처리
+    'try:', 'try :', 'except ', 'except:', 'finally:', 'finally :',
+    # 컨텍스트 매니저
+    'with ',
+    # 함수/클래스
+    'def ', 'class ', 'async def ', 'async for ', 'async with ',
+    # 패턴 매칭 (Python 3.10+)
+    'match ', 'case ',
+    # 람다 (한 줄이지만 콜론 있음)
+    'lambda ',
+)
+
+# 블록 종료 키워드 (이 키워드로 시작하면 현재 블록의 마지막)
+PYTHON_BLOCK_ENDERS = (
+    'return', 'return ', 'return(',
+    'break', 'continue', 'pass',
+    'raise', 'raise ',
+    'yield', 'yield ',
+)
+
+# 같은 레벨 유지 키워드 (이전 블록과 동일 레벨)
+PYTHON_SAME_LEVEL_STARTERS = (
+    'elif ', 'elif(',
+    'else:', 'else :',
+    'except ', 'except:',
+    'finally:', 'finally :',
+    'case ',
+)
+
+
+def _ends_with_colon(code: str) -> bool:
+    """코드가 ':'로 끝나는지 확인 (주석 제외)"""
+    code = code.strip()
+    # 주석 제거
+    if '#' in code:
+        code = code[:code.index('#')].strip()
+    return code.endswith(':')
+
+
+def _starts_with_block_starter(code: str) -> bool:
+    """블록 시작 키워드로 시작하는지 확인"""
+    code_lower = code.strip().lower()
+    return any(code_lower.startswith(kw.lower()) for kw in PYTHON_BLOCK_STARTERS)
+
+
+def _starts_with_block_ender(code: str) -> bool:
+    """블록 종료 키워드로 시작하는지 확인"""
+    code_lower = code.strip().lower()
+    return any(code_lower.startswith(kw.lower()) for kw in PYTHON_BLOCK_ENDERS)
+
+
+def _starts_with_same_level(code: str) -> bool:
+    """같은 레벨 키워드로 시작하는지 확인 (elif, else, except, finally, case)"""
+    code_lower = code.strip().lower()
+    return any(code_lower.startswith(kw.lower()) for kw in PYTHON_SAME_LEVEL_STARTERS)
+
+
 def _process_block_indents(blocks: list, base_indent: int) -> list:
     """
     모든 블록의 코드를 정규화하고 indentation을 설정
 
-    전략:
-    1. 각 블록의 코드에서 공통 들여쓰기 제거 (dedent)
-    2. LLM이 설정한 indent 값 또는 추출된 레벨 사용
-    3. 코드 패턴 기반으로 indent 보정
+    Python 들여쓰기 규칙:
+    1. if/for/while/def/class/try/with 등 ':' 로 끝나면 → 다음 블록 indent +1
+    2. elif/else/except/finally/case → 이전 if/try/match와 같은 레벨
+    3. return/break/continue/pass/raise → 블록 종료, 이후 indent -1
 
-    Note: 프론트엔드에서 indentation 값에 따라 들여쓰기를 다시 적용함
+    Note: LLM이 설정한 indent 값이 있으면 그걸 우선 사용
     """
     if not blocks:
         return blocks
@@ -201,7 +269,7 @@ def _process_block_indents(blocks: list, base_indent: int) -> list:
 
         # 2. indent 값 결정
         if llm_indent is not None and llm_indent >= 0:
-            # LLM이 설정한 값 사용
+            # LLM이 설정한 값 사용 (가장 우선)
             new_block["indentation"] = llm_indent
             indent_stack = [llm_indent]
         elif extracted_indent > 0:
@@ -212,19 +280,38 @@ def _process_block_indents(blocks: list, base_indent: int) -> list:
         else:
             # 코드 패턴 기반으로 계산
             code_stripped = dedented_code.strip()
+            code_first_line = code_stripped.split('\n')[0] if code_stripped else ""
+            prev_stripped = prev_code.strip()
+            prev_last_line = prev_stripped.split('\n')[-1] if prev_stripped else ""
 
-            # 이전 블록이 ':'로 끝나면 들여쓰기 레벨 증가
-            if prev_code.strip().endswith(':'):
-                new_indent = indent_stack[-1] + 1
-                indent_stack.append(new_indent)
-            else:
-                new_indent = indent_stack[-1]
+            new_indent = indent_stack[-1]
 
-            # return, break, continue 등 후 레벨 감소
-            if code_stripped.startswith(('return ', 'return\n', 'return', 'break', 'continue', 'pass')):
-                new_indent = indent_stack[-1]
+            # Case 1: elif/else/except/finally/case는 이전 if/try/match와 같은 레벨
+            if _starts_with_same_level(code_first_line):
+                # 스택에서 한 단계 빼서 같은 레벨로
                 if len(indent_stack) > 1:
                     indent_stack.pop()
+                new_indent = indent_stack[-1]
+                # 이 블록도 ':' 로 끝나면 다시 스택에 push
+                if _ends_with_colon(code_stripped.split('\n')[-1]):
+                    indent_stack.append(new_indent + 1)
+
+            # Case 2: 이전 블록이 ':'로 끝나면 들여쓰기 증가
+            elif _ends_with_colon(prev_last_line):
+                new_indent = indent_stack[-1] + 1
+                indent_stack.append(new_indent)
+
+            # Case 3: 현재 블록이 block ender면 현재 레벨 유지 후 스택에서 pop
+            if _starts_with_block_ender(code_first_line):
+                # 현재 레벨 유지
+                if len(indent_stack) > 1:
+                    indent_stack.pop()
+
+            # Case 4: 현재 블록이 ':'로 끝나면 다음을 위해 스택에 push
+            code_last_line = code_stripped.split('\n')[-1] if code_stripped else ""
+            if _ends_with_colon(code_last_line) and not _starts_with_same_level(code_first_line):
+                if new_indent not in indent_stack or indent_stack[-1] != new_indent:
+                    pass  # 이미 처리됨
 
             new_block["indentation"] = new_indent
 
@@ -1205,6 +1292,31 @@ async def solving_agent(request: SolvingRequest, db=Depends(get_db)):
 # Problem Generation
 # ============================================================
 
+
+async def _pregenerate_hints_background(
+    problem_type: str,
+    problem_id: str,
+    problem_data: dict
+) -> None:
+    """
+    백그라운드에서 힌트 사전 생성 (실패해도 무시)
+
+    문제 생성 직후 호출되어 모든 힌트를 미리 생성해둠.
+    사용자가 힌트 요청 시 즉시 캐시에서 반환 가능.
+    """
+    try:
+        hint_service = get_hint_service()
+        await hint_service.pregenerate_all_hints(
+            problem_type=problem_type,
+            problem_id=problem_id,
+            problem_data=problem_data,
+        )
+    except Exception as e:
+        # 힌트 사전 생성 실패는 로그만 남기고 무시
+        # 요청 시 생성하는 fallback이 있음
+        print(f"[HintPregen] Background pregeneration failed: {e}")
+
+
 @router.post("/generate/blank", response_model=BlankProblemResponse)
 async def generate_blank_problem(
     request: ProblemGenerationRequest,
@@ -1390,6 +1502,12 @@ async def generate_blank_problem(
                 )
                 if save_result.get("success"):
                     print(f"[Blank Gen] Saved to DB: {original_id} (user: {creator_id[:8]}...)")
+
+                    # 🔥 백그라운드에서 힌트 사전 생성 (base_problem_id로 캐싱)
+                    if base_problem_id:
+                        asyncio.create_task(
+                            _pregenerate_hints_background("blank", base_problem_id, result)
+                        )
                 else:
                     print(f"[Blank Gen] DB save failed: {save_result.get('error')}")
             except Exception as save_err:
@@ -1628,6 +1746,12 @@ async def generate_puzzle_problem(
                 )
                 if save_result.get("success"):
                     print(f"[Puzzle Gen] Saved to DB: {original_id} (user: {creator_id[:8]}...)")
+
+                    # 🔥 백그라운드에서 힌트 사전 생성 (base_problem_id로 캐싱)
+                    if base_problem_id:
+                        asyncio.create_task(
+                            _pregenerate_hints_background("puzzle", base_problem_id, result)
+                        )
                 else:
                     print(f"[Puzzle Gen] DB save failed: {save_result.get('error')}")
             except Exception as save_err:
@@ -1854,6 +1978,12 @@ async def generate_guided_problem(
             if insert_result.data:
                 guided_problem_id = insert_result.data[0]["id"]
                 print(f"[Guided Gen] Saved to DB: {guided_problem_id}")
+
+                # 🔥 백그라운드에서 힌트 사전 생성 (base_problem_id로 캐싱)
+                if base_problem_id:
+                    asyncio.create_task(
+                        _pregenerate_hints_background("guided", base_problem_id, result)
+                    )
             else:
                 guided_problem_id = None
                 print(f"[Guided Gen] DB insert returned no data")

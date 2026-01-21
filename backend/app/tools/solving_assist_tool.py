@@ -50,37 +50,37 @@ class AssistResult:
 ASSIST_SYSTEM_PROMPT = """당신은 코딩 교육 전문가입니다. 학생이 문제를 풀고 있습니다.
 
 ## 핵심 원칙 (절대 위반 금지)
-1. **정답 코드를 절대 보여주지 마세요** - 한 줄도 안 됨
-2. **빈칸 정답을 직접 알려주지 마세요** - "_0_에는 X가 들어가요" 금지
-3. **퍼즐 블록 순서를 알려주지 마세요** - "1번 다음 2번" 금지
-4. 대신 **개념**과 **사고 방향**만 설명하세요
-5. **소크라테스식 질문**으로 스스로 깨닫게 유도하세요
+1. **힌트를 사용하지 않은 빈칸/블록의 정답은 절대 알려주지 마세요**
+2. **힌트를 사용한 빈칸/블록**에 대해서만 정답과 이유를 설명할 수 있어요
+3. 대신 **개념**과 **사고 방향**으로 유도하세요
+4. **소크라테스식 질문**으로 스스로 깨닫게 유도하세요
+
+## 힌트 사용 여부에 따른 규칙
+- **[힌트 사용한 빈칸/블록]**: 정답과 그 이유를 자세히 설명해도 됨
+- **[힌트 미사용 빈칸/블록]**: 정답 절대 금지! 직접적인 힌트보다 간접적인 힌트 제공
 
 ## 허용되는 도움
 - 관련 개념/알고리즘 설명 (예: "이 문제는 DP를 활용하면 좋아요")
-- 일반적인 접근법 (예: "먼저 입력을 어떻게 처리할지 생각해보세요")
+- 힌트 사용한 빈칸에 대한 추가 설명 (예: "4번 빈칸의 idx+1은 인덱스를 1부터 시작하기 위함이에요")
 - 학생의 방향이 맞는지 확인 (예: "좋은 방향이에요! 계속해보세요")
-- 왜 이런 접근이 필요한지 설명
 
 ## 금지되는 도움
-- 정답 코드 공개
-- 빈칸 답 직접 제공
-- 블록 순서 알려주기
-- "여기에 for문을 넣으세요" 같은 구체적 지시
+- 힌트 미사용 빈칸/블록의 정답 공개
+- 정답 코드 전체 공개
+- "여기에 for문을 넣으세요" 같은 구체적 지시 (힌트 미사용 시)
 
 ## 도움 유형별 응답
 {assist_type_guide}
 
 ## 응답 형식
-- 1-2문장으로 매우 간결하게 (최대 100토큰)
+- 1-3문장으로 간결하게 (최대 150토큰)
 - 격려하는 톤 유지
-- 필요시 관련 개념 키워드만 언급
+- 힌트 사용한 빈칸 질문 → 정답과 이유 설명 OK
+- 힌트 미사용 빈칸 질문 → "힌트 버튼을 눌러보세요!" 유도
 
 ## 절대 금지 (Guardrails)
 - 새로운 문제를 생성하거나 만들어내지 마세요
-- DB에 있는 문제 내용을 직접 출력하지 마세요
-- 정답 코드를 생성하지 마세요
-- **난이도**, **주제** 같은 메타데이터 형식으로 출력하지 마세요
+- 힌트 미사용 빈칸의 정답을 유추하게 하는 힌트도 금지
 """
 
 ASSIST_TYPE_GUIDES = {
@@ -172,7 +172,8 @@ class SolvingAssistTool:
                 model=settings.llm_model_hint,  # 가벼운 모델 사용
                 messages=messages,
                 temperature=0.7,
-                max_tokens=250,  
+                max_tokens=250,
+            )
 
             content = openrouter_service.get_content(response)
 
@@ -271,39 +272,103 @@ class SolvingAssistTool:
         problem_context: Dict[str, Any],
         user_progress: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """사용자 프롬프트 구성"""
-        # 문제 정보 (정답은 참조용으로만)
+        """사용자 프롬프트 구성 - 힌트 사용 여부에 따라 정답 정보 필터링"""
+        # 문제 정보
         title = problem_context.get("title") or problem_context.get("name", "문제")
         description = problem_context.get("description") or ""
         problem_type = problem_context.get("problem_type", "blank")
         difficulty = problem_context.get("difficulty", "medium")
         tags = problem_context.get("tags", [])
+        code_template = problem_context.get("code_template", "")
 
-        # 문제 유형별 힌트 정보 (LLM 참고용)
+        # 힌트 사용 정보 추출
+        used_hint_indices = []
+        if user_progress:
+            used_hint_indices = user_progress.get("used_hint_indices", [])
+
+        # 문제 유형별 힌트 정보 (힌트 사용 여부에 따라 정답 공개)
         type_info = ""
-        if problem_type == "blank":
-            blank_count = problem_context.get("blank_count", 0)
-            type_info = f"빈칸 채우기 문제 ({blank_count}개 빈칸)"
-            # 정답은 내부적으로 LLM이 참고 (출력 금지 명시됨)
-            internal_answers = problem_context.get("_internal_blank_answers", [])
-            if internal_answers:
-                type_info += f"\n[내부 참조용 - 절대 출력 금지] 정답: {internal_answers}"
-        elif problem_type == "puzzle":
-            block_count = problem_context.get("block_count", 0)
-            type_info = f"퍼즐 문제 ({block_count}개 블록 정렬)"
-            # 정답 순서는 내부 참조용
-            internal_order = problem_context.get("_internal_correct_order", [])
-            if internal_order:
-                type_info += f"\n[내부 참조용 - 절대 출력 금지] 정답 순서: {internal_order}"
+        hint_info = ""
 
-        # 정답 코드 (LLM이 개념 파악용으로 참고, 출력 금지)
+        if problem_type == "blank":
+            internal_answers = problem_context.get("_internal_blank_answers", [])
+            blank_count = len(internal_answers) if internal_answers else problem_context.get("blank_count", 0)
+            type_info = f"빈칸 채우기 문제 ({blank_count}개 빈칸)"
+
+            if internal_answers:
+                # 힌트 사용한 빈칸만 정답 공개
+                hinted_answers = []
+                unhinted_indices = []
+                for idx, answer in enumerate(internal_answers):
+                    if idx in used_hint_indices:
+                        hinted_answers.append(f"빈칸 {idx+1}번: '{answer}' (힌트 사용됨 - 설명 가능)")
+                    else:
+                        unhinted_indices.append(idx + 1)
+
+                if hinted_answers:
+                    hint_info = f"""
+## 힌트 사용한 빈칸 (이 빈칸들은 정답과 이유 설명 가능!)
+{chr(10).join(hinted_answers)}
+"""
+                if unhinted_indices:
+                    hint_info += f"""
+## 힌트 미사용 빈칸 (정답 절대 금지, 간접 힌트만!)
+빈칸 {', '.join(map(str, unhinted_indices))}번은 힌트를 사용하지 않았습니다.
+이 빈칸들에 대해서는:
+- ❌ 정답 직접 알려주기 금지
+- ✅ 관련 개념/문법 설명 가능 (예: "for문은 반복에 사용해요")
+- ✅ 사고 방향 유도 가능 (예: "이 부분은 반복이 필요해 보이는데, 어떤 반복문이 좋을까요?")
+- ✅ 학생 코드의 방향성 확인 가능 (예: "좋은 접근이에요!")
+"""
+
+            # 코드 템플릿 정보 (빈칸 위치 파악용)
+            if code_template:
+                hint_info += f"""
+## 코드 템플릿 (빈칸 위치 참고용)
+```
+{code_template[:600]}
+```
+"""
+
+        elif problem_type == "puzzle":
+            blocks = problem_context.get("block_contents", [])
+            block_count = len(blocks) if blocks else problem_context.get("block_count", 0)
+            type_info = f"퍼즐 문제 ({block_count}개 블록 정렬)"
+
+            # 힌트 사용한 블록만 정보 공개
+            if blocks:
+                hinted_blocks = []
+                unhinted_indices = []
+                for idx, block_code in enumerate(blocks):
+                    if idx in used_hint_indices:
+                        hinted_blocks.append(f"블록 {idx+1}: ```{block_code[:100]}``` (힌트 사용됨 - 역할 설명 가능)")
+                    else:
+                        unhinted_indices.append(idx + 1)
+
+                if hinted_blocks:
+                    hint_info = f"""
+## 힌트 사용한 블록 (이 블록들은 역할 설명 가능!)
+{chr(10).join(hinted_blocks)}
+"""
+                if unhinted_indices:
+                    hint_info += f"""
+## 힌트 미사용 블록 (순서/위치 절대 금지, 간접 힌트만!)
+블록 {', '.join(map(str, unhinted_indices))}번은 힌트를 사용하지 않았습니다.
+이 블록들에 대해서는:
+- ❌ 순서나 위치 직접 알려주기 금지
+- ✅ 블록 코드의 역할 설명 가능 (예: "이 블록은 변수를 초기화하는 코드네요")
+- ✅ 프로그램 흐름 개념 설명 가능 (예: "보통 변수 초기화는 먼저 하고, 계산은 그 다음에 해요")
+- ✅ 학생의 정렬 시도에 대해 방향성 피드백 가능
+"""
+
+        # 정답 코드 (개념 파악용 - 힌트 사용한 경우만)
         solutions_info = ""
-        internal_solutions = problem_context.get("_internal_solutions", [])
-        if internal_solutions:
-            # 첫 번째 솔루션만 참고용으로
-            first_sol = internal_solutions[0] if internal_solutions else {}
-            solutions_info = f"""
-[내부 참조용 - 절대 출력 금지] 정답 코드 (개념 파악용):
+        if used_hint_indices:  # 힌트를 하나라도 사용한 경우만 솔루션 참고 허용
+            internal_solutions = problem_context.get("_internal_solutions", [])
+            if internal_solutions:
+                first_sol = internal_solutions[0] if internal_solutions else {}
+                solutions_info = f"""
+## 정답 코드 (힌트 사용 빈칸 설명용 참고 - 전체 코드 출력 금지)
 ```
 {first_sol.get('code', '')[:500]}
 ```
@@ -313,8 +378,11 @@ class SolvingAssistTool:
         progress_info = ""
         if user_progress:
             current_code = user_progress.get("current_code", "")
+            current_answers = user_progress.get("current_answers", {})
             if current_code:
-                progress_info = f"\n학생의 현재 코드:\n```\n{current_code[:300]}\n```"
+                progress_info = f"\n## 학생의 현재 코드:\n```\n{current_code[:300]}\n```"
+            if current_answers:
+                progress_info += f"\n## 학생이 입력한 답:\n{current_answers}"
 
         prompt = f"""## 문제 정보
 - 제목: {title}
@@ -322,13 +390,14 @@ class SolvingAssistTool:
 - 난이도: {difficulty}
 - 주제: {', '.join(tags) if tags else '알고리즘'}
 - 설명: {description[:400]}
+{hint_info}
 {solutions_info}
 {progress_info}
 
 ## 학생 질문
 "{message}"
 
-위 원칙을 지키면서 학생을 도와주세요. 정답은 절대 알려주지 마세요!"""
+**중요**: 힌트 사용한 빈칸/블록만 정답 설명 가능! 미사용 빈칸/블록 정답은 절대 금지!"""
 
         return prompt
 

@@ -39,13 +39,16 @@ const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
 interface WebSocketProviderProps {
   children: React.ReactNode;
+  disabled?: boolean;  // /chat 등 특정 페이지에서 WebSocket 비활성화
 }
 
 /**
  * WebSocket Provider
  * 앱 전체에서 WebSocket 연결을 공유하고 메시지를 관리
+ *
+ * @param disabled - true인 경우 WebSocket 연결을 시도하지 않음 (문제 풀이 집중 모드)
  */
-export function WebSocketProvider({ children }: WebSocketProviderProps) {
+export function WebSocketProvider({ children, disabled = false }: WebSocketProviderProps) {
   // 읽지 않은 메시지 수 (sender_id별)
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
@@ -81,7 +84,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, []);
 
-  // WebSocket 훅 사용
+  // WebSocket 훅 사용 (disabled=true면 자동 연결 안 함)
   const {
     isConnected,
     isConnecting,
@@ -91,11 +94,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   } = useWebSocket({
     onMessage: handleMessage,
     onConnect: () => {
-      console.log('WebSocket Provider: Connected');
+      if (!disabled) {
+        console.log('WebSocket Provider: Connected');
+      }
     },
     onDisconnect: () => {
-      console.log('WebSocket Provider: Disconnected');
+      if (!disabled) {
+        console.log('WebSocket Provider: Disconnected');
+      }
     },
+    autoConnect: !disabled,  // /chat 페이지 등에서는 WebSocket 비활성화
   });
 
   // 채팅 메시지 전송

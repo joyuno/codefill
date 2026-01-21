@@ -1007,6 +1007,7 @@ async def record_solve(
 
         # attempts 테이블에 기록 시도
         attempt_id_used = None
+        attempt_number_used = None  # ELO 계산용 시도 횟수 추적
         try:
             from uuid import UUID as UUIDType
 
@@ -1026,7 +1027,10 @@ async def record_solve(
                         # ✅ 추가 필드
                         "submitted_code": submission.submitted_code,
                         "time_spent": submission.time_spent,
-                        # ✅ 피드백 및 보너스 필드
+                        # ✅ 힌트 필드
+                        "hints_used": submission.hints_used or 0,
+                        "total_hints_requested": submission.hints_used or 0,
+                        # ✅ 피드백 및 보너스 필드 (피드백 에이전트 결과로 나중에 덮어씌워짐)
                         "difficulty_bonus": difficulty_bonus,
                         "feedback_grade": feedback_grade,
                         "feedback_data": feedback_data_json,
@@ -1040,7 +1044,14 @@ async def record_solve(
 
                     db.table("attempts").update(update_data).eq("id", submission.attempt_id).execute()
                     attempt_id_used = submission.attempt_id
-                    print(f"[RecordSolve] Updated existing attempt: {attempt_id_used}")
+                    # 기존 attempt에서 attempt_number 조회 (ELO 계산용)
+                    try:
+                        existing_attempt = db.table("attempts").select("attempt_number").eq("id", submission.attempt_id).single().execute()
+                        if existing_attempt.data:
+                            attempt_number_used = existing_attempt.data.get("attempt_number", 1)
+                    except Exception:
+                        attempt_number_used = 1
+                    print(f"[RecordSolve] Updated existing attempt: {attempt_id_used}, attempt_number={attempt_number_used}")
                 except Exception as e:
                     print(f"[RecordSolve] Failed to update existing attempt, will create new: {e}")
                     attempt_id_used = None
@@ -1082,14 +1093,16 @@ async def record_solve(
                     attempt_data["attempt_number"] = get_next_attempt_number(
                         db, str(user_id), base_problem_id
                     )
+                    attempt_number_used = attempt_data["attempt_number"]
                 else:
                     attempt_data["attempt_number"] = 1
+                    attempt_number_used = 1
                     print(f"[RecordSolve] WARNING: No base_problem_id resolved for problem_id={submission.problem_id}")
 
                 result = db.table("attempts").insert(attempt_data).execute()
                 if result.data and len(result.data) > 0:
                     attempt_id_used = result.data[0]["id"]
-                print(f"[RecordSolve] New attempt recorded: problem_id={submission.problem_id}, attempt_id={attempt_id_used}")
+                print(f"[RecordSolve] New attempt recorded: problem_id={submission.problem_id}, attempt_id={attempt_id_used}, attempt_number={attempt_number_used}")
 
             # attempt_details에 제출 기록 추가
             if attempt_id_used:
@@ -1288,8 +1301,9 @@ async def record_solve(
                     time_spent=submission.time_spent,
                     hints_used=submission.hints_used,
                     base_problem_id=base_problem_id,  # 중복 풀이 체크용
+                    attempt_number=attempt_number_used,  # 5회 초과 시 정답이어도 ELO 변화 없음
                 )
-                print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}, type={submission.problem_type}, base_problem_id={base_problem_id}")
+                print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}, type={submission.problem_type}, base_problem_id={base_problem_id}, attempt_number={attempt_number_used}")
 
                 # ============================================================
                 # 🚀 매 10문제마다 전체 스킬 프로필 재계산 (LLM 분석 포함)
@@ -1430,13 +1444,14 @@ async def record_solve(
                             "improvements": feedback_data.improvements,
                         }
 
-                        print(f"[RecordSolve] Updating attempt {attempt_id_used} with feedback_grade={feedback_data.grade}, score={avg_score}")
+                        print(f"[RecordSolve] Updating attempt {attempt_id_used} with feedback_grade={feedback_data.grade}, score={avg_score}, hints_used={submission.hints_used}")
                         update_result = db.table("attempts").update({
                             "feedback_grade": feedback_data.grade,
                             "feedback_data": feedback_data_json,
                             "score": avg_score,
+                            "total_hints_requested": submission.hints_used or 0,
                         }).eq("id", attempt_id_used).execute()
-                        print(f"[RecordSolve] Feedback update result: {update_result.data}")
+                        print(f"[RecordSolve] Feedback update result: {update_result.data}, count={len(update_result.data) if update_result.data else 0}")
                     except Exception as fb_update_err:
                         import traceback
                         print(f"[RecordSolve] Failed to update attempt with feedback: {fb_update_err}")
@@ -2106,6 +2121,7 @@ async def session_heartbeat(
 async def session_end(
     request: SessionEndRequest,
     user_id: Optional[UUID] = Depends(get_user_id_from_token_optional),
+    db=Depends(get_db),
 ):
     """
     세션 종료 - 완료/스킵/포기
@@ -2184,6 +2200,45 @@ async def session_end(
                 except Exception as mem_err:
                     print(f"[SessionEnd] Memory creation error (non-blocking): {mem_err}")
 
+                # 📉 ELO 감소 처리 (skip = 포기로 간주)
+                topics = session_metadata.get("topics", [])
+                if topics and len(topics) > 0:
+                    try:
+                        from ..services.feedback_service import get_feedback_service
+                        feedback_service = get_feedback_service()
+
+                        # attempt_number 조회 (base_problem_id 기반)
+                        attempt_number = 1
+                        base_problem_id = session_metadata.get("base_problem_id")
+                        if base_problem_id:
+                            try:
+                                attempt_count_result = db.table("attempts") \
+                                    .select("attempt_number") \
+                                    .eq("user_id", str(user_id)) \
+                                    .eq("base_problem_id", base_problem_id) \
+                                    .order("attempt_number", desc=True) \
+                                    .limit(1) \
+                                    .execute()
+                                if attempt_count_result.data:
+                                    attempt_number = attempt_count_result.data[0].get("attempt_number", 1)
+                            except Exception:
+                                pass
+
+                        await feedback_service.update_skill_profile(
+                            user_id=str(user_id),
+                            problem_topics=topics,
+                            difficulty=session_metadata.get("difficulty", "medium"),
+                            is_correct=False,  # skip = 오답 처리 → ELO 감소
+                            problem_type=session.problem_type,
+                            time_spent=result.get("time_spent", 0),
+                            hints_used=session.hints_used,
+                            base_problem_id=base_problem_id,
+                            attempt_number=attempt_number,
+                        )
+                        print(f"[SessionEnd] ELO decreased for skip: user={str(user_id)[:8]}, topics={topics}")
+                    except Exception as elo_err:
+                        print(f"[SessionEnd] ELO update error (non-blocking): {elo_err}")
+
         elif request.end_type == "abandon":
             result = await tracker.abandon_session(
                 session_id=request.session_id,
@@ -2222,6 +2277,46 @@ async def session_end(
                     print(f"[SessionEnd] Created memory for abandoned session: {request.session_id}")
                 except Exception as mem_err:
                     print(f"[SessionEnd] Memory creation error (non-blocking): {mem_err}")
+
+                # 📉 ELO 감소 처리 (abandon = 포기로 간주)
+                topics = session_metadata.get("topics", [])
+                if topics and len(topics) > 0:
+                    try:
+                        from ..services.feedback_service import get_feedback_service
+                        feedback_service = get_feedback_service()
+
+                        # attempt_number 조회 (base_problem_id 기반)
+                        attempt_number = 1
+                        base_problem_id = session_metadata.get("base_problem_id")
+                        if base_problem_id:
+                            try:
+                                attempt_count_result = db.table("attempts") \
+                                    .select("attempt_number") \
+                                    .eq("user_id", str(user_id)) \
+                                    .eq("base_problem_id", base_problem_id) \
+                                    .order("attempt_number", desc=True) \
+                                    .limit(1) \
+                                    .execute()
+                                if attempt_count_result.data:
+                                    attempt_number = attempt_count_result.data[0].get("attempt_number", 1)
+                            except Exception:
+                                pass
+
+                        await feedback_service.update_skill_profile(
+                            user_id=str(user_id),
+                            problem_topics=topics,
+                            difficulty=session_metadata.get("difficulty", "medium"),
+                            is_correct=False,  # abandon = 오답 처리 → ELO 감소
+                            problem_type=session.problem_type,
+                            time_spent=result.get("time_spent", 0),
+                            hints_used=session.hints_used,
+                            base_problem_id=base_problem_id,
+                            attempt_number=attempt_number,
+                        )
+                        print(f"[SessionEnd] ELO decreased for abandon: user={str(user_id)[:8]}, topics={topics}")
+                    except Exception as elo_err:
+                        print(f"[SessionEnd] ELO update error (non-blocking): {elo_err}")
+
         else:
             return SessionEndResponse(
                 success=False,

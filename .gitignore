@@ -70,3 +70,4 @@ __pycache__/
 venv/
 
 /generated/prisma
+screenshots/

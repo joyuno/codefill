@@ -16,6 +16,7 @@ import {
   User,
   Sparkles,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import type { GuidedStep, GuidedProblemData } from '@/lib/types';
 
 interface GuidedResponse {
@@ -329,9 +330,18 @@ export function GuidedPractice({
             className="flex gap-2 items-start p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20"
           >
             <Lightbulb className="h-5 w-5 text-yellow-600 shrink-0" />
-            <p className="text-sm text-yellow-800 dark:text-yellow-200">
-              {currentStep.hint}
-            </p>
+            <div className="text-sm text-yellow-800 dark:text-yellow-200">
+              <ReactMarkdown
+                components={{
+                  strong: ({ children }) => (
+                    <strong className="font-bold text-yellow-900 dark:text-yellow-100">{children}</strong>
+                  ),
+                  p: ({ children }) => <span className="inline">{children}</span>,
+                }}
+              >
+                {currentStep.hint}
+              </ReactMarkdown>
+            </div>
           </motion.div>
         )}
 

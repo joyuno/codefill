@@ -370,8 +370,24 @@ class StatsCacheService:
             except Exception as e:
                 logger.error(f"[StatsCache] Failed to flush interactions: {e}")
 
+    def _calculate_required_xp(self, level: int) -> int:
+        """Calculate required XP for next level."""
+        return level * 100 + (level - 1) * 50
+
+    def _calculate_level_from_total_xp(self, total_xp: int) -> int:
+        """Calculate level from total XP."""
+        level = 1
+        accumulated_xp = 0
+        while True:
+            required = self._calculate_required_xp(level)
+            if accumulated_xp + required > total_xp:
+                break
+            accumulated_xp += required
+            level += 1
+        return level
+
     async def _apply_stats_delta(self, user_id: str, delta: UserStatsDelta) -> bool:
-        """user_stats에 delta 적용"""
+        """user_stats에 delta 적용 (레벨업 포함)"""
         try:
             # RPC 호출로 atomic update
             self.db.rpc("increment_user_stats", {
@@ -386,20 +402,33 @@ class StatsCacheService:
         except Exception as e:
             # RPC 없으면 직접 업데이트 (fallback)
             try:
-                # 현재 값 조회
+                # 현재 값 조회 (level 포함)
                 result = self.db.table("user_stats").select(
-                    "total_xp, problems_solved, hints_used, seeds"
+                    "total_xp, level, problems_solved, hints_used, seeds"
                 ).eq("user_id", user_id).single().execute()
 
                 if result.data:
                     current = result.data
-                    self.db.table("user_stats").update({
-                        "total_xp": current.get("total_xp", 0) + delta.xp_delta,
+                    new_total_xp = current.get("total_xp", 0) + delta.xp_delta
+                    current_level = current.get("level", 1)
+
+                    # 레벨업 체크
+                    new_level = self._calculate_level_from_total_xp(new_total_xp)
+
+                    update_data = {
+                        "total_xp": new_total_xp,
                         "problems_solved": current.get("problems_solved", 0) + delta.problems_solved_delta,
                         "hints_used": (current.get("hints_used") or 0) + delta.hints_used_delta,
                         "seeds": current.get("seeds", 0) + delta.seeds_delta,
                         "updated_at": datetime.now().isoformat(),
-                    }).eq("user_id", user_id).execute()
+                    }
+
+                    # 레벨이 변경되면 업데이트
+                    if new_level != current_level:
+                        update_data["level"] = new_level
+                        logger.info(f"[StatsCache] Level up! user={user_id[:8]}... {current_level} -> {new_level}")
+
+                    self.db.table("user_stats").update(update_data).eq("user_id", user_id).execute()
                     return True
             except Exception as inner_e:
                 logger.error(f"[StatsCache] Failed to apply stats delta: {inner_e}")

@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { HelpCircle, ChevronRight, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
 
 interface HintPopoverProps {
   hints: string[];
@@ -56,7 +57,24 @@ export function HintPopover({ hints, blankNumber }: HintPopoverProps) {
                   <span className="text-xs text-muted-foreground">Level {index + 1} Hint</span>
                 </div>
                 {index < revealedLevel ? (
-                  <p className="mt-2">{hint}</p>
+                  <div className="mt-2 text-sm leading-relaxed">
+                    <ReactMarkdown
+                      components={{
+                        // **bold** → 굵고 약간 큰 폰트로 강조
+                        strong: ({ children }) => (
+                          <strong className="font-bold text-primary text-[0.95em]">
+                            {children}
+                          </strong>
+                        ),
+                        // 기본 p 태그 스타일
+                        p: ({ children }) => (
+                          <span className="inline">{children}</span>
+                        ),
+                      }}
+                    >
+                      {hint}
+                    </ReactMarkdown>
+                  </div>
                 ) : (
                   <p className="mt-2 text-muted-foreground">Click reveal to see hint</p>
                 )}

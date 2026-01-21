@@ -68,6 +68,8 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
   - 사용자가 "끝"을 알 수 있도록 마지막 줄은 항상 고정!
 - **blocks**: 사용자가 정렬해야 할 핵심 로직만 포함
   - 각 블록에 `indent` (들여쓰기 레벨, 0부터 시작) 포함 필수!
+  - ⚠️ **실제 코드 들여쓰기에 정확히 맞춰야 함!**
+  - 원본 솔루션 코드에서 해당 블록의 들여쓰기 레벨을 그대로 사용
 
 ---
 
@@ -153,8 +155,10 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
 
 **중요**:
 - blocks의 `id`는 정답 순서입니다. id: 1이 먼저, id: 2가 다음 순서.
-- `indent`는 들여쓰기 레벨 (Python: 4칸 기준, 0=루트, 1=함수내부, 2=중첩블록)
-- Python `class Solution`의 메서드 내부 코드는 보통 `indent: 2`
+- `indent`는 **원본 솔루션 코드의 실제 들여쓰기 레벨**과 정확히 일치해야 함!
+  - Python: 4칸 = 1레벨 (탭이나 스페이스 4개당 1 증가)
+  - 예: 함수 밖 = 0, 함수 안 = 1, if 안 = 2, 중첩 for 안 = 3, ...
+- ⚠️ 원본 코드를 보고 정확한 레벨을 세서 입력하세요!
 
 ---
 
@@ -193,6 +197,12 @@ class Solution:
   "fixed_end": "        return solve(h, m)"
 }
 ```
+
+**indent 계산 (위 예시 기준)**:
+- class Solution 안 (indent 1)
+- def maxLevel 안 (indent 2)
+- def solve 안 (indent 3) ← 블록들의 기본 위치
+- if 내부 (indent 4) ← return 0
 
 ### 예시 2: 기본 입출력 (easy - Python)
 
@@ -391,17 +401,14 @@ for _ in range(T):
 PUZZLE_DIFFICULTY_CONFIG = {
     "easy": {
         "block_count": (5, 8),
-        "max_indentation": 2,
         "max_blocks": 20
     },
     "medium": {
         "block_count": (8, 12),
-        "max_indentation": 3,
         "max_blocks": 20
     },
     "hard": {
         "block_count": (12, 15),
-        "max_indentation": 4,
         "max_blocks": 20
     }
 }
