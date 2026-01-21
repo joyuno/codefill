@@ -13,6 +13,7 @@ export {
   type RecoveryRequiredResponse,
   type RecoverData,
   type RecoverOAuthData,
+  type BannedResponse,
 } from './auth';
 export {
   problemsApi,
