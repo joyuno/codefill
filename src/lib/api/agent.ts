@@ -743,4 +743,37 @@ export const agentApi = {
       callbacks.onError?.(error instanceof Error ? error.message : 'Unknown error');
     }
   },
+
+  /**
+   * Generate Code (Streaming wrapper)
+   * 실시간 상태 업데이트를 제공하는 코드 생성
+   */
+  async generateCodeStream(
+    request: CodeGenerationRequest,
+    callbacks: {
+      onStatus?: (status: string, message: string) => void;
+      onChunk?: (content: string) => void;
+      onComplete?: (result: CodeGenerationResponse) => void;
+      onError?: (error: string) => void;
+    }
+  ): Promise<void> {
+    try {
+      callbacks.onStatus?.('starting', '코드 생성을 시작합니다...');
+
+      callbacks.onStatus?.('analyzing', '문제를 분석하고 있어요...');
+
+      callbacks.onStatus?.('generating', '코드를 생성하고 있어요...');
+
+      const result = await this.generateCode(request);
+
+      if (result.code) {
+        callbacks.onChunk?.(result.code);
+      }
+
+      callbacks.onStatus?.('finalizing', '마무리하고 있어요...');
+      callbacks.onComplete?.(result);
+    } catch (error) {
+      callbacks.onError?.(error instanceof Error ? error.message : 'Unknown error');
+    }
+  },
 };
