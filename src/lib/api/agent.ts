@@ -760,6 +760,7 @@ export const agentApi = {
     callbacks: {
       onStatus?: (status: string, message: string) => void;
       onChunk?: (content: string) => void;
+      onResult?: (result: BaseProblemInfo) => void;
       onComplete?: (result: CodeGenerationResponse) => void;
       onError?: (error: string) => void;
     }
@@ -791,6 +792,18 @@ export const agentApi = {
       }
 
       callbacks.onStatus?.('finalizing', '마무리하고 있어요...');
+
+      // Convert CodeGenerationResponse to BaseProblemInfo for onResult callback
+      const baseProblemInfo: BaseProblemInfo = {
+        id: `generated-${Date.now()}`,
+        name: result.title,
+        title: result.title,
+        difficulty: result.difficulty,
+        description: result.description,
+        question: result.description,
+        topics: result.topics,
+      };
+      callbacks.onResult?.(baseProblemInfo);
       callbacks.onComplete?.(result);
     } catch (error) {
       callbacks.onError?.(error instanceof Error ? error.message : 'Unknown error');
