@@ -31,7 +31,7 @@ const FARM_ASSETS = {
 
 export type FarmerAction = 'idle' | 'walk' | 'farm' | 'water' | 'harvest' | 'sleep';
 export type Direction = 'down' | 'up' | 'left' | 'right';
-export type CropStage = 0 | 1 | 2 | 3 | 4;
+export type CropStage = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type CropVariety = 'carrot' | 'tomato' | 'corn' | 'strawberry' | 'potato' | 'wheat' | 'pumpkin' | 'cabbage' | 'onion' | 'radish';
 
 // ============================================
