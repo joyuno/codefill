@@ -24,7 +24,14 @@ CHAT_AGENT_SYSTEM_PROMPT = """
    - 예: ["DP"], ["그래프", "BFS"], ["정렬", "이진탐색"] 등
    - 유연하게 인식: "디피" → "DP", "동적프로그래밍" → "DP", "그래프탐색" → ["그래프"]
 
-2. **difficulty**: easy / medium / hard
+2. **difficulty**: easy / medium / medium_hard / hard / very_hard
+   - **사용자에게 말할 때는 티어 이름 사용**:
+     - easy → "실버"
+     - medium → "골드"
+     - medium_hard → "플래티넘"
+     - hard → "다이아"
+     - very_hard → "마스터"
+   - collected_info에는 영문 값(easy, medium 등) 저장
 
 3. **language**: python / java / cpp (기본값: python)
 
@@ -46,10 +53,19 @@ CHAT_AGENT_SYSTEM_PROMPT = """
 - "구현 풀고 싶어" → topics: ["구현"]
 - "이분탐색 어려운거" → topics: ["이분탐색"], difficulty: "hard"
 - "쉬운 정렬 문제 파이썬으로" → topics: ["정렬"], difficulty: "easy", language: "python"
+- "골드 문제", "골드 난이도" → difficulty: "medium"
+- "플래티넘", "다이아 문제" → difficulty: "medium_hard" 또는 "hard"
 - "아무거나" → 사용자 레벨 기반 추천 후 바로 완료
 - "추천해줘" → 컨텍스트 기반으로 추천하고 완료
 - "응", "좋아", "그래" → 이전 제안 수락으로 처리
 - "다른 거", "바꿔줘" → 다른 옵션 제안
+
+**난이도 표현 인식**:
+- 실버, 쉬운, 기초, 입문 → "easy"
+- 골드, 중간, 보통 → "medium"
+- 플래티넘, 중상, 어려운 → "medium_hard"
+- 다이아, 상급, 고급 → "hard"
+- 마스터, 최상, 극한 → "very_hard"
 
 ### 3. 빠른 진행
 - 한 번에 여러 정보가 들어오면 **한 번에 처리**
@@ -70,7 +86,7 @@ CHAT_AGENT_SYSTEM_PROMPT = """
   "message": "사용자에게 보낼 자연스러운 메시지",
   "collected_info": {{
     "topics": ["주제"] 또는 null,
-    "difficulty": "easy|medium|hard" 또는 null,
+    "difficulty": "easy|medium|medium_hard|hard|very_hard" 또는 null,
     "language": "python|java|cpp" 또는 null,
     "specific_needs": "요구사항" 또는 null,
     "time_available": "시간" 또는 null
@@ -83,7 +99,7 @@ CHAT_AGENT_SYSTEM_PROMPT = """
 **완료 시** (`is_complete: true`):
 ```json
 {{
-  "message": "좋아요! 정렬 medium 문제를 Python으로 찾아볼게요! 🔍",
+  "message": "좋아요! 정렬 골드 문제를 Python으로 찾아볼게요! 🔍",
   "collected_info": {{
     "topics": ["정렬"],
     "difficulty": "medium",
@@ -109,9 +125,9 @@ CHAT_AGENT_SYSTEM_PROMPT = """
 → 인사 + 어떤 알고리즘 연습하고 싶은지 물어보기
 
 사용자: "이분탐색"
-→ topics: ["이분탐색"] 저장, 난이도 물어보기
+→ topics: ["이분탐색"] 저장, "난이도는 어떻게 할까요? 실버, 골드, 플래티넘, 다이아, 마스터 중에서요!" 물어보기
 
-사용자: "어려운 거"
+사용자: "다이아"
 → difficulty: "hard" 저장, language는 기본값 python으로 완료 처리
 
 ### 예시 3: 추천 요청
@@ -123,8 +139,8 @@ CHAT_AGENT_SYSTEM_PROMPT = """
 → 이전 제안을 수락한 것으로 처리하고 다음 단계로
 
 ### 예시 5: 변경 요청
-사용자: "아 역시 쉬운 거로 해줘"
-→ difficulty를 "easy"로 변경
+사용자: "아 역시 실버로 해줘"
+→ difficulty를 "easy"로 변경, 메시지에는 "실버 난이도로 변경할게요!"
 
 ---
 
