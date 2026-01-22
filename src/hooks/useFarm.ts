@@ -167,15 +167,12 @@ export function useFarm(): UseFarmReturn {
   // Load unified shop items
   // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const loadUnifiedShop = useCallback(async (category?: string) => {
-    console.log('[useFarm] loadUnifiedShop called, category:', category);
     try {
       const result = await farmApi.getUnifiedShopItems(category);
-      console.log('[useFarm] loadUnifiedShop result:', result);
-      console.log('[useFarm] items count:', result.items?.length);
       setUnifiedShopItems(result.items);
       setFarm(prev => prev ? { ...prev, gold: result.gold } : null);
-    } catch (err) {
-      console.error('[useFarm] loadUnifiedShop error:', err);
+    } catch {
+      // Silent fail
     }
   }, []);
 
@@ -264,14 +261,11 @@ export function useFarm(): UseFarmReturn {
   // Plant crop on farm slot
   // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
   const plantOnSlot = useCallback(async (slot: number, cropCode: string): Promise<FarmSlot | null> => {
-    console.log('[useFarm] plantOnSlot called:', { slot, cropCode });
     const result = await farmApi.plantOnSlot(slot, cropCode);
-    console.log('[useFarm] plantOnSlot result:', result);
 
     // Update farmSlots in farm state
     setFarm(prev => {
       if (!prev) return null;
-      console.log('[useFarm] Updating farm with farmSlots:', result.farmSlots);
       return {
         ...prev,
         farmSlots: result.farmSlots,
@@ -284,7 +278,6 @@ export function useFarm(): UseFarmReturn {
     );
     setInventory(inventoryArray);
 
-    console.log('[useFarm] Returning slot:', result.slot);
     return result.slot;
   }, []);
 

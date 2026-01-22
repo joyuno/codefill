@@ -115,9 +115,7 @@ export default function FarmPage() {
 
   // 캐릭터 미생성 시 리다이렉트
   useEffect(() => {
-    console.log('[Farm] Redirect check:', { isLoading, hasFarm: !!farm, characterCreated: farm?.characterCreated });
     if (!isLoading && farm && !farm.characterCreated) {
-      console.warn('[Farm] Redirecting - character not created');
       router.push('/');
     }
   }, [isLoading, farm, router]);
@@ -145,7 +143,6 @@ export default function FarmPage() {
       const phaserHasChanges = farmGameHandle.hasPlacementChanges();
       setHasPlacementChanges(prev => {
         if (prev !== phaserHasChanges) {
-          console.log('[Farm] Syncing hasPlacementChanges:', phaserHasChanges);
           return phaserHasChanges;
         }
         return prev;
@@ -222,7 +219,6 @@ export default function FarmPage() {
       // ref에서 최신 핸들 가져오기 (클로저 문제 방지)
       const handle = farmGameHandleRef.current;
       if (!handle) {
-        console.warn('[PlaceItem] Handle not ready yet');
         return null;
       }
 
@@ -230,7 +226,6 @@ export default function FarmPage() {
       const shopItems = unifiedShopItemsRef.current || [];
       const shopItem = shopItems.find(item => item.code === itemCode);
       if (!shopItem) {
-        console.warn('[PlaceItem] Item not found:', itemCode, 'Available:', shopItems.length);
         return null;
       }
 
@@ -244,8 +239,7 @@ export default function FarmPage() {
       }
 
       return tempId;
-    } catch (err) {
-      console.error('[PlaceItem] Error:', err);
+    } catch {
       return null;
     }
   }, []);
@@ -305,7 +299,6 @@ export default function FarmPage() {
 
   // 배치 모드 진입 (E키)
   const handleEnterPlacementMode = useCallback(async () => {
-    console.log('[Farm] Entering placement mode');
     setIsPlacementMode(true);
     setSelectedSeedCode(null);
     setHasPlacementChanges(false);
@@ -320,51 +313,35 @@ export default function FarmPage() {
 
   // 배치 모드 종료 (ESC키) - 저장하지 않고 변경사항 취소
   const handleExitPlacementMode = useCallback(() => {
-    console.log('[Farm] Exiting placement mode', {
-      hasChanges: hasPlacementChanges,
-      handleReady: !!farmGameHandle,
-    });
-
     // 변경 사항이 있으면 되돌리기
     if (farmGameHandle) {
       try {
         farmGameHandle.revertPlacementChanges();
-        console.log('[Farm] Reverted placement changes on exit');
-      } catch (err) {
-        console.error('[Farm] Failed to revert changes:', err);
+      } catch {
+        // Silent fail
       }
-    } else {
-      console.warn('[Farm] Cannot revert - handle not ready');
     }
 
     setIsPlacementMode(false);
     setSelectedPlacementCode(null);
     setHasPlacementChanges(false);
-  }, [hasPlacementChanges, farmGameHandle]);
+  }, [farmGameHandle]);
 
   // 배치 저장 (S키 또는 저장 버튼)
   const handleSavePlacement = useCallback(async () => {
-    console.log('[Farm] Saving placement changes...');
     if (isSavingPlacement) {
-      console.log('[Farm] Already saving, skipping');
       return;
     }
 
     const saved = await savePlacementChanges();
     if (saved) {
       setHasPlacementChanges(false);
-      console.log('[Farm] Placement saved successfully');
     }
   }, [savePlacementChanges, isSavingPlacement]);
 
   // 배치 변경 취소 (취소 버튼)
   const handleCancelPlacement = useCallback(() => {
-    console.log('[Farm] Canceling placement changes', {
-      handleReady: !!farmGameHandle,
-    });
-
     if (!farmGameHandle) {
-      console.warn('[Farm] Cannot cancel - handle not ready');
       addToast('아직 준비 중입니다. 잠시 후 다시 시도하세요.', 'error');
       return;
     }
@@ -373,8 +350,7 @@ export default function FarmPage() {
       farmGameHandle.revertPlacementChanges();
       setHasPlacementChanges(false);
       addToast('변경 사항이 취소되었습니다', 'success');
-    } catch (err) {
-      console.error('[Farm] Failed to cancel changes:', err);
+    } catch {
       addToast('취소 중 오류가 발생했습니다', 'error');
     }
   }, [farmGameHandle, addToast]);
@@ -410,7 +386,6 @@ export default function FarmPage() {
 
   // 캐릭터 미생성
   if (!farm?.characterCreated) {
-    console.warn('[Farm] Showing redirect screen - farm:', farm);
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-green-800">
         <Sprout className="w-12 h-12 text-white animate-bounce" />

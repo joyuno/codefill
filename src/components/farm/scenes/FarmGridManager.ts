@@ -96,8 +96,6 @@ export class FarmGridManager {
       ? Array.from(neededCrops)
       : ['carrot', 'tomato', 'radish']; // 기본 작물
 
-    console.log('[FarmGridManager] Loading crops:', cropsToLoad.length, '/', Object.keys(CROPS).length);
-
     cropsToLoad.forEach(cropCode => {
       const crop = CROPS[cropCode];
       if (!crop) return;
@@ -142,7 +140,6 @@ export class FarmGridManager {
       });
 
       this.scene.load.once('complete', () => {
-        console.log('[FarmGridManager] Loaded crop asset:', cropCode);
         resolve();
       });
 
@@ -346,11 +343,8 @@ export class FarmGridManager {
    * 특정 슬롯 업데이트
    */
   updateSlot(slot: number, slotData: FarmSlot): void {
-    console.log('[FarmGridManager] updateSlot:', { slot, slotData });
-
     const sprites = this.slotSprites.get(slot);
     if (!sprites) {
-      console.warn('[FarmGridManager] No sprites found for slot:', slot);
       return;
     }
 
@@ -376,22 +370,18 @@ export class FarmGridManager {
     // 새 작물 스프라이트
     if (slotData.cropCode) {
       const cropConfig = getCropConfig(slotData.cropCode);
-      console.log('[FarmGridManager] cropConfig:', cropConfig);
 
       if (cropConfig) {
         const spriteKey = getCropSpriteKey(slotData.cropCode);
         const textureExists = this.scene.textures.exists(spriteKey);
-        console.log('[FarmGridManager] texture check:', { spriteKey, textureExists });
 
         if (!textureExists) {
-          console.error('[FarmGridManager] Texture not found:', spriteKey);
           return;
         }
 
         // stage 그대로 사용 (0 = 씨앗)
         const stage = slotData.stage;
         const frame = getCropFrame(slotData.cropCode, stage);
-        console.log('[FarmGridManager] Creating crop sprite:', { worldX, worldY, spriteKey, frame, stage });
 
         sprites.crop = this.scene.add.sprite(
           worldX,
@@ -401,17 +391,13 @@ export class FarmGridManager {
         );
         const depth = getCropDepth(worldY, MAP_HEIGHT);
         sprites.crop.setDepth(depth);
-        console.log('[FarmGridManager] Crop sprite created with depth:', depth);
 
         // 성장 중인 경우 타이머 표시
         if (stage < 6 && slotData.plantedAt && slotData.growTimeSeconds) {
           const timerResult = this.createTimerIndicator(worldX, worldY, slotData);
           sprites.timerContainer = timerResult.container;
           sprites.timerProgress = timerResult.progress;
-          console.log('[FarmGridManager] Timer indicator created');
         }
-      } else {
-        console.error('[FarmGridManager] No crop config for:', slotData.cropCode);
       }
     }
   }
