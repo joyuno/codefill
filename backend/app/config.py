@@ -5,10 +5,14 @@ import os
 
 # .env 파일 경로 결정
 # 1. 환경변수 ENV_FILE_PATH가 있으면 사용
-# 2. 없으면 config.py 기준 상위 디렉토리
+# 2. .env.local이 있으면 사용 (로컬 개발용)
+# 3. 없으면 .env 사용
 _env_file = os.getenv("ENV_FILE_PATH")
 if not _env_file:
-    _env_file = str(Path(__file__).resolve().parent.parent / ".env")
+    _base_dir = Path(__file__).resolve().parent.parent
+    _env_local = _base_dir / ".env.local"
+    _env_default = _base_dir / ".env"
+    _env_file = str(_env_local if _env_local.exists() else _env_default)
 
 
 class Settings(BaseSettings):

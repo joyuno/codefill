@@ -73,3 +73,6 @@ venv/
 /generated/prisma
 screenshots/
 
+
+# Backend .env files
+backend/.env.local

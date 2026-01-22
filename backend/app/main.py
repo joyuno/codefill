@@ -1,3 +1,12 @@
+# .env 먼저 로드 (다른 import 전에!)
+# .env.local이 있으면 우선 사용 (로컬 개발용)
+from pathlib import Path
+from dotenv import load_dotenv
+_base_dir = Path(__file__).resolve().parent.parent
+_env_local = _base_dir / ".env.local"
+_env_default = _base_dir / ".env"
+load_dotenv(_env_local if _env_local.exists() else _env_default)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager

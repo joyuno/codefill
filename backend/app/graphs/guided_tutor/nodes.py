@@ -25,6 +25,112 @@ from ...prompts import (
 )
 
 
+# ============================================================
+# Helper Functions for Initial Guide Parsing
+# ============================================================
+
+def _parse_concepts(concept_text: str) -> List[Dict[str, str]]:
+    """
+    개념 설명 텍스트를 구조화된 형태로 파싱
+
+    프론트엔드 InitialGuideData.conceptsExplanation 형식:
+    [{ concept, explanation, whyNeeded }]
+    """
+    if not concept_text:
+        return []
+
+    concepts = []
+    lines = concept_text.strip().split('\n')
+
+    current_concept = None
+    current_explanation = []
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # "- **개념명**: 설명" 또는 "**개념명**: 설명" 형식
+        if line.startswith('- **') or line.startswith('**'):
+            # 이전 개념 저장
+            if current_concept:
+                concepts.append({
+                    "concept": current_concept,
+                    "explanation": ' '.join(current_explanation),
+                    "whyNeeded": "문제 풀이에 필요한 핵심 개념입니다.",
+                })
+
+            # 새 개념 파싱
+            line = line.lstrip('- ')
+            if '**' in line:
+                parts = line.split('**')
+                if len(parts) >= 2:
+                    current_concept = parts[1].strip().rstrip(':')
+                    rest = ''.join(parts[2:]).lstrip(':').strip()
+                    current_explanation = [rest] if rest else []
+                else:
+                    current_concept = line.replace('**', '').strip()
+                    current_explanation = []
+            else:
+                current_concept = line
+                current_explanation = []
+        else:
+            # 설명 계속
+            current_explanation.append(line)
+
+    # 마지막 개념 저장
+    if current_concept:
+        concepts.append({
+            "concept": current_concept,
+            "explanation": ' '.join(current_explanation),
+            "whyNeeded": "문제 풀이에 필요한 핵심 개념입니다.",
+        })
+
+    # 파싱 실패 시 전체를 하나의 개념으로
+    if not concepts and concept_text:
+        concepts.append({
+            "concept": "핵심 개념",
+            "explanation": concept_text,
+            "whyNeeded": "문제 풀이에 필요한 핵심 개념입니다.",
+        })
+
+    return concepts
+
+
+def _parse_flow(approach_text: str) -> List[str]:
+    """
+    접근법 텍스트를 단계별 리스트로 파싱
+
+    프론트엔드 InitialGuideData.flowOverview 형식:
+    string[]
+    """
+    if not approach_text:
+        return []
+
+    steps = []
+    lines = approach_text.strip().split('\n')
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # 번호, 불릿 제거
+        if line[0].isdigit():
+            # "1. 단계" 또는 "1) 단계" 형식
+            for sep in ['. ', ') ', ': ']:
+                if sep in line:
+                    line = line.split(sep, 1)[-1].strip()
+                    break
+        elif line.startswith('- ') or line.startswith('* '):
+            line = line[2:].strip()
+
+        if line:
+            steps.append(line)
+
+    return steps if steps else [approach_text]
+
+
 async def retrieve_context_node(state: AgenticRAGState) -> Dict[str, Any]:
     """
     문제 관련 컨텍스트 검색 (RAG)
@@ -439,34 +545,44 @@ async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
         title = problem_context.get('title', '문제')
         topics = problem_context.get('topics', [])
 
-        # variables_guide 포맷팅
-        variables_text = ""
+        # variables_guide 포맷팅 (프론트엔드 InitialGuideData 형식)
+        variables_list = []
         if variables_guide:
             if isinstance(variables_guide, dict):
-                var_items = []
                 for var_name, var_info in variables_guide.items():
                     if isinstance(var_info, dict):
-                        var_items.append(f"- `{var_name}`: {var_info.get('purpose', var_info.get('description', ''))}")
+                        variables_list.append({
+                            "suggestedName": var_name,
+                            "role": var_info.get('purpose', var_info.get('description', var_info.get('role', ''))),
+                            "type": var_info.get('type', 'any'),
+                            "initialValue": var_info.get('initialValue', var_info.get('initial_value', '')),
+                            "explanation": var_info.get('explanation', ''),
+                        })
                     else:
-                        var_items.append(f"- `{var_name}`: {var_info}")
-                if var_items:
-                    variables_text = "\n\n**📦 사용할 변수들:**\n" + "\n".join(var_items)
+                        variables_list.append({
+                            "suggestedName": var_name,
+                            "role": str(var_info),
+                            "type": "any",
+                            "initialValue": "",
+                            "explanation": "",
+                        })
 
-        message = (
-            f"**{title}** 문제를 함께 풀어볼게요! 🎯\n\n"
-            f"**💡 핵심 개념:**\n{concept_explanation}\n\n"
-            f"**🛠️ 문제 접근법:**\n{approach_guide}"
-            f"{variables_text}\n\n"
-            "준비되셨나요? 먼저 무엇부터 시작해볼까요?"
+        # response에는 간단한 인사말만 (핵심개념은 initial_guide에만 포함)
+        simple_message = (
+            f"안녕하세요! **{title}** 문제를 함께 풀어볼게요! 🎯\n\n"
+            "위의 '학습 가이드 보기'를 펼쳐서 핵심 개념과 접근 방법을 확인해보세요.\n\n"
+            "준비되셨나요? 궁금한 점이 있으면 질문해주세요!"
         )
 
         return {
-            "response": message,
+            "response": simple_message,
             "initial_guide": {
-                "message": message,
-                "concept_explanation": concept_explanation,
-                "approach_guide": approach_guide,
-                "variables_guide": variables_guide,
+                "conceptsExplanation": _parse_concepts(concept_explanation),
+                "flowOverview": _parse_flow(approach_guide),
+                "variablesGuide": {
+                    "totalCount": len(variables_list),
+                    "variables": variables_list,
+                },
             },
             "is_initial_guide": True,
             "student_progress": {
@@ -512,16 +628,29 @@ async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
         # JSON 파싱
         try:
             result = json.loads(content)
-            message = result.get("message", content)
         except json.JSONDecodeError:
-            message = content
+            result = {}
 
+        title = problem_context.get('title', '문제')
+
+        # response에는 간단한 인사말만
+        simple_message = (
+            f"안녕하세요! **{title}** 문제를 함께 풀어볼게요! 🎯\n\n"
+            "위의 '학습 가이드 보기'를 펼쳐서 핵심 개념과 접근 방법을 확인해보세요.\n\n"
+            "준비되셨나요? 궁금한 점이 있으면 질문해주세요!"
+        )
+
+        # initial_guide는 프론트엔드 형식에 맞춤
         return {
-            "response": message,
-            "initial_guide": result if isinstance(result, dict) else {"message": content},
+            "response": simple_message,
+            "initial_guide": {
+                "conceptsExplanation": result.get("conceptsExplanation", []),
+                "flowOverview": result.get("flowOverview", []),
+                "variablesGuide": result.get("variablesGuide", {"totalCount": 0, "variables": []}),
+            },
             "is_initial_guide": True,
             "student_progress": {
-                "understanding_score": 0.1,  # 시작
+                "understanding_score": 0.1,
                 "concepts_mastered": [],
                 "concepts_struggling": [],
                 "current_focus": flow[0] if flow else (concepts[0] if concepts else ""),
@@ -532,11 +661,21 @@ async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
 
     except Exception as e:
         print(f"[GuidedTutor:InitialGuide] Error: {e}")
+        title = problem_context.get('title', '문제')
+        topics = problem_context.get('topics', ['프로그래밍'])
+
         # 에러 시 기본 안내
         return {
-            "response": f"안녕하세요! **{problem_context.get('title', '문제')}**를 함께 풀어볼게요.\n\n"
-                       f"이 문제에서는 {', '.join(problem_context.get('topics', ['프로그래밍']))} 개념을 사용해요.\n\n"
-                       "준비되셨나요? 먼저 무엇부터 해야 할지 생각해볼까요?",
+            "response": f"안녕하세요! **{title}** 문제를 함께 풀어볼게요! 🎯\n\n"
+                       "준비되셨나요? 궁금한 점이 있으면 질문해주세요!",
+            "initial_guide": {
+                "conceptsExplanation": [
+                    {"concept": topic, "explanation": f"{topic} 개념을 활용합니다.", "whyNeeded": "문제 풀이에 필요합니다."}
+                    for topic in topics
+                ],
+                "flowOverview": ["문제 이해하기", "코드 작성하기", "테스트하기"],
+                "variablesGuide": {"totalCount": 0, "variables": []},
+            },
             "is_initial_guide": True,
             "student_progress": {
                 "understanding_score": 0.1,
