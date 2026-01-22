@@ -2,7 +2,7 @@ name: Deploy to AWS
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]  # dev 제외 - 아직 배포 안함
 
 env:
   AWS_REGION: ap-northeast-2
