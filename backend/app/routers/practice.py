@@ -2635,7 +2635,7 @@ async def guided_tutor_chat(
     try:
         # 1. problems_guided에서 학습 구조 가져오기 (base_problem_id 사용)
         guided_result = db.table("problems_guided")\
-            .select("id, base_problem_id, language, concepts, flow, checkpoints")\
+            .select("id, base_problem_id, language, concept_explanation, approach_guide, check_points, starter_code, variables_guide")\
             .eq("id", request.problem_id)\
             .limit(1)\
             .execute()
@@ -2643,7 +2643,7 @@ async def guided_tutor_chat(
         # UUID로 못 찾으면 base_problem_id로 시도
         if not guided_result.data:
             guided_result = db.table("problems_guided")\
-                .select("id, base_problem_id, language, concepts, flow, checkpoints")\
+                .select("id, base_problem_id, language, concept_explanation, approach_guide, check_points, starter_code, variables_guide")\
                 .eq("base_problem_id", request.problem_id)\
                 .limit(1)\
                 .execute()
@@ -2680,9 +2680,11 @@ async def guided_tutor_chat(
             "language": language,
             "topics": base_problem.get("tags", []),
             # problems_guided 학습 구조
-            "concepts": guided_data.get("concepts", []),
-            "flow": guided_data.get("flow", []),
-            "checkpoints": guided_data.get("checkpoints", []),
+            "concept_explanation": guided_data.get("concept_explanation", ""),
+            "approach_guide": guided_data.get("approach_guide", ""),
+            "check_points": guided_data.get("check_points", []),
+            "starter_code": guided_data.get("starter_code", ""),
+            "variables_guide": guided_data.get("variables_guide", {}),
         }
 
         # 5. 튜터 그래프 실행
@@ -2691,7 +2693,7 @@ async def guided_tutor_chat(
             message=request.message,
             problem_context=problem_context,
             solution_code=solution_code,
-            key_concepts=guided_data.get("concepts", []),
+            key_concepts=base_problem.get("tags", []),  # tags를 key_concepts로 사용
             conversation_history=request.conversation_history or [],
             session_id=request.session_id,
         )
