@@ -5,8 +5,10 @@ Problem Solving Intent Classification Node
 """
 from typing import Dict, Any
 from ..solving_state import SolvingState, SolvingIntentResult, SOLVING_INTENT_TO_NODE
+from ...services.langsmith_tracker import track_intent_node
 
 
+@track_intent_node("classify_solving_intent", tags=["solving", "intent"])
 async def classify_solving_intent(state: SolvingState) -> Dict[str, Any]:
     """
     문제 풀이 중 의도를 분류합니다.

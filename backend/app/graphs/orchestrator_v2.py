@@ -62,6 +62,7 @@ from ..services.problem_save import get_problem_save_service
 from ..services.history_refiner import get_history_refiner
 from ..services.edge_case_logger import edge_case_logger
 from ..tools.intent_tools import intent_tool, IntentCategory, ActionType, MultiIntentResult
+from ..services.langsmith_tracker import track_orchestrator_method
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ class ChatOrchestratorV2:
             logger.error(f"[Orchestrator] Failed to initialize checkpointer: {e}")
             self._initialized = True  # 실패해도 진행 (fallback)
 
+    @track_orchestrator_method("process", tags=["main", "entry"])
     async def process(
         self,
         message: str,
@@ -434,6 +436,7 @@ class ChatOrchestratorV2:
             session_state=session_state,
         )
 
+    @track_orchestrator_method("_process_info_collection", tags=["collection", "graph"])
     async def _process_info_collection(
         self,
         message: str,
@@ -551,6 +554,7 @@ class ChatOrchestratorV2:
             "rejected_values": result.get("rejected_values", []),
         }
 
+    @track_orchestrator_method("_process_discovery", tags=["discovery", "graph"])
     async def _process_discovery(
         self,
         message: str,
@@ -607,6 +611,7 @@ class ChatOrchestratorV2:
             "is_complete": result.get("is_confirmed", False),
         }
 
+    @track_orchestrator_method("_process_solving", tags=["solving", "graph"])
     async def _process_solving(
         self,
         message: str,
@@ -657,6 +662,7 @@ class ChatOrchestratorV2:
         "affirm", "negate",
     }
 
+    @track_orchestrator_method("_process_multi_intents", tags=["multi-intent", "router"])
     async def _process_multi_intents(
         self,
         multi_intent_result: MultiIntentResult,
@@ -1209,6 +1215,7 @@ class ChatOrchestratorV2:
 
         return base_data
 
+    @track_orchestrator_method("_process_problem_type_selection", tags=["problem-gen", "llm"])
     async def _process_problem_type_selection(
         self,
         problem_type: str,

@@ -672,10 +672,11 @@ export function PracticeChatPanel({
     setMessages(prev => [...prev, userMsg, assistantMsg]);
   }, []);
 
-  // 스트리밍으로 새 문제 생성 (generate-new 칩 클릭 시) - handleChipClick 전에 정의
+  // 새 문제 생성 (generate-new 칩 클릭 시) - handleChipClick 전에 정의
   const handleGenerateNewProblem = useCallback(async () => {
     const currentCollectedInfo = collectedInfoRef.current;
     const currentProblems = recommendedProblemsRef.current;
+    const userContext = getUserContext();
 
     // 사용자 메시지 추가
     const userMessage: Message = {
@@ -685,7 +686,7 @@ export function PracticeChatPanel({
       timestamp: new Date().toISOString(),
     };
 
-    // 초기 로딩 메시지
+    // 로딩 메시지
     const loadingMessageId = `loading-generate-${Date.now()}`;
     const loadingMessage: Message = {
       id: loadingMessageId,
@@ -697,100 +698,49 @@ export function PracticeChatPanel({
     setMessages(prev => [...prev, userMessage, loadingMessage]);
     setIsLoading(true);
 
-    // 상태 메시지 업데이트 (스트리밍 중 변경)
-    let currentStatusMessage = '🚀 새로운 문제를 생성하고 있어요...';
-    let accumulatedContent = '';
-
     try {
-      await agentApi.generateCodeStream(
-        {
-          collectedInfo: currentCollectedInfo,
-          similarProblems: currentProblems,
-          userContext: getUserContext(),
-        },
-        {
-          onStatus: (status: string, message: string) => {
-            // 상태 업데이트에 따른 메시지 변경
-            const statusEmojis: Record<string, string> = {
-              starting: '🚀',
-              analyzing: '🔍',
-              generating: '✨',
-              coding: '💻',
-              finalizing: '📝',
-            };
-            const emoji = statusEmojis[status] || '⏳';
-            currentStatusMessage = `${emoji} ${message}`;
+      // generateCode API 호출 (비스트리밍)
+      const result = await agentApi.generateCode({
+        user_request: currentCollectedInfo as unknown as Record<string, unknown>,
+        similar_problems: currentProblems as unknown as Record<string, unknown>[],
+        user_status: (userContext.recentActivity as string) || undefined,
+        user_goal: currentCollectedInfo?.specific_needs || undefined,
+        user_level: (userContext.level as 'beginner' | 'elementary' | 'intermediate' | 'advanced') || 'intermediate',
+        strong_algorithms: (userContext.strongTopics as string[]) || [],
+      });
 
-            setMessages(prev => {
-              const updated = [...prev];
-              const loadingIdx = updated.findIndex(m => m.id === loadingMessageId);
-              if (loadingIdx !== -1) {
-                updated[loadingIdx] = {
-                  ...updated[loadingIdx],
-                  content: currentStatusMessage + (accumulatedContent ? `\n\n---\n${accumulatedContent}` : ''),
-                };
-              }
-              return updated;
-            });
-          },
-          onChunk: (content: string) => {
-            accumulatedContent += content;
-            // 청크가 들어올 때마다 메시지 업데이트
-            setMessages(prev => {
-              const updated = [...prev];
-              const loadingIdx = updated.findIndex(m => m.id === loadingMessageId);
-              if (loadingIdx !== -1) {
-                updated[loadingIdx] = {
-                  ...updated[loadingIdx],
-                  content: currentStatusMessage + `\n\n---\n\`\`\`\n${accumulatedContent}\n\`\`\``,
-                };
-              }
-              return updated;
-            });
-          },
-          onResult: (result: BaseProblemInfo) => {
-            // 생성 완료 - 문제 선택 UI로 전환
-            setRecommendedProblems([result]);
-            setFlowState('type_selection');
+      // CodeGenerationResponse를 BaseProblemInfo로 변환
+      const generatedProblem: BaseProblemInfo = {
+        title: result.title,
+        description: result.description,
+        code: result.code?.python || result.code?.java || result.code?.cpp || '',
+        difficulty: result.difficulty as BaseProblemInfo['difficulty'],
+        topics: result.topics,
+        time_complexity: result.time_complexity,
+        space_complexity: result.space_complexity,
+      };
 
-            // 로딩 메시지를 결과 메시지로 교체
-            setMessages(prev => {
-              const filtered = prev.filter(m => m.id !== loadingMessageId);
-              return [...filtered, {
-                id: `generated-result-${Date.now()}`,
-                role: 'assistant' as const,
-                content: `✅ 새로운 문제가 생성되었어요!\n\n**${result.title || result.name}** (${result.difficulty})\n\n${result.description || result.question || ''}`,
-                timestamp: new Date().toISOString(),
-                chips: [{
-                  label: `${result.title || result.name} (${result.difficulty})`,
-                  value: 'problem-0',
-                  category: 'action' as const,
-                }],
-              }];
-            });
-          },
-          onError: (error: string) => {
-            // 에러 발생
-            setMessages(prev => {
-              const filtered = prev.filter(m => m.id !== loadingMessageId);
-              return [...filtered, {
-                id: `error-${Date.now()}`,
-                role: 'assistant' as const,
-                content: `❌ 문제 생성 중 오류가 발생했어요.\n\n${error}\n\n다시 시도해주세요.`,
-                timestamp: new Date().toISOString(),
-                chips: [
-                  { label: '✨ 다시 시도', value: 'generate-new', category: 'action' as const },
-                ],
-              }];
-            });
-          },
-          onDone: () => {
-            setIsLoading(false);
-          },
-        }
-      );
+      // 생성 완료 - 문제 선택 UI로 전환
+      setRecommendedProblems([generatedProblem]);
+      setFlowState('type_selection');
+
+      // 로딩 메시지를 결과 메시지로 교체
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.id !== loadingMessageId);
+        return [...filtered, {
+          id: `generated-result-${Date.now()}`,
+          role: 'assistant' as const,
+          content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${generatedProblem.difficulty})\n\n${generatedProblem.description || generatedProblem.question || ''}`,
+          timestamp: new Date().toISOString(),
+          chips: [{
+            label: `${generatedProblem.title || generatedProblem.name} (${generatedProblem.difficulty})`,
+            value: 'problem-0',
+            category: 'action' as const,
+          }],
+        }];
+      });
     } catch (error) {
-      console.error('Generate stream error:', error);
+      console.error('Generate code error:', error);
       setMessages(prev => {
         const filtered = prev.filter(m => m.id !== loadingMessageId);
         return [...filtered, {
@@ -803,6 +753,7 @@ export function PracticeChatPanel({
           ],
         }];
       });
+    } finally {
       setIsLoading(false);
     }
   }, [getUserContext]);

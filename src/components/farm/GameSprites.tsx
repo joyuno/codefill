@@ -356,7 +356,7 @@ export function CropSprite({
         />
         
         {/* 수확 가능 시 반짝임 효과 */}
-        {stage === 6 && (
+        {stage === 4 && (
           <motion.div
             className="absolute inset-0 pointer-events-none"
             animate={{ opacity: [0, 0.3, 0] }}
@@ -366,9 +366,9 @@ export function CropSprite({
           </motion.div>
         )}
       </div>
-      
+
       {/* 타이머 표시 */}
-      {withTimer && stage > 0 && stage < 6 && remainingSeconds > 0 && (
+      {withTimer && stage > 0 && stage < 4 && remainingSeconds > 0 && (
         <div 
           className="absolute bottom-0 left-0 right-0 bg-black/70 text-center py-0.5 rounded-b"
           style={{ fontSize: size > 32 ? '10px' : '8px' }}

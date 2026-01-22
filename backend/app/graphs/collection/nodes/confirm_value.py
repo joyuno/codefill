@@ -6,6 +6,7 @@ choose_topic, choose_difficulty, choose_language를 하나로 통합
 """
 from typing import Dict, Any, List, Optional
 from ..state import CollectionState, DIFFICULTY_TO_TIER
+from app.services.langsmith_tracker import track_collection_node
 
 
 # ============================================================
@@ -125,6 +126,7 @@ LANGUAGE_DISPLAY = {
 # Unified Confirm Value Node
 # ============================================================
 
+@track_collection_node("confirm_value", tags=["confirm"])
 async def confirm_value(state: CollectionState) -> Dict[str, Any]:
     """
     통합 값 확정 노드 (async - LLM 기반 질문 감지)

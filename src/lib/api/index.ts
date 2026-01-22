@@ -11,18 +11,18 @@ export {
   type TokenResponse,
   type OnboardingData,
   type RecoveryRequiredResponse,
+  type BannedResponse,
   type RecoverData,
   type RecoverOAuthData,
 } from './auth';
 export {
   problemsApi,
-  type ProblemFilters,
-  type ProblemListResponse,
-  type HintResponse,
   type BaseProblemListItem,
   type BaseProblemDetail,
   type BaseProblemListResponse,
   type BaseProblemFilters,
+  type ProblemStatsResponse,
+  type ProblemLikeResponse,
 } from './problems';
 export {
   practiceApi,

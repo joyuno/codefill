@@ -40,6 +40,7 @@ from .discovery_state import (
 )
 from .nodes.confirm import confirm_generation_node, should_confirm_generation
 from ..services.edge_case_logger import edge_case_logger
+from ..services.langsmith_tracker import track_discovery_node
 
 
 # ============================================================
@@ -112,6 +113,7 @@ def _expand_related_topics(topics: list) -> list:
 # Node Functions
 # ============================================================
 
+@track_discovery_node("route_discovery_intent", tags=["routing"])
 async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     Discovery 그래프의 진입점.
@@ -184,6 +186,7 @@ async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
     return {"search_offset": 0, "next_node": "search_problems"}
 
 
+@track_discovery_node("search_problems", tags=["rag", "search"])
 async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     Agentic RAG를 통해 문제를 검색합니다.
@@ -374,6 +377,7 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("filter_results", tags=["filter"])
 async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     검색 결과를 필터링하고 응답을 생성합니다.
@@ -450,6 +454,7 @@ async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("generate_problem", tags=["codegen", "fallback"])
 async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     CodeGen Fallback 신호를 반환합니다.
@@ -493,6 +498,7 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("handle_selection", tags=["selection"])
 async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     사용자의 문제 선택을 처리합니다.
@@ -629,6 +635,7 @@ async def handle_selection_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("inquire_problem", tags=["llm", "inquiry"])
 async def inquire_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     검색 결과에서 특정 문제에 대한 질문을 처리합니다.
@@ -706,6 +713,7 @@ async def inquire_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("fallback_clarify", tags=["fallback"])
 async def fallback_clarify_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     의도 파악 실패 시 사용자에게 명확한 피드백 제공.
@@ -756,6 +764,7 @@ async def fallback_clarify_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("confirm_problem", tags=["confirm"])
 async def confirm_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     선택된 문제를 확정하고 문제 유형 선택 UI를 표시합니다.
@@ -794,6 +803,7 @@ async def confirm_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("respond", tags=["response"])
 async def respond_node(state: DiscoveryState) -> Dict[str, Any]:
     """
     최종 응답 노드 - LLM 기반 동적 응답 사용

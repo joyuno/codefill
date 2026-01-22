@@ -1,12 +1,21 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from pathlib import Path
+import os
+
+# .env 파일 경로 결정
+# 1. 환경변수 ENV_FILE_PATH가 있으면 사용
+# 2. 없으면 config.py 기준 상위 디렉토리
+_env_file = os.getenv("ENV_FILE_PATH")
+if not _env_file:
+    _env_file = str(Path(__file__).resolve().parent.parent / ".env")
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_env_file,
         env_file_encoding="utf-8",
         extra="ignore",  # Prisma용 DATABASE_URL, DIRECT_URL 등 허용
     )

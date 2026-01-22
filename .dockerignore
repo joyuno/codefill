@@ -1,0 +1,56 @@
+# ===========================================
+# CodeFill Frontend - Docker Ignore
+# ===========================================
+
+# Dependencies (Docker에서 새로 설치)
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+.next
+out
+build
+dist
+
+# Backend (별도 EC2)
+backend
+
+# Data files (Supabase 사용)
+data
+Modern_Farm_v1.2
+
+# Development files
+*.md
+*.txt
+.env
+.env.local
+.env.development
+screenshots
+logs
+outputs
+docs
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage
+.nyc_output
+__tests__
+
+# Misc
+*.log
+npm-debug.log*
+.npm

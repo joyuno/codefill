@@ -1,0 +1,210 @@
+# AWS CLI 명령어 모음 - CodeFill 배포용
+# 생성일: 2024-01-21
+
+# ============================================
+# 사전 확인
+# ============================================
+
+# AWS CLI 버전 확인
+aws --version
+
+# AWS 자격 증명 확인
+aws sts get-caller-identity
+
+# 현재 리전 확인
+aws configure get region
+
+# ============================================
+# Phase 1: 키 페어 생성 (선택 - 콘솔에서 해도 됨)
+# ============================================
+
+# 키 페어 생성 및 저장
+aws ec2 create-key-pair \
+  --key-name codefill-key \
+  --query 'KeyMaterial' \
+  --output text > ~/.ssh/codefill-key.pem
+
+# 키 파일 권한 설정
+chmod 400 ~/.ssh/codefill-key.pem
+
+# 키 페어 목록 확인
+aws ec2 describe-key-pairs
+
+# ============================================
+# Phase 2: 보안 그룹 생성
+# ============================================
+
+# VPC ID 확인 (기본 VPC 사용)
+aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --query 'Vpcs[0].VpcId' --output text
+
+# 백엔드 보안 그룹 생성
+aws ec2 create-security-group \
+  --group-name codefill-backend-sg \
+  --description "Security group for CodeFill Backend" \
+  --vpc-id <VPC_ID>
+
+# 백엔드 보안 그룹 규칙 추가
+aws ec2 authorize-security-group-ingress --group-name codefill-backend-sg --protocol tcp --port 22 --cidr <YOUR_IP>/32
+aws ec2 authorize-security-group-ingress --group-name codefill-backend-sg --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-name codefill-backend-sg --protocol tcp --port 443 --cidr 0.0.0.0/0
+
+# 프론트엔드 보안 그룹 생성
+aws ec2 create-security-group \
+  --group-name codefill-frontend-sg \
+  --description "Security group for CodeFill Frontend" \
+  --vpc-id <VPC_ID>
+
+# 프론트엔드 보안 그룹 규칙 추가
+aws ec2 authorize-security-group-ingress --group-name codefill-frontend-sg --protocol tcp --port 22 --cidr <YOUR_IP>/32
+aws ec2 authorize-security-group-ingress --group-name codefill-frontend-sg --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-name codefill-frontend-sg --protocol tcp --port 443 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-name codefill-frontend-sg --protocol tcp --port 3000 --cidr 0.0.0.0/0
+
+# 보안 그룹 목록 확인
+aws ec2 describe-security-groups --group-names codefill-backend-sg codefill-frontend-sg
+
+# ============================================
+# Phase 3: EC2 인스턴스 생성
+# ============================================
+
+# Ubuntu 22.04 LTS AMI ID 확인 (서울 리전)
+aws ec2 describe-images \
+  --owners 099720109477 \
+  --filters "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*" \
+  --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
+  --output text
+
+# 백엔드 EC2 인스턴스 생성
+aws ec2 run-instances \
+  --image-id <AMI_ID> \
+  --instance-type t3.small \
+  --key-name codefill-key \
+  --security-groups codefill-backend-sg \
+  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":20,"VolumeType":"gp3"}}]' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=codefill-backend}]' \
+  --count 1
+
+# 프론트엔드 EC2 인스턴스 생성
+aws ec2 run-instances \
+  --image-id <AMI_ID> \
+  --instance-type t3.small \
+  --key-name codefill-key \
+  --security-groups codefill-frontend-sg \
+  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":20,"VolumeType":"gp3"}}]' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=codefill-frontend}]' \
+  --count 1
+
+# 인스턴스 상태 확인
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=codefill-*" \
+  --query 'Reservations[].Instances[].{Name:Tags[?Key==`Name`].Value|[0],InstanceId:InstanceId,State:State.Name,PublicIP:PublicIpAddress}' \
+  --output table
+
+# ============================================
+# Phase 4: Elastic IP 할당
+# ============================================
+
+# Elastic IP 할당 (백엔드용)
+aws ec2 allocate-address --domain vpc --tag-specifications 'ResourceType=elastic-ip,Tags=[{Key=Name,Value=codefill-backend-eip}]'
+
+# Elastic IP 할당 (프론트엔드용)
+aws ec2 allocate-address --domain vpc --tag-specifications 'ResourceType=elastic-ip,Tags=[{Key=Name,Value=codefill-frontend-eip}]'
+
+# Elastic IP를 인스턴스에 연결
+aws ec2 associate-address --instance-id <BACKEND_INSTANCE_ID> --allocation-id <BACKEND_EIP_ALLOCATION_ID>
+aws ec2 associate-address --instance-id <FRONTEND_INSTANCE_ID> --allocation-id <FRONTEND_EIP_ALLOCATION_ID>
+
+# Elastic IP 목록 확인
+aws ec2 describe-addresses --query 'Addresses[].{Name:Tags[?Key==`Name`].Value|[0],PublicIP:PublicIp,InstanceId:InstanceId}' --output table
+
+# ============================================
+# Phase 5: SSH 접속
+# ============================================
+
+# 백엔드 SSH 접속
+ssh -i ~/.ssh/codefill-key.pem ubuntu@<BACKEND_IP>
+
+# 프론트엔드 SSH 접속
+ssh -i ~/.ssh/codefill-key.pem ubuntu@<FRONTEND_IP>
+
+# ============================================
+# Phase 6: 파일 전송 (로컬에서 실행)
+# ============================================
+
+# 백엔드 코드 전송
+scp -i ~/.ssh/codefill-key.pem -r ./backend ubuntu@<BACKEND_IP>:~/app/
+
+# 프론트엔드 코드 전송 (node_modules 제외)
+rsync -avz --exclude 'node_modules' --exclude '.next' --exclude '.git' \
+  -e "ssh -i ~/.ssh/codefill-key.pem" \
+  ./ ubuntu@<FRONTEND_IP>:~/app/frontend/
+
+# ============================================
+# 유용한 관리 명령어
+# ============================================
+
+# 인스턴스 시작
+aws ec2 start-instances --instance-ids <INSTANCE_ID>
+
+# 인스턴스 중지
+aws ec2 stop-instances --instance-ids <INSTANCE_ID>
+
+# 인스턴스 재부팅
+aws ec2 reboot-instances --instance-ids <INSTANCE_ID>
+
+# 인스턴스 종료 (삭제)
+aws ec2 terminate-instances --instance-ids <INSTANCE_ID>
+
+# 보안 그룹 규칙 확인
+aws ec2 describe-security-groups --group-ids <SG_ID>
+
+# 특정 포트 열기 (예: 8080)
+aws ec2 authorize-security-group-ingress --group-id <SG_ID> --protocol tcp --port 8080 --cidr 0.0.0.0/0
+
+# ============================================
+# CloudFront (선택사항)
+# ============================================
+
+# CloudFront 배포 목록
+aws cloudfront list-distributions --query 'DistributionList.Items[].{Id:Id,DomainName:DomainName,Status:Status}' --output table
+
+# CloudFront 캐시 무효화
+aws cloudfront create-invalidation --distribution-id <DISTRIBUTION_ID> --paths "/*"
+
+# ============================================
+# 비용 관련
+# ============================================
+
+# 현재 월 예상 비용 (Cost Explorer 활성화 필요)
+aws ce get-cost-and-usage \
+  --time-period Start=$(date -v-30d +%Y-%m-%d),End=$(date +%Y-%m-%d) \
+  --granularity MONTHLY \
+  --metrics "BlendedCost" \
+  --group-by Type=DIMENSION,Key=SERVICE
+
+# ============================================
+# 프론트엔드 배포 시 제외할 폴더
+# ============================================
+# rsync 명령어 예시:
+rsync -avz \
+  --exclude 'node_modules' \
+  --exclude '.next' \
+  --exclude '.git' \
+  --exclude 'backend' \
+  --exclude 'data' \
+  --exclude 'Modern_Farm_v1.2' \
+  --exclude 'screenshots' \
+  --exclude 'logs' \
+  --exclude 'outputs' \
+  --exclude '*.md' \
+  -e "ssh -i ~/.ssh/codefill-key.pem" \
+  ./ ubuntu@15.164.80.37:~/app/frontend/
+
+# ============================================
+# 주의사항
+# ============================================
+# 1. <VPC_ID>, <AMI_ID>, <INSTANCE_ID> 등은 실제 값으로 교체
+# 2. <YOUR_IP>는 본인 IP로 교체 (https://checkip.amazonaws.com 에서 확인)
+# 3. 서울 리전(ap-northeast-2) 기준
+# 4. 키 페어 파일(.pem)은 절대 공유하지 말 것
+# 5. 프론트엔드 배포 시 data/, Modern_Farm_v1.2/ 등 개발용 폴더 제외 필수!

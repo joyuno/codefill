@@ -12,6 +12,7 @@ import json
 import os
 from typing import Dict, Any, Optional, List
 from ..state import CollectionState, DIFFICULTY_TO_TIER
+from app.services.langsmith_tracker import track_collection_node
 
 
 # ============================================================
@@ -420,6 +421,7 @@ STEP_GUIDANCE = {
 }
 
 
+@track_collection_node("handle_question", tags=["llm", "qa"])
 async def handle_question(state: CollectionState) -> Dict[str, Any]:
     """
     질문에 대한 답변 생성

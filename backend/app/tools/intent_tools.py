@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Any
 from enum import Enum
 
 from ..services.openrouter import openrouter_service
+from ..services.langsmith_tracker import track_intent_method
 
 
 class IntentCategory(str, Enum):
@@ -305,6 +306,7 @@ class IntentTool:
             self._embeddings_service = get_collection_embeddings_service()
         return self._embeddings_service
 
+    @track_intent_method("classify", tags=["main", "llm"])
     async def classify(
         self,
         message: str,
@@ -475,6 +477,7 @@ class IntentTool:
 
         return None
 
+    @track_intent_method("_classify_with_llm", tags=["llm", "gpt-4o-mini"])
     async def _classify_with_llm(
         self,
         message: str,
@@ -600,6 +603,7 @@ class IntentTool:
 
         return False
 
+    @track_intent_method("classify_multi", tags=["multi-intent", "llm"])
     async def classify_multi(
         self,
         message: str,
@@ -648,6 +652,7 @@ class IntentTool:
 
         return multi_result
 
+    @track_intent_method("_classify_multi_with_llm", tags=["multi-intent", "llm", "gpt-4o-mini"])
     async def _classify_multi_with_llm(
         self,
         message: str,

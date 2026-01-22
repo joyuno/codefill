@@ -325,10 +325,22 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                 {/* Question - Markdown + LaTeX 렌더링 */}
                 <div className="space-y-2">
                   <h3 className="text-sm font-medium text-muted-foreground">Problem</h3>
-                  <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/30 rounded-lg p-4 [&_pre]:bg-background/50 [&_pre]:p-3 [&_pre]:rounded-md [&_code]:text-primary [&_code]:bg-background/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_p]:text-[13px] [&_li]:text-[13px] [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm">
+                  <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/30 rounded-lg p-4 [&_pre]:bg-background/50 [&_pre]:p-3 [&_pre]:rounded-md [&_code]:text-primary [&_code]:bg-background/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_p]:text-[13px] [&_li]:text-[13px] [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4 [&_img]:rounded-md">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                       rehypePlugins={[rehypeKatex]}
+                      components={{
+                        img: ({ src, alt, ...props }) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={src}
+                            alt={alt || ''}
+                            loading="lazy"
+                            className="max-w-full h-auto my-4 rounded-md bg-white p-2"
+                            {...props}
+                          />
+                        ),
+                      }}
                     >
                       {preprocessLatex(displayQuestion || '')}
                     </ReactMarkdown>
@@ -394,10 +406,22 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                 {problem.explanation && (
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium text-muted-foreground">Explanation</h3>
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className="prose prose-sm dark:prose-invert max-w-none [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4 [&_img]:rounded-md">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                         rehypePlugins={[rehypeKatex]}
+                        components={{
+                          img: ({ src, alt, ...props }) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={src}
+                              alt={alt || ''}
+                              loading="lazy"
+                              className="max-w-full h-auto my-4 rounded-md bg-white p-2"
+                              {...props}
+                            />
+                          ),
+                        }}
                       >
                         {preprocessLatex(problem.explanation)}
                       </ReactMarkdown>

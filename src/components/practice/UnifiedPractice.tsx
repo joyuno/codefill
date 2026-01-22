@@ -46,7 +46,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
-import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemLoader';
+import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemChecker';
 
 // CodeEditor 동적 임포트 (Monaco Editor 번들 분리 - 초기 로딩 성능 향상)
 const CodeEditor = dynamic(
@@ -1416,7 +1416,7 @@ export function UnifiedPractice({
                         </div>
                       )}
                       <div
-                        className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert prose-p:my-1 prose-pre:bg-secondary/50 prose-pre:overflow-x-auto prose-code:text-primary"
+                        className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert prose-p:my-1 prose-pre:bg-secondary/50 prose-pre:overflow-x-auto prose-code:text-primary [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4 [&_img]:rounded-md"
                         style={{
                           maxWidth: `${sidebarWidth - 32}px`,  // 32px = p-4 양쪽 패딩
                           wordBreak: 'break-word',
@@ -1427,6 +1427,18 @@ export function UnifiedPractice({
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[rehypeKatex]}
+                          components={{
+                            img: ({ src, alt, ...props }) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={src}
+                                alt={alt || ''}
+                                loading="lazy"
+                                className="max-w-full h-auto my-4 rounded-md bg-white p-2"
+                                {...props}
+                              />
+                            ),
+                          }}
                         >
                           {preprocessLatex(showOriginal || !translatedDescription
                             ? problem.description || ''

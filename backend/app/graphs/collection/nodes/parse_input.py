@@ -10,8 +10,10 @@ Parse Input Node (Tool-based)
 from typing import Dict, Any, Optional
 from ..state import CollectionState
 from app.tools.collection_tools import collection_tool
+from app.services.langsmith_tracker import track_collection_node
 
 
+@track_collection_node("parse_input", tags=["parsing"])
 async def parse_input(state: CollectionState) -> Dict[str, Any]:
     """
     사용자 메시지 파싱 (Tool 기반)

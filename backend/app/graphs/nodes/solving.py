@@ -7,8 +7,10 @@ import json
 from typing import Dict, Any, List
 from ..solving_state import SolvingState
 from ...services.edge_case_logger import edge_case_logger
+from ...services.langsmith_tracker import track_solving_node
 
 
+@track_solving_node("provide_hint", tags=["llm", "hint"])
 async def provide_hint(state: SolvingState) -> Dict[str, Any]:
     """
     점진적 힌트를 제공합니다.
@@ -103,6 +105,7 @@ async def provide_hint(state: SolvingState) -> Dict[str, Any]:
         }
 
 
+@track_solving_node("review_code", tags=["llm", "review"])
 async def review_code(state: SolvingState) -> Dict[str, Any]:
     """
     사용자 코드를 리뷰합니다.
@@ -217,6 +220,7 @@ JSON으로 응답:
         }
 
 
+@track_solving_node("check_answer", tags=["validation"])
 async def check_answer(state: SolvingState) -> Dict[str, Any]:
     """
     정답을 체크합니다.
@@ -300,6 +304,7 @@ async def check_answer(state: SolvingState) -> Dict[str, Any]:
     }
 
 
+@track_solving_node("provide_feedback", tags=["llm", "feedback"])
 async def provide_feedback(state: SolvingState) -> Dict[str, Any]:
     """
     종합 피드백을 제공합니다.
@@ -407,6 +412,7 @@ JSON으로 응답:
         }
 
 
+@track_solving_node("show_solution", tags=["solution"])
 async def show_solution(state: SolvingState) -> Dict[str, Any]:
     """
     정답을 보여줍니다 (포기 시).
@@ -439,6 +445,7 @@ async def show_solution(state: SolvingState) -> Dict[str, Any]:
     }
 
 
+@track_solving_node("summarize_problem", tags=["llm", "summary"])
 async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
     """
     문제를 요약해서 보여줍니다.
@@ -510,6 +517,7 @@ async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
         }
 
 
+@track_solving_node("chat_assist", tags=["llm", "chat", "assist"])
 async def chat_assist(state: SolvingState) -> Dict[str, Any]:
     """
     채팅 기반 간접 도움을 제공합니다.
@@ -569,6 +577,7 @@ async def chat_assist(state: SolvingState) -> Dict[str, Any]:
     }
 
 
+@track_solving_node("answer_question", tags=["llm", "qa"])
 async def answer_question(state: SolvingState) -> Dict[str, Any]:
     """
     일반 질문에 답변합니다.
