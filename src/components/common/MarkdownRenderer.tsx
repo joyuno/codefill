@@ -38,7 +38,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         components={{
           // 외부 도메인 이미지 지원을 위해 일반 img 태그 사용
           img: ({ src, alt }) => (
-            <span className="inline-block my-4 p-2 bg-white rounded-md">
+            <span className="inline-block my-2 p-1 bg-white rounded">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={src}

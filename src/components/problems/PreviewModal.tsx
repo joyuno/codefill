@@ -331,7 +331,7 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                       rehypePlugins={[rehypeKatex]}
                       components={{
                         img: ({ src, alt }) => (
-                          <span className="inline-block my-4 p-2 bg-white rounded-md">
+                          <span className="inline-block my-2 p-1 bg-white rounded">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={src}
@@ -413,7 +413,7 @@ export function PreviewModal({ originalId, onClose }: PreviewModalProps) {
                         rehypePlugins={[rehypeKatex]}
                         components={{
                           img: ({ src, alt }) => (
-                            <span className="inline-block my-4 p-2 bg-white rounded-md">
+                            <span className="inline-block my-2 p-1 bg-white rounded">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={src}
