@@ -2,7 +2,7 @@ name: Deploy to AWS
 
 on:
   push:
-    branches: [main, deploy]  # deploy 브랜치에서 배포 테스트
+    branches: [main]  # 배포는 main에서만
 
 env:
   AWS_REGION: ap-northeast-2
