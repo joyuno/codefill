@@ -21,6 +21,13 @@ export interface NewBadge {
   rarity: string;
 }
 
+export interface SeedAwarded {
+  seedCode: string;      // "seed_carrot"
+  cropCode: string;      // "carrot"
+  rarity: string;        // "common", "uncommon", "rare"
+  cropNameKo: string;    // "당근"
+}
+
 export interface BlankResult {
   results: Record<string, boolean>;
   allCorrect: boolean;
@@ -75,6 +82,7 @@ export interface RecordResult {
   message: string;
   newBadges?: NewBadge[];
   solveCount?: number;  // 문제 풀이 수 (첫 정답 시에만 증가)
+  seedAwarded?: SeedAwarded;  // 씨앗 보상 (첫 정답 시에만)
 }
 
 export interface HintCheckResult {
@@ -404,6 +412,7 @@ export const practiceApi = {
       message: string;
       new_badges?: Array<{ code: string; name: string; icon_url?: string; rarity: string }>;
       solve_count?: number;  // 문제 풀이 수
+      seed_awarded?: { seed_code: string; crop_code: string; rarity: string; crop_name_ko: string };  // 씨앗 보상
     }>('/practice/submit/record', {
       problem_id: submission.problemId,
       base_problem_id: submission.baseProblemId,
@@ -440,6 +449,12 @@ export const practiceApi = {
         rarity: b.rarity,
       })),
       solveCount: data.solve_count,  // 문제 풀이 수
+      seedAwarded: data.seed_awarded ? {
+        seedCode: data.seed_awarded.seed_code,
+        cropCode: data.seed_awarded.crop_code,
+        rarity: data.seed_awarded.rarity,
+        cropNameKo: data.seed_awarded.crop_name_ko,
+      } : undefined,
     };
   },
 

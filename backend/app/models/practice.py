@@ -206,6 +206,14 @@ class FeedbackData(BaseModel):
     encouragement: str = ""
 
 
+class SeedAwarded(BaseModel):
+    """씨앗 보상 정보."""
+    seed_code: str      # "seed_carrot"
+    crop_code: str      # "carrot"
+    rarity: str         # "common", "uncommon", "rare"
+    crop_name_ko: str   # "당근"
+
+
 class RecordResponse(BaseModel):
     """Response for record submission."""
     success: bool
@@ -214,6 +222,7 @@ class RecordResponse(BaseModel):
     new_badges: Optional[List[NewBadge]] = None
     feedback: Optional[FeedbackData] = None  # 피드백 데이터 (정답 시)
     solve_count: Optional[int] = None  # 문제 풀이 수 (첫 정답 시에만 증가)
+    seed_awarded: Optional[SeedAwarded] = None  # 씨앗 보상 (첫 정답 시에만)
 
 
 class HintCheckResponse(BaseModel):

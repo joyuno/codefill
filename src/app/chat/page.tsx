@@ -21,7 +21,7 @@ import { ExitWarningDialog } from '@/components/practice/ExitWarningDialog';
 import { BadgePopup } from '@/components/ui/badge-popup';
 
 import { practiceApi, agentApi, problemsApi } from '@/lib/api';
-import type { NewBadge } from '@/lib/api/practice';
+import type { NewBadge, SeedAwarded } from '@/lib/api/practice';
 import { apiClient } from '@/lib/api/client';
 import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 import type { HintAgentResponse, FeedbackResponse, BaseProblemInfo } from '@/lib/api/agent';
@@ -52,6 +52,9 @@ function ChatPageContent() {
 
   // 뱃지 획득 팝업 상태
   const [earnedBadges, setEarnedBadges] = useState<NewBadge[]>([]);
+
+  // 씨앗 보상 상태
+  const [earnedSeed, setEarnedSeed] = useState<SeedAwarded | null>(null);
 
   // 뱃지 획득 시 팝업 표시
   const showBadgePopup = useCallback((badges: NewBadge[] | undefined) => {
@@ -397,6 +400,7 @@ function ChatPageContent() {
     setFeedbackData(null);
     setSessionId(null);  // Clear session ID
     setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
+    setEarnedSeed(null);  // 씨앗 보상 초기화
   }, [resetSession, sessionId]);
 
   // 포기하기 (Give up)
@@ -717,6 +721,10 @@ function ChatPageContent() {
               if (recordResult.newBadges && recordResult.newBadges.length > 0) {
                 showBadgePopup(recordResult.newBadges);
               }
+              // 씨앗 보상 표시
+              if (recordResult.seedAwarded) {
+                setEarnedSeed(recordResult.seedAwarded);
+              }
               refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
@@ -772,6 +780,10 @@ function ChatPageContent() {
             setXpEarned(recordResult.xpEarned);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
+            }
+            // 씨앗 보상 표시
+            if (recordResult.seedAwarded) {
+              setEarnedSeed(recordResult.seedAwarded);
             }
             refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
@@ -847,6 +859,10 @@ function ChatPageContent() {
               if (recordResult.newBadges && recordResult.newBadges.length > 0) {
                 showBadgePopup(recordResult.newBadges);
               }
+              // 씨앗 보상 표시
+              if (recordResult.seedAwarded) {
+                setEarnedSeed(recordResult.seedAwarded);
+              }
               refreshProfile();  // 프로필 캐시 갱신
               fetchFeedback(true, recordResult.xpEarned);
               return;
@@ -896,6 +912,10 @@ function ChatPageContent() {
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
             }
+            // 씨앗 보상 표시
+            if (recordResult.seedAwarded) {
+              setEarnedSeed(recordResult.seedAwarded);
+            }
             refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
             return;
@@ -943,6 +963,10 @@ function ChatPageContent() {
             setXpEarned(recordResult.xpEarned);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
+            }
+            // 씨앗 보상 표시
+            if (recordResult.seedAwarded) {
+              setEarnedSeed(recordResult.seedAwarded);
             }
             refreshProfile();  // 프로필 캐시 갱신
             fetchFeedback(true, recordResult.xpEarned);
@@ -1181,6 +1205,7 @@ function ChatPageContent() {
         feedback={feedbackData}
         xpEarned={xpEarned}
         isLoading={isFeedbackLoading}
+        seedAwarded={earnedSeed}
       />
 
       {/* Badge Popup */}

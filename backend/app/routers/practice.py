@@ -26,6 +26,7 @@ from ..models.practice import (
     AttemptDetailAction,
     NewBadge,  # 뱃지 응답용 모델
     FeedbackData,  # 피드백 데이터 모델
+    SeedAwarded,  # 씨앗 보상 모델
     # Session tracking models
     SessionHeartbeatRequest,
     SessionHeartbeatResponse,
@@ -34,6 +35,7 @@ from ..models.practice import (
 )
 from ..models.problem import ProblemType
 from ..services.badge_service import get_badge_service
+from ..services.seed_reward_service import get_seed_reward_service
 
 router = APIRouter()
 
@@ -1222,6 +1224,7 @@ async def record_solve(
 
         # 정답인 경우 user stats 업데이트 (XP, 잔디) - 이건 항상 시도
         new_badges = None
+        seed_awarded = None  # 씨앗 보상 (첫 정답 시에만)
         if submission.is_correct and xp_earned > 0:
             try:
                 db.rpc("increment_user_stats", {
@@ -1245,6 +1248,20 @@ async def record_solve(
                     if awarded:
                         new_badges = [NewBadge(**b) for b in awarded]
                         print(f"[RecordSolve] Awarded {len(awarded)} badges")
+
+                    # 씨앗 보상 지급 (첫 정답 시에만)
+                    try:
+                        seed_service = get_seed_reward_service()
+                        seed_result = seed_service.award_seed(
+                            user_id=str(user_id),
+                            difficulty=submission.difficulty or "medium",
+                            db=db
+                        )
+                        if seed_result:
+                            seed_awarded = SeedAwarded(**seed_result)
+                            print(f"[RecordSolve] Awarded seed: {seed_awarded.seed_code} ({seed_awarded.rarity})")
+                    except Exception as seed_err:
+                        print(f"[RecordSolve] Seed reward error (non-blocking): {seed_err}")
 
                 # Update mission progress (daily/weekly missions)
                 try:
@@ -1517,6 +1534,7 @@ async def record_solve(
             new_badges=new_badges,
             feedback=feedback_data,
             solve_count=new_solve_count,  # 문제 풀이 수 (프론트엔드 즉시 업데이트용)
+            seed_awarded=seed_awarded,  # 씨앗 보상 (첫 정답 시에만)
         )
 
     except Exception as e:

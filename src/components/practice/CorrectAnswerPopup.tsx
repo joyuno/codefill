@@ -16,6 +16,8 @@ import { Separator } from '@/components/ui/separator';
 import { Trophy, Sparkles, Target, Clock, Lightbulb, TrendingUp, ArrowRight, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { FeedbackResponse } from '@/lib/api/agent';
+import type { SeedAwarded } from '@/lib/api/practice';
+import { CROPS } from '@/components/farm/config/cropConfig';
 
 interface CorrectAnswerPopupProps {
   isOpen: boolean;
@@ -24,6 +26,7 @@ interface CorrectAnswerPopupProps {
   feedback: FeedbackResponse | null;
   xpEarned: number;
   isLoading?: boolean;
+  seedAwarded?: SeedAwarded | null;  // 씨앗 보상 정보
 }
 
 const gradeColors: Record<string, string> = {
@@ -42,6 +45,55 @@ const gradeBgColors: Record<string, string> = {
   learning: 'bg-emerald-500/10 border-emerald-500/30',
 };
 
+// 씨앗 등급별 스타일 설정
+const seedRarityConfig: Record<string, {
+  gradient: string;
+  glow: string;
+  border: string;
+  text: string;
+  label: string;
+  labelColor: string;
+}> = {
+  common: {
+    gradient: 'from-blue-600/30 via-sky-500/20 to-blue-600/30',
+    glow: 'shadow-blue-500/20',
+    border: 'border-blue-400/40',
+    text: 'text-blue-300',
+    label: '일반',
+    labelColor: 'bg-blue-500/30 text-blue-300',
+  },
+  uncommon: {
+    gradient: 'from-purple-600/30 via-violet-500/20 to-purple-600/30',
+    glow: 'shadow-purple-500/30',
+    border: 'border-purple-400/50',
+    text: 'text-purple-300',
+    label: '고급',
+    labelColor: 'bg-purple-500/30 text-purple-300',
+  },
+  rare: {
+    gradient: 'from-red-600/30 via-rose-500/20 to-red-600/30',
+    glow: 'shadow-red-500/40',
+    border: 'border-red-400/60',
+    text: 'text-red-300',
+    label: '희귀',
+    labelColor: 'bg-red-500/30 text-red-300',
+  },
+  epic: {
+    gradient: 'from-amber-600/30 via-yellow-500/20 to-amber-600/30',
+    glow: 'shadow-amber-500/50',
+    border: 'border-amber-400/70',
+    text: 'text-amber-300',
+    label: '전설',
+    labelColor: 'bg-amber-500/30 text-amber-300',
+  },
+};
+
+// 작물 이미지 경로 가져오기
+function getCropImage(cropCode: string): string | null {
+  const crop = CROPS[cropCode];
+  return crop?.ripeSprite || null;
+}
+
 export function CorrectAnswerPopup({
   isOpen,
   onClose,
@@ -49,6 +101,7 @@ export function CorrectAnswerPopup({
   feedback,
   xpEarned,
   isLoading = false,
+  seedAwarded,
 }: CorrectAnswerPopupProps) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -99,13 +152,14 @@ export function CorrectAnswerPopup({
           </DialogDescription>
         </DialogHeader>
 
-        {/* XP Earned Badge */}
+        {/* XP Badge + Seed Badge (compact) */}
         <motion.div
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="flex justify-center"
+          className="flex justify-center items-center gap-3 flex-wrap"
         >
+          {/* XP Badge */}
           <Badge
             variant="outline"
             className="px-4 py-2 text-lg bg-primary/10 text-primary border-primary/30"
@@ -113,6 +167,71 @@ export function CorrectAnswerPopup({
             <Trophy className="w-5 h-5 mr-2" />
             +{xpEarned} XP
           </Badge>
+
+          {/* Seed Badge (compact version) */}
+          {seedAwarded && (() => {
+            const config = seedRarityConfig[seedAwarded.rarity] || seedRarityConfig.common;
+            const cropImage = getCropImage(seedAwarded.cropCode);
+
+            return (
+              <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.4, type: 'spring', stiffness: 300, damping: 20 }}
+                className={cn(
+                  "relative flex items-center gap-2 px-3 py-1.5 rounded-full border",
+                  "bg-gradient-to-r",
+                  config.gradient,
+                  config.border
+                )}
+              >
+                {/* Glow effect for rare+ */}
+                {(seedAwarded.rarity === 'rare' || seedAwarded.rarity === 'epic') && (
+                  <motion.div
+                    className={cn(
+                      "absolute inset-0 rounded-full",
+                      seedAwarded.rarity === 'epic'
+                        ? "bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-amber-500/10"
+                        : "bg-gradient-to-r from-red-500/10 via-rose-500/10 to-red-500/10"
+                    )}
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                )}
+
+                {/* Crop image */}
+                <div className={cn(
+                  "relative w-7 h-7 rounded-md flex items-center justify-center",
+                  "bg-black/30 border",
+                  config.border
+                )}>
+                  {cropImage ? (
+                    <img
+                      src={cropImage}
+                      alt={seedAwarded.cropNameKo}
+                      className="w-5 h-5"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                  ) : (
+                    <span className="text-sm">🌱</span>
+                  )}
+                </div>
+
+                {/* Seed name */}
+                <span className={cn("text-sm font-medium relative z-10", config.text)}>
+                  {seedAwarded.cropNameKo} 씨앗
+                </span>
+
+                {/* Rarity indicator dot */}
+                <span className={cn(
+                  "w-1.5 h-1.5 rounded-full relative z-10",
+                  seedAwarded.rarity === 'epic' ? 'bg-amber-400' :
+                  seedAwarded.rarity === 'rare' ? 'bg-red-400' :
+                  seedAwarded.rarity === 'uncommon' ? 'bg-purple-400' : 'bg-blue-400'
+                )} />
+              </motion.div>
+            );
+          })()}
         </motion.div>
 
         <AnimatePresence>
