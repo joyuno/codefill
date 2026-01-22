@@ -14,7 +14,6 @@ export {
   type BannedResponse,
   type RecoverData,
   type RecoverOAuthData,
-  type BannedResponse,
 } from './auth';
 export {
   problemsApi,

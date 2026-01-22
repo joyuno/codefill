@@ -1428,15 +1428,16 @@ export function UnifiedPractice({
                           remarkPlugins={[remarkGfm, remarkMath]}
                           rehypePlugins={[rehypeKatex]}
                           components={{
-                            img: ({ src, alt, ...props }) => (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={src}
-                                alt={alt || ''}
-                                loading="lazy"
-                                className="max-w-full h-auto my-4 rounded-md bg-white p-2"
-                                {...props}
-                              />
+                            img: ({ src, alt }) => (
+                              <span className="inline-block my-4 p-2 bg-white rounded-md">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={src}
+                                  alt={alt || ''}
+                                  loading="lazy"
+                                  className="max-w-full h-auto rounded"
+                                />
+                              </span>
                             ),
                           }}
                         >
