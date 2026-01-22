@@ -388,8 +388,8 @@ export class FarmGridManager {
           return;
         }
 
-        // stage가 0이면 1로 보정 (새로 심은 작물)
-        const stage = slotData.stage === 0 ? 1 : slotData.stage;
+        // stage 그대로 사용 (0 = 씨앗)
+        const stage = slotData.stage;
         const frame = getCropFrame(slotData.cropCode, stage);
         console.log('[FarmGridManager] Creating crop sprite:', { worldX, worldY, spriteKey, frame, stage });
 

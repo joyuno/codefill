@@ -1439,3 +1439,129 @@ class AnalysisService:
             })
 
         return recommendations
+
+    async def get_wrong_problems(
+        self,
+        user_id: UUID,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: str = "recent",  # recent, difficulty, hints
+        difficulty_filter: Optional[str] = None,  # easy, medium, hard 등
+        topic_filter: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        틀린 문제 목록 조회 (복습용).
+
+        - is_correct=false인 시도들 중 최근 것들
+        - 같은 문제를 여러 번 틀렸으면 가장 최근 시도만 포함
+        - 이미 맞춘 문제는 제외 (복습 완료)
+        - 정렬, 필터, 페이지네이션 지원
+        """
+        # 1. 틀린 시도 조회 (전체)
+        wrong_attempts = self.db.table("attempts").select(
+            "base_problem_id, problem_name, problem_type, difficulty, topics, hints_used, created_at"
+        ).eq("user_id", str(user_id)).eq(
+            "is_correct", False
+        ).not_.is_("base_problem_id", "null").order(
+            "created_at", desc=True
+        ).limit(500).execute()
+
+        if not wrong_attempts.data:
+            return {"problems": [], "total": 0, "hasMore": False}
+
+        # 2. 맞춘 문제 ID 목록 (복습 완료된 것들 제외용)
+        correct_result = self.db.table("attempts").select(
+            "base_problem_id"
+        ).eq("user_id", str(user_id)).eq(
+            "is_correct", True
+        ).execute()
+
+        solved_ids: set[str] = {
+            str(a.get("base_problem_id"))
+            for a in (correct_result.data or [])
+            if a.get("base_problem_id")
+        }
+
+        # 3. 중복 제거 + 필터링 (같은 문제는 가장 최근 시도만)
+        seen_problems: set[str] = set()
+        unique_wrong: List[Dict[str, Any]] = []
+
+        for attempt in wrong_attempts.data:
+            problem_id = str(attempt.get("base_problem_id"))
+
+            # 이미 맞춘 문제는 제외
+            if problem_id in solved_ids:
+                continue
+
+            # 중복 제거
+            if problem_id in seen_problems:
+                continue
+
+            # 난이도 필터
+            if difficulty_filter:
+                if attempt.get("difficulty") != difficulty_filter:
+                    continue
+
+            # 토픽 필터
+            if topic_filter:
+                topics = attempt.get("topics") or []
+                if topic_filter not in topics:
+                    continue
+
+            seen_problems.add(problem_id)
+            unique_wrong.append(attempt)
+
+        if not unique_wrong:
+            return {"problems": [], "total": 0, "hasMore": False}
+
+        # 4. 정렬
+        if sort_by == "difficulty":
+            # 난이도 순서 정의
+            diff_order = {"easy": 0, "medium": 1, "medium_hard": 2, "hard": 3, "very_hard": 4}
+            unique_wrong.sort(key=lambda x: diff_order.get(x.get("difficulty", "medium"), 1))
+        elif sort_by == "hints":
+            # 힌트 많이 사용한 순
+            unique_wrong.sort(key=lambda x: x.get("hints_used", 0), reverse=True)
+        # else: recent (기본값, 이미 created_at desc로 정렬됨)
+
+        total = len(unique_wrong)
+
+        # 5. 페이지네이션 적용
+        paginated = unique_wrong[offset:offset + limit]
+
+        if not paginated:
+            return {"problems": [], "total": total, "hasMore": False}
+
+        # 6. base_problems에서 original_id 조회
+        problem_ids = [str(a.get("base_problem_id")) for a in paginated]
+        problems_result = self.db.table("base_problems").select(
+            "id, original_id"
+        ).in_("id", problem_ids).execute()
+
+        # ID -> original_id 매핑
+        original_id_map: Dict[str, str] = {
+            str(p.get("id")): p.get("original_id")
+            for p in (problems_result.data or [])
+            if p.get("original_id")
+        }
+
+        # 7. 응답 형식으로 변환
+        problems = [
+            {
+                "id": str(a.get("base_problem_id")),
+                "originalId": original_id_map.get(str(a.get("base_problem_id"))),
+                "name": a.get("problem_name", "Unknown"),
+                "problemType": a.get("problem_type"),
+                "difficulty": a.get("difficulty", "medium"),
+                "topics": a.get("topics", []),
+                "hintsUsed": a.get("hints_used", 0),
+                "lastAttemptAt": a.get("created_at"),
+            }
+            for a in paginated
+        ]
+
+        return {
+            "problems": problems,
+            "total": total,
+            "hasMore": offset + limit < total,
+        }

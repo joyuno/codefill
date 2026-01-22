@@ -26,8 +26,30 @@ const SPRITE_FILES: Record<string, { path: string; file: string; frameWidth?: nu
   'buildings/house': { path: 'houses/', file: 'Farmer_House_1_32x32.png' },
   'buildings/well': { path: 'houses/', file: 'Well_Usable_Bucket_Full_32x32.png' },
   'buildings/chickenCoop': { path: 'houses/', file: 'Chicken_Coop_32x32.png' },
+  'buildings/chicken_coop': { path: 'houses/', file: 'Chicken_Coop_32x32.png' },  // DB 호환
   'buildings/scarecrow': { path: 'houses/', file: 'Scarecrow_32x32.png' },
   'buildings/barn': { path: 'houses/', file: 'Barn_Small_32x32.png' },
+
+  // 새 건물 (houses/)
+  'buildings/farmer_house_1': { path: 'houses/', file: 'Farmer_House_1_32x32.png' },
+  'buildings/farmer_house_2': { path: 'houses/', file: 'Farmer_House_2_32x32.png' },
+  'buildings/barn_small': { path: 'houses/', file: 'Barn_Small_32x32.png' },
+  'buildings/stable': { path: 'houses/', file: 'Stable_Example_Outside_32x32.png' },
+  'buildings/silos': { path: 'houses/', file: 'Silos_1_32x32.png' },
+  'buildings/doghouse': { path: 'houses/', file: 'Doghouse_32x32.png' },
+
+  // 작업대 (houses/)
+  'buildings/stone_oven': { path: 'houses/', file: 'Stone_Oven_1_32x32.png' },
+  'buildings/cheese_machine': { path: 'houses/', file: 'Cheese_Machine_Full_32x32.png' },
+  'buildings/diy_crafting_table': { path: 'houses/', file: 'DIY_Crafting_Table_32x32.png' },
+  'buildings/tailor_table': { path: 'houses/', file: 'Tailor_Crafting_Table_32x32.png' },
+  'buildings/woodwork_table': { path: 'houses/', file: 'Woodwork_Crafting_Table_32x32.png' },
+
+  // 마켓 가판대 (houses/)
+  'buildings/market_stand_blue': { path: 'houses/', file: 'Market_Stand_Blue_Big_32x32.png' },
+  'buildings/market_stand_green': { path: 'houses/', file: 'Market_Stand_Green_Big_32x32.png' },
+  'buildings/market_stand_yellow': { path: 'houses/', file: 'Market_Stand_Yellow_Big_32x32.png' },
+  'buildings/market_stand_pink': { path: 'houses/', file: 'Market_Stand_Pink_Big_32x32.png' },
 
   // 나무 - 애니메이션 GIF (animated/)
   'trees/oak': { path: 'animated/', file: 'Trees_Oak_Green_Big_Shake_32x32.gif' },
@@ -124,6 +146,10 @@ export class UnifiedPlacementManager {
   // 로드된 에셋 키 추적
   private loadedAssets: Set<string> = new Set();
 
+  // 충돌 디버그 시각화
+  private collisionDebugGraphics: Phaser.GameObjects.Graphics | null = null;
+  private collisionDebugVisible: boolean = false;
+
   // 배치 모드 스냅샷 및 변경 추적
   private placementSnapshot: Map<string, { tileX: number; tileY: number }> = new Map();
   private movedItems: Set<string> = new Set();
@@ -145,7 +171,8 @@ export class UnifiedPlacementManager {
     const neededSprites = new Set<string>();
 
     // 기본 건물 (항상 로드 - 초기 배치 아이템)
-    const defaultSprites = ['buildings/house', 'buildings/well', 'buildings/chickenCoop', 'buildings/scarecrow'];
+    // chicken_coop: DB에서 스네이크케이스로 저장됨
+    const defaultSprites = ['buildings/house', 'buildings/well', 'buildings/chicken_coop', 'buildings/scarecrow'];
     defaultSprites.forEach(s => neededSprites.add(s));
 
     // 배치된 아이템의 스프라이트
@@ -278,7 +305,7 @@ export class UnifiedPlacementManager {
     const worldY = item.tileY * TILE_SIZE + height * TILE_SIZE;
 
     const sprite = this.scene.add.sprite(worldX, worldY, assetKey);
-    sprite.setOrigin(0.5, 0.9);
+    sprite.setOrigin(0.5, 1.0);  // 이미지 하단이 배치 영역 하단에 맞춤
 
     // 깊이 설정 (Y 좌표 기반)
     const calculatedDepth = getBuildingDepth(worldY, MAP_HEIGHT);
@@ -442,6 +469,56 @@ export class UnifiedPlacementManager {
   }
 
   /**
+   * 특정 타일이 건물/장애물로 막혀있는지 확인 (플레이어 충돌용)
+   * @param tileX 타일 X 좌표
+   * @param tileY 타일 Y 좌표
+   * @returns 막혀있으면 true
+   */
+  isTileBlocked(tileX: number, tileY: number): boolean {
+    // 맵 범위 밖은 막힘 처리
+    if (tileX < 0 || tileX >= MAP_COLS || tileY < 0 || tileY >= MAP_ROWS) {
+      return true;
+    }
+
+    // 배치된 아이템과 충돌 체크
+    for (const [, placed] of Array.from(this.placedItems.entries())) {
+      const { item } = placed;
+      const {
+        width,
+        height,
+        collision,
+        collisionWidth,
+        collisionHeight,
+        collisionOffsetX,
+        collisionOffsetY
+      } = item.metadata;
+
+      // collision이 명시적으로 false면 통과 가능
+      if (collision === false) continue;
+
+      // 충돌 영역 계산 (별도 정의가 있으면 사용, 없으면 전체 크기)
+      const cWidth = collisionWidth ?? width;
+      const cHeight = collisionHeight ?? height;
+      const cOffsetX = collisionOffsetX ?? 0;
+      const cOffsetY = collisionOffsetY ?? 0;
+
+      // 충돌 영역 시작점
+      const collisionStartX = item.tileX + cOffsetX;
+      const collisionStartY = item.tileY + cOffsetY;
+
+      // 타일이 충돌 영역 내에 있는지 체크
+      if (tileX >= collisionStartX &&
+          tileX < collisionStartX + cWidth &&
+          tileY >= collisionStartY &&
+          tileY < collisionStartY + cHeight) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * 미리보기 그리기
    */
   private drawPreview(tileX: number, tileY: number, width: number, height: number, isValid: boolean): void {
@@ -559,6 +636,11 @@ export class UnifiedPlacementManager {
    * 변경 사항이 있는지 확인
    */
   hasChanges(): boolean {
+    // 새로 배치된 아이템이 있는지 확인
+    if (this.pendingPlacements.size > 0) {
+      return true;
+    }
+
     // 이동된 아이템 중 실제로 위치가 변경된 것이 있는지 확인
     for (const id of Array.from(this.movedItems)) {
       const placed = this.placedItems.get(id);
@@ -719,7 +801,7 @@ export class UnifiedPlacementManager {
    * 참고: farm_plot은 FarmGridManager에서 관리하므로 여기서 배치 불가
    * @returns tempId 또는 null (배치 실패 시)
    */
-  placeItemLocally(itemCode: string, tileX: number, tileY: number, metadata: ItemMetadata): string | null {
+  async placeItemLocally(itemCode: string, tileX: number, tileY: number, metadata: ItemMetadata): Promise<string | null> {
     // farm_plot은 FarmGridManager에서 관리
     if (itemCode === 'farm_plot') {
       return null;
@@ -731,6 +813,9 @@ export class UnifiedPlacementManager {
     if (!this.canPlaceAt(tileX, tileY, width, height)) {
       return null;
     }
+
+    // 에셋 로드 (없으면 로드)
+    await this.loadAsset(metadata.sprite);
 
     // 임시 ID 생성
     const tempId = `temp_${Date.now()}_${this.tempIdCounter++}`;
@@ -885,6 +970,117 @@ export class UnifiedPlacementManager {
     this.placedItems.clear();
   }
 
+  // ====== 충돌 디버그 시각화 ======
+
+  /**
+   * 충돌 디버그 토글
+   */
+  toggleCollisionDebug(): void {
+    this.collisionDebugVisible = !this.collisionDebugVisible;
+    this.updateCollisionDebug();
+  }
+
+  /**
+   * 충돌 디버그 표시
+   */
+  showCollisionDebug(): void {
+    this.collisionDebugVisible = true;
+    this.updateCollisionDebug();
+  }
+
+  /**
+   * 충돌 디버그 숨기기
+   */
+  hideCollisionDebug(): void {
+    this.collisionDebugVisible = false;
+    this.updateCollisionDebug();
+  }
+
+  /**
+   * 충돌 영역 시각화 업데이트
+   */
+  updateCollisionDebug(): void {
+    if (!this.collisionDebugGraphics) {
+      this.collisionDebugGraphics = this.scene.add.graphics();
+      this.collisionDebugGraphics.setDepth(DEPTH.HIGHLIGHT - 2);
+    }
+
+    this.collisionDebugGraphics.clear();
+
+    if (!this.collisionDebugVisible) return;
+
+    // 모든 타일에 대해 충돌 체크
+    for (let tileY = 0; tileY < MAP_ROWS; tileY++) {
+      for (let tileX = 0; tileX < MAP_COLS; tileX++) {
+        const blocked = this.isTileBlocked(tileX, tileY);
+
+        if (blocked) {
+          // 빨간색 반투명으로 충돌 타일 표시
+          this.collisionDebugGraphics.fillStyle(0xff0000, 0.3);
+          this.collisionDebugGraphics.fillRect(
+            tileX * TILE_SIZE,
+            tileY * TILE_SIZE,
+            TILE_SIZE,
+            TILE_SIZE
+          );
+
+          // 테두리
+          this.collisionDebugGraphics.lineStyle(1, 0xff0000, 0.6);
+          this.collisionDebugGraphics.strokeRect(
+            tileX * TILE_SIZE,
+            tileY * TILE_SIZE,
+            TILE_SIZE,
+            TILE_SIZE
+          );
+        }
+      }
+    }
+
+    // 각 배치된 아이템의 충돌 영역 표시 (시안색 테두리)
+    for (const [, placed] of Array.from(this.placedItems.entries())) {
+      const { item } = placed;
+      const {
+        width,
+        height,
+        collision,
+        collisionWidth,
+        collisionHeight,
+        collisionOffsetX,
+        collisionOffsetY
+      } = item.metadata;
+
+      // collision이 false면 스킵
+      if (collision === false) continue;
+
+      // 충돌 영역 계산
+      const cWidth = collisionWidth ?? width;
+      const cHeight = collisionHeight ?? height;
+      const cOffsetX = collisionOffsetX ?? 0;
+      const cOffsetY = collisionOffsetY ?? 0;
+
+      const startX = (item.tileX + cOffsetX) * TILE_SIZE;
+      const startY = (item.tileY + cOffsetY) * TILE_SIZE;
+
+      // 시안색으로 실제 충돌 영역 테두리
+      this.collisionDebugGraphics.lineStyle(2, 0x00ffff, 0.8);
+      this.collisionDebugGraphics.strokeRect(
+        startX,
+        startY,
+        cWidth * TILE_SIZE,
+        cHeight * TILE_SIZE
+      );
+
+      // 전체 배치 영역 (녹색 점선 효과)
+      this.collisionDebugGraphics.lineStyle(1, 0x00ff00, 0.4);
+      this.collisionDebugGraphics.strokeRect(
+        item.tileX * TILE_SIZE,
+        item.tileY * TILE_SIZE,
+        width * TILE_SIZE,
+        height * TILE_SIZE
+      );
+    }
+  }
+
   /**
    * 정리
    */
@@ -899,6 +1095,11 @@ export class UnifiedPlacementManager {
     if (this.gridGraphics) {
       this.gridGraphics.destroy();
       this.gridGraphics = null;
+    }
+
+    if (this.collisionDebugGraphics) {
+      this.collisionDebugGraphics.destroy();
+      this.collisionDebugGraphics = null;
     }
   }
 }

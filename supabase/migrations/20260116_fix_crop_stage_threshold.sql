@@ -79,7 +79,7 @@ BEGIN
     -- Build farm character
     IF v_farm.character_created AND v_farm.character_data IS NOT NULL AND v_farm.character_data != '{}'::JSONB THEN
         v_character := jsonb_build_object(
-            'name', COALESCE(v_farm.character_data->>'name', 'Farmer'),
+            'name', COALESCE(v_farm.character_data->>'name', 'Farmer'), 
             'hair', COALESCE(v_farm.character_data->>'hair', 'short'),
             'hairColor', COALESCE(v_farm.character_data->>'hair_color', '#8B4513'),
             'face', COALESCE(v_farm.character_data->>'face', 'happy'),

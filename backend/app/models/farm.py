@@ -279,6 +279,18 @@ class CustomizationResponse(BaseModel):
 
 
 # =====================================================
+# Farm Init Response (통합 API 응답)
+# =====================================================
+
+class FarmInitResponse(BaseModel):
+    """농장 초기화 통합 응답 (1개 HTTP 요청으로 모든 데이터 반환)"""
+    farm: UserFarmResponse
+    items: List[FarmItemResponse]  # 작물 목록 (정적 데이터)
+    inventory: List[InventoryItem]  # 사용자 인벤토리
+    placedItems: List[Any] = []  # 배치된 아이템 (PlacedItemResponse)
+
+
+# =====================================================
 # Constants
 # =====================================================
 

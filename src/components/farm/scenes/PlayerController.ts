@@ -129,6 +129,17 @@ export class PlayerController {
   // 액션 콜백
   private onActionCallback: (() => void) | null = null;
 
+  // 충돌 체크 콜백 (타일 좌표 기반)
+  private collisionChecker: ((tileX: number, tileY: number) => boolean) | null = null;
+
+  // 플레이어 충돌 박스 (발 기준, 픽셀 단위)
+  // origin이 (0.5, 1)이므로 발 위치가 container.x, container.y
+  private readonly COLLISION_BOX = {
+    width: 26,   // 좌우 총 26px
+    height: 28,  // 상하 총 28px (거의 1타일)
+    offsetY: -14, // 발 위치에서 위로 14px (박스 중앙이 몸통)
+  };
+
   constructor(scene: Phaser.Scene, characterData?: CharacterData | null) {
     this.scene = scene;
     this.characterData = characterData || DEFAULT_CHARACTER;
@@ -599,6 +610,38 @@ export class PlayerController {
     newX = Phaser.Math.Clamp(newX, margin, MAP_WIDTH - margin);
     newY = Phaser.Math.Clamp(newY, margin, MAP_HEIGHT - margin);
 
+    // 충돌 체크 (충돌 박스 기반)
+    if (this.collisionChecker) {
+      const { width, height, offsetY } = this.COLLISION_BOX;
+      const halfW = width / 2;
+      const halfH = height / 2;
+
+      // X축 이동 체크 (현재 Y 유지)
+      if (velocityX !== 0) {
+        const testX = newX;
+        const testY = this.container.y + offsetY;
+
+        // 충돌 박스의 4개 코너 + 중앙 체크
+        const blocked = this.checkCollisionBox(testX, testY, halfW, halfH);
+        if (blocked) {
+          newX = this.container.x;
+          velocityX = 0;
+        }
+      }
+
+      // Y축 이동 체크 (업데이트된 X 사용)
+      if (velocityY !== 0) {
+        const testX = newX;
+        const testY = newY + offsetY;
+
+        const blocked = this.checkCollisionBox(testX, testY, halfW, halfH);
+        if (blocked) {
+          newY = this.container.y;
+          velocityY = 0;
+        }
+      }
+    }
+
     this.container.setPosition(newX, newY);
 
     // 애니메이션 업데이트
@@ -746,6 +789,54 @@ export class PlayerController {
    */
   setActionCallback(callback: () => void): void {
     this.onActionCallback = callback;
+  }
+
+  /**
+   * 충돌 체크 콜백 설정 (건물/장애물 충돌용)
+   */
+  setCollisionChecker(checker: (tileX: number, tileY: number) => boolean): void {
+    this.collisionChecker = checker;
+  }
+
+  /**
+   * 충돌 박스 내 타일 충돌 체크
+   * 박스의 4개 코너와 중앙을 체크
+   */
+  private checkCollisionBox(centerX: number, centerY: number, halfW: number, halfH: number): boolean {
+    if (!this.collisionChecker) return false;
+
+    // 체크할 포인트들 (코너 4개 + 중앙)
+    const points = [
+      { x: centerX - halfW, y: centerY - halfH },  // 좌상
+      { x: centerX + halfW, y: centerY - halfH },  // 우상
+      { x: centerX - halfW, y: centerY + halfH },  // 좌하
+      { x: centerX + halfW, y: centerY + halfH },  // 우하
+      { x: centerX, y: centerY },                   // 중앙
+    ];
+
+    for (const point of points) {
+      const tileX = Math.floor(point.x / TILE_SIZE);
+      const tileY = Math.floor(point.y / TILE_SIZE);
+
+      if (this.collisionChecker(tileX, tileY)) {
+        return true; // 충돌 발생
+      }
+    }
+
+    return false; // 충돌 없음
+  }
+
+  /**
+   * 충돌 박스 정보 가져오기 (디버그용)
+   */
+  getCollisionBox(): { x: number; y: number; width: number; height: number } {
+    const { width, height, offsetY } = this.COLLISION_BOX;
+    return {
+      x: this.container.x - width / 2,
+      y: this.container.y + offsetY - height / 2,
+      width,
+      height,
+    };
   }
 
   /**

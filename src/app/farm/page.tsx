@@ -20,13 +20,19 @@ import {
 } from 'lucide-react';
 
 // UI 컴포넌트
-import { ExpandModal, CROP_INFO, type CropVariety } from '@/components/farm/ui';
+import {
+  ExpandModal,
+  CROP_INFO,
+  type CropVariety,
+  ActionPrompt,
+  SeedHotbar,
+  PlacementModeUI,
+} from '@/components/farm/ui';
 import { UnifiedShopModal } from '@/components/farm/ui/UnifiedShopModal';
 import { ToastNotification } from '@/components/farm/ui/ToastNotification';
 import { GameTopBar } from '@/components/farm/ui/GameTopBar';
-import { UnifiedHotbar, type HotbarMode } from '@/components/farm/ui/UnifiedHotbar';
 import type { PlacedItem } from '@/lib/api/farm';
-import type { FarmGameHandle } from '@/components/farm/FarmGame';
+import type { FarmGameHandle, InteractionState } from '@/components/farm/FarmGame';
 
 // Phaser 게임 컴포넌트 (SSR 비활성화)
 const FarmGame = dynamic(() => import('@/components/farm/FarmGame'), {
@@ -77,9 +83,14 @@ export default function FarmPage() {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isSavingPlacement, setIsSavingPlacement] = useState(false);
 
-  // 통합 핫바 상태
-  const [hotbarMode, setHotbarMode] = useState<HotbarMode>('seed');
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  // UI 모드 상태 (분리된 모드)
+  const [isPlacementMode, setIsPlacementMode] = useState(false);
+  const [selectedSeedCode, setSelectedSeedCode] = useState<string | null>(null);
+  const [selectedPlacementCode, setSelectedPlacementCode] = useState<string | null>(null);
+  const [hasPlacementChanges, setHasPlacementChanges] = useState(false);
+
+  // 상호작용 상태 (Phaser에서 전달받음)
+  const [interactionState, setInteractionState] = useState<InteractionState | null>(null);
 
   // FarmGame 핸들 (배치 저장/취소용) - dynamic import라서 콜백으로 받음
   const [farmGameHandle, setFarmGameHandle] = useState<FarmGameHandle | null>(null);
@@ -126,12 +137,29 @@ export default function FarmPage() {
     };
   }, []);
 
-  // 파생 상태 - 레거시 호환성
-  const placementMode = hotbarMode === 'placement';
-  const selectedSeed = hotbarMode === 'seed' && selectedItem
-    ? selectedItem.replace('seed_', '') as CropVariety
+  // 배치 모드에서 Phaser 상태와 동기화 (폴링 방식)
+  useEffect(() => {
+    if (!isPlacementMode || !farmGameHandle) return;
+
+    const interval = setInterval(() => {
+      const phaserHasChanges = farmGameHandle.hasPlacementChanges();
+      setHasPlacementChanges(prev => {
+        if (prev !== phaserHasChanges) {
+          console.log('[Farm] Syncing hasPlacementChanges:', phaserHasChanges);
+          return phaserHasChanges;
+        }
+        return prev;
+      });
+    }, 200); // 200ms 주기로 체크
+
+    return () => clearInterval(interval);
+  }, [isPlacementMode, farmGameHandle]);
+
+  // 파생 상태 - Phaser 연동용
+  const selectedSeed = !isPlacementMode && selectedSeedCode
+    ? selectedSeedCode.replace('seed_', '') as CropVariety
     : null;
-  const selectedPlacementItem = hotbarMode === 'placement' ? selectedItem : null;
+  const selectedPlacementItem = isPlacementMode ? selectedPlacementCode : null;
 
   // 농장 확장
   const handleExpand = useCallback(async (targetSize: number) => {
@@ -176,8 +204,8 @@ export default function FarmPage() {
       await buyUnifiedItem(itemCode);
       // 구매 성공 시: 모달 닫기 → 배치 모드 → 아이템 선택
       setShowUnifiedShop(false);
-      setHotbarMode('placement');
-      setSelectedItem(itemCode);
+      setIsPlacementMode(true);
+      setSelectedPlacementCode(itemCode);
       addToast('배치 모드로 전환! 맵에서 클릭하여 배치하세요.', 'success');
     } catch (err) {
       console.error('Purchase and place failed:', err);
@@ -189,7 +217,7 @@ export default function FarmPage() {
 
   // 아이템 로컬 배치 (API 호출 없음, 모드 전환 시 저장)
   // ref를 사용하여 클로저 문제 방지 - Phaser 씬에 전달된 콜백이 항상 최신 상태 참조
-  const handlePlaceItemLocally = useCallback((itemCode: string, tileX: number, tileY: number): string | null => {
+  const handlePlaceItemLocally = useCallback(async (itemCode: string, tileX: number, tileY: number): Promise<string | null> => {
     try {
       // ref에서 최신 핸들 가져오기 (클로저 문제 방지)
       const handle = farmGameHandleRef.current;
@@ -207,7 +235,14 @@ export default function FarmPage() {
       }
 
       // 핸들을 통해 로컬 배치 수행 (상점 아이템의 메타데이터 사용)
-      const tempId = handle.placeItemLocally(itemCode, tileX, tileY, shopItem.metadata);
+      // await로 에셋 로딩 완료 후 tempId 반환
+      const tempId = await handle.placeItemLocally(itemCode, tileX, tileY, shopItem.metadata);
+
+      // 배치 성공 시 변경 사항 추적
+      if (tempId) {
+        setHasPlacementChanges(true);
+      }
+
       return tempId;
     } catch (err) {
       console.error('[PlaceItem] Error:', err);
@@ -268,36 +303,80 @@ export default function FarmPage() {
     }
   }, [farmGameHandle, placeItem, moveItem, removeItem, addToast]);
 
-  // 핫바 모드 변경 (배치 모드에서 나갈 때 자동 저장)
-  const handleModeChange = useCallback(async (mode: HotbarMode) => {
-    // 배치 모드에서 나가는 경우 자동 저장
-    if (hotbarMode === 'placement' && mode === 'seed') {
-      const saved = await savePlacementChanges();
-      if (!saved) {
-        // 저장 실패 시 모드 유지
-        return;
-      }
-    }
-
-    setHotbarMode(mode);
-    setSelectedItem(null);
+  // 배치 모드 진입 (E키)
+  const handleEnterPlacementMode = useCallback(async () => {
+    console.log('[Farm] Entering placement mode');
+    setIsPlacementMode(true);
+    setSelectedSeedCode(null);
+    setHasPlacementChanges(false);
 
     // 배치 모드 진입 시 상점 데이터 로드
-    if (mode === 'placement') {
-      try {
-        await loadUnifiedShop();
-      } catch (err) {
-        console.error('Failed to load unified shop:', err);
-      }
+    try {
+      await loadUnifiedShop();
+    } catch (err) {
+      console.error('Failed to load unified shop:', err);
     }
-  }, [hotbarMode, savePlacementChanges, loadUnifiedShop]);
+  }, [loadUnifiedShop]);
 
-  // 배치 변경 취소
+  // 배치 모드 종료 (ESC키) - 저장하지 않고 변경사항 취소
+  const handleExitPlacementMode = useCallback(() => {
+    console.log('[Farm] Exiting placement mode', {
+      hasChanges: hasPlacementChanges,
+      handleReady: !!farmGameHandle,
+    });
+
+    // 변경 사항이 있으면 되돌리기
+    if (farmGameHandle) {
+      try {
+        farmGameHandle.revertPlacementChanges();
+        console.log('[Farm] Reverted placement changes on exit');
+      } catch (err) {
+        console.error('[Farm] Failed to revert changes:', err);
+      }
+    } else {
+      console.warn('[Farm] Cannot revert - handle not ready');
+    }
+
+    setIsPlacementMode(false);
+    setSelectedPlacementCode(null);
+    setHasPlacementChanges(false);
+  }, [hasPlacementChanges, farmGameHandle]);
+
+  // 배치 저장 (S키 또는 저장 버튼)
+  const handleSavePlacement = useCallback(async () => {
+    console.log('[Farm] Saving placement changes...');
+    if (isSavingPlacement) {
+      console.log('[Farm] Already saving, skipping');
+      return;
+    }
+
+    const saved = await savePlacementChanges();
+    if (saved) {
+      setHasPlacementChanges(false);
+      console.log('[Farm] Placement saved successfully');
+    }
+  }, [savePlacementChanges, isSavingPlacement]);
+
+  // 배치 변경 취소 (취소 버튼)
   const handleCancelPlacement = useCallback(() => {
-    if (!farmGameHandle) return;
+    console.log('[Farm] Canceling placement changes', {
+      handleReady: !!farmGameHandle,
+    });
 
-    farmGameHandle.revertPlacementChanges();
-    addToast('변경 사항이 취소되었습니다', 'success');
+    if (!farmGameHandle) {
+      console.warn('[Farm] Cannot cancel - handle not ready');
+      addToast('아직 준비 중입니다. 잠시 후 다시 시도하세요.', 'error');
+      return;
+    }
+
+    try {
+      farmGameHandle.revertPlacementChanges();
+      setHasPlacementChanges(false);
+      addToast('변경 사항이 취소되었습니다', 'success');
+    } catch (err) {
+      console.error('[Farm] Failed to cancel changes:', err);
+      addToast('취소 중 오류가 발생했습니다', 'error');
+    }
   }, [farmGameHandle, addToast]);
 
   // 계산된 값들
@@ -352,7 +431,7 @@ export default function FarmPage() {
           selectedSeed={selectedSeed}
           onNotify={handleNotify}
           characterData={farm?.characterData}
-          placementMode={placementMode}
+          placementMode={isPlacementMode}
           selectedPlacementItem={selectedPlacementItem}
           placedItems={placedItems}
           onPlaceItemLocally={handlePlaceItemLocally}
@@ -361,30 +440,50 @@ export default function FarmPage() {
           farmSlots={farm?.farmSlots || []}
           onPlantOnSlot={plantOnSlot}
           onHarvestFromSlot={harvestFromSlot}
+          onInteractionChange={setInteractionState}
         />
       </div>
 
-      {/* 상단 UI - 미니멀 HUD */}
-      <GameTopBar
-        gold={gold}
-        onOpenShop={handleOpenUnifiedShop}
-        onOpenExpand={() => setShowExpand(true)}
-      />
+      {/* 상단 UI - 미니멀 HUD (배치 모드가 아닐 때만) */}
+      {!isPlacementMode && (
+        <GameTopBar
+          gold={gold}
+          onOpenShop={handleOpenUnifiedShop}
+          onOpenExpand={() => setShowExpand(true)}
+        />
+      )}
 
       {/* 토스트 알림 (우하단) */}
       <ToastNotification toasts={toasts} onDismiss={removeToast} />
 
-      {/* 통합 핫바 */}
-      <UnifiedHotbar
-        inventory={inventory}
-        placeableItems={unifiedShopItems}
-        mode={hotbarMode}
-        onModeChange={handleModeChange}
-        selectedItem={selectedItem}
-        onSelectItem={setSelectedItem}
-        onCancelPlacement={handleCancelPlacement}
-        isSaving={isSavingPlacement}
-      />
+      {/* 액션 프롬프트 (핫바 위) - 씨앗 모드에서만 표시 */}
+      {!isPlacementMode && (
+        <ActionPrompt
+          interaction={interactionState}
+          selectedSeed={selectedSeedCode}
+        />
+      )}
+
+      {/* 모드별 UI - 조건부 렌더링 */}
+      {isPlacementMode ? (
+        <PlacementModeUI
+          items={unifiedShopItems}
+          selectedItem={selectedPlacementCode}
+          onSelectItem={setSelectedPlacementCode}
+          onExit={handleExitPlacementMode}
+          onSave={handleSavePlacement}
+          onCancel={handleCancelPlacement}
+          isSaving={isSavingPlacement}
+          hasChanges={hasPlacementChanges}
+        />
+      ) : (
+        <SeedHotbar
+          inventory={inventory}
+          selectedSeed={selectedSeedCode}
+          onSelectSeed={setSelectedSeedCode}
+          onEnterPlacementMode={handleEnterPlacementMode}
+        />
+      )}
 
       {/* 농장 확장 모달 */}
       <AnimatePresence>

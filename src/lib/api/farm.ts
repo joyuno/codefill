@@ -111,6 +111,11 @@ export interface ItemMetadata {
   canDelete: boolean;
   anchor?: number[];
   collision?: boolean;
+  // 충돌 영역 (이미지와 별도로 정의, 없으면 width/height 사용)
+  collisionWidth?: number;
+  collisionHeight?: number;
+  collisionOffsetX?: number;  // 타일 기준 X 오프셋
+  collisionOffsetY?: number;  // 타일 기준 Y 오프셋
 }
 
 export interface UnifiedShopItem {
@@ -220,6 +225,24 @@ export interface RemoveItemResponse {
   success: boolean;
   message: string;
   inventory: Record<string, number>;
+}
+
+// =====================================================
+// Farm Init Response (통합 API)
+// =====================================================
+
+export interface FarmInitResponse {
+  farm: UserFarm;
+  items: FarmItem[];
+  inventory: InventoryItem[];
+  placedItems: PlacedItem[];
+}
+
+interface BackendFarmInitResponse {
+  farm: BackendUserFarm;
+  items: BackendFarmItem[];
+  inventory: BackendInventoryItem[];
+  placedItems: PlacedItem[];  // 이미 camelCase로 반환됨
 }
 
 export interface PlantCropResponse {
@@ -392,6 +415,22 @@ function transformInventoryItem(data: BackendInventoryItem): InventoryItem {
 // =====================================================
 
 export const farmApi = {
+  /**
+   * Get farm initialization data (통합 API - 권장)
+   * 4개 API 호출을 1개로 통합하여 성능 개선
+   */
+  async getInit(): Promise<FarmInitResponse> {
+    const response = await api.get<BackendFarmInitResponse>('/farm/init');
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    return {
+      farm: transformUserFarm(data.farm),
+      items: (data.items || []).map(transformFarmItem),
+      inventory: (data.inventory || []).map(transformInventoryItem),
+      placedItems: data.placedItems || [],
+    };
+  },
+
   /**
    * Get farm status
    */

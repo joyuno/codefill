@@ -40,7 +40,7 @@ function getSeedInfo(seedCode: string): { name: string; image: string } | null {
   if (!crop) return null;
   return {
     name: crop.nameKo,
-    image: `${CROP_ASSET_PATH}${crop.ripeSprite}`,
+    image: crop.ripeSprite,  // ripeSprite already has full path
   };
 }
 

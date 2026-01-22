@@ -12,7 +12,15 @@ import { useEffect, useRef, useState } from 'react';
 import * as Phaser from 'phaser';
 import { FarmScene } from './scenes/FarmScene';
 import type { PlacementChanges } from './scenes/UnifiedPlacementManager';
+import type { InteractionType } from './scenes/InteractionSystem';
 import type { InventoryItem, PlacedItem, ItemMetadata, FarmSlot, CharacterData } from '@/lib/api/farm';
+
+// 상호작용 상태 타입 (React에서 사용)
+export interface InteractionState {
+  type: InteractionType;
+  cropCode: string | null;
+  stage: number;
+}
 
 // 외부에서 접근 가능한 메서드
 export interface FarmGameHandle {
@@ -20,7 +28,7 @@ export interface FarmGameHandle {
   getPlacementChanges: () => PlacementChanges;
   revertPlacementChanges: () => void;
   confirmPlacementChanges: () => void;
-  placeItemLocally: (itemCode: string, tileX: number, tileY: number, metadata: ItemMetadata) => string | null;
+  placeItemLocally: (itemCode: string, tileX: number, tileY: number, metadata: ItemMetadata) => Promise<string | null>;
 }
 
 // 게임 크기 상수 (config와 동일)
@@ -41,7 +49,7 @@ interface FarmGameProps {
   // 통합 배치 시스템
   placedItems: PlacedItem[];
   // 로컬 배치 콜백 (API 호출 없이 프론트에서 처리, 모드 전환 시 저장)
-  onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => string | null;
+  onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => Promise<string | null>;
   onMoveItem: (itemId: string, tileX: number, tileY: number) => Promise<void>;
   onRemoveItem: (itemId: string) => Promise<void>;
   // 슬롯 기반 밭 시스템 (신규)
@@ -50,6 +58,8 @@ interface FarmGameProps {
   onHarvestFromSlot: (slot: number) => Promise<{ gold: number; xp: number; slot: FarmSlot } | null>;
   // 콜백으로 핸들 전달 (dynamic import 호환용)
   onReady?: (handle: FarmGameHandle) => void;
+  // 상호작용 상태 변경 콜백 (액션 프롬프트 UI용)
+  onInteractionChange?: (interaction: InteractionState | null) => void;
 }
 
 export function FarmGame({
@@ -69,6 +79,7 @@ export function FarmGame({
   onPlantOnSlot,
   onHarvestFromSlot,
   onReady,
+  onInteractionChange,
 }: FarmGameProps) {
   const gameContainerRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
@@ -128,6 +139,8 @@ export function FarmGame({
           farmSlots,
           onPlantOnSlot,
           onHarvestFromSlot,
+          // 상호작용 상태 변경 콜백
+          onInteractionChange,
         });
 
         // 핸들 생성 및 콜백 호출
@@ -136,7 +149,7 @@ export function FarmGame({
           getPlacementChanges: () => sceneRef.current?.getPlacementChanges() ?? { moved: [], deleted: [], created: [] },
           revertPlacementChanges: () => sceneRef.current?.revertPlacementChanges(),
           confirmPlacementChanges: () => sceneRef.current?.confirmPlacementChanges(),
-          placeItemLocally: (itemCode, tileX, tileY, metadata) =>
+          placeItemLocally: async (itemCode, tileX, tileY, metadata) =>
             sceneRef.current?.placeItemLocally(itemCode, tileX, tileY, metadata) ?? null,
         };
         onReady?.(handle);

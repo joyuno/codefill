@@ -163,11 +163,18 @@ export function useAuth() {
 
       // 토큰 없거나 만료됨
       if (!accessToken || isTokenExpired(accessToken)) {
-        // 만료된 토큰 정리
+        // 만료된 토큰 및 모든 캐시 정리
         if (accessToken) {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
         }
+        // 사용자 관련 캐시 모두 삭제
+        localStorage.removeItem('codefill_farm_cache');
+        sessionStorage.removeItem(PROFILE_CACHE_KEY);
+        sessionStorage.removeItem('codefill_badge_count');
+        sessionStorage.removeItem('codefill_badges_cache');
+        sessionStorage.removeItem('codefill_farm_visited');
+
         setAuthState({
           user: null,
           profile: null,
@@ -195,9 +202,15 @@ export function useAuth() {
           isAuthenticated: true,
         });
       } else {
-        // 프로필 조회 실패 시 토큰 정리
+        // 프로필 조회 실패 시 토큰 및 캐시 정리
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        localStorage.removeItem('codefill_farm_cache');
+        sessionStorage.removeItem(PROFILE_CACHE_KEY);
+        sessionStorage.removeItem('codefill_badge_count');
+        sessionStorage.removeItem('codefill_badges_cache');
+        sessionStorage.removeItem('codefill_farm_visited');
+
         setAuthState({
           user: null,
           profile: null,
@@ -233,7 +246,11 @@ export function useAuth() {
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('codefill_character');
         localStorage.removeItem('codefill_farm_level');
+        localStorage.removeItem('codefill_farm_cache');  // 농장 캐시 삭제
         sessionStorage.removeItem(PROFILE_CACHE_KEY);  // 프로필 캐시 삭제
+        sessionStorage.removeItem('codefill_badge_count');  // 뱃지 카운트 캐시 삭제
+        sessionStorage.removeItem('codefill_badges_cache');  // 뱃지 전체 캐시 삭제
+        sessionStorage.removeItem('codefill_farm_visited');  // 농장 방문 플래그 삭제
       }
 
       setAuthState({

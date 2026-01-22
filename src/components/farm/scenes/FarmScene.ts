@@ -16,7 +16,7 @@ import * as Phaser from 'phaser';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE } from '../config/gameConfig';
 import { MapManager } from './MapManager';
 import { PlayerController } from './PlayerController';
-import { InteractionSystem } from './InteractionSystem';
+import { InteractionSystem, type InteractionCallback } from './InteractionSystem';
 import { UnifiedPlacementManager } from './UnifiedPlacementManager';
 import { FarmGridManager, FarmSlot } from './FarmGridManager';
 import type { PlacedItem, CharacterData } from '@/lib/api/farm';
@@ -38,7 +38,7 @@ interface FarmSceneData {
   characterData?: CharacterData | null;
   // 통합 배치 시스템
   placedItems: PlacedItem[];
-  onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => string | null;
+  onPlaceItemLocally: (itemCode: string, tileX: number, tileY: number) => Promise<string | null>;
   onMoveItem: (itemId: string, tileX: number, tileY: number) => Promise<void>;
   onRemoveItem: (itemId: string) => Promise<void>;
   // 슬롯 기반 밭 시스템
@@ -48,6 +48,8 @@ interface FarmSceneData {
   selectedPlacementItem?: string | null;
   placementMode?: boolean;
   deleteMode?: boolean;
+  // 상호작용 상태 변경 콜백 (React UI 업데이트용)
+  onInteractionChange?: InteractionCallback;
 }
 
 export class FarmScene extends Phaser.Scene {
@@ -69,6 +71,15 @@ export class FarmScene extends Phaser.Scene {
   private placementMode: boolean = false;
   private selectedPlacementItem: string | null = null;
   private deleteMode: boolean = false;
+
+  // 디버그 모드
+  private debugMode: boolean = false;
+  private debugKey: Phaser.Input.Keyboard.Key | null = null;
+  private playerDebugGraphics: Phaser.GameObjects.Graphics | null = null;
+  private playerDebugText: Phaser.GameObjects.Text | null = null;
+
+  // 농작업 처리 중 플래그 (연속 클릭 방지)
+  private isProcessingFarmAction: boolean = false;
 
   constructor() {
     super({ key: 'FarmScene' });
@@ -101,68 +112,144 @@ export class FarmScene extends Phaser.Scene {
 
   /**
    * 작물 심기 (슬롯 기반)
+   * Optimistic Update 적용 - 즉시 씨앗(stage 0) 표시, 타이머는 API 응답 후
    */
   private async plantCrop(slot: number, cropCode: string): Promise<boolean> {
-    console.log('[FarmScene] plantCrop called:', { slot, cropCode });
+    // 연속 클릭 방지
+    if (this.isProcessingFarmAction) return false;
+    this.isProcessingFarmAction = true;
 
     // 씨앗 보유량 체크
     const seedCount = this.getSeedCount(cropCode);
     if (seedCount <= 0) {
       this.farmData.onNotify('씨앗이 부족합니다!', 'error');
+      this.isProcessingFarmAction = false;
       return false;
     }
 
+    const slotIndex = this.farmSlots.findIndex(s => s.slot === slot);
+
+    // Optimistic Update - 즉시 씨앗 표시 (stage 0, 타이머 없음)
+    const optimisticSlot = {
+      slot,
+      cropCode,
+      stage: 0,  // 씨앗 상태
+      plantedAt: null,  // 타이머 표시 안함
+      growTimeSeconds: null,
+    };
+
+    if (slotIndex >= 0) {
+      this.farmSlots[slotIndex] = optimisticSlot;
+    } else {
+      this.farmSlots.push(optimisticSlot);
+    }
+    this.farmGridManager.updateSlot(slot, optimisticSlot);
+
     try {
-      // 심기는 dig(땅파기) 애니메이션 사용
-      await this.playerController.playDigAnimation();
-      console.log('[FarmScene] Calling onPlantOnSlot...');
-      const result = await this.farmData.onPlantOnSlot(slot, cropCode);
-      console.log('[FarmScene] onPlantOnSlot result:', result);
+      // 애니메이션과 API 호출 병렬 실행
+      const [, result] = await Promise.all([
+        this.playerController.playDigAnimation(),
+        this.farmData.onPlantOnSlot(slot, cropCode),
+      ]);
 
       if (result) {
-        // 슬롯 데이터 업데이트
-        const slotIndex = this.farmSlots.findIndex(s => s.slot === slot);
-        console.log('[FarmScene] Updating local farmSlots, slotIndex:', slotIndex);
-        if (slotIndex >= 0) {
-          this.farmSlots[slotIndex] = result;
-        } else {
-          this.farmSlots.push(result);
+        // API 성공 - 서버 응답으로 타이머 포함 업데이트
+        const newSlotIndex = this.farmSlots.findIndex(s => s.slot === slot);
+        if (newSlotIndex >= 0) {
+          this.farmSlots[newSlotIndex] = result;
         }
-        console.log('[FarmScene] Calling farmGridManager.updateSlot...');
         this.farmGridManager.updateSlot(slot, result);
         this.interactionSystem.updateFarmSlots(this.farmSlots);
-        console.log('[FarmScene] plantCrop completed successfully');
+        this.isProcessingFarmAction = false;
         return true;
       }
+
+      // API 실패 - 롤백
+      this.rollbackSlot(slot, slotIndex);
+      this.isProcessingFarmAction = false;
       return false;
     } catch (err) {
       console.error('[FarmScene] plantCrop error:', err);
+      this.rollbackSlot(slot, slotIndex);
       this.farmData.onNotify('심기에 실패했습니다', 'error');
+      this.isProcessingFarmAction = false;
       return false;
     }
   }
 
   /**
+   * 슬롯 롤백 헬퍼
+   */
+  private rollbackSlot(slot: number, originalIndex: number): void {
+    if (originalIndex >= 0) {
+      // 기존 슬롯이었으면 빈 상태로
+      const emptySlot = { slot, cropCode: null, stage: 0, plantedAt: null, growTimeSeconds: null };
+      this.farmSlots[originalIndex] = emptySlot;
+      this.farmGridManager.updateSlot(slot, emptySlot);
+    } else {
+      // 새로 추가된 슬롯이면 제거
+      const idx = this.farmSlots.findIndex(s => s.slot === slot);
+      if (idx >= 0) {
+        this.farmSlots.splice(idx, 1);
+        this.farmGridManager.updateSlot(slot, { slot, cropCode: null, stage: 0, plantedAt: null, growTimeSeconds: null });
+      }
+    }
+    this.interactionSystem.updateFarmSlots(this.farmSlots);
+  }
+
+  /**
    * 작물 수확 (슬롯 기반)
+   * Optimistic Update 적용 - 즉시 작물 제거 후 API 호출
    */
   private async harvestCrop(slot: number): Promise<boolean> {
+    // 연속 클릭 방지
+    if (this.isProcessingFarmAction) return false;
+    this.isProcessingFarmAction = true;
+
+    const slotIndex = this.farmSlots.findIndex(s => s.slot === slot);
+    if (slotIndex < 0) {
+      this.isProcessingFarmAction = false;
+      return false;
+    }
+
+    // 현재 상태 백업 (롤백용)
+    const originalSlot = { ...this.farmSlots[slotIndex] };
+
+    // Optimistic Update - 즉시 UI에서 작물 제거
+    const emptySlot = {
+      slot,
+      cropCode: null,
+      stage: 0,
+      plantedAt: null,
+      growTimeSeconds: null,
+    };
+    this.farmSlots[slotIndex] = emptySlot;
+    this.farmGridManager.updateSlot(slot, emptySlot);
+
     try {
-      await this.playerController.playHarvestAnimation();
-      const result = await this.farmData.onHarvestFromSlot(slot);
+      // 애니메이션과 API 호출 병렬 실행
+      const [, result] = await Promise.all([
+        this.playerController.playHarvestAnimation(),
+        this.farmData.onHarvestFromSlot(slot),
+      ]);
+
       if (result) {
-        // 슬롯 데이터 업데이트
-        const slotIndex = this.farmSlots.findIndex(s => s.slot === slot);
-        if (slotIndex >= 0) {
-          this.farmSlots[slotIndex] = result.slot;
-        }
-        this.farmGridManager.updateSlot(slot, result.slot);
-        this.interactionSystem.updateFarmSlots(this.farmSlots);
         this.farmData.onNotify(`+${result.gold}G, +${result.xp}XP`, 'success');
+        this.isProcessingFarmAction = false;
         return true;
       }
+
+      // API 실패 - 롤백
+      this.farmSlots[slotIndex] = originalSlot;
+      this.farmGridManager.updateSlot(slot, originalSlot);
+      this.isProcessingFarmAction = false;
       return false;
     } catch {
+      // 에러 - 롤백
+      this.farmSlots[slotIndex] = originalSlot;
+      this.farmGridManager.updateSlot(slot, originalSlot);
       this.farmData.onNotify('수확에 실패했습니다', 'error');
+      this.isProcessingFarmAction = false;
       return false;
     }
   }
@@ -224,6 +311,10 @@ export class FarmScene extends Phaser.Scene {
     // FarmGridManager 참조 전달
     this.interactionSystem.setFarmGridManager(this.farmGridManager);
     this.interactionSystem.updateFarmSlots(this.farmSlots);
+    // React 콜백 설정 (액션 프롬프트 UI용)
+    if (this.farmData.onInteractionChange) {
+      this.interactionSystem.setInteractionCallback(this.farmData.onInteractionChange);
+    }
 
     // 초기 배치 모드 적용
     if (this.placementMode) {
@@ -233,8 +324,18 @@ export class FarmScene extends Phaser.Scene {
     // 플레이어 액션 콜백 설정
     this.playerController.setActionCallback(() => this.handleAction());
 
+    // 플레이어 충돌 체크 설정 (건물/장애물)
+    this.playerController.setCollisionChecker((tileX, tileY) =>
+      this.unifiedPlacementManager.isTileBlocked(tileX, tileY)
+    );
+
     // 마우스 이벤트 설정
     this.setupMouseEvents();
+
+    // 디버그 키 설정 (` 백틱 키로 토글)
+    if (this.input.keyboard) {
+      this.debugKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.BACKTICK);
+    }
   }
 
   /**
@@ -252,12 +353,13 @@ export class FarmScene extends Phaser.Scene {
       if (this.placementMode) {
         // 배치 모드: 좌클릭으로 아이템 배치 (로컬)
         if (this.selectedPlacementItem && this.farmData.onPlaceItemLocally) {
-          const tempId = this.farmData.onPlaceItemLocally(this.selectedPlacementItem, tileX, tileY);
-          if (tempId) {
-            this.farmData.onNotify('아이템 배치됨 (저장 시 적용)', 'success');
-          } else {
-            this.farmData.onNotify('이 위치에는 배치할 수 없습니다', 'error');
-          }
+          this.farmData.onPlaceItemLocally(this.selectedPlacementItem, tileX, tileY).then(tempId => {
+            if (tempId) {
+              this.farmData.onNotify('아이템 배치됨 (저장 시 적용)', 'success');
+            } else {
+              this.farmData.onNotify('이 위치에는 배치할 수 없습니다', 'error');
+            }
+          });
         }
       } else {
         // 씨앗 모드: 좌클릭으로 밭에 심기/수확 (마우스 조작)
@@ -317,6 +419,11 @@ export class FarmScene extends Phaser.Scene {
    * 매 프레임 업데이트
    */
   update(): void {
+    // 디버그 키 입력 처리 (` 백틱)
+    if (this.debugKey && Phaser.Input.Keyboard.JustDown(this.debugKey)) {
+      this.toggleDebugMode();
+    }
+
     // 배치 모드가 아닐 때만 플레이어 컨트롤러 업데이트
     if (!this.placementMode) {
       this.playerController.update();
@@ -326,6 +433,111 @@ export class FarmScene extends Phaser.Scene {
     this.farmGridManager.updateTimers(this.farmSlots);
     // 배치 시스템 업데이트 (호환성 유지)
     this.unifiedPlacementManager.update();
+
+    // 디버그 모드일 때 충돌 표시 업데이트
+    if (this.debugMode) {
+      this.unifiedPlacementManager.updateCollisionDebug();
+      this.updatePlayerDebug();
+    }
+  }
+
+  /**
+   * 디버그 모드 토글
+   */
+  private toggleDebugMode(): void {
+    this.debugMode = !this.debugMode;
+
+    if (this.debugMode) {
+      // 디버그 모드 ON
+      this.mapManager.showDebugGrid();
+      this.unifiedPlacementManager.showCollisionDebug();
+
+      // 플레이어 디버그 그래픽스 생성
+      if (!this.playerDebugGraphics) {
+        this.playerDebugGraphics = this.add.graphics();
+        this.playerDebugGraphics.setDepth(600);
+      }
+      if (!this.playerDebugText) {
+        this.playerDebugText = this.add.text(10, 10, '', {
+          fontSize: '12px',
+          color: '#00ff00',
+          backgroundColor: '#000000',
+          padding: { x: 5, y: 3 },
+        });
+        this.playerDebugText.setDepth(600);
+        this.playerDebugText.setScrollFactor(0); // UI로 고정
+      }
+
+      this.farmData.onNotify('디버그 모드 ON (` 키로 토글)', 'success');
+    } else {
+      // 디버그 모드 OFF
+      this.mapManager.hideDebugGrid();
+      this.unifiedPlacementManager.hideCollisionDebug();
+
+      // 플레이어 디버그 숨기기
+      if (this.playerDebugGraphics) {
+        this.playerDebugGraphics.clear();
+      }
+      if (this.playerDebugText) {
+        this.playerDebugText.setVisible(false);
+      }
+
+      this.farmData.onNotify('디버그 모드 OFF', 'success');
+    }
+  }
+
+  /**
+   * 플레이어 디버그 정보 업데이트
+   */
+  private updatePlayerDebug(): void {
+    if (!this.playerDebugGraphics || !this.playerDebugText) return;
+
+    const pos = this.playerController.getPosition();
+    const tileX = Math.floor(pos.x / TILE_SIZE);
+    const tileY = Math.floor(pos.y / TILE_SIZE);
+    const isBlocked = this.unifiedPlacementManager.isTileBlocked(tileX, tileY);
+
+    // 플레이어 현재 타일 표시 (파란색/마젠타)
+    this.playerDebugGraphics.clear();
+
+    // 플레이어가 서있는 타일
+    const color = isBlocked ? 0xff00ff : 0x0088ff; // 충돌이면 마젠타, 아니면 파랑
+    this.playerDebugGraphics.fillStyle(color, 0.4);
+    this.playerDebugGraphics.fillRect(
+      tileX * TILE_SIZE,
+      tileY * TILE_SIZE,
+      TILE_SIZE,
+      TILE_SIZE
+    );
+    this.playerDebugGraphics.lineStyle(2, color, 0.8);
+    this.playerDebugGraphics.strokeRect(
+      tileX * TILE_SIZE,
+      tileY * TILE_SIZE,
+      TILE_SIZE,
+      TILE_SIZE
+    );
+
+    // 플레이어 중심점 표시 (발 위치)
+    this.playerDebugGraphics.fillStyle(0xffffff, 1);
+    this.playerDebugGraphics.fillCircle(pos.x, pos.y, 3);
+
+    // 플레이어 충돌 박스 표시 (노란색)
+    const collisionBox = this.playerController.getCollisionBox();
+    this.playerDebugGraphics.lineStyle(2, 0xffff00, 0.9);
+    this.playerDebugGraphics.strokeRect(
+      collisionBox.x,
+      collisionBox.y,
+      collisionBox.width,
+      collisionBox.height
+    );
+
+    // 디버그 텍스트 업데이트
+    this.playerDebugText.setVisible(true);
+    this.playerDebugText.setText([
+      `Player Pos: (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)})`,
+      `Tile: (${tileX}, ${tileY})`,
+      `Blocked: ${isBlocked ? 'YES' : 'NO'}`,
+    ].join('\n'));
   }
 
   /**
@@ -459,7 +671,7 @@ export class FarmScene extends Phaser.Scene {
   /**
    * 아이템 로컬 배치 (API 호출 없음)
    */
-  placeItemLocally(itemCode: string, tileX: number, tileY: number, metadata: PlacedItem['metadata']): string | null {
+  async placeItemLocally(itemCode: string, tileX: number, tileY: number, metadata: PlacedItem['metadata']): Promise<string | null> {
     if (!this.unifiedPlacementManager) return null;
     return this.unifiedPlacementManager.placeItemLocally(itemCode, tileX, tileY, metadata);
   }
@@ -507,5 +719,15 @@ export class FarmScene extends Phaser.Scene {
     this.interactionSystem?.destroy();
     this.unifiedPlacementManager?.destroy();
     this.farmGridManager?.destroy();
+
+    // 디버그 그래픽스 정리
+    if (this.playerDebugGraphics) {
+      this.playerDebugGraphics.destroy();
+      this.playerDebugGraphics = null;
+    }
+    if (this.playerDebugText) {
+      this.playerDebugText.destroy();
+      this.playerDebugText = null;
+    }
   }
 }

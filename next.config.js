@@ -9,7 +9,10 @@ const nextConfig = {
 
   reactStrictMode: true,
 
-  // 이미지 설정 (정적 빌드용)
+  // Docker 배포를 위한 standalone 모드
+  output: 'standalone',
+
+  // 이미지 최적화 설정
   images: {
     unoptimized: true,  // 정적 export 시 필수
   },

@@ -608,3 +608,8 @@ async def harvest_crop(
         item=parse_placed_item(updated_item, metadata),
         gold=new_gold,
     )
+
+
+# =====================================================
+# Admin Endpoints
+# =====================================================

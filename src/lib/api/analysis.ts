@@ -32,6 +32,31 @@ export interface RecommendedProblem {
   reason: string;
 }
 
+export interface WrongProblem {
+  id: string;
+  originalId?: string;  // 문제 페이지 이동용
+  name: string;
+  problemType?: string;
+  difficulty: string;
+  topics: string[];
+  hintsUsed: number;
+  lastAttemptAt?: string;
+}
+
+export interface WrongProblemsResponse {
+  problems: WrongProblem[];
+  total: number;
+  hasMore: boolean;
+}
+
+export interface WrongProblemsParams {
+  limit?: number;
+  offset?: number;
+  sortBy?: 'recent' | 'difficulty' | 'hints';
+  difficulty?: string;
+  topic?: string;
+}
+
 export interface HintUsage {
   total_requested: number;
   by_level?: Record<string, number>; // 레벨별 힌트 사용 횟수 {"1": 5, "2": 3}
@@ -200,9 +225,28 @@ export async function recommendProblems() {
   });
 }
 
+/**
+ * Get wrong problems for review
+ * 틀린 문제 목록 조회 (복습용)
+ */
+export async function getWrongProblems(params?: WrongProblemsParams) {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.sortBy) searchParams.set('sort_by', params.sortBy);
+  if (params?.difficulty) searchParams.set('difficulty', params.difficulty);
+  if (params?.topic) searchParams.set('topic', params.topic);
+
+  const query = searchParams.toString();
+  const url = `/analysis/wrong-problems${query ? `?${query}` : ''}`;
+
+  return api.get<WrongProblemsResponse>(url, true);
+}
+
 // Export as namespace
 export const analysisApi = {
   getReport,
   generateAnalysis,
   recommendProblems,
+  getWrongProblems,
 };

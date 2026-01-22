@@ -20,7 +20,7 @@ interface PixelSpriteProps {
 // ============================================
 
 interface CropPixelProps extends PixelSpriteProps {
-  stage: 0 | 1 | 2 | 3 | 4; // 빈땅, 씨앗, 새싹, 성장, 수확
+  stage: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 빈땅, 씨앗, 새싹, 성장, 성장2, 성장3, 수확가능
   type?: CropType;
 }
 

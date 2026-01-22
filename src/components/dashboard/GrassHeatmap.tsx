@@ -101,9 +101,6 @@ export function GrassHeatmap({ compact = false, username, publicActivityData }: 
   // 본인 프로필인지 확인
   const isOwnProfile = !username || (profile?.username === username);
 
-  // 오늘 날짜 상세 자동 로드 여부 추적
-  const [hasAutoLoadedToday, setHasAutoLoadedToday] = useState(false);
-
   useEffect(() => {
     // 데이터 처리 함수
     function processActivityData(response: { days?: Array<{ date?: string; activity_date?: string; problems_solved?: number; count?: number }> } | Array<{ date?: string; activity_date?: string; problems_solved?: number; count?: number }>) {
@@ -167,36 +164,8 @@ export function GrassHeatmap({ compact = false, username, publicActivityData }: 
     fetchActivity();
   }, [username, publicActivityData]);
 
-  // 페이지 로드 시 오늘 날짜 상세 자동 로드 (compact 모드 제외, Full 버전에서만)
-  useEffect(() => {
-    // compact 모드이거나, 아직 로딩 중이거나, 데이터가 없거나, 이미 자동 로드했으면 스킵
-    if (compact || isLoading || activityData.length === 0 || hasAutoLoadedToday) return;
-
-    const today = new Date().toISOString().split('T')[0];
-    const todayData = activityData.find(day => day.date === today);
-
-    if (todayData) {
-      // 오늘 날짜 자동 선택 및 상세 로드
-      const loadTodayDetail = async () => {
-        setSelectedDate(today);
-        setIsLoadingDetail(true);
-        setHasAutoLoadedToday(true);
-
-        try {
-          const detail = isOwnProfile
-            ? await usersApi.getActivityByDate(today)
-            : await publicProfileApi.getActivityByDate(username!, today);
-          setDateDetail(detail);
-        } catch (err) {
-          console.error('Failed to load today detail:', err);
-        } finally {
-          setIsLoadingDetail(false);
-        }
-      };
-
-      loadTodayDetail();
-    }
-  }, [isLoading, activityData, compact, isOwnProfile, username, hasAutoLoadedToday]);
+  // 자동 오늘 날짜 상세 로드 제거 - 성능 최적화
+  // 사용자가 직접 날짜를 클릭할 때만 상세 데이터 로드
 
   // 날짜 클릭 핸들러
   const handleDateClick = async (day: ActivityDay) => {

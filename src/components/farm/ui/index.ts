@@ -15,4 +15,11 @@ export { ExpandModal } from './ExpandModal';
 export { UnifiedShopModal } from './UnifiedShopModal';
 export { ToastNotification } from './ToastNotification';
 export { GameTopBar } from './GameTopBar';
+export { ActionPrompt } from './ActionPrompt';
+
+// 분리된 모드별 UI
+export { SeedHotbar } from './SeedHotbar';
+export { PlacementModeUI } from './PlacementModeUI';
+
+// 레거시 (추후 제거)
 export { UnifiedHotbar, type HotbarMode } from './UnifiedHotbar';

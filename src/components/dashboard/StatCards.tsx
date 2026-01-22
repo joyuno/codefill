@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, Award, Flame, Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { usersApi } from '@/lib/api/users';
 
 interface StatCardsProps {
   /** 조회할 사용자 username. 없으면 본인 */
@@ -26,18 +25,23 @@ export function StatCards({ username, publicData, badgeCount: propBadgeCount }: 
   // 본인 프로필인지 확인
   const isOwnProfile = !username;
 
-  // 본인 프로필일 때 뱃지 수 가져오기 (propBadgeCount가 없을 때만)
+  // 본인 프로필일 때 뱃지 수 가져오기 (캐시 우선, 중복 API 호출 방지)
   useEffect(() => {
-    // propBadgeCount가 전달되었으면 API 호출 안 함 (SidebarProfile에서 이미 호출함)
+    // propBadgeCount가 전달되었으면 사용
     if (propBadgeCount !== undefined) {
       setFetchedBadgeCount(propBadgeCount);
       return;
     }
 
     if (isOwnProfile && isAuthenticated) {
-      usersApi.getBadges()
-        .then(badges => setFetchedBadgeCount(badges.length))
-        .catch(() => setFetchedBadgeCount(0));
+      // MainLayout에서 캐싱한 값 먼저 확인 (API 호출 제거)
+      const cached = sessionStorage.getItem('codefill_badge_count');
+      if (cached) {
+        setFetchedBadgeCount(parseInt(cached, 10));
+        return;
+      }
+      // 캐시 없으면 0으로 설정 (MainLayout에서 곧 캐싱됨)
+      setFetchedBadgeCount(0);
     }
   }, [isOwnProfile, isAuthenticated, propBadgeCount]);
 
