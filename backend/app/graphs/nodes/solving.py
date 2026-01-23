@@ -78,6 +78,7 @@ async def provide_hint(state: SolvingState) -> Dict[str, Any]:
             messages=messages,
             model="gpt-4o-mini",
             temperature=0.7,
+            max_tokens=180,
         )
         hint_text = openrouter_service.get_content(response)
 
@@ -621,6 +622,8 @@ async def answer_question(state: SolvingState) -> Dict[str, Any]:
         response = await openrouter_service.chat_completion(
             messages=messages,
             model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=200,
         )
         response_message = openrouter_service.get_content(response)
 
