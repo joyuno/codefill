@@ -100,6 +100,10 @@ export class PlayerController {
   private scene: Phaser.Scene;
   private characterData: CharacterData;
 
+  // 동적 맵 크기 (기본값은 상수 사용)
+  private mapWidth: number = MAP_WIDTH;
+  private mapHeight: number = MAP_HEIGHT;
+
   // 레이어 기반 렌더링
   private container!: Phaser.GameObjects.Container;
   private layers: Map<LayerType, Phaser.GameObjects.Sprite> = new Map();
@@ -151,6 +155,14 @@ export class PlayerController {
   updateCharacterData(characterData: CharacterData): void {
     this.characterData = characterData;
     // 런타임 중 캐릭터 변경이 필요하면 레이어 재로드 로직 추가
+  }
+
+  /**
+   * 맵 크기 설정 (동적 맵 확장용)
+   */
+  setMapBounds(width: number, height: number): void {
+    this.mapWidth = width;
+    this.mapHeight = height;
   }
 
   /**
@@ -607,8 +619,8 @@ export class PlayerController {
 
     // 경계 제한 (맵 내부만)
     const margin = TILE_SIZE / 2;
-    newX = Phaser.Math.Clamp(newX, margin, MAP_WIDTH - margin);
-    newY = Phaser.Math.Clamp(newY, margin, MAP_HEIGHT - margin);
+    newX = Phaser.Math.Clamp(newX, margin, this.mapWidth - margin);
+    newY = Phaser.Math.Clamp(newY, margin, this.mapHeight - margin);
 
     // 충돌 체크 (충돌 박스 기반)
     if (this.collisionChecker) {
@@ -681,7 +693,7 @@ export class PlayerController {
    * Y좌표 기반 깊이 업데이트
    */
   private updateDepth(): void {
-    const depth = getEntityDepth(this.container.y, MAP_HEIGHT);
+    const depth = getEntityDepth(this.container.y, this.mapHeight);
     this.container.setDepth(depth);
   }
 

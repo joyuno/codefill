@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CreditCard, LogOut, User, Settings, Crown, Users, Shield, FileText, UserCog } from 'lucide-react';
+import { CreditCard, LogOut, User, Settings, Crown, Users, Shield, FileText, UserCog, Coins, Sparkles } from 'lucide-react';
 import { friendsApi } from '@/lib/api';
 import { FriendModal } from '@/components/friends';
 import { Button } from '@/components/ui/button';
@@ -94,32 +94,23 @@ export function Header() {
           ) : isAuthenticated && user ? (
             // 로그인 상태
             <>
-              {/* 결제 버튼 */}
-              <Link href="/pricing">
+              {/* 크레딧 표시 */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary/50 border border-border">
+                <Coins className="h-4 w-4 text-amber-500" />
+                <span className="text-sm font-medium">
+                  {(profile?.credits ?? 0).toLocaleString()}
+                </span>
+              </div>
+
+              {/* 크레딧 충전 버튼 */}
+              <Link href="/credits">
                 <Button
                   variant="outline"
                   size="sm"
-                  className={cn(
-                    'gap-2 font-medium',
-                    profile?.subscription_tier === 'pro' && 'border-amber-400 text-amber-600 hover:bg-amber-50'
-                  )}
+                  className="gap-2 font-medium"
                 >
-                  {profile?.subscription_tier === 'pro' ? (
-                    <>
-                      <Crown className="h-4 w-4" />
-                      <span className="hidden sm:inline">Pro 멤버</span>
-                    </>
-                  ) : profile?.subscription_tier === 'basic' ? (
-                    <>
-                      <CreditCard className="h-4 w-4" />
-                      <span className="hidden sm:inline">베이직</span>
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="h-4 w-4" />
-                      <span className="hidden sm:inline">업그레이드</span>
-                    </>
-                  )}
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  <span className="hidden sm:inline">충전</span>
                 </Button>
               </Link>
 

@@ -316,8 +316,8 @@ export default function OnboardingPage() {
       // 회원가입 성공 시 토큰이 자동으로 저장됨 (authApi.signup 내부에서 처리)
       if (result.data?.access_token) {
         toast({
-          title: '회원가입 완료!',
-          description: 'CodeFill에 오신 것을 환영합니다!',
+          title: '🎉 회원가입 완료!',
+          description: '10,000 크레딧이 지급되었습니다. 문제 생성 시 크레딧이 소모됩니다.',
         });
 
         // 자동 로그인되어 대시보드로 이동

@@ -5,13 +5,11 @@
 
 import * as Phaser from 'phaser';
 import {
-  MAP_COLS,
-  MAP_ROWS,
-  MAP_WIDTH,
-  MAP_HEIGHT,
   TILE_SIZE,
   TILESET,
-  TILES,
+  VIEWPORT_WIDTH,
+  VIEWPORT_HEIGHT,
+  MAP_COLS,
   FARM_OFFSET_X,
   FARM_OFFSET_Y,
   FARM_MAX_SIZE,
@@ -22,6 +20,10 @@ export class MapManager {
   private scene: Phaser.Scene;
   private groundTileSprite: Phaser.GameObjects.TileSprite | null = null;
   private decorationSprites: Phaser.GameObjects.Image[] = [];
+
+  // 동적 맵 크기
+  private mapWidth: number = VIEWPORT_WIDTH;
+  private mapHeight: number = VIEWPORT_HEIGHT;
 
   // 디버그 그리드
   private debugGridGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -57,8 +59,14 @@ export class MapManager {
 
   /**
    * 맵 생성
+   * @param mapWidth 맵 너비 (픽셀)
+   * @param mapHeight 맵 높이 (픽셀)
    */
-  create(): void {
+  create(mapWidth?: number, mapHeight?: number): void {
+    // 동적 맵 크기 설정
+    if (mapWidth) this.mapWidth = mapWidth;
+    if (mapHeight) this.mapHeight = mapHeight;
+
     this.createGrassFloor();
     // 나무와 건초는 소유 시스템으로 전환됨 (PlacementSystem에서 처리)
   }
@@ -69,10 +77,10 @@ export class MapManager {
   private createGrassFloor(): void {
     // TileSprite: 하나의 이미지를 전체 맵에 반복 (600개 스프라이트 대신 1개)
     this.groundTileSprite = this.scene.add.tileSprite(
-      MAP_WIDTH / 2,   // 중앙 x
-      MAP_HEIGHT / 2,  // 중앙 y
-      MAP_WIDTH,       // 전체 너비
-      MAP_HEIGHT,      // 전체 높이
+      this.mapWidth / 2,   // 중앙 x
+      this.mapHeight / 2,  // 중앙 y
+      this.mapWidth,       // 전체 너비
+      this.mapHeight,      // 전체 높이
       'grass_floor'
     );
     this.groundTileSprite.setDepth(DEPTH.GROUND_GRASS);
@@ -130,10 +138,22 @@ export class MapManager {
   }
 
   /**
+   * 맵 크기 getter
+   */
+  getMapDimensions(): { width: number; height: number; cols: number; rows: number } {
+    return {
+      width: this.mapWidth,
+      height: this.mapHeight,
+      cols: Math.floor(this.mapWidth / TILE_SIZE),
+      rows: Math.floor(this.mapHeight / TILE_SIZE),
+    };
+  }
+
+  /**
    * 특정 위치가 맵 경계 내인지 확인
    */
   isWithinBounds(x: number, y: number): boolean {
-    return x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT;
+    return x >= 0 && x < this.mapWidth && y >= 0 && y < this.mapHeight;
   }
 
   /**
@@ -193,28 +213,31 @@ export class MapManager {
 
     if (!this.debugGridVisible) return;
 
+    const mapCols = Math.floor(this.mapWidth / TILE_SIZE);
+    const mapRows = Math.floor(this.mapHeight / TILE_SIZE);
+
     // 노란색 그리드 선
     this.debugGridGraphics.lineStyle(1, 0xffff00, 0.3);
 
     // 세로선
-    for (let col = 0; col <= MAP_COLS; col++) {
+    for (let col = 0; col <= mapCols; col++) {
       this.debugGridGraphics.lineBetween(
         col * TILE_SIZE, 0,
-        col * TILE_SIZE, MAP_HEIGHT
+        col * TILE_SIZE, this.mapHeight
       );
     }
 
     // 가로선
-    for (let row = 0; row <= MAP_ROWS; row++) {
+    for (let row = 0; row <= mapRows; row++) {
       this.debugGridGraphics.lineBetween(
         0, row * TILE_SIZE,
-        MAP_WIDTH, row * TILE_SIZE
+        this.mapWidth, row * TILE_SIZE
       );
     }
 
     // 타일 좌표 텍스트 (주요 위치만)
-    for (let col = 0; col < MAP_COLS; col += 5) {
-      for (let row = 0; row < MAP_ROWS; row += 5) {
+    for (let col = 0; col < mapCols; col += 5) {
+      for (let row = 0; row < mapRows; row += 5) {
         const x = col * TILE_SIZE + 2;
         const y = row * TILE_SIZE + 2;
         const text = this.scene.add.text(x, y, `${col},${row}`, {

@@ -37,6 +37,7 @@ const GAME_HEIGHT = 640;
 
 interface FarmGameProps {
   farmSize: number;
+  mapLevel?: number;  // 맵 확장 레벨 (1-5, 기본값 1)
   gold: number;
   inventory: InventoryItem[];
   selectedSeed: string | null;
@@ -64,6 +65,7 @@ interface FarmGameProps {
 
 export function FarmGame({
   farmSize,
+  mapLevel = 1,
   gold,
   inventory,
   selectedSeed,
@@ -123,6 +125,7 @@ export function FarmGame({
         scene.scene.restart({
           gold,
           farmSize,
+          mapLevel,  // 맵 확장 레벨
           inventory,
           onNotify,
           selectedSeed,
@@ -200,6 +203,35 @@ export function FarmGame({
       sceneRef.current.updateFarmSlots(farmSize, farmSlots);
     }
   }, [farmSlots, farmSize, isLoaded]);
+
+  // 맵 레벨 변경 시 씬 재시작 (맵 확장)
+  const prevMapLevelRef = useRef(mapLevel);
+  useEffect(() => {
+    if (sceneRef.current && isLoaded && mapLevel !== prevMapLevelRef.current) {
+      prevMapLevelRef.current = mapLevel;
+      // 씬 재시작으로 맵 크기 업데이트
+      sceneRef.current.scene.restart({
+        gold,
+        farmSize,
+        mapLevel,
+        inventory,
+        onNotify,
+        selectedSeed,
+        characterData,
+        placementMode,
+        deleteMode: false,
+        selectedPlacementItem,
+        placedItems,
+        onPlaceItemLocally,
+        onMoveItem,
+        onRemoveItem,
+        farmSlots,
+        onPlantOnSlot,
+        onHarvestFromSlot,
+        onInteractionChange,
+      });
+    }
+  }, [mapLevel, isLoaded, gold, farmSize, inventory, onNotify, selectedSeed, characterData, placementMode, selectedPlacementItem, placedItems, onPlaceItemLocally, onMoveItem, onRemoveItem, farmSlots, onPlantOnSlot, onHarvestFromSlot, onInteractionChange]);
 
   return (
     <div

@@ -15,6 +15,7 @@ import {
   Menu,
   Store,
   Expand,
+  Map,
   Settings,
   X,
 } from 'lucide-react';
@@ -23,9 +24,10 @@ interface GameTopBarProps {
   gold: number;
   onOpenShop: () => void;
   onOpenExpand: () => void;
+  onOpenMapExpand?: () => void;
 }
 
-export function GameTopBar({ gold, onOpenShop, onOpenExpand }: GameTopBarProps) {
+export function GameTopBar({ gold, onOpenShop, onOpenExpand, onOpenMapExpand }: GameTopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -127,8 +129,22 @@ export function GameTopBar({ gold, onOpenShop, onOpenExpand }: GameTopBarProps) 
                       className="w-full flex items-center gap-3 px-4 py-3 text-left text-amber-200 hover:bg-amber-900/50 transition-colors border-t border-amber-900/30"
                     >
                       <Expand className="w-5 h-5 text-green-400" />
-                      <span className="font-bold">농장 확장</span>
+                      <span className="font-bold">밭 확장</span>
                     </button>
+
+                    {/* 맵 확장 */}
+                    {onOpenMapExpand && (
+                      <button
+                        onClick={() => {
+                          onOpenMapExpand();
+                          setMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-amber-200 hover:bg-amber-900/50 transition-colors border-t border-amber-900/30"
+                      >
+                        <Map className="w-5 h-5 text-cyan-400" />
+                        <span className="font-bold">맵 확장</span>
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               )}

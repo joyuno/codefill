@@ -99,6 +99,10 @@ export {
   type ExpansionOption,
   type ExpansionCostsResponse,
   type ExpandResponse,
+  // Map Expansion Types (맵 확장)
+  type MapExpansionOption,
+  type MapExpansionCostsResponse,
+  type MapExpandResponse,
   // Slot-based Farm System Types (신규)
   type FarmSlot,
   type PlantSlotResponse,

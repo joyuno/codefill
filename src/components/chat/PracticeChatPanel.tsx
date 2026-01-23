@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble } from './MessageBubble';
 import { ChatComposer } from './ChatComposer';
@@ -24,6 +25,15 @@ import type { ConvertedProblem } from '@/lib/dataTypes';
 import { Loader2, Lightbulb, BookOpen, Sparkles, GraduationCap, Code } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Coins } from 'lucide-react';
 
 interface PracticeChatPanelProps {
   problem: ConvertedProblem | null;
@@ -216,7 +226,16 @@ export function PracticeChatPanel({
   usedBlankHintIndices = [],
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
+
+  // 라우터
+  const router = useRouter();
+
+  // 토스트 알림
+  const { toast } = useToast();
+
+  // 크레딧 부족 모달 상태
+  const [showInsufficientCreditsDialog, setShowInsufficientCreditsDialog] = useState(false);
 
   // 세션 ID 상태 (props에서 전달받거나 응답에서 설정)
   const [sessionId, setSessionId] = useState<string | null>(propSessionId || null);
@@ -1086,6 +1105,26 @@ export function PracticeChatPanel({
         });
 
         generatedProblem = streamResult;
+
+        // 문제 생성 후 프로필 새로고침 (크레딧 업데이트)
+        console.log('[Credits] Refreshing profile after problem generation...');
+        refreshProfile().then(() => {
+          console.log('[Credits] Profile refreshed successfully');
+          // 크레딧을 소모하는 유형만 토스트 표시 (blank, puzzle, guided)
+          if (['blank', 'puzzle', 'guided'].includes(type)) {
+            toast({
+              description: (
+                <div className="flex items-center gap-2">
+                  <Coins className="h-4 w-4 text-amber-500" />
+                  <span>-10 크레딧</span>
+                </div>
+              ),
+              duration: 2000,
+            });
+          }
+        }).catch((err) => {
+          console.error('[Credits] Profile refresh failed:', err);
+        });
       }
 
       console.log('[handleProblemTypeSelect] Generated problem:', {
@@ -1220,15 +1259,36 @@ export function PracticeChatPanel({
 
     } catch (error) {
       console.error('Problem generation error:', error);
-      setMessages(prev => {
-        const filtered = prev.filter(m => !m.id.startsWith('loading-'));
-        return [...filtered, {
-          id: `error-${Date.now()}`,
-          role: 'assistant' as const,
-          content: `문제 생성 중 오류가 발생했어요. 다시 시도해주세요.\n\n오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
-          timestamp: new Date().toISOString(),
-        }];
-      });
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
+
+      // 크레딧 부족 에러 감지
+      const isInsufficientCredits = errorMessage.includes('크레딧') ||
+        errorMessage.includes('credit') ||
+        errorMessage.toLowerCase().includes('insufficient');
+
+      if (isInsufficientCredits) {
+        // 크레딧 부족 모달 표시
+        setShowInsufficientCreditsDialog(true);
+        setMessages(prev => {
+          const filtered = prev.filter(m => !m.id.startsWith('loading-'));
+          return [...filtered, {
+            id: `error-${Date.now()}`,
+            role: 'assistant' as const,
+            content: '크레딧이 부족해요. 크레딧을 충전하거나 무료 문제 유형을 이용해주세요!',
+            timestamp: new Date().toISOString(),
+          }];
+        });
+      } else {
+        setMessages(prev => {
+          const filtered = prev.filter(m => !m.id.startsWith('loading-'));
+          return [...filtered, {
+            id: `error-${Date.now()}`,
+            role: 'assistant' as const,
+            content: `문제 생성 중 오류가 발생했어요. 다시 시도해주세요.\n\n오류: ${errorMessage}`,
+            timestamp: new Date().toISOString(),
+          }];
+        });
+      }
       setFlowState('type_selection');
     } finally {
       setIsLoading(false);
@@ -2122,6 +2182,52 @@ export function PracticeChatPanel({
       )}
 
       <ChatComposer onSend={handleSendMessage} disabled={isLoading} />
+
+      {/* 크레딧 부족 모달 */}
+      <Dialog open={showInsufficientCreditsDialog} onOpenChange={setShowInsufficientCreditsDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Coins className="h-5 w-5 text-amber-500" />
+              크레딧이 부족해요
+            </DialogTitle>
+            <DialogDescription className="space-y-3 pt-2">
+              <p>
+                문제 생성에 필요한 크레딧이 부족합니다.
+              </p>
+              <div className="bg-secondary/50 rounded-lg p-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">현재 크레딧</span>
+                  <span className="font-medium">{(profile?.credits ?? 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">필요 크레딧</span>
+                  <span className="font-medium text-amber-600">10</span>
+                </div>
+              </div>
+              <p className="text-sm">
+                <strong>구현</strong> 유형은 무료로 이용 가능해요!
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowInsufficientCreditsDialog(false)}
+            >
+              닫기
+            </Button>
+            <Button
+              onClick={() => {
+                setShowInsufficientCreditsDialog(false);
+                router.push('/credits');
+              }}
+            >
+              크레딧 충전하기
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

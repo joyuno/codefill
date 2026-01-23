@@ -20,6 +20,7 @@ export interface UserProfile {
   maxStreak: number;
   joinedAt: string;
   subscription: 'free' | 'pro' | 'enterprise';
+  credits: number;  // 문제 생성용 크레딧
   preferences?: {
     preferredFramework?: string;
     preferredLanguage?: string;

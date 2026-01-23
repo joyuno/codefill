@@ -92,7 +92,8 @@ export interface UserFarm {
   farmUnlocked: boolean;
   farmLevel: number;
   gold: number;
-  farmSize: number;  // 밭 슬롯 개수 (1, 4, 9, 16, 25)
+  farmSize: number;  // 밭 슬롯 개수 (1, 4, 9, 16, 25, 36, 49)
+  mapLevel: number;  // 맵 확장 레벨 (1-5)
   houseLevel: number;
   farmSlots: FarmSlot[];  // 밭 그리드 슬롯 데이터
   createdAt: string;
@@ -154,6 +155,33 @@ export interface ExpandResponse {
   farmSize: number;
   gold: number;
   farmSlots: FarmSlot[];
+}
+
+// =====================================================
+// Map Expansion Types (맵 확장)
+// =====================================================
+
+export interface MapExpansionOption {
+  level: number;
+  cols: number;
+  rows: number;
+  name: string;
+  cost: number;
+  isCurrent: boolean;
+  canAfford: boolean;
+}
+
+export interface MapExpansionCostsResponse {
+  currentLevel: number;
+  gold: number;
+  options: MapExpansionOption[];
+}
+
+export interface MapExpandResponse {
+  success: boolean;
+  message: string;
+  mapLevel: number;
+  gold: number;
 }
 
 // =====================================================
@@ -356,6 +384,7 @@ interface BackendUserFarm {
   farm_level: number;
   gold: number;
   farm_size: number;
+  map_level: number;
   house_level: number;
   farm_slots: BackendFarmSlot[];
   created_at: string;
@@ -411,6 +440,29 @@ interface BackendExpandResponse {
   farm_slots: BackendFarmSlot[];
 }
 
+interface BackendMapExpansionOption {
+  level: number;
+  cols: number;
+  rows: number;
+  name: string;
+  cost: number;
+  is_current: boolean;
+  can_afford: boolean;
+}
+
+interface BackendMapExpansionCostsResponse {
+  current_level: number;
+  gold: number;
+  options: BackendMapExpansionOption[];
+}
+
+interface BackendMapExpandResponse {
+  success: boolean;
+  message: string;
+  map_level: number;
+  gold: number;
+}
+
 // =====================================================
 // Transform Functions
 // =====================================================
@@ -437,6 +489,7 @@ function transformUserFarm(data: BackendUserFarm): UserFarm {
     farmLevel: data.farm_level,
     gold: data.gold,
     farmSize: data.farm_size,
+    mapLevel: data.map_level || 1,
     houseLevel: data.house_level,
     farmSlots: (data.farm_slots || []).map(slot => ({
       slot: slot.slot,
@@ -661,6 +714,49 @@ export const farmApi = {
         growTimeSeconds: slot.growTimeSeconds,
         stage: slot.stage,
       })),
+    };
+  },
+
+  // =====================================================
+  // Map Expansion API (맵 확장)
+  // =====================================================
+
+  /**
+   * Get map expansion costs
+   */
+  async getMapExpansionCosts(): Promise<MapExpansionCostsResponse> {
+    const response = await api.get<BackendMapExpansionCostsResponse>('/farm/map/expansion-costs');
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    return {
+      currentLevel: data.current_level,
+      gold: data.gold,
+      options: data.options.map((opt) => ({
+        level: opt.level,
+        cols: opt.cols,
+        rows: opt.rows,
+        name: opt.name,
+        cost: opt.cost,
+        isCurrent: opt.is_current,
+        canAfford: opt.can_afford,
+      })),
+    };
+  },
+
+  /**
+   * Expand map
+   */
+  async expandMap(targetLevel: number): Promise<MapExpandResponse> {
+    const response = await api.post<BackendMapExpandResponse>('/farm/map/expand', {
+      target_level: targetLevel,
+    });
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    return {
+      success: data.success,
+      message: data.message,
+      mapLevel: data.map_level,
+      gold: data.gold,
     };
   },
 
