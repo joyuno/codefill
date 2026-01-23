@@ -139,15 +139,20 @@ async def handle_thanks(state: ChatState) -> Dict[str, Any]:
 async def handle_general(state: ChatState) -> Dict[str, Any]:
     """
     일반적인 대화 처리 (분류되지 않은 의도)
+
+    문제 풀이 중일 때는 현재 상황 정보를 포함하여 관련 질문에 대답할 수 있도록 함
     """
     from ...services.openrouter import OpenRouterService
+    import json
 
     message = state.get("message", "")
     conversation_history = state.get("conversation_history", [])
     intent_result = state.get("intent_result", {})
+    current_practice_state = state.get("current_practice_state", {})
 
     openrouter = OpenRouterService()
 
+    # 기본 시스템 프롬프트
     system_prompt = """당신은 CodeFill의 친근한 코딩 학습 도우미입니다.
 사용자와 자연스럽게 대화하면서 코딩 학습으로 유도해주세요.
 
@@ -157,6 +162,68 @@ async def handle_general(state: ChatState) -> Dict[str, Any]:
 - 범위를 벗어난 질문은 정중히 거절하고 학습으로 돌아오게 유도
 - 이모지 적절히 사용
 """
+
+    # 문제 풀이 중일 때 현재 상황 정보 추가
+    if current_practice_state and current_practice_state.get("problem_id"):
+        problem_type = current_practice_state.get("problem_type", "")
+        problem_title = current_practice_state.get("problem_title", "")
+        previous_hints = current_practice_state.get("previous_hints", [])
+
+        practice_context = f"""
+
+## 현재 문제 풀이 상황
+- **문제**: {problem_title}
+- **유형**: {problem_type}
+"""
+
+        # 빈칸 문제일 때
+        if problem_type == "blank":
+            blank_answers = current_practice_state.get("blank_answers", {})
+            used_hint_indices = current_practice_state.get("used_hint_indices", [])
+
+            if blank_answers:
+                answers_info = ", ".join([f"{k}: '{v}'" for k, v in blank_answers.items() if v])
+                practice_context += f"- **현재 입력한 답변**: {answers_info}\n"
+
+            if used_hint_indices:
+                practice_context += f"- **힌트 사용한 빈칸**: {used_hint_indices}\n"
+
+        # 퍼즐 문제일 때
+        elif problem_type == "puzzle":
+            puzzle_user_order = current_practice_state.get("puzzle_user_order", [])
+            used_hint_indices = current_practice_state.get("used_hint_indices", [])
+
+            if puzzle_user_order:
+                practice_context += f"- **현재 블록 배치 순서**: {len(puzzle_user_order)}개 블록 배치됨\n"
+
+            if used_hint_indices:
+                practice_context += f"- **힌트 사용한 블록 위치**: {used_hint_indices}\n"
+
+        # guided 모드일 때
+        elif problem_type == "guided":
+            current_code = current_practice_state.get("current_code", "")
+            if current_code:
+                # 코드가 너무 길면 축약
+                code_preview = current_code[:500] + "..." if len(current_code) > 500 else current_code
+                practice_context += f"- **현재 작성 중인 코드**:\n```\n{code_preview}\n```\n"
+
+        # 이전 힌트 정보
+        if previous_hints:
+            hints_summary = previous_hints[-3:]  # 최근 3개 힌트만
+            practice_context += f"- **이전에 받은 힌트** ({len(previous_hints)}개):\n"
+            for i, hint in enumerate(hints_summary, 1):
+                hint_preview = hint[:100] + "..." if len(hint) > 100 else hint
+                practice_context += f"  {i}. {hint_preview}\n"
+
+        practice_context += """
+## 추가 규칙
+- 사용자가 현재 풀고 있는 문제와 관련된 질문을 하면 위 정보를 참고하여 도움을 주세요
+- 이미 제공된 힌트 내용을 참고하여 중복되지 않는 도움을 주세요
+- 직접적인 정답은 알려주지 않고, 사고 과정을 돕는 방향으로 안내하세요
+- 사용자가 입력한 답변이 있으면 그것을 바탕으로 피드백을 줄 수 있어요
+"""
+
+        system_prompt += practice_context
 
     messages = [{"role": "system", "content": system_prompt}]
     for msg in conversation_history[-6:]:  # 꼬리 질문 맥락 유지
@@ -170,6 +237,7 @@ async def handle_general(state: ChatState) -> Dict[str, Any]:
         response_data = await openrouter.chat_completion(
             messages=messages,
             model="gpt-4o-mini",
+            max_tokens=180,  # 2-3문장으로 간결하게
         )
         response = openrouter.get_content(response_data)
     except Exception as e:

@@ -49,6 +49,23 @@ class ProblemInfo(TypedDict, total=False):
     similarity: Optional[float]
 
 
+class CurrentPracticeState(TypedDict, total=False):
+    """현재 문제 풀이 상황 (빈칸/퍼즐 문제에서 채팅이 현재 상황 파악용)"""
+    problem_id: Optional[str]
+    problem_type: Optional[str]  # blank, puzzle, guided
+    problem_title: Optional[str]
+    # 빈칸 문제: 사용자가 입력한 답변
+    blank_answers: Optional[Dict[str, str]]
+    # 퍼즐 문제: 사용자가 배치한 블록 순서
+    puzzle_user_order: Optional[List[str]]
+    # 이전에 받은 힌트들
+    previous_hints: Optional[List[str]]
+    # 힌트 사용한 빈칸/블록 인덱스
+    used_hint_indices: Optional[List[int]]
+    # guided 모드: 현재 코드
+    current_code: Optional[str]
+
+
 class ChatState(TypedDict, total=False):
     """
     LangGraph Chat State
@@ -59,6 +76,7 @@ class ChatState(TypedDict, total=False):
     message: str  # 현재 사용자 메시지
     conversation_history: List[Dict[str, str]]  # 대화 히스토리
     user_context: Optional[Dict[str, Any]]  # 사용자 컨텍스트 (현재 문제, 코드 등)
+    current_practice_state: Optional[CurrentPracticeState]  # 현재 문제 풀이 상황
 
     # === 의도 분류 ===
     intent_result: Optional[IntentResult]

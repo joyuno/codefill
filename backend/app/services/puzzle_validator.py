@@ -99,6 +99,9 @@ class PuzzleValidator:
         correct_order: List[int],
         language: str = "python",
         strict_mode: bool = False,
+        test_cases: Optional[List[Dict[str, str]]] = None,
+        fixed_start: str = "",
+        fixed_end: str = "",
     ) -> ValidationResult:
         """
         퍼즐 정답 검증
@@ -109,6 +112,9 @@ class PuzzleValidator:
             correct_order: 정답 순서
             language: 프로그래밍 언어
             strict_mode: True면 정확한 순서만 허용
+            test_cases: Judge0 검증용 테스트케이스
+            fixed_start: 고정된 시작 코드
+            fixed_end: 고정된 끝 코드
 
         Returns:
             ValidationResult
@@ -121,7 +127,31 @@ class PuzzleValidator:
                 feedback="정확합니다! 🎉",
             )
 
-        # 2. strict 모드면 틀림 처리
+        # 2. 테스트케이스가 있으면 Judge0로 실행 검증 (복수 정답 처리)
+        if test_cases and len(test_cases) > 0:
+            user_code = self._assemble_full_code(blocks, user_order, fixed_start, fixed_end)
+            exec_result = await self._validate_with_test_cases(user_code, language, test_cases)
+
+            if exec_result["all_passed"]:
+                return ValidationResult(
+                    is_correct=True,
+                    score=1.0,
+                    feedback="테스트케이스 통과! 복수 정답으로 인정됩니다. 🎉",
+                    details={"validation_type": "judge0_testcase"}
+                )
+            else:
+                # 테스트케이스 실패 - 첫 틀린 위치 찾기
+                first_wrong = self._find_first_wrong(user_order, correct_order)
+                return ValidationResult(
+                    is_correct=False,
+                    score=self._calculate_score(user_order, correct_order),
+                    feedback=exec_result.get("feedback", f"{first_wrong + 1}번째 블록을 확인해보세요."),
+                    first_wrong_position=first_wrong,
+                    expected_block=blocks[correct_order[first_wrong]][:30] if first_wrong < len(correct_order) else None,
+                    details={"execution_error": exec_result.get("error")}
+                )
+
+        # 3. strict 모드면 틀림 처리
         if strict_mode:
             first_wrong = self._find_first_wrong(user_order, correct_order)
             return ValidationResult(
@@ -132,7 +162,7 @@ class PuzzleValidator:
                 expected_block=blocks[correct_order[first_wrong]][:30],
             )
 
-        # 3. 스마트 검증: 논리적 그룹 기반
+        # 4. 스마트 검증: 논리적 그룹 기반
         return await self._validate_smart(blocks, user_order, correct_order, language)
 
     async def _validate_smart(
@@ -454,6 +484,99 @@ class PuzzleValidator:
         """블록을 순서대로 조합하여 코드 생성"""
         return "\n".join(blocks[i] for i in order)
 
+    def _assemble_full_code(
+        self,
+        blocks: List[str],
+        order: List[int],
+        fixed_start: str = "",
+        fixed_end: str = ""
+    ) -> str:
+        """fixed_start/end를 포함한 전체 코드 생성"""
+        parts = []
+        if fixed_start:
+            parts.append(fixed_start)
+        parts.append(self._assemble_code(blocks, order))
+        if fixed_end:
+            parts.append(fixed_end)
+        return "\n".join(parts)
+
+    async def _validate_with_test_cases(
+        self,
+        code: str,
+        language: str,
+        test_cases: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """
+        Judge0로 테스트케이스 기반 실행 검증
+
+        Args:
+            code: 실행할 코드
+            language: 프로그래밍 언어
+            test_cases: [{"input": "...", "output": "..."}]
+
+        Returns:
+            {"all_passed": bool, "passed_count": int, "total": int, "error": str, "feedback": str}
+        """
+        try:
+            from .judge0 import judge0_service
+
+            # 언어 ID 매핑
+            language_ids = {
+                "python": 71,
+                "javascript": 63,
+                "java": 62,
+                "c": 50,
+                "cpp": 54,
+            }
+
+            lang_id = language_ids.get(language, 71)
+            passed_count = 0
+            total = len(test_cases)
+            last_error = None
+
+            for i, tc in enumerate(test_cases[:3]):  # 최대 3개 테스트케이스만 검증 (API 비용 절감)
+                stdin = tc.get("input", "")
+                expected_output = tc.get("output", "").strip()
+
+                result = await judge0_service.execute(
+                    source_code=code,
+                    language_id=lang_id,
+                    stdin=stdin,
+                    timeout=5,
+                )
+
+                status_id = result.get("status", {}).get("id", 0)
+                actual_output = (result.get("stdout") or "").strip()
+
+                if status_id == 3:  # Accepted
+                    if actual_output == expected_output:
+                        passed_count += 1
+                    else:
+                        last_error = f"출력이 다릅니다. 예상: {expected_output[:30]}, 실제: {actual_output[:30]}"
+                else:
+                    last_error = result.get("stderr", "") or result.get("compile_output", "") or "실행 오류"
+
+            all_passed = (passed_count == min(total, 3))
+
+            return {
+                "all_passed": all_passed,
+                "passed_count": passed_count,
+                "total": min(total, 3),
+                "error": last_error if not all_passed else None,
+                "feedback": f"테스트케이스 {passed_count}/{min(total, 3)} 통과" if not all_passed else None,
+            }
+
+        except Exception as e:
+            print(f"[PuzzleValidator] Judge0 test_cases error: {e}")
+            # Judge0 실패 시 False 반환 (strict 검증으로 폴백)
+            return {
+                "all_passed": False,
+                "passed_count": 0,
+                "total": len(test_cases),
+                "error": str(e),
+                "feedback": "코드 실행 검증 중 오류가 발생했습니다.",
+            }
+
     def _find_first_wrong(self, user_order: List[int], correct_order: List[int]) -> int:
         """첫 번째 틀린 위치 찾기"""
         for i, (u, c) in enumerate(zip(user_order, correct_order)):
@@ -540,18 +663,35 @@ async def validate_puzzle(
     correct_order: List[int],
     language: str = "python",
     strict_mode: bool = False,
+    test_cases: Optional[List[Dict[str, str]]] = None,
+    fixed_start: str = "",
+    fixed_end: str = "",
 ) -> ValidationResult:
     """
     퍼즐 검증 편의 함수
+
+    Args:
+        blocks: 코드 블록 목록
+        user_order: 사용자가 제출한 순서
+        correct_order: 정답 순서
+        language: 프로그래밍 언어
+        strict_mode: True면 정확한 순서만 허용
+        test_cases: [{"input": "...", "output": "..."}] - Judge0 검증용
+        fixed_start: 고정된 시작 코드
+        fixed_end: 고정된 끝 코드
 
     Example:
         result = await validate_puzzle(
             blocks=["import os", "def main():", "    print('hi')", "main()"],
             user_order=[0, 1, 2, 3],
             correct_order=[0, 1, 2, 3],
+            test_cases=[{"input": "", "output": "hi"}],
         )
         if result.is_correct:
             print("정답!")
     """
-    validator = get_puzzle_validator()
-    return await validator.validate(blocks, user_order, correct_order, language, strict_mode)
+    validator = get_puzzle_validator(judge0_enabled=bool(test_cases))
+    return await validator.validate(
+        blocks, user_order, correct_order, language, strict_mode,
+        test_cases=test_cases, fixed_start=fixed_start, fixed_end=fixed_end
+    )

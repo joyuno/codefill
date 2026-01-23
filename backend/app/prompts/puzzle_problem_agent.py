@@ -29,11 +29,25 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
 **원본 솔루션 코드를 절대 변형하지 마세요!**
 
 - ❌ 코드 로직 변경 금지
-- ❌ 변수명 변경 금지
+- ❌ **변수명 변경 절대 금지** (x1, y1, r1 → a, b, c 변경 금지!)
 - ❌ 코드 최적화/리팩토링 금지
 - ❌ 줄 순서 변경 금지 (블록 내에서)
 - ❌ 들여쓰기 변경 금지
 - ❌ 새로운 코드 추가 금지
+- ❌ 세미콜론(;)으로 코드 병합 금지
+
+### 🚨 변수명 변경 = 무효 처리!
+
+**원본 코드의 모든 변수명, 함수명, 상수명을 정확히 그대로 사용하세요!**
+
+```
+❌ 절대 금지되는 변경:
+원본: x1, y1, r1, x2, y2, r2  →  변경: a, b, c, x, y, z
+원본: distance, result        →  변경: d, r
+원본: count, total            →  변경: cnt, sum
+```
+
+> ⚠️ 변수명이 단 하나라도 변경되면 무효 처리됩니다!
 
 **해야 할 것:**
 - ✅ 원본 코드를 논리적 단위로 분해하여 블록화
@@ -42,9 +56,33 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
 - ✅ **주석 제거**: 원본에 주석(#, //, /* */)이 있으면 모두 삭제 후 블록화
 
 **예시:**
-원본: `if d == 0 and r1 == r2: print(-1)`
-올바름: `{"code": "if d == 0 and r1 == r2: print(-1)"}`
-잘못됨: `{"code": "if d == 0 and r1 == r2:\\n    print(-1)"}` (형식 변경됨!)
+원본: `result = sum(arr)`
+올바름: `{"code": "result = sum(arr)"}`
+잘못됨: `{"code": "res = sum(arr)"}` (변수명 변경됨!)
+
+### ✅ 예외: Python 원라이너 조건문/반복문 분리 (가독성 향상)
+
+**Python 원라이너 `if condition: action` 형식은 반드시 여러 줄로 분리하세요!**
+
+사용자가 블록을 읽기 쉽게 하기 위함입니다.
+
+```python
+# ❌ 나쁜 예: 원라이너 (읽기 어려움)
+{"id": 1, "code": "if d == 0: print(-1)"}
+
+# ✅ 좋은 예: 여러 줄로 분리 (읽기 쉬움)
+{"id": 1, "code": "if d == 0:\\n    print(-1)"}
+```
+
+**분리 대상:**
+- `if condition: action` → `if condition:\\n    action`
+- `elif condition: action` → `elif condition:\\n    action`
+- `else: action` → `else:\\n    action`
+- `for x in y: action` → `for x in y:\\n    action`
+- `while condition: action` → `while condition:\\n    action`
+
+**단, 삼항 연산자는 분리하지 않음:**
+- `x = a if condition else b` → 그대로 유지
 
 ---
 
@@ -110,17 +148,17 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
 {"id": 1, "code": "for i in range(n):\\n    dp[i] = dp[i-1] + dp[i-2]\\n    result += dp[i]"}
 ```
 
-#### 3. 조건문 체인 묶기
+#### 3. 조건문 체인 묶기 (여러 줄 형식으로!)
 ```python
-# ❌ 나쁜 예: 각 elif 분리 (4개)
+# ❌ 나쁜 예: 각 elif 분리 + 원라이너 (4개, 읽기 어려움)
 {"id": 1, "code": "if x < 0: return -1"},
 {"id": 2, "code": "elif x == 0: return 0"},
 {"id": 3, "code": "elif x < 10: return 1"},
 {"id": 4, "code": "else: return 2"}
 
-# ✅ 좋은 예: 2-3개씩 묶기 (2개)
-{"id": 1, "code": "if x < 0: return -1\\nelif x == 0: return 0"},
-{"id": 2, "code": "elif x < 10: return 1\\nelse: return 2"}
+# ✅ 좋은 예: 2-3개씩 묶기 + 여러 줄 형식 (2개, 읽기 쉬움)
+{"id": 1, "code": "if x < 0:\\n    return -1\\nelif x == 0:\\n    return 0"},
+{"id": 2, "code": "elif x < 10:\\n    return 1\\nelse:\\n    return 2"}
 ```
 
 #### 4. 뻔한 코드는 fixed_start/fixed_end로 이동
@@ -295,10 +333,14 @@ T = int(input())
 for _ in range(T):
     x1, y1, r1, x2, y2, r2 = map(int, input().split())
     d = math.sqrt((x2-x1)**2 + (y2-y1)**2)
-    if d == 0 and r1 == r2: print(-1)
-    elif d > r1+r2 or d < abs(r1-r2): print(0)
-    elif d == r1+r2 or d == abs(r1-r2): print(1)
-    else: print(2)
+    if d == 0 and r1 == r2:
+        print(-1)
+    elif d > r1+r2 or d < abs(r1-r2):
+        print(0)
+    elif d == r1+r2 or d == abs(r1-r2):
+        print(1)
+    else:
+        print(2)
 ```
 
 **출력**:
@@ -307,13 +349,13 @@ for _ in range(T):
   "original_id": "baekjoon_1002",
   "language": "python",
   "fixed_start": "import math\\nT = int(input())\\nfor _ in range(T):",
-  "fixed_end": "    else: print(2)",
+  "fixed_end": "    else:\\n        print(2)",
   "blocks": [
     {"id": 1, "code": "x1, y1, r1, x2, y2, r2 = map(int, input().split())", "indent": 1},
     {"id": 2, "code": "d = math.sqrt((x2-x1)**2 + (y2-y1)**2)", "indent": 1},
-    {"id": 3, "code": "if d == 0 and r1 == r2: print(-1)", "indent": 1},
-    {"id": 4, "code": "elif d > r1+r2 or d < abs(r1-r2): print(0)", "indent": 1},
-    {"id": 5, "code": "elif d == r1+r2 or d == abs(r1-r2): print(1)", "indent": 1}
+    {"id": 3, "code": "if d == 0 and r1 == r2:\\n    print(-1)", "indent": 1},
+    {"id": 4, "code": "elif d > r1+r2 or d < abs(r1-r2):\\n    print(0)", "indent": 1},
+    {"id": 5, "code": "elif d == r1+r2 or d == abs(r1-r2):\\n    print(1)", "indent": 1}
   ]
 }
 ```

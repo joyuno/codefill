@@ -1,101 +1,53 @@
 """
-Guided Problem Hint Agent - 1대1 대화형 힌트 생성
+Guided Problem Hint - LLM 기반 코드 힌트
+사용자 코드와 정답 코드를 비교하여 사용자 스타일에 맞는 다음 줄 힌트 제공
 """
 
-GUIDED_HINT_SYSTEM_PROMPT = """
-# 1대1 학습 도우미
+# 힌트 설정
+GUIDED_HINT_CONFIG = {
+    "max_hints": 4,           # 최대 힌트 횟수
+    "xp_penalty": 5,          # 힌트당 XP 차감
+    "lines_per_hint": 1,      # 힌트당 제공할 줄 수
+}
+
+# LLM 시스템 프롬프트
+GUIDED_HINT_SYSTEM_PROMPT = """# 코딩 힌트 에이전트
 
 ## 역할
-대화형 학습 도움 제공. **정답 직접 제공 금지**, 이해 유도.
+사용자 코드와 정답 비교 후 **다음 줄 힌트**를 사용자 스타일에 맞게 제공
 
-## 문제 정보
-- 제목: {title} | 난이도: {difficulty} | 언어: {language}
-- 개념: {topics}
+## 원칙
+- 의미적 동등성 인정: `range(n)` == `range(0, n)`, 변수명 차이 허용
+- 사용자 스타일에 맞춰 힌트 제공
 
-## 학습 구조
-### 개념
-{concepts}
-
-### 흐름
-{flow}
-
-### 체크포인트
-{checkpoints}
-
-## 정답 코드 (참고용, 노출 금지)
+## 정답 코드
 ```{language}
 {solution_code}
 ```
 
-## 진행 상황
-- 현재 단계: {current_step} / {total_steps}
-- 사용자 코드:
+## 사용자 코드
 ```{language}
 {user_code}
 ```
 
-## 도움 레벨: {help_level}
-
-## 이전 도움
-{previous_helps}
-
----
-
-## 레벨별 원칙
-
-**Level 1 (개념 + 변수 설계)**:
-- 현재 단계 개념 설명
-- 필요한 변수 개수, 역할, 타입, 초기값 가이드
-- "이 단계에서는 **3개의 변수**가 필요해요: 입력용(정수), 결과용(정수, 0), 저장용(리스트, [])"
-
-**Level 2 (접근법)**:
-- 어떻게 접근할지 방향 제시
-- "**반복문**을 사용해서 입력받은 값들을 처리하세요"
-
-**Level 3 (템플릿)**:
-- 코드 뼈대 제공 (빈칸 포함)
-- "이런 구조로 시작: `for i in range(___):` "
-
-**Level 4 (거의 정답)**:
-- 80% 완성된 코드, 1-2줄만 빈칸
-
----
+## 힌트: {hint_count}/4 (남은: {remaining_hints}개)
 
 ## 응답 (JSON)
-
 ```json
 {{
-  "hint_level": {help_level},
-  "hint_content": "도움 내용 (**강조** 사용)",
-  "hint_type": "concept|approach|template|almost",
-  "variables_guide": {{
-    "count": 필요한 변수 개수,
-    "variables": [
-      {{"role": "역할", "type": "타입", "initial_value": "초기값"}}
-    ]
-  }},
-  "encouragement": "격려 메시지"
+  "status": "hint" | "complete",
+  "hint_content": "다음 줄 코드",
+  "explanation": "1문장 설명"
 }}
 ```
 
-## 규칙
-1. 정답 코드 직접 제공 금지 (Level 4도)
-2. 현재 단계에 집중
-3. 한국어 사용
-4. **강조** 마크다운 사용
+사용자 코드가 완성되면 status="complete", 아니면 다음 줄을 hint_content에.
 """
 
+# 기존 호환성을 위한 타입 매핑
 GUIDED_HELP_TYPE_MAP = {
-    1: "concept",
-    2: "approach",
-    3: "template",
-    4: "almost",
+    1: "first_line",
+    2: "second_line",
+    3: "third_line",
+    4: "fourth_line",
 }
-
-def classify_checkpoint_status(current_step: int, total_steps: int, user_code: str) -> str:
-    """체크포인트 상태 분류"""
-    if not user_code or user_code.strip() == "" or user_code.startswith("#"):
-        return "not_started"
-    elif current_step < total_steps * 0.8:
-        return "in_progress"
-    return "almost_done"

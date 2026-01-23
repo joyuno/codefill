@@ -40,6 +40,43 @@ const getActionIcon = (value: string) => {
   return <Sparkles className="h-3 w-3" />;
 };
 
+/**
+ * 힌트 메시지 포맷팅 (마크다운 스타일링)
+ * [라벨] 또는 **bold** 형식을 굵은 텍스트 + 색상으로 변환
+ */
+function formatHintContent(content: string): React.ReactNode {
+  // [라벨] 또는 **bold** 패턴 찾기
+  const pattern = /\[([^\]]+)\]|\*\*([^*]+)\*\*/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+  let keyIndex = 0;
+
+  while ((match = pattern.exec(content)) !== null) {
+    // 패턴 앞의 텍스트
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+
+    // [라벨] 또는 **bold** 스타일링
+    const text = match[1] || match[2]; // [라벨]은 group 1, **bold**는 group 2
+    parts.push(
+      <span key={keyIndex++} className="font-semibold text-primary">
+        {text}
+      </span>
+    );
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // 나머지 텍스트
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : content;
+}
+
 interface MessageBubbleProps {
   message: Message;
   onChipClick?: (chip: QuickChip) => void;
@@ -75,7 +112,7 @@ export function MessageBubble({ message, onChipClick, onSuggestedActionClick }: 
             isAssistant ? 'bg-secondary' : 'bg-primary text-primary-foreground'
           )}
         >
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          <p className="text-sm whitespace-pre-wrap">{formatHintContent(message.content)}</p>
         </div>
 
         {/* 기존 chips 렌더링 */}

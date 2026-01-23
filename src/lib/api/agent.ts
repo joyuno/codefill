@@ -197,12 +197,10 @@ export interface HintAgentRequest {
   base_problem_id?: string;  // base_problems 테이블의 UUID
   problem_type: 'blank' | 'puzzle' | 'guided';  // 문제 유형
   problem_info: Record<string, unknown>;
-  user_code?: string;
+  user_code?: string;  // guided: 사용자가 작성한 코드
   user_answers?: Record<string, string>;  // blank: 현재 입력한 답들 {"0": "len", "1": ""}
   current_blank_index?: number;  // blank: 현재 질문하는 빈칸 번호 (0부터)
-  attempt_count: number;
-  hint_level: 1 | 2 | 3 | 4;
-  previous_hints: string[];
+  previous_hints?: string[];  // guided: 이전 힌트 (힌트 횟수 계산용)
   user_level: 'beginner' | 'elementary' | 'intermediate' | 'advanced';
 }
 
@@ -220,17 +218,18 @@ export interface BlankFocus {
 }
 
 export interface HintAgentResponse {
-  hint_level: number;
   hint_content: string;
-  hint_type: 'direction' | 'approach' | 'specific' | 'final' | 'context' | 'operation' | 'range' | 'almost';
-  questions: string[];
-  related_concept?: RelatedConcept;
-  encouragement: string;
+  hint_type?: string;  // answer, position, code_line, complete, exhausted 등
+  questions?: string[];
+  encouragement?: string;
   next_hint_preview?: string;
   code_snippet?: string;
-  common_mistake_check?: string;
   // Blank 문제 전용 필드
   blank_focus?: BlankFocus;
+  // 레거시 호환 (optional)
+  hint_level?: number;
+  related_concept?: RelatedConcept;
+  common_mistake_check?: string;
   wrong_answer_feedback?: string;
 }
 
