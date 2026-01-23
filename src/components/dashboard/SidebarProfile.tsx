@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
 import { usersApi, publicProfileApi, type PublicFarm, type PublicBadge } from '@/lib/api/users';
-import { farmApi, type InventoryItem } from '@/lib/api/farm';
+import { farmApi, transformCharacterInput, type InventoryItem, type CharacterModalInput } from '@/lib/api/farm';
 import type { Badge as BadgeType } from '@/lib/types';
 import { Sparkles, Lock, Leaf, UserPlus, Home, Coins, TrendingUp, Loader2, UserCheck, Sprout, Package, Settings } from 'lucide-react';
 import { BadgeIcon } from '@/components/ui/badge-icon';
@@ -438,29 +438,12 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
     setCharacterError(null);
 
     try {
-      // API 호출로 캐릭터 생성
-      // 새 형식: color가 직접 hex 값 (예: '#3d2314')
-      // 레거시 형식: color가 키 (예: 'brown') - COLOR_MAP으로 변환 필요
-      const hairColor = newCharacter.appearance.color.startsWith('#')
-        ? newCharacter.appearance.color
-        : COLOR_MAP[newCharacter.appearance.color] || '#8B4513';
+      // API 형식으로 변환 후 호출
+      const characterData = transformCharacterInput(newCharacter as CharacterModalInput);
+      const updatedFarm = await farmApi.createCharacter(characterData);
 
-      // 헤어스타일 파일명 조합: Hairstyle_Short_Brown_Dark 형태
-      const hairStyleFull = `${newCharacter.appearance.hair}_${newCharacter.appearance.hairColor}`;
-
-      const updatedFarm = await farmApi.createCharacter({
-        name: newCharacter.name,
-        body: newCharacter.appearance.body,
-        hair: hairStyleFull,
-        hairColor,
-        face: newCharacter.appearance.face,
-        outfit: newCharacter.appearance.clothes,
-        outfitColor: hairColor,
-        accessory: newCharacter.appearance.accessory,
-        farmName: newCharacter.farmName,
-      });
       setFarm(updatedFarm);
-      setFarmToCache(updatedFarm); // 캐시도 업데이트
+      setFarmToCache(updatedFarm);
       setShowCharacterModal(false);
       toast.success('캐릭터가 생성되었습니다! 🌱');
     } catch (error) {
@@ -479,23 +462,10 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
     setCharacterError(null);
 
     try {
-      const hairColor = updatedCharacter.appearance.color.startsWith('#')
-        ? updatedCharacter.appearance.color
-        : COLOR_MAP[updatedCharacter.appearance.color] || '#8B4513';
+      // API 형식으로 변환 후 호출
+      const characterData = transformCharacterInput(updatedCharacter as CharacterModalInput);
+      const updatedFarm = await farmApi.updateCharacter(characterData);
 
-      const hairStyleFull = `${updatedCharacter.appearance.hair}_${updatedCharacter.appearance.hairColor}`;
-
-      const updatedFarm = await farmApi.updateCharacter({
-        name: updatedCharacter.name,
-        body: updatedCharacter.appearance.body,
-        hair: hairStyleFull,
-        hairColor,
-        face: updatedCharacter.appearance.face,
-        outfit: updatedCharacter.appearance.clothes,
-        outfitColor: hairColor,
-        accessory: updatedCharacter.appearance.accessory,
-        farmName: updatedCharacter.farmName,
-      });
       setFarm(updatedFarm);
       setFarmToCache(updatedFarm);
       setShowCharacterModal(false);

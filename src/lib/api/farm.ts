@@ -21,6 +21,69 @@ export interface CharacterData {
   farmName: string;
 }
 
+/**
+ * CharacterCreationModal에서 반환하는 형식
+ * API 호출 전 transformCharacterInput으로 변환 필요
+ */
+export interface CharacterModalInput {
+  name: string;
+  appearance: {
+    body: string;       // Body_1 ~ Body_9
+    hair: string;       // 헤어스타일 ID (Short, Long 등)
+    hairColor: string;  // 헤어 색상 ID (Brown_Dark 등)
+    face: string;       // Eyes_Brown 등
+    clothes: string;    // Outfit_Dungarees_Green 등
+    accessory: string;  // Accessory 코드 또는 'none'
+    color: string;      // hex color (#3d2314)
+  };
+  farmName: string;
+}
+
+// 레거시 색상 키 → hex 매핑 (이전 버전 호환용)
+const COLOR_MAP: Record<string, string> = {
+  brown: '#8B4513',
+  black: '#2d2d2d',
+  blonde: '#f4d03f',
+  red: '#c0392b',
+  blue: '#3498db',
+  pink: '#e91e8a',
+};
+
+/**
+ * CharacterCreationModal의 데이터를 API 형식으로 변환
+ */
+export function transformCharacterInput(input: CharacterModalInput): {
+  name: string;
+  body: string;
+  hair: string;
+  hairColor: string;
+  face: string;
+  outfit: string;
+  outfitColor: string;
+  accessory: string;
+  farmName: string;
+} {
+  // hex 색상 변환 (레거시 키 형식 지원)
+  const hairColorHex = input.appearance.color.startsWith('#')
+    ? input.appearance.color
+    : COLOR_MAP[input.appearance.color] || '#8B4513';
+
+  // 헤어스타일 파일명 조합: Short_Brown_Dark 형태
+  const hairStyleFull = `${input.appearance.hair}_${input.appearance.hairColor}`;
+
+  return {
+    name: input.name,
+    body: input.appearance.body,
+    hair: hairStyleFull,
+    hairColor: hairColorHex,
+    face: input.appearance.face,
+    outfit: input.appearance.clothes,
+    outfitColor: hairColorHex,
+    accessory: input.appearance.accessory,
+    farmName: input.farmName || `${input.name}의 농장`,
+  };
+}
+
 export interface UserFarm {
   id: string;
   userId: string;
