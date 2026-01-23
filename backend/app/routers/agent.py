@@ -77,6 +77,110 @@ from ..models.agent import (
 
 
 # ============================================================
+# 크레딧 시스템 상수 및 헬퍼 함수
+# ============================================================
+
+# 문제 유형별 크레딧 비용
+CREDIT_COSTS = {
+    "blank": 10,
+    "puzzle": 10,
+    "guided": 10,
+}
+
+
+PROBLEM_TYPE_LABELS = {
+    "blank": "빈칸 채우기",
+    "puzzle": "퍼즐",
+    "guided": "1대1 대화형",
+}
+
+
+async def check_and_deduct_credits(
+    db,
+    user_id: Optional[str],
+    problem_type: str,
+    problem_info: Optional[dict] = None,
+) -> dict:
+    """
+    크레딧 확인 및 차감 (내역 기록 포함)
+
+    Args:
+        db: Supabase client
+        user_id: 사용자 UUID (None이면 비로그인)
+        problem_type: 문제 유형 (blank, puzzle, guided)
+        problem_info: 문제 정보 (title, original_id, difficulty, language 등)
+
+    Returns:
+        {"success": bool, "remaining_credits": int, "message": str}
+
+    Raises:
+        HTTPException: 크레딧 부족 시 403 에러
+    """
+    # 비로그인 사용자는 크레딧 체크 스킵 (또는 차단 가능)
+    if not user_id:
+        return {"success": True, "remaining_credits": 0, "message": "비로그인 사용자"}
+
+    cost = CREDIT_COSTS.get(problem_type, 10)
+
+    # 문제 제목이 있으면 description에 포함
+    problem_title = problem_info.get("title", "") if problem_info else ""
+    if problem_title:
+        description = f"{PROBLEM_TYPE_LABELS.get(problem_type, problem_type)} - {problem_title}"
+    else:
+        description = f"{PROBLEM_TYPE_LABELS.get(problem_type, problem_type)} 문제 생성"
+
+    # metadata 구성
+    import json
+    metadata = {}
+    if problem_info:
+        metadata = {
+            "problem_type": problem_type,
+            "original_id": problem_info.get("original_id"),
+            "title": problem_info.get("title"),
+            "difficulty": problem_info.get("difficulty"),
+            "language": problem_info.get("language"),
+        }
+        # None 값 제거
+        metadata = {k: v for k, v in metadata.items() if v is not None}
+
+    try:
+        # 내역 기록 포함 버전 사용 (fallback으로 기존 함수도 시도)
+        result = db.rpc("deduct_credits_with_history", {
+            "p_user_id": user_id,
+            "p_amount": cost,
+            "p_description": description,
+            "p_metadata": json.dumps(metadata) if metadata else "{}",
+        }).execute()
+
+        if result.data and len(result.data) > 0:
+            data = result.data[0]
+            if not data.get("success"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error": "INSUFFICIENT_CREDITS",
+                        "message": data.get("message", "크레딧이 부족합니다."),
+                        "remaining_credits": data.get("remaining_credits", 0),
+                        "required_credits": cost,
+                    }
+                )
+            return data
+        else:
+            # RPC 결과가 없는 경우
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="크레딧 차감 중 오류가 발생했습니다."
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Credits] Error deducting credits: {e}")
+        # 크레딧 시스템 오류 시에도 문제 생성은 허용 (선택적)
+        return {"success": True, "remaining_credits": -1, "message": f"크레딧 시스템 오류: {e}"}
+
+
+# ============================================================
 # 퍼즐 블록 후처리 헬퍼 함수
 # ============================================================
 
@@ -1337,14 +1441,26 @@ async def generate_blank_problem(
     Uses GPT-4o-mini via OpenRouter.
     Cache-First: DB에 있으면 복사, 없으면 LLM 생성 후 저장
     """
+    # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
+    creator_id = str(current_user_id) if current_user_id else None
+    bp = request.base_problem
+    language = request.language.value
+
+    # ============================================================
+    # 크레딧 확인 및 차감 (가장 먼저 실행)
+    # ============================================================
+    problem_info = {
+        "title": bp.title or bp.name,
+        "original_id": bp.original_id or bp.id,
+        "difficulty": bp.difficulty,
+        "language": language,
+    }
+    credit_result = await check_and_deduct_credits(db, creator_id, "blank", problem_info)
+    print(f"[Blank Gen] Credit deducted: {credit_result}")
+
     try:
-        bp = request.base_problem
-        language = request.language.value
         # original_id 우선 사용 (프론트엔드에서 전달), 없으면 id, name 순으로 fallback
         original_id = bp.original_id or bp.id or bp.name
-
-        # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
-        creator_id = str(current_user_id) if current_user_id else None
 
         print(f"[Blank Gen] original_id: {original_id}, creator_id: {creator_id}")
 
@@ -1545,14 +1661,26 @@ async def generate_puzzle_problem(
     Uses GPT-4o-mini via OpenRouter.
     Cache-First: DB에 있으면 복사, 없으면 LLM 생성 후 저장
     """
+    # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
+    creator_id = str(current_user_id) if current_user_id else None
+    bp = request.base_problem
+    language = request.language.value
+
+    # ============================================================
+    # 크레딧 확인 및 차감 (가장 먼저 실행)
+    # ============================================================
+    problem_info = {
+        "title": bp.title or bp.name,
+        "original_id": bp.original_id or bp.id,
+        "difficulty": bp.difficulty,
+        "language": language,
+    }
+    credit_result = await check_and_deduct_credits(db, creator_id, "puzzle", problem_info)
+    print(f"[Puzzle Gen] Credit deducted: {credit_result}")
+
     try:
-        bp = request.base_problem
-        language = request.language.value
         # original_id 우선 사용 (프론트엔드에서 전달), 없으면 id, name 순으로 fallback
         original_id = bp.original_id or bp.id or bp.name
-
-        # 로그인된 유저 ID 사용 (JWT 토큰에서 추출)
-        creator_id = str(current_user_id) if current_user_id else None
 
         print(f"[Puzzle Gen] original_id: {original_id}, creator_id: {creator_id}")
 
@@ -1804,18 +1932,31 @@ async def generate_guided_problem(
     Uses GPT-4o-mini via OpenRouter.
     로그인 필수: creator_id가 필요함
     """
-    try:
-        # 로그인 체크
-        if not current_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="1대1 대화형 문제는 로그인이 필요합니다."
-            )
+    # 로그인 체크
+    if not current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="1대1 대화형 문제는 로그인이 필요합니다."
+        )
 
-        bp = request.base_problem
-        language = request.language.value
+    creator_id = str(current_user_id)
+    bp = request.base_problem
+    language = request.language.value
+
+    # ============================================================
+    # 크레딧 확인 및 차감 (가장 먼저 실행)
+    # ============================================================
+    problem_info = {
+        "title": bp.title or bp.name,
+        "original_id": bp.original_id or bp.id,
+        "difficulty": bp.difficulty,
+        "language": language,
+    }
+    credit_result = await check_and_deduct_credits(db, creator_id, "guided", problem_info)
+    print(f"[Guided Gen] Credit deducted: {credit_result}")
+
+    try:
         original_id = bp.original_id or bp.id or bp.name
-        creator_id = str(current_user_id)
 
         print(f"[Guided Gen] original_id: {original_id}, creator_id: {creator_id[:8]}...")
 
@@ -2215,6 +2356,24 @@ async def generate_problem_stream(
             creator_id = str(current_user_id) if current_user_id else None
 
             print(f"[Stream Gen] type={problem_type}, original_id={original_id}, creator_id={creator_id}")
+
+            # ============================================================
+            # 크레딧 확인 및 차감 (가장 먼저 실행)
+            # ============================================================
+            problem_info = {
+                "title": bp.get("title") or bp.get("name"),
+                "original_id": original_id,
+                "difficulty": bp.get("difficulty"),
+                "language": language,
+            }
+            try:
+                credit_result = await check_and_deduct_credits(db, creator_id, problem_type, problem_info)
+                print(f"[Stream Gen] Credit deducted: {credit_result}")
+            except HTTPException as credit_error:
+                # 크레딧 부족 에러를 스트리밍으로 전달
+                yield f"data: {json.dumps({'type': 'error', 'message': credit_error.detail.get('message', '크레딧이 부족합니다.')}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
             # 1. 캐시 확인 상태
             yield f"data: {json.dumps({'type': 'status', 'status': 'cache_check', 'message': '캐시를 확인하고 있어요...'}, ensure_ascii=False)}\n\n"

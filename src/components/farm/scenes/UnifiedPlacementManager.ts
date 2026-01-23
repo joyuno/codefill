@@ -133,6 +133,10 @@ export class UnifiedPlacementManager {
   private scene: Phaser.Scene;
   private placedItems: Map<string, PlacedItemSprite> = new Map();
 
+  // 동적 맵 크기 (기본값은 상수 사용)
+  private mapCols: number = MAP_COLS;
+  private mapRows: number = MAP_ROWS;
+
   // 드래그 모드 상태
   private isDragMode: boolean = false;
   private draggedItem: PlacedItemSprite | null = null;
@@ -159,6 +163,14 @@ export class UnifiedPlacementManager {
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
+  }
+
+  /**
+   * 맵 크기 설정 (동적 맵 확장용)
+   */
+  setMapBounds(cols: number, rows: number): void {
+    this.mapCols = cols;
+    this.mapRows = rows;
   }
 
   /**
@@ -444,8 +456,8 @@ export class UnifiedPlacementManager {
       height = arg4;
     }
 
-    // 맵 범위 체크
-    if (tileX < 0 || tileX + width > MAP_COLS || tileY < 0 || tileY + height > MAP_ROWS) {
+    // 맵 범위 체크 (동적 맵 크기 사용)
+    if (tileX < 0 || tileX + width > this.mapCols || tileY < 0 || tileY + height > this.mapRows) {
       return false;
     }
 
@@ -475,8 +487,8 @@ export class UnifiedPlacementManager {
    * @returns 막혀있으면 true
    */
   isTileBlocked(tileX: number, tileY: number): boolean {
-    // 맵 범위 밖은 막힘 처리
-    if (tileX < 0 || tileX >= MAP_COLS || tileY < 0 || tileY >= MAP_ROWS) {
+    // 맵 범위 밖은 막힘 처리 (동적 맵 크기 사용)
+    if (tileX < 0 || tileX >= this.mapCols || tileY < 0 || tileY >= this.mapRows) {
       return true;
     }
 
@@ -557,19 +569,23 @@ export class UnifiedPlacementManager {
     this.gridGraphics.clear();
     this.gridGraphics.lineStyle(1, 0xffffff, 0.15);
 
+    // 동적 맵 크기 사용
+    const mapWidth = this.mapCols * TILE_SIZE;
+    const mapHeight = this.mapRows * TILE_SIZE;
+
     // 세로선
-    for (let col = 0; col <= MAP_COLS; col++) {
+    for (let col = 0; col <= this.mapCols; col++) {
       this.gridGraphics.lineBetween(
         col * TILE_SIZE, 0,
-        col * TILE_SIZE, MAP_HEIGHT
+        col * TILE_SIZE, mapHeight
       );
     }
 
     // 가로선
-    for (let row = 0; row <= MAP_ROWS; row++) {
+    for (let row = 0; row <= this.mapRows; row++) {
       this.gridGraphics.lineBetween(
         0, row * TILE_SIZE,
-        MAP_WIDTH, row * TILE_SIZE
+        mapWidth, row * TILE_SIZE
       );
     }
 
@@ -1009,9 +1025,9 @@ export class UnifiedPlacementManager {
 
     if (!this.collisionDebugVisible) return;
 
-    // 모든 타일에 대해 충돌 체크
-    for (let tileY = 0; tileY < MAP_ROWS; tileY++) {
-      for (let tileX = 0; tileX < MAP_COLS; tileX++) {
+    // 모든 타일에 대해 충돌 체크 (동적 맵 크기 사용)
+    for (let tileY = 0; tileY < this.mapRows; tileY++) {
+      for (let tileX = 0; tileX < this.mapCols; tileX++) {
         const blocked = this.isTileBlocked(tileX, tileY);
 
         if (blocked) {

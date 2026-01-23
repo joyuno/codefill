@@ -1,25 +1,25 @@
 'use client';
 
 /**
- * ExpandModal - 픽셀 RPG 스타일 농장 확장 모달
+ * MapExpandModal - 픽셀 RPG 스타일 맵 확장 모달
  */
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Expand, X, Coins, Loader2, Check, Lock } from 'lucide-react';
-import { farmApi, type ExpansionOption } from '@/lib/api/farm';
+import { Map, X, Coins, Loader2, Check, Lock } from 'lucide-react';
+import { farmApi, type MapExpansionOption } from '@/lib/api/farm';
 import { cn } from '@/lib/utils';
 
-interface ExpandModalProps {
+interface MapExpandModalProps {
   isOpen: boolean;
   onClose: () => void;
   gold: number;
-  currentSize: number;
-  onExpand: (targetSize: number) => Promise<void>;
+  currentLevel: number;
+  onExpand: (targetLevel: number) => Promise<void>;
 }
 
-export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: ExpandModalProps) {
-  const [options, setOptions] = useState<ExpansionOption[]>([]);
+export function MapExpandModal({ isOpen, onClose, gold, currentLevel, onExpand }: MapExpandModalProps) {
+  const [options, setOptions] = useState<MapExpansionOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExpanding, setIsExpanding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
       try {
         setIsLoading(true);
         setError(null);
-        const data = await farmApi.getExpansionCosts();
+        const data = await farmApi.getMapExpansionCosts();
         setOptions(data.options);
       } catch (err) {
         setError('확장 정보를 불러오는데 실패했습니다');
@@ -44,11 +44,11 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
     loadOptions();
   }, [isOpen]);
 
-  const handleExpand = async (targetSize: number) => {
+  const handleExpand = async (targetLevel: number) => {
     try {
       setIsExpanding(true);
       setError(null);
-      await onExpand(targetSize);
+      await onExpand(targetLevel);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : '확장에 실패했습니다');
@@ -75,11 +75,11 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
             onClick={e => e.stopPropagation()}
             className="relative w-full max-w-md overflow-hidden rounded-lg"
             style={{
-              background: 'linear-gradient(180deg, #3D2A1A 0%, #2D1B0E 100%)',
-              border: '4px solid #5C3D2E',
+              background: 'linear-gradient(180deg, #1A3D3D 0%, #0F2A2A 100%)',
+              border: '4px solid #2A5D5D',
               boxShadow: `
-                inset 0 2px 0 #4A3628,
-                inset 0 -2px 0 #1A0F08,
+                inset 0 2px 0 #3D6B6B,
+                inset 0 -2px 0 #0A1F1F,
                 0 12px 40px rgba(0,0,0,0.7)
               `,
             }}
@@ -88,33 +88,33 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
             <div
               className="absolute top-0 left-6 right-6 h-[2px]"
               style={{
-                background: 'linear-gradient(90deg, transparent 0%, #C9A227 50%, transparent 100%)',
+                background: 'linear-gradient(90deg, transparent 0%, #4ADEDE 50%, transparent 100%)',
               }}
             />
 
             {/* 코너 장식 */}
-            <div className="absolute -top-1 -left-1 w-4 h-4" style={{ background: '#5C3D2E' }} />
-            <div className="absolute -top-1 -right-1 w-4 h-4" style={{ background: '#5C3D2E' }} />
-            <div className="absolute -bottom-1 -left-1 w-4 h-4" style={{ background: '#5C3D2E' }} />
-            <div className="absolute -bottom-1 -right-1 w-4 h-4" style={{ background: '#5C3D2E' }} />
+            <div className="absolute -top-1 -left-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
+            <div className="absolute -top-1 -right-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
+            <div className="absolute -bottom-1 -left-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
+            <div className="absolute -bottom-1 -right-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
 
             {/* 헤더 */}
             <div
               className="relative p-4 flex items-center justify-between"
               style={{
-                background: 'linear-gradient(180deg, #4A3628 0%, #3D2A1A 100%)',
-                borderBottom: '3px solid #5C3D2E',
+                background: 'linear-gradient(180deg, #2A4A4A 0%, #1A3D3D 100%)',
+                borderBottom: '3px solid #2A5D5D',
               }}
             >
               <h2
                 className="text-xl font-black flex items-center gap-2"
                 style={{
-                  color: '#FFD700',
-                  textShadow: '0 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(255,215,0,0.3)',
+                  color: '#4ADEDE',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(74,222,222,0.3)',
                 }}
               >
-                <Expand className="w-6 h-6" />
-                농장 확장
+                <Map className="w-6 h-6" />
+                맵 확장
               </h2>
 
               <div className="flex items-center gap-4">
@@ -166,7 +166,7 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
             <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+                  <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
                 </div>
               ) : error ? (
                 <div
@@ -177,16 +177,16 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                 </div>
               ) : (
                 options.map((option, index) => {
-                  const isCurrent = option.size === currentSize;
-                  const isPast = option.size < currentSize;
-                  const currentIndex = options.findIndex(o => o.size === currentSize);
+                  const isCurrent = option.level === currentLevel;
+                  const isPast = option.level < currentLevel;
+                  const currentIndex = options.findIndex(o => o.level === currentLevel);
                   const isNextStep = index === currentIndex + 1;
                   const isLocked = !isCurrent && !isPast && !isNextStep;
                   const canUpgrade = isNextStep && gold >= option.cost;
 
                   return (
                     <motion.div
-                      key={option.size}
+                      key={option.level}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
@@ -196,51 +196,38 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                       )}
                       style={{
                         background: isCurrent
-                          ? 'linear-gradient(180deg, rgba(42,93,42,0.4) 0%, rgba(26,61,26,0.4) 100%)'
+                          ? 'linear-gradient(180deg, rgba(42,93,93,0.4) 0%, rgba(26,61,61,0.4) 100%)'
                           : isPast
                           ? 'rgba(0,0,0,0.2)'
                           : 'rgba(0,0,0,0.3)',
                         border: isCurrent
-                          ? '2px solid #4ADE4A'
+                          ? '2px solid #4ADEDE'
                           : isPast
-                          ? '2px solid #5C3D2E40'
+                          ? '2px solid #2A5D5D40'
                           : isLocked
-                          ? '2px solid #3D2E2440'
-                          : '2px solid #5C3D2E80',
+                          ? '2px solid #1A3D3D40'
+                          : '2px solid #2A5D5D80',
                       }}
                     >
                       <div className="flex items-center gap-3">
-                        {/* 그리드 미리보기 */}
+                        {/* 맵 크기 미리보기 */}
                         <div
-                          className="w-11 h-11 grid gap-0.5 rounded p-1"
+                          className="w-14 h-10 rounded flex items-center justify-center font-black text-sm"
                           style={{
                             background: isLocked ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.4)',
-                            border: `2px solid ${isLocked ? '#3D2E24' : '#5C3D2E'}`,
-                            gridTemplateColumns: `repeat(${Math.sqrt(option.size)}, 1fr)`,
+                            border: `2px solid ${isLocked ? '#1A3D3D' : '#2A5D5D'}`,
+                            color: isLocked ? '#2A5D5D' : isCurrent ? '#4ADEDE' : '#5BAEAE',
+                            textShadow: '0 1px 2px #000',
                           }}
                         >
-                          {Array.from({ length: option.size }).map((_, i) => (
-                            <div
-                              key={i}
-                              className="rounded-sm"
-                              style={{
-                                background: isLocked
-                                  ? '#3D2E24'
-                                  : isCurrent
-                                  ? '#4ADE4A80'
-                                  : isPast
-                                  ? '#5C3D2E60'
-                                  : '#C9A22780',
-                              }}
-                            />
-                          ))}
+                          {option.cols}x{option.rows}
                         </div>
 
                         <div>
                           <p
                             className="font-bold flex items-center gap-2"
                             style={{
-                              color: isLocked ? '#6B5344' : '#E8D5B7',
+                              color: isLocked ? '#3D6B6B' : '#B8E8E8',
                               textShadow: '0 1px 2px #000',
                             }}
                           >
@@ -249,9 +236,9 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                               <span
                                 className="text-xs px-2 py-0.5 rounded font-bold"
                                 style={{
-                                  background: 'rgba(74,222,74,0.3)',
-                                  color: '#4ADE4A',
-                                  border: '1px solid #4ADE4A60',
+                                  background: 'rgba(74,222,222,0.3)',
+                                  color: '#4ADEDE',
+                                  border: '1px solid #4ADEDE60',
                                 }}
                               >
                                 현재
@@ -266,11 +253,11 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                           <p
                             className="text-sm"
                             style={{
-                              color: isLocked ? '#5C4025' : '#8B7355',
+                              color: isLocked ? '#2A5D5D' : '#5BAEAE',
                               textShadow: '0 1px 2px #000',
                             }}
                           >
-                            {option.grid}
+                            Lv.{option.level} - {option.cols * option.rows} 타일
                           </p>
                         </div>
                       </div>
@@ -278,21 +265,21 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                       {/* 액션 버튼 */}
                       <div className="flex items-center gap-2">
                         {isCurrent ? (
-                          <div style={{ color: '#4ADE4A' }}>
+                          <div style={{ color: '#4ADEDE' }}>
                             <Check className="w-5 h-5" />
                           </div>
                         ) : isPast ? (
                           <span
                             className="text-sm font-medium"
-                            style={{ color: '#6B5344' }}
+                            style={{ color: '#3D6B6B' }}
                           >
                             완료
                           </span>
                         ) : isLocked ? (
-                          <Lock className="w-5 h-5" style={{ color: '#5C4025' }} />
+                          <Lock className="w-5 h-5" style={{ color: '#2A5D5D' }} />
                         ) : (
                           <motion.button
-                            onClick={() => handleExpand(option.size)}
+                            onClick={() => handleExpand(option.level)}
                             disabled={!canUpgrade || isExpanding}
                             whileHover={canUpgrade ? { scale: 1.03, y: -1 } : undefined}
                             whileTap={canUpgrade ? { scale: 0.97 } : undefined}
@@ -302,10 +289,10 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                             )}
                             style={{
                               background: canUpgrade
-                                ? 'linear-gradient(180deg, #2A5D2A 0%, #1A3D1A 100%)'
-                                : 'linear-gradient(180deg, #3D2A1A 0%, #2D1B0E 100%)',
-                              border: `2px solid ${canUpgrade ? '#4ADE4A' : '#5C3D2E'}`,
-                              color: canUpgrade ? '#90EE90' : '#6B5344',
+                                ? 'linear-gradient(180deg, #2A5D5D 0%, #1A3D3D 100%)'
+                                : 'linear-gradient(180deg, #1A3D3D 0%, #0F2A2A 100%)',
+                              border: `2px solid ${canUpgrade ? '#4ADEDE' : '#2A5D5D'}`,
+                              color: canUpgrade ? '#90EEEE' : '#3D6B6B',
                               textShadow: '0 1px 2px #000',
                               boxShadow: canUpgrade
                                 ? 'inset 0 1px 0 rgba(255,255,255,0.1), 0 3px 6px rgba(0,0,0,0.3)'
@@ -334,12 +321,12 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
               className="p-3 text-center text-sm font-medium"
               style={{
                 background: 'rgba(0,0,0,0.3)',
-                borderTop: '2px solid #5C3D2E',
-                color: '#8B7355',
+                borderTop: '2px solid #2A5D5D',
+                color: '#5BAEAE',
                 textShadow: '0 1px 2px #000',
               }}
             >
-              밭을 확장하면 더 많은 슬롯에 작물을 심을 수 있습니다
+              맵을 확장하면 더 넓은 공간에 건물과 장식을 배치할 수 있습니다
             </div>
 
             {/* 하단 장식 */}
@@ -348,7 +335,7 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                 <div
                   key={i}
                   className="w-2 h-2 rotate-45"
-                  style={{ background: '#5C3D2E' }}
+                  style={{ background: '#2A5D5D' }}
                 />
               ))}
             </div>

@@ -29,13 +29,22 @@ from ..models.farm import (
     ExpandResponse,
     ExpansionCost,
     ExpansionCostsResponse,
+    MapExpandRequest,
+    MapExpandResponse,
+    MapExpansionCost,
+    MapExpansionCostsResponse,
     PlantSlotRequest,
     PlantSlotResponse,
     HarvestSlotResponse,
     FarmInitResponse,
     EXPANSION_COSTS,
+    EXPANSION_ORDER,
+    MAP_EXPANSION_COSTS,
+    MAP_EXPANSION_ORDER,
     INITIAL_GOLD,
-    INITIAL_SEEDS_COUNT,
+    INITIAL_FARM_SIZE,
+    INITIAL_SEEDS_QUANTITY,
+    INITIAL_MAP_LEVEL,
 )
 from ..models.placement import PlacedItemResponse, ItemMetadata
 from ..services.farm_service import FarmService
@@ -84,7 +93,7 @@ def get_or_create_farm(db, user_id: UUID) -> dict:
     """사용자 농장 조회 또는 생성 (farm_slots 포함)"""
     result = db.table("user_farm").select(
         "id, user_id, character_created, character_data, "
-        "farm_unlocked, farm_level, gold, farm_size, house_level, "
+        "farm_unlocked, farm_level, gold, farm_size, map_level, house_level, "
         "farm_slots, created_at, updated_at"
     ).eq("user_id", str(user_id)).execute()
 
@@ -100,6 +109,7 @@ def get_or_create_farm(db, user_id: UUID) -> dict:
         "farm_level": 1,
         "gold": 0,
         "farm_size": 1,  # 1x1 (1칸)으로 시작
+        "map_level": 1,  # 맵 확장 레벨 (1-5)
         "house_level": 1,
         "farm_slots": json.dumps([]),  # 빈 슬롯 배열
     }
@@ -264,6 +274,7 @@ async def get_farm(
         farm_level=farm.get("farm_level", 1),
         gold=farm.get("gold", 0),
         farm_size=farm.get("farm_size", 1),  # 기본값 1 (1x1)
+        map_level=farm.get("map_level", 1),  # 맵 확장 레벨
         house_level=farm.get("house_level", 1),
         farm_slots=farm_slots,
         created_at=farm["created_at"],
@@ -312,6 +323,7 @@ async def get_farm_init(
         farm_level=farm_data.get("farm_level", 1),
         gold=farm_data.get("gold", 0),
         farm_size=farm_data.get("farm_size", 1),
+        map_level=farm_data.get("map_level", 1),  # 맵 확장 레벨
         house_level=farm_data.get("house_level", 1),
         farm_slots=farm_slots,
         created_at=farm_data["created_at"],
@@ -452,9 +464,10 @@ async def create_character(
         "farm_name": request.farm_name,
     }
 
-    # 초기 farm_slots (1x1 = 1칸)
+    # 초기 farm_slots (3x3 = 9칸)
     initial_slots = [
-        {"slot": 0, "cropCode": None, "plantedAt": None, "growTimeSeconds": None}
+        {"slot": i, "cropCode": None, "plantedAt": None, "growTimeSeconds": None}
+        for i in range(INITIAL_FARM_SIZE)
     ]
 
     # 농장 업데이트 (트리거가 house 배치)
@@ -463,17 +476,15 @@ async def create_character(
         "character_data": json.dumps(character_data),
         "farm_unlocked": True,
         "gold": INITIAL_GOLD,
-        "farm_size": 1,
+        "farm_size": INITIAL_FARM_SIZE,
         "farm_slots": json.dumps(initial_slots),
     }).eq("user_id", str(user_id)).execute()
 
-    # 초기 씨앗 지급 (랜덤 5개)
+    # 초기 씨앗 지급 (모든 작물 종류별 10개씩)
     crops = db.table("farm_items").select("code").eq("type", "crop").execute()
     if crops.data:
-        crop_codes = [c["code"] for c in crops.data]
-        for _ in range(INITIAL_SEEDS_COUNT):
-            random_crop = random.choice(crop_codes)
-            update_inventory(db, user_id, f"seed_{random_crop}", 1)
+        for crop in crops.data:
+            update_inventory(db, user_id, f"seed_{crop['code']}", INITIAL_SEEDS_QUANTITY)
 
     # 업데이트된 농장 반환
     return await get_farm(user_id, db)
@@ -661,6 +672,7 @@ async def expand_farm(
 
     - farm_size 업데이트
     - farm_slots 배열 자동 확장 (새 슬롯 추가)
+    - 순차적 확장만 허용 (단계 건너뛰기 불가)
     """
     farm = get_or_create_farm(db, user_id)
     current_size = farm.get("farm_size", 1)
@@ -671,6 +683,19 @@ async def expand_farm(
 
     if request.target_size <= current_size:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="현재 크기보다 큰 크기로만 확장할 수 있습니다")
+
+    # 순차적 확장 검증: 현재 크기의 다음 단계만 허용
+    try:
+        current_index = EXPANSION_ORDER.index(current_size)
+        next_size = EXPANSION_ORDER[current_index + 1] if current_index + 1 < len(EXPANSION_ORDER) else None
+        if next_size is None or request.target_size != next_size:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"순차적으로만 확장할 수 있습니다. 다음 단계: {EXPANSION_COSTS.get(next_size, {}).get('grid', 'N/A')}"
+            )
+    except ValueError:
+        # current_size가 EXPANSION_ORDER에 없는 경우 (비정상 상태)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="농장 크기가 비정상적입니다")
 
     cost = EXPANSION_COSTS[request.target_size]["cost"]
 
@@ -710,6 +735,94 @@ async def expand_farm(
         farm_size=request.target_size,
         gold=new_gold,
         farm_slots=new_slots,
+    )
+
+
+# =====================================================
+# Map Expansion Endpoints (맵 확장)
+# =====================================================
+
+@router.get("/map/expansion-costs", response_model=MapExpansionCostsResponse)
+async def get_map_expansion_costs(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """맵 확장 비용 목록 조회"""
+    farm = get_or_create_farm(db, user_id)
+    current_level = farm.get("map_level", 1)
+    gold = farm.get("gold", 0)
+
+    options = []
+    for level in MAP_EXPANSION_ORDER:
+        info = MAP_EXPANSION_COSTS[level]
+        options.append(MapExpansionCost(
+            level=level,
+            cols=info["cols"],
+            rows=info["rows"],
+            name=info["name"],
+            cost=info["cost"],
+            is_current=(level == current_level),
+            can_afford=(gold >= info["cost"] and level > current_level),
+        ))
+
+    return MapExpansionCostsResponse(
+        current_level=current_level,
+        gold=gold,
+        options=options,
+    )
+
+
+@router.post("/map/expand", response_model=MapExpandResponse)
+async def expand_map(
+    request: MapExpandRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db)
+):
+    """맵 확장
+
+    - map_level 업데이트
+    - 순차적 확장만 허용 (단계 건너뛰기 불가)
+    """
+    farm = get_or_create_farm(db, user_id)
+    current_level = farm.get("map_level", 1)
+    gold = farm.get("gold", 0)
+
+    if request.target_level not in MAP_EXPANSION_COSTS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="유효하지 않은 맵 레벨입니다")
+
+    if request.target_level <= current_level:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="현재 레벨보다 높은 레벨로만 확장할 수 있습니다")
+
+    # 순차적 확장 검증
+    try:
+        current_index = MAP_EXPANSION_ORDER.index(current_level)
+        next_level = MAP_EXPANSION_ORDER[current_index + 1] if current_index + 1 < len(MAP_EXPANSION_ORDER) else None
+        if next_level is None or request.target_level != next_level:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"순차적으로만 확장할 수 있습니다. 다음 단계: {MAP_EXPANSION_COSTS.get(next_level, {}).get('name', 'N/A')}"
+            )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="맵 레벨이 비정상적입니다")
+
+    cost = MAP_EXPANSION_COSTS[request.target_level]["cost"]
+
+    if gold < cost:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="골드가 부족합니다")
+
+    new_gold = gold - cost
+
+    # map_level 업데이트
+    db.table("user_farm").update({
+        "map_level": request.target_level,
+        "gold": new_gold,
+    }).eq("user_id", str(user_id)).execute()
+
+    return MapExpandResponse(
+        success=True,
+        message=f"맵을 {MAP_EXPANSION_COSTS[request.target_level]['name']}으로 확장했습니다!",
+        map_level=request.target_level,
+        gold=new_gold,
     )
 
 

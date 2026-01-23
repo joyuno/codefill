@@ -22,6 +22,7 @@ import {
 // UI 컴포넌트
 import {
   ExpandModal,
+  MapExpandModal,
   CROP_INFO,
   type CropVariety,
   ActionPrompt,
@@ -61,6 +62,8 @@ export default function FarmPage() {
     error,
     buySeed,
     expand,
+    getMapExpansionCosts,
+    expandMap,
     // 통합 배치 시스템
     placedItems,
     unifiedShopItems,
@@ -80,6 +83,7 @@ export default function FarmPage() {
   // UI 상태
   const [showUnifiedShop, setShowUnifiedShop] = useState(false);
   const [showExpand, setShowExpand] = useState(false);
+  const [showMapExpand, setShowMapExpand] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isSavingPlacement, setIsSavingPlacement] = useState(false);
 
@@ -169,6 +173,18 @@ export default function FarmPage() {
       throw err;
     }
   }, [expand, addToast]);
+
+  // 맵 확장
+  const handleMapExpand = useCallback(async (targetLevel: number) => {
+    try {
+      await expandMap(targetLevel);
+      addToast('맵이 확장되었습니다!', 'success');
+    } catch (err) {
+      console.error('Map expand failed:', err);
+      addToast(err instanceof Error ? err.message : '확장 실패', 'error');
+      throw err;
+    }
+  }, [expandMap, addToast]);
 
   // 통합 상점 열기
   const handleOpenUnifiedShop = useCallback(async () => {
@@ -401,6 +417,7 @@ export default function FarmPage() {
         <FarmGame
           onReady={handleFarmGameReady}
           farmSize={dbFarmSize}
+          mapLevel={farm?.mapLevel || 1}
           gold={gold}
           inventory={inventory}
           selectedSeed={selectedSeed}
@@ -425,6 +442,7 @@ export default function FarmPage() {
           gold={gold}
           onOpenShop={handleOpenUnifiedShop}
           onOpenExpand={() => setShowExpand(true)}
+          onOpenMapExpand={() => setShowMapExpand(true)}
         />
       )}
 
@@ -469,6 +487,19 @@ export default function FarmPage() {
             gold={gold}
             currentSize={dbFarmSize}
             onExpand={handleExpand}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 맵 확장 모달 */}
+      <AnimatePresence>
+        {showMapExpand && (
+          <MapExpandModal
+            isOpen={showMapExpand}
+            onClose={() => setShowMapExpand(false)}
+            gold={gold}
+            currentLevel={farm?.mapLevel || 1}
+            onExpand={handleMapExpand}
           />
         )}
       </AnimatePresence>

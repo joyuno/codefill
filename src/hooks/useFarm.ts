@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { farmApi, type UserFarm, type FarmItem, type InventoryItem, type UnifiedShopItem, type PlacedItem, type FarmSlot } from '@/lib/api';
+import { farmApi, type UserFarm, type FarmItem, type InventoryItem, type UnifiedShopItem, type PlacedItem, type FarmSlot, type MapExpansionCostsResponse } from '@/lib/api';
 
 interface UseFarmReturn {
   // State
@@ -32,6 +32,8 @@ interface UseFarmReturn {
   }) => Promise<void>;
   buySeed: (cropCode: string, quantity?: number) => Promise<void>;
   expand: (targetSize: number) => Promise<void>;
+  getMapExpansionCosts: () => Promise<MapExpansionCostsResponse>;
+  expandMap: (targetLevel: number) => Promise<void>;
   refresh: () => Promise<void>;
 
   // Slot-based Farm Actions (신규)
@@ -120,22 +122,17 @@ export function useFarm(): UseFarmReturn {
   }) => {
     try {
       setError(null);
-      const updatedFarm = await farmApi.createCharacter(data);
-      setFarm(updatedFarm);
+      await farmApi.createCharacter(data);
 
-      // Reload inventory and placed items (initial items are granted)
-      const [inventoryData, placedItemsData] = await Promise.all([
-        farmApi.getInventory(),
-        farmApi.getPlacedItems(),
-      ]);
-      setInventory(inventoryData);
-      setPlacedItems(placedItemsData);
+      // 캐릭터 생성 시 초기 씨앗/집이 지급되므로 전체 데이터 다시 로드
+      // 2개 API 호출(getInventory + getPlacedItems) 대신 1개(getInit)로 최적화
+      await loadFarmData();
     } catch (err) {
       const message = err instanceof Error ? err.message : '캐릭터 생성에 실패했습니다';
       setError(message);
       throw err;
     }
-  }, []);
+  }, [loadFarmData]);
 
   // Buy seeds (legacy method, still works via /farm/shop/buy)
   // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
@@ -154,6 +151,22 @@ export function useFarm(): UseFarmReturn {
       farmSize: result.farmSize,
       gold: result.gold,
       farmSlots: result.farmSlots,
+    } : null);
+  }, []);
+
+  // Get map expansion costs
+  const getMapExpansionCosts = useCallback(async (): Promise<MapExpansionCostsResponse> => {
+    return await farmApi.getMapExpansionCosts();
+  }, []);
+
+  // Expand map (맵 확장)
+  // 주의: 액션 에러 시 setError 사용 안함 (호출자가 토스트로 처리)
+  const expandMap = useCallback(async (targetLevel: number) => {
+    const result = await farmApi.expandMap(targetLevel);
+    setFarm(prev => prev ? {
+      ...prev,
+      mapLevel: result.mapLevel,
+      gold: result.gold,
     } : null);
   }, []);
 
@@ -358,6 +371,8 @@ export function useFarm(): UseFarmReturn {
     createCharacter,
     buySeed,
     expand,
+    getMapExpansionCosts,
+    expandMap,
     refresh,
 
     // Slot-based Farm Actions (신규)

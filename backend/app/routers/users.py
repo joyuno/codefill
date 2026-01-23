@@ -493,9 +493,9 @@ async def get_mypage_profile(
 ):
     """Get flattened user profile for mypage."""
     try:
-        # Get user (필요한 컬럼만 선택)
+        # Get user (필요한 컬럼만 선택) - credits는 users 테이블에 저장
         user_result = db.table("users").select(
-            "id, email, name, avatar_url, role, created_at"
+            "id, email, name, avatar_url, role, created_at, credits"
         ).eq("id", str(user_id)).single().execute()
         user_data = user_result.data
 
@@ -551,6 +551,7 @@ async def get_mypage_profile(
             maxStreak=stats_data.get("longest_streak", 0),
             joinedAt=user_data.get("created_at", ""),
             subscription=subscription,
+            credits=user_data.get("credits", 10000),
         )
 
     except Exception as e:
@@ -674,8 +675,9 @@ async def get_mypage_all(
 
     try:
         # ===== 1. Profile 데이터 (users + user_stats + subscriptions) =====
+        # credits는 users 테이블에 저장
         user_result = db.table("users").select(
-            "id, email, name, avatar_url, created_at"
+            "id, email, name, avatar_url, created_at, credits"
         ).eq("id", str(user_id)).single().execute()
         user_data = user_result.data
 
@@ -717,6 +719,7 @@ async def get_mypage_all(
             maxStreak=stats_data.get("longest_streak", 0),
             joinedAt=user_data.get("created_at", ""),
             subscription=subscription,
+            credits=user_data.get("credits", 10000),
         )
 
         # ===== 2. Stats 데이터 (user_stats에서 이미 가져옴, 재사용) =====
@@ -1691,3 +1694,52 @@ async def get_buffer_status(
 
     cache = get_stats_cache()
     return cache.get_buffer_status()
+
+
+# =====================================================
+# Credit History API
+# =====================================================
+
+@router.get("/me/credits/history")
+async def get_credit_history(
+    user_id: UUID = Depends(get_current_user_id),
+    db=Depends(get_db),
+    limit: int = 50,
+):
+    """크레딧 사용 내역 조회"""
+    try:
+        # 크레딧 내역 조회
+        history_result = db.table("credit_history").select(
+            "id, type, amount, balance, description, metadata, created_at"
+        ).eq("user_id", str(user_id)).order(
+            "created_at", desc=True
+        ).limit(limit).execute()
+
+        history = history_result.data if history_result.data else []
+
+        # 이번 달 사용량 계산
+        from datetime import datetime
+        now = datetime.now()
+        first_day = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        monthly_result = db.table("credit_history").select(
+            "amount"
+        ).eq("user_id", str(user_id)).eq(
+            "type", "use"
+        ).gte("created_at", first_day.isoformat()).execute()
+
+        monthly_usage = 0
+        if monthly_result.data:
+            monthly_usage = sum(abs(item["amount"]) for item in monthly_result.data)
+
+        return {
+            "history": history,
+            "monthly_usage": monthly_usage,
+        }
+
+    except Exception as e:
+        print(f"Error fetching credit history: {e}")
+        return {
+            "history": [],
+            "monthly_usage": 0,
+        }

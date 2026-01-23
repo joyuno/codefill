@@ -76,7 +76,8 @@ class UserFarmResponse(BaseModel):
     farm_unlocked: bool
     farm_level: int
     gold: int
-    farm_size: int  # 밭 슬롯 개수 (1, 4, 9, 16, 25)
+    farm_size: int  # 밭 슬롯 개수 (1, 4, 9, 16, 25, 36, 49)
+    map_level: int = 1  # 맵 확장 레벨 (1-5)
     house_level: int
     farm_slots: List[FarmSlot] = []  # 밭 그리드 슬롯 데이터
     created_at: datetime
@@ -197,7 +198,7 @@ class SellResponse(BaseModel):
 
 class ExpandRequest(BaseModel):
     """농장 확장 요청"""
-    target_size: int = Field(..., ge=1, le=25)  # 1, 4, 9, 16, 25
+    target_size: int = Field(..., ge=1, le=49)  # 1, 4, 9, 16, 25, 36, 49
 
 
 class ExpandResponse(BaseModel):
@@ -224,6 +225,41 @@ class ExpansionCostsResponse(BaseModel):
     current_size: int
     gold: int
     options: List[ExpansionCost]
+
+
+# =====================================================
+# Map Expansion Models (맵 확장)
+# =====================================================
+
+class MapExpandRequest(BaseModel):
+    """맵 확장 요청"""
+    target_level: int = Field(..., ge=1, le=5)  # 1-5
+
+
+class MapExpandResponse(BaseModel):
+    """맵 확장 응답"""
+    success: bool
+    message: str
+    map_level: int
+    gold: int
+
+
+class MapExpansionCost(BaseModel):
+    """맵 확장 비용 정보"""
+    level: int
+    cols: int
+    rows: int
+    name: str
+    cost: int
+    is_current: bool
+    can_afford: bool
+
+
+class MapExpansionCostsResponse(BaseModel):
+    """맵 확장 비용 목록 응답"""
+    current_level: int
+    gold: int
+    options: List[MapExpansionCost]
 
 
 # =====================================================
@@ -294,18 +330,36 @@ class FarmInitResponse(BaseModel):
 # Constants
 # =====================================================
 
-# 농장 확장 비용 (그리드 기반: 1x1 -> 5x5)
+# 농장 확장 비용 (그리드 기반: 1x1 -> 7x7)
 EXPANSION_COSTS = {
     1: {"grid": "1x1", "name": "씨앗 밭", "cost": 0},
     4: {"grid": "2x2", "name": "작은 농장", "cost": 200},
     9: {"grid": "3x3", "name": "중간 농장", "cost": 500},
     16: {"grid": "4x4", "name": "큰 농장", "cost": 1500},
     25: {"grid": "5x5", "name": "대형 농장", "cost": 4000},
+    36: {"grid": "6x6", "name": "거대 농장", "cost": 8000},
+    49: {"grid": "7x7", "name": "전설 농장", "cost": 15000},
 }
 
+# 순차적 확장을 위한 크기 순서 정의
+EXPANSION_ORDER = [1, 4, 9, 16, 25, 36, 49]
+
 # 캐릭터 생성 시 초기 지급
-INITIAL_GOLD = 100
-INITIAL_SEEDS_COUNT = 5
+INITIAL_GOLD = 5000
+INITIAL_FARM_SIZE = 9  # 3x3 그리드
+INITIAL_SEEDS_QUANTITY = 10  # 모든 씨앗 종류별 10개씩
+INITIAL_MAP_LEVEL = 1  # 초기 맵 레벨
+
+# 맵 확장 비용 (레벨 기반: 1 -> 5)
+MAP_EXPANSION_COSTS = {
+    1: {"cols": 30, "rows": 20, "name": "작은 땅", "cost": 0},
+    2: {"cols": 45, "rows": 30, "name": "넓은 땅", "cost": 5000},
+    3: {"cols": 60, "rows": 40, "name": "큰 땅", "cost": 15000},
+    4: {"cols": 80, "rows": 50, "name": "대농장", "cost": 35000},
+    5: {"cols": 100, "rows": 60, "name": "거대 농장", "cost": 70000},
+}
+
+MAP_EXPANSION_ORDER = [1, 2, 3, 4, 5]
 
 # 기본 건물 위치 (집만 기본 제공)
 DEFAULT_BUILDING_POSITIONS = {

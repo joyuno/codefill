@@ -12,6 +12,7 @@ export { CROP_INFO, ALL_CROPS, type CropVariety } from './Hotbar';
 
 // 새 UI 컴포넌트
 export { ExpandModal } from './ExpandModal';
+export { MapExpandModal } from './MapExpandModal';
 export { UnifiedShopModal } from './UnifiedShopModal';
 export { ToastNotification } from './ToastNotification';
 export { GameTopBar } from './GameTopBar';

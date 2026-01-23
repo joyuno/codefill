@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api/client';
+import { WelcomeModal } from '@/components/modals/WelcomeModal';
 
 // Onboarding data type
 interface SocialOnboardingData {
@@ -82,6 +83,7 @@ export default function SocialOnboardingPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const totalSteps = 4;
 
   const [formData, setFormData] = useState<SocialOnboardingData>({
@@ -175,13 +177,8 @@ export default function SocialOnboardingPage() {
         console.warn('Failed to update preferences:', preferencesResponse.error);
       }
 
-      toast({
-        title: '설정 완료!',
-        description: 'CodeFill에 오신 것을 환영합니다!',
-      });
-
-      router.push('/');
-      router.refresh();
+      // 환영 모달 표시
+      setShowWelcomeModal(true);
     } catch (error) {
       toast({
         title: '오류 발생',
@@ -499,6 +496,16 @@ export default function SocialOnboardingPage() {
           나중에 설정하기
         </button>
       </motion.div>
+
+      {/* 환영 모달 */}
+      <WelcomeModal
+        open={showWelcomeModal}
+        onClose={() => {
+          setShowWelcomeModal(false);
+          router.push('/');
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

@@ -6,6 +6,20 @@
 import { api } from './client';
 
 // ============================================================
+// Custom Errors
+// ============================================================
+
+export class InsufficientCreditsError extends Error {
+  public remainingCredits: number;
+
+  constructor(message: string, remainingCredits: number = 0) {
+    super(message);
+    this.name = 'InsufficientCreditsError';
+    this.remainingCredits = remainingCredits;
+  }
+}
+
+// ============================================================
 // Types
 // ============================================================
 
@@ -585,7 +599,12 @@ export const agentApi = {
    */
   async generateBlank(request: ProblemGenerationRequest): Promise<BlankProblemResponse> {
     const response = await api.post<BlankProblemResponse>('/agent/generate/blank', request, true, 60000);
-    if (response.error) throw new Error(response.error.message);
+    if (response.error) {
+      if (response.error.code === 'INSUFFICIENT_CREDITS') {
+        throw new InsufficientCreditsError(response.error.message);
+      }
+      throw new Error(response.error.message);
+    }
     return response.data!;
   },
 
@@ -594,7 +613,12 @@ export const agentApi = {
    */
   async generatePuzzle(request: ProblemGenerationRequest): Promise<PuzzleProblemResponse> {
     const response = await api.post<PuzzleProblemResponse>('/agent/generate/puzzle', request, true, 60000);
-    if (response.error) throw new Error(response.error.message);
+    if (response.error) {
+      if (response.error.code === 'INSUFFICIENT_CREDITS') {
+        throw new InsufficientCreditsError(response.error.message);
+      }
+      throw new Error(response.error.message);
+    }
     return response.data!;
   },
 
@@ -603,7 +627,12 @@ export const agentApi = {
    */
   async generateGuided(request: ProblemGenerationRequest): Promise<GuidedProblemResponse> {
     const response = await api.post<GuidedProblemResponse>('/agent/generate/guided', request, true, 60000);
-    if (response.error) throw new Error(response.error.message);
+    if (response.error) {
+      if (response.error.code === 'INSUFFICIENT_CREDITS') {
+        throw new InsufficientCreditsError(response.error.message);
+      }
+      throw new Error(response.error.message);
+    }
     return response.data!;
   },
 
@@ -717,6 +746,13 @@ export const agentApi = {
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error('로그인 토큰이 만료되었어요. 다시 로그인해주세요.');
+        }
+        if (response.status === 403) {
+          // Check for insufficient credits error
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.detail?.includes('크레딧') || errorData.error?.code === 'INSUFFICIENT_CREDITS') {
+            throw new InsufficientCreditsError(errorData.detail || '크레딧이 부족합니다.');
+          }
         }
         throw new Error(`HTTP error! status: ${response.status}`);
       }

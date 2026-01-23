@@ -3,16 +3,50 @@
  * 스타듀밸리 스타일 농장 게임의 핵심 설정값
  */
 
-// 맵 크기 설정
-export const MAP_WIDTH = 960;      // 30 타일
-export const MAP_HEIGHT = 640;     // 20 타일
+// 타일 크기
 export const TILE_SIZE = 32;
+
+// 뷰포트 크기 (화면에 보이는 영역 - 고정)
+export const VIEWPORT_WIDTH = 960;   // 30 타일
+export const VIEWPORT_HEIGHT = 640;  // 20 타일
+export const VIEWPORT_COLS = VIEWPORT_WIDTH / TILE_SIZE;   // 30
+export const VIEWPORT_ROWS = VIEWPORT_HEIGHT / TILE_SIZE;  // 20
+
+// 맵 확장 단계 (중심에서 사방으로 확장)
+export const MAP_EXPANSION_STAGES = {
+  1: { cols: 30, rows: 20, name: '작은 땅', cost: 0 },
+  2: { cols: 45, rows: 30, name: '넓은 땅', cost: 5000 },
+  3: { cols: 60, rows: 40, name: '큰 땅', cost: 15000 },
+  4: { cols: 80, rows: 50, name: '대농장', cost: 35000 },
+  5: { cols: 100, rows: 60, name: '거대 농장', cost: 70000 },
+} as const;
+
+export const MAP_EXPANSION_ORDER = [1, 2, 3, 4, 5] as const;
+
+// 기본 맵 크기 (1단계 기준, 동적으로 변경됨)
+export const DEFAULT_MAP_LEVEL = 1;
+export const MAP_WIDTH = MAP_EXPANSION_STAGES[DEFAULT_MAP_LEVEL].cols * TILE_SIZE;   // 960
+export const MAP_HEIGHT = MAP_EXPANSION_STAGES[DEFAULT_MAP_LEVEL].rows * TILE_SIZE;  // 640
+
+// 맵 크기 헬퍼 함수
+export function getMapDimensions(level: number) {
+  const stage = MAP_EXPANSION_STAGES[level as keyof typeof MAP_EXPANSION_STAGES]
+    || MAP_EXPANSION_STAGES[1];
+  return {
+    cols: stage.cols,
+    rows: stage.rows,
+    width: stage.cols * TILE_SIZE,
+    height: stage.rows * TILE_SIZE,
+    name: stage.name,
+    cost: stage.cost,
+  };
+}
 
 export const MAP_COLS = MAP_WIDTH / TILE_SIZE;   // 30
 export const MAP_ROWS = MAP_HEIGHT / TILE_SIZE;  // 20
 
 // 농장 영역 설정 (맵 중앙)
-export const FARM_MAX_SIZE = 6;    // 최대 6x6
+export const FARM_MAX_SIZE = 7;    // 최대 7x7
 export const FARM_START_SIZE = 3;  // 초기 3x3
 
 // 농장 위치 계산 (맵 중앙)

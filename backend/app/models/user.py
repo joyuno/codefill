@@ -157,6 +157,7 @@ class MypageProfile(BaseModel):
     maxStreak: int = 0
     joinedAt: str
     subscription: str = "free"
+    credits: int = 10000  # 문제 생성용 크레딧
 
 
 class MypageStats(BaseModel):

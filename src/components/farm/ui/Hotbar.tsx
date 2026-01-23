@@ -19,29 +19,30 @@ export type CropVariety =
   | 'watermelon' | 'pineapple';  // Epic
 
 // 작물 정보 (18종, rarity 기준 정렬)
-export const CROP_INFO: Record<CropVariety, { name: string; icon: string; sellPrice: number; seedCost: number; rarity: string }> = {
-  // Common (6종) - 판매가 30~50
-  carrot: { name: '당근', icon: '/farm/icons/crops/Carrot/icon.png', sellPrice: 38, seedCost: 8, rarity: 'common' },
-  radish: { name: '무', icon: '/farm/icons/crops/Radish/icon.png', sellPrice: 30, seedCost: 6, rarity: 'common' },
-  turnip: { name: '순무', icon: '/farm/icons/crops/Turnip/icon.png', sellPrice: 34, seedCost: 7, rarity: 'common' },
-  onion: { name: '양파', icon: '/farm/icons/crops/Onion/icon.png', sellPrice: 42, seedCost: 10, rarity: 'common' },
-  tomato: { name: '토마토', icon: '/farm/icons/crops/Tomato/icon.png', sellPrice: 50, seedCost: 12, rarity: 'common' },
-  grain: { name: '밀', icon: '/farm/icons/crops/Grain/icon.png', sellPrice: 32, seedCost: 5, rarity: 'common' },
-  // Uncommon (6종) - 판매가 150~200
-  cauliflower: { name: '콜리플라워', icon: '/farm/icons/crops/Cauliflower/icon.png', sellPrice: 160, seedCost: 18, rarity: 'uncommon' },
-  corn: { name: '옥수수', icon: '/farm/icons/crops/Corn/icon.png', sellPrice: 175, seedCost: 22, rarity: 'uncommon' },
-  chili_pepper: { name: '고추', icon: '/farm/icons/crops/Chili_Pepper/icon.png', sellPrice: 185, seedCost: 25, rarity: 'uncommon' },
-  strawberry: { name: '딸기', icon: '/farm/icons/crops/Strawberry/icon.png', sellPrice: 200, seedCost: 28, rarity: 'uncommon' },
-  zucchini: { name: '주키니', icon: '/farm/icons/crops/Zucchini/icon.png', sellPrice: 150, seedCost: 16, rarity: 'uncommon' },
-  cotton: { name: '목화', icon: '/farm/icons/crops/Cotton/icon.png', sellPrice: 155, seedCost: 15, rarity: 'uncommon' },
-  // Rare (4종) - 판매가 700~900
-  pumpkin: { name: '호박', icon: '/farm/icons/crops/Pumpkin/icon.png', sellPrice: 750, seedCost: 45, rarity: 'rare' },
-  grape: { name: '포도', icon: '/farm/icons/crops/Grape/icon.png', sellPrice: 820, seedCost: 52, rarity: 'rare' },
-  coffee: { name: '커피', icon: '/farm/icons/crops/Coffee/icon.png', sellPrice: 900, seedCost: 60, rarity: 'rare' },
-  prickly_pear: { name: '백년초', icon: '/farm/icons/crops/Prickly_Pear/icon.png', sellPrice: 700, seedCost: 40, rarity: 'rare' },
-  // Epic (2종) - 판매가 2300~2500
-  watermelon: { name: '수박', icon: '/farm/icons/crops/Watermelon/icon.png', sellPrice: 2300, seedCost: 100, rarity: 'epic' },
-  pineapple: { name: '파인애플', icon: '/farm/icons/crops/Pineapple/icon.png', sellPrice: 2500, seedCost: 150, rarity: 'epic' },
+// 시간당 골드: Common ~50G/h, Uncommon ~150G/h, Rare ~400G/h, Epic ~800G/h
+export const CROP_INFO: Record<CropVariety, { name: string; icon: string; sellPrice: number; rarity: string; growTime: number }> = {
+  // Common (6종) - 10~30분 재배, ~50G/hour
+  carrot: { name: '당근', icon: '/farm/icons/crops/Carrot/icon.png', sellPrice: 8, rarity: 'common', growTime: 600 },          // 10분
+  radish: { name: '무', icon: '/farm/icons/crops/Radish/icon.png', sellPrice: 8, rarity: 'common', growTime: 600 },            // 10분
+  turnip: { name: '순무', icon: '/farm/icons/crops/Turnip/icon.png', sellPrice: 12, rarity: 'common', growTime: 900 },         // 15분
+  onion: { name: '양파', icon: '/farm/icons/crops/Onion/icon.png', sellPrice: 17, rarity: 'common', growTime: 1200 },          // 20분
+  tomato: { name: '토마토', icon: '/farm/icons/crops/Tomato/icon.png', sellPrice: 21, rarity: 'common', growTime: 1500 },      // 25분
+  grain: { name: '밀', icon: '/farm/icons/crops/Grain/icon.png', sellPrice: 25, rarity: 'common', growTime: 1800 },            // 30분
+  // Uncommon (6종) - 30분~1시간 재배, ~150G/hour
+  cauliflower: { name: '콜리플라워', icon: '/farm/icons/crops/Cauliflower/icon.png', sellPrice: 75, rarity: 'uncommon', growTime: 1800 },   // 30분
+  corn: { name: '옥수수', icon: '/farm/icons/crops/Corn/icon.png', sellPrice: 100, rarity: 'uncommon', growTime: 2400 },                    // 40분
+  chili_pepper: { name: '고추', icon: '/farm/icons/crops/Chili_Pepper/icon.png', sellPrice: 112, rarity: 'uncommon', growTime: 2700 },      // 45분
+  strawberry: { name: '딸기', icon: '/farm/icons/crops/Strawberry/icon.png', sellPrice: 125, rarity: 'uncommon', growTime: 3000 },          // 50분
+  zucchini: { name: '주키니', icon: '/farm/icons/crops/Zucchini/icon.png', sellPrice: 138, rarity: 'uncommon', growTime: 3300 },            // 55분
+  cotton: { name: '목화', icon: '/farm/icons/crops/Cotton/icon.png', sellPrice: 150, rarity: 'uncommon', growTime: 3600 },                  // 1시간
+  // Rare (4종) - 1~3시간 재배, ~400G/hour
+  pumpkin: { name: '호박', icon: '/farm/icons/crops/Pumpkin/icon.png', sellPrice: 400, rarity: 'rare', growTime: 3600 },              // 1시간
+  grape: { name: '포도', icon: '/farm/icons/crops/Grape/icon.png', sellPrice: 600, rarity: 'rare', growTime: 5400 },                  // 1.5시간
+  coffee: { name: '커피', icon: '/farm/icons/crops/Coffee/icon.png', sellPrice: 800, rarity: 'rare', growTime: 7200 },                // 2시간
+  prickly_pear: { name: '백년초', icon: '/farm/icons/crops/Prickly_Pear/icon.png', sellPrice: 1200, rarity: 'rare', growTime: 10800 }, // 3시간
+  // Epic (2종) - 4~5시간 재배, ~800G/hour
+  watermelon: { name: '수박', icon: '/farm/icons/crops/Watermelon/icon.png', sellPrice: 3200, rarity: 'epic', growTime: 14400 },      // 4시간
+  pineapple: { name: '파인애플', icon: '/farm/icons/crops/Pineapple/icon.png', sellPrice: 4000, rarity: 'epic', growTime: 18000 },    // 5시간
 };
 
 // DB farm_items INSERT 순서와 동일 (rarity 기준)

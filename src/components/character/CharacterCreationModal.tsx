@@ -15,6 +15,7 @@ import {
   Sparkles,
   Home,
   User,
+  Loader2,
 } from 'lucide-react';
 
 interface CharacterCreationModalProps {
@@ -25,6 +26,10 @@ interface CharacterCreationModalProps {
   initialData?: CharacterData | null;
   /** 수정 모드 여부 */
   isEditing?: boolean;
+  /** 생성/수정 중 로딩 상태 */
+  isLoading?: boolean;
+  /** 에러 메시지 */
+  error?: string | null;
 }
 
 export interface CharacterData {
@@ -45,17 +50,17 @@ export interface CharacterData {
 // 에셋 옵션 정의 - Modern Farm 에셋 기반
 // ============================================================
 
-// Body (피부색) 옵션
+// Body (피부색) 옵션 - 실제 스프라이트 색상 기반
 const BODY_OPTIONS = [
-  { id: 'Body_1', label: '밝은 피부 1' },
-  { id: 'Body_2', label: '밝은 피부 2' },
-  { id: 'Body_3', label: '베이지' },
-  { id: 'Body_4', label: '황금빛' },
-  { id: 'Body_5', label: '올리브' },
-  { id: 'Body_6', label: '카라멜' },
-  { id: 'Body_7', label: '브라운' },
-  { id: 'Body_8', label: '다크' },
-  { id: 'Body_9', label: '딥 다크' },
+  { id: 'Body_2', label: '밝은 피부 1' },
+  { id: 'Body_3', label: '밝은 피부 2' },
+  { id: 'Body_5', label: '페일' },
+  { id: 'Body_7', label: '피치' },
+  { id: 'Body_1', label: '탄 피부 1' },
+  { id: 'Body_4', label: '탄 피부 2' },
+  { id: 'Body_6', label: '그레이 베이지' },
+  { id: 'Body_8', label: '핑크 (판타지)' },
+  { id: 'Body_9', label: '라벤더 (판타지)' },
 ];
 
 // Eye 옵션
@@ -386,6 +391,8 @@ export function CharacterCreationModal({
   onComplete,
   initialData,
   isEditing = false,
+  isLoading = false,
+  error = null,
 }: CharacterCreationModalProps) {
   // 입력 상태
   const [name, setName] = useState('');
@@ -478,8 +485,18 @@ export function CharacterCreationModal({
     onComplete(character);
   };
 
+  // 로딩 중에는 모달 닫기 방지
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && isLoading) {
+      return; // 로딩 중에는 닫기 방지
+    }
+    if (!newOpen) {
+      onClose();
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className={cn(
         'sm:max-w-lg p-0 overflow-hidden',
         'border-4 border-amber-700',
@@ -598,6 +615,7 @@ export function CharacterCreationModal({
                   className={cn(
                     'h-9 text-sm font-medium',
                     'bg-amber-50 border-2 border-amber-500',
+                    'text-amber-900 placeholder:text-amber-400',
                     'focus:border-amber-600 focus:ring-1 focus:ring-amber-400'
                   )}
                 />
@@ -618,6 +636,7 @@ export function CharacterCreationModal({
                     className={cn(
                       'h-9 text-sm font-medium flex-1',
                       'bg-amber-50 border-2 border-amber-500',
+                      'text-amber-900 placeholder:text-amber-400',
                       'focus:border-amber-600 focus:ring-1 focus:ring-amber-400'
                     )}
                   />
@@ -704,32 +723,50 @@ export function CharacterCreationModal({
             />
           </div>
 
+          {/* 에러 메시지 */}
+          {error && (
+            <div className="p-2 rounded bg-red-100 border-2 border-red-400">
+              <p className="text-sm text-red-700 text-center">{error}</p>
+            </div>
+          )}
+
           {/* 하단 버튼 */}
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
               onClick={onClose}
+              disabled={isLoading}
               className={cn(
                 'border-2 border-amber-500 bg-amber-100',
-                'hover:bg-amber-200 text-amber-800'
+                'hover:bg-amber-200 text-amber-800',
+                'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
             >
               취소
             </Button>
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <motion.div whileHover={!isLoading && canComplete ? { scale: 1.02 } : {}} whileTap={!isLoading && canComplete ? { scale: 0.98 } : {}}>
               <Button
                 onClick={handleComplete}
-                disabled={!canComplete}
+                disabled={!canComplete || isLoading}
                 className={cn(
                   'bg-green-500 hover:bg-green-600 text-white font-bold',
                   'border-4 border-green-700',
                   'shadow-[3px_3px_0_0_#166534]',
                   'disabled:opacity-50 disabled:cursor-not-allowed',
-                  'transition-all'
+                  'transition-all min-w-[80px]'
                 )}
               >
-                <Sparkles className="w-4 h-4 mr-1" />
-                OK
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    저장중...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    OK
+                  </>
+                )}
               </Button>
             </motion.div>
           </div>

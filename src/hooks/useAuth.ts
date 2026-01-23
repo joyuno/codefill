@@ -24,6 +24,7 @@ interface UserProfile {
   subscription_tier: 'free' | 'basic' | 'pro';
   subscription_expires_at?: string;
   created_at: string;
+  credits: number;  // 문제 생성용 크레딧
 }
 
 interface AuthState {
@@ -129,6 +130,7 @@ export function useAuth() {
         subscription_tier: data.subscription_tier || data.subscription || 'free',
         subscription_expires_at: data.subscription_expires_at,
         created_at: data.created_at || data.joinedAt,
+        credits: data.credits ?? 10000,
       };
 
       // 캐시 저장
@@ -275,6 +277,10 @@ export function useAuth() {
           setAuthState(prev => ({ ...prev, profile }));
           // 다른 컴포넌트의 useAuth 인스턴스에도 알림
           window.dispatchEvent(new Event('profile-updated'));
+          // 다른 탭에도 알림 (localStorage 이벤트 트리거)
+          const timestamp = Date.now().toString();
+          console.log('[useAuth] Notifying other tabs, credits:', profile.credits);
+          localStorage.setItem('codefill_profile_changed', timestamp);
         }
       }
     }
@@ -295,9 +301,33 @@ export function useAuth() {
       }
     };
 
+    // 같은 탭 내 이벤트
     window.addEventListener('profile-updated', handleProfileUpdate);
-    return () => window.removeEventListener('profile-updated', handleProfileUpdate);
-  }, []);
+
+    // 다른 탭에서 프로필 변경 시 감지 (localStorage 이벤트)
+    const handleStorageChange = (e: StorageEvent) => {
+      console.log('[useAuth] Storage event received:', e.key, e.newValue);
+      if (e.key === 'codefill_profile_changed') {
+        console.log('[useAuth] Profile changed in another tab, refreshing...');
+        // 다른 탭에서 프로필 변경됨 → 새로고침
+        const accessToken = localStorage.getItem('access_token');
+        if (accessToken && !isTokenExpired(accessToken)) {
+          fetchProfileFromBackend(accessToken, true).then((profile) => {
+            console.log('[useAuth] Profile refreshed from other tab:', profile?.credits);
+            if (profile) {
+              setAuthState(prev => ({ ...prev, profile }));
+            }
+          });
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('profile-updated', handleProfileUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [fetchProfileFromBackend]);
 
   return {
     ...authState,
