@@ -32,12 +32,6 @@ from .code_gen_agent import (
     TOPIC_REQUIRED_CONCEPTS
 )
 
-from .hint_agent import (
-    HINT_AGENT_SYSTEM_PROMPT,
-    HINT_LEVEL_CONFIG,
-    PROBLEM_TYPE_HINT_FOCUS,
-    ERROR_HINT_TEMPLATES
-)
 
 from .free_chat_agent import (
     FREE_CHAT_SYSTEM_PROMPT,
@@ -92,11 +86,6 @@ __all__ = [
     "CODE_GEN_SYSTEM_PROMPT",
     "LEVEL_TOPIC_RECOMMENDATIONS",
     "TOPIC_REQUIRED_CONCEPTS",
-    # Hint Agent
-    "HINT_AGENT_SYSTEM_PROMPT",
-    "HINT_LEVEL_CONFIG",
-    "PROBLEM_TYPE_HINT_FOCUS",
-    "ERROR_HINT_TEMPLATES",
     # Free Chat Agent
     "FREE_CHAT_SYSTEM_PROMPT",
     "INTENT_ACTION_MAP",

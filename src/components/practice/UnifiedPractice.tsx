@@ -48,6 +48,79 @@ import {
 import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, ConvertedBlank, ConvertedPuzzleBlock } from '@/lib/dataTypes';
 import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemChecker';
 
+/**
+ * Python 구문 분석을 통한 동적 들여쓰기 계산
+ * - 콜론(:)으로 끝나는 구문 다음은 +1 들여쓰기
+ * - 블록 종료 키워드 후에는 들여쓰기 유지 또는 감소
+ */
+function calculateDynamicIndentation(
+  fixedStart: string,
+  blocks: Array<{ code: string }>,
+  blockIndex: number
+): number {
+  // Python 블록 시작 키워드 (콜론으로 끝나는 구문들)
+  const blockStartPattern = /:\s*(#.*)?$/;
+  // 블록 종료/감소 키워드
+  const dedentKeywords = ['return', 'break', 'continue', 'pass', 'raise'];
+
+  let currentIndent = 0;
+  const indentStack: number[] = [0]; // 들여쓰기 스택 (스코프 추적)
+
+  // fixed_start 분석
+  if (fixedStart) {
+    const lines = fixedStart.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      // 현재 줄의 들여쓰기 레벨 계산 (4칸 = 1레벨)
+      const lineIndent = Math.floor((line.match(/^(\s*)/)?.[1].length || 0) / 4);
+
+      // 스택에서 현재 레벨보다 깊은 것들 제거
+      while (indentStack.length > 1 && indentStack[indentStack.length - 1] > lineIndent) {
+        indentStack.pop();
+      }
+
+      // 콜론으로 끝나면 다음 줄 들여쓰기 증가
+      if (blockStartPattern.test(trimmed)) {
+        currentIndent = lineIndent + 1;
+        indentStack.push(currentIndent);
+      } else {
+        currentIndent = lineIndent;
+      }
+    }
+  }
+
+  // 이전 블록들 분석 (blockIndex까지)
+  for (let i = 0; i < blockIndex; i++) {
+    const blockCode = blocks[i].code.replace(/\\n/g, '\n');
+    const lines = blockCode.split('\n');
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      // dedent 키워드 확인
+      const firstWord = trimmed.split(/\s|\(/)[0];
+      if (dedentKeywords.includes(firstWord)) {
+        // 스코프 종료 - 스택에서 제거
+        if (indentStack.length > 1) {
+          indentStack.pop();
+          currentIndent = indentStack[indentStack.length - 1];
+        }
+      }
+
+      // 콜론으로 끝나면 들여쓰기 증가
+      if (blockStartPattern.test(trimmed)) {
+        currentIndent = currentIndent + 1;
+        indentStack.push(currentIndent);
+      }
+    }
+  }
+
+  return currentIndent;
+}
+
 // CodeEditor 동적 임포트 (Monaco Editor 번들 분리 - 초기 로딩 성능 향상)
 const CodeEditor = dynamic(
   () => import('./CodeEditor').then(mod => mod.CodeEditor),
@@ -173,11 +246,12 @@ interface UnifiedPracticeProps {
   problemType: ConvertedProblemType;
   onSubmit: (code: string, results: TestResult[], hintsUsed?: number) => void;
   onRun: (code: string) => void;
-  onHintRequest: (level: number) => void;
+  onHintRequest: (level: number, userOrder?: string[]) => void;  // puzzle일 때 userOrder 전달
   onGiveUp?: () => void;  // 포기하기
   attemptId?: string;  // attempt tracking for hint recording
   onCodeChange?: (code: string) => void;  // 코드 변경 콜백 (guided 모드 튜터에게 전달용)
   onBlankHintUsed?: (index: number) => void;  // 빈칸/퍼즐 힌트 사용 시 콜백 (채팅 도움용)
+  onBlockOrderChange?: (userOrder: string[]) => void;  // 퍼즐 블록 순서 변경 콜백 (채팅 힌트용)
 }
 
 export function UnifiedPractice({
@@ -190,6 +264,7 @@ export function UnifiedPractice({
   attemptId,
   onCodeChange,
   onBlankHintUsed,
+  onBlockOrderChange,
 }: UnifiedPracticeProps) {
   // 공통 상태
   const [code, setCode] = useState('');
@@ -308,6 +383,8 @@ export function UnifiedPractice({
       const shuffled = [...uiBlocks].sort(() => Math.random() - 0.5);
       setBlocks(shuffled);
       setCode('# 블록을 올바른 순서로 정렬하세요');
+      // 초기 블록 순서 전달 (채팅 힌트용)
+      onBlockOrderChange?.(shuffled.map(b => String(b.id)));
     } else if (problemType === 'implementation') {
       // implementation 문제는 빈 코드로 시작
       setCode('# 여기에 코드를 작성하세요\n');
@@ -335,7 +412,20 @@ export function UnifiedPractice({
       }
 
       const assembledCode = blocks
-        .map(b => '    '.repeat(computedBaseIndent + (b.indentation || 0)) + b.code)
+        .map(b => {
+          const totalIndent = computedBaseIndent + (b.indentation || 0);
+          const baseIndent = '    '.repeat(totalIndent);
+          // 멀티라인 블록: 각 줄에 들여쓰기 적용 (\\n → 실제 줄바꿈)
+          const lines = b.code.replace(/\\n/g, '\n').split('\n');
+          return lines.map((line, i) => {
+            if (i === 0) return baseIndent + line;
+            // 후속 줄: 원본 코드의 상대적 들여쓰기 계산
+            const lineSpaces = line.match(/^(\s*)/)?.[1].length || 0;
+            const additionalIndent = Math.floor(lineSpaces / 4);
+            const content = line.trimStart();
+            return '    '.repeat(totalIndent + additionalIndent) + content;
+          }).join('\n');
+        })
         .join('\n');
       setCode(assembledCode);
     }
@@ -447,12 +537,52 @@ export function UnifiedPractice({
 
       return execCode;
     } else if (problemType === 'puzzle') {
-      return blocks.map(b => {
-        // baseIndentation + 블록의 상대적 indentation = 최종 들여쓰기
-        const relativeIndent = b.indentation || 0;
-        const totalIndent = baseIndentation + relativeIndent;
-        return '    '.repeat(totalIndent) + b.code;
-      }).join('\n');
+      // 동적 들여쓰기를 사용한 코드 조립
+      const parts: string[] = [];
+
+      // fixed_start 추가
+      if (problem.fixedStart) {
+        parts.push(problem.fixedStart);
+      }
+
+      // 퍼즐 블록들 - 동적 들여쓰기 적용
+      blocks.forEach((b, blockIdx) => {
+        const dynamicIndent = calculateDynamicIndentation(
+          problem.fixedStart || '',
+          blocks,
+          blockIdx
+        );
+        const baseIndent = '    '.repeat(dynamicIndent);
+
+        // 멀티라인 블록: 각 줄에 들여쓰기 적용
+        const rawCode = b.code.replace(/\\n/g, '\n');
+        const lines = rawCode.split('\n');
+
+        // 블록 내 최소 들여쓰기 계산 (dedent용)
+        const minBlockIndent = lines
+          .filter(line => line.trim().length > 0)
+          .reduce((min, line) => {
+            const spaces = line.match(/^(\s*)/)?.[1].length || 0;
+            return Math.min(min, spaces);
+          }, Infinity);
+        const normalizedMinIndent = minBlockIndent === Infinity ? 0 : minBlockIndent;
+
+        const processedLines = lines.map(line => {
+          const lineSpaces = line.match(/^(\s*)/)?.[1].length || 0;
+          const relativeIndent = Math.floor((lineSpaces - normalizedMinIndent) / 4);
+          const content = line.trimStart();
+          return '    '.repeat(dynamicIndent + Math.max(0, relativeIndent)) + content;
+        });
+
+        parts.push(processedLines.join('\n'));
+      });
+
+      // fixed_end 추가
+      if (problem.fixedEnd) {
+        parts.push(problem.fixedEnd);
+      }
+
+      return parts.join('\n');
     }
     return code;
   };
@@ -634,35 +764,80 @@ export function UnifiedPractice({
         return;
       }
 
-      // Puzzle: 코드 실행 없이 순서만 체크
+      // Puzzle: 백엔드 API로 검증 (Judge0 테스트케이스로 복수 정답 지원)
       if (problemType === 'puzzle') {
         const userOrder = blocks.map(b => b.id);
-        const { correct, results } = checkPuzzleOrder(problem, userOrder);
-
-        // 각 블록별 결과 저장
-        const newPuzzleResults: Record<string, boolean> = {};
-        blocks.forEach((block, idx) => {
-          newPuzzleResults[block.id] = results[idx] || false;
-        });
-        setPuzzleResults(newPuzzleResults);
-
-        const correctCount = results.filter(r => r).length;
 
         if (isSubmit) {
-          setOutput(correct
-            ? '✓ 정답입니다! 올바른 순서입니다.'
-            : `✗ 오답입니다. (${correctCount}/${blocks.length}) - 순서를 다시 확인해주세요.`
-          );
-          const puzzleTestResults: TestResult[] = [{
-            testId: 'puzzle-result',
-            passed: correct,
-            actual: correct ? 'correct order' : 'wrong order',
-          }];
-          // 퍼즐 힌트 사용 횟수 전달
-          onSubmit(getExecutableCode(), puzzleTestResults, puzzleHintsUsedCount);
-          // 정답일 때만 수정 불가 상태로 전환
-          if (correct) {
-            setIsSubmitted(true);
+          try {
+            // 백엔드 API로 복수 정답 검증
+            const { practiceApi } = await import('@/lib/api/practice');
+            const validateResult = await practiceApi.validatePuzzle({
+              problemId: problem.id,
+              userOrder,
+              blocks: blocks.map(b => ({ id: b.id, code: b.code, order: b.correctOrder })),
+              language: problem.language || 'python',
+            });
+
+            const correct = validateResult.isCorrect;
+
+            // 각 블록별 결과 저장 (복수 정답인 경우 모두 정답 처리)
+            const newPuzzleResults: Record<string, boolean> = {};
+            if (correct) {
+              // 복수 정답 통과 - 모든 블록 정답 처리
+              blocks.forEach((block) => {
+                newPuzzleResults[block.id] = true;
+              });
+            } else {
+              // 오답 - 기존 로직으로 각 블록별 결과 계산
+              const { results } = checkPuzzleOrder(problem, userOrder);
+              blocks.forEach((block, idx) => {
+                newPuzzleResults[block.id] = results[idx] || false;
+              });
+            }
+            setPuzzleResults(newPuzzleResults);
+
+            const correctCount = Object.values(newPuzzleResults).filter(r => r).length;
+
+            setOutput(correct
+              ? `✓ ${validateResult.feedback}`
+              : `✗ 오답입니다. (${correctCount}/${blocks.length}) - ${validateResult.feedback}`
+            );
+
+            const puzzleTestResults: TestResult[] = [{
+              testId: 'puzzle-result',
+              passed: correct,
+              actual: correct ? 'correct order' : 'wrong order',
+            }];
+            // 퍼즐 힌트 사용 횟수 전달
+            onSubmit(getExecutableCode(), puzzleTestResults, puzzleHintsUsedCount);
+            // 정답일 때만 수정 불가 상태로 전환
+            if (correct) {
+              setIsSubmitted(true);
+            }
+          } catch (error) {
+            // API 실패 시 기존 로컬 검증으로 폴백
+            console.error('[Puzzle] Validate API error, falling back to local check:', error);
+            const { correct, results } = checkPuzzleOrder(problem, userOrder);
+            const newPuzzleResults: Record<string, boolean> = {};
+            blocks.forEach((block, idx) => {
+              newPuzzleResults[block.id] = results[idx] || false;
+            });
+            setPuzzleResults(newPuzzleResults);
+            const correctCount = results.filter(r => r).length;
+            setOutput(correct
+              ? '✓ 정답입니다! 올바른 순서입니다.'
+              : `✗ 오답입니다. (${correctCount}/${blocks.length}) - 순서를 다시 확인해주세요.`
+            );
+            const puzzleTestResults: TestResult[] = [{
+              testId: 'puzzle-result',
+              passed: correct,
+              actual: correct ? 'correct order' : 'wrong order',
+            }];
+            onSubmit(getExecutableCode(), puzzleTestResults, puzzleHintsUsedCount);
+            if (correct) {
+              setIsSubmitted(true);
+            }
           }
         } else {
           setOutput('블록을 올바른 순서로 정렬하고 제출해주세요.');
@@ -733,7 +908,9 @@ export function UnifiedPractice({
   const handleHint = () => {
     const newLevel = hintsUsed + 1;
     setHintsUsed(newLevel);
-    onHintRequest(newLevel);
+    // puzzle 타입일 때 현재 블록 배치 순서도 함께 전달
+    const userOrder = problemType === 'puzzle' ? blocks.map(b => b.id) : undefined;
+    onHintRequest(newLevel, userOrder);
   };
 
   // 빈칸별 힌트 요청 핸들러 (횟수 제한 없음, 사용 기록만 추적)
@@ -880,6 +1057,8 @@ export function UnifiedPractice({
     });
 
     setBlocks(newBlocks);
+    // 블록 순서 변경 시 콜백 호출 (채팅 힌트용)
+    onBlockOrderChange?.(newBlocks.map(b => String(b.id)));
   };
 
   const handleDragEnd = () => {
@@ -1588,7 +1767,7 @@ export function UnifiedPractice({
                     onDragStart={() => !isSubmitted && !isLocked && handleDragStart(block.id)}
                     onDragOver={(e) => !isSubmitted && !isLocked && handleDragOver(e, block.id)}
                     onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-2 p-2 rounded border transition-all ${
+                    className={`flex items-start gap-2 p-2 rounded border transition-all ${
                       isSubmitted || isLocked
                         ? 'cursor-default'
                         : 'cursor-move'
@@ -1601,7 +1780,6 @@ export function UnifiedPractice({
                             : `bg-red-500/10 border-red-500/50 ${showPuzzlePulse ? 'animate-[pulse_2s_ease-in-out_1]' : ''}`
                           : 'bg-card border-border hover:border-primary/50'
                     }`}
-                    style={{ marginLeft: block.indentation * 24 }}
                   >
                     {isLocked ? (
                       <Lock className="h-4 w-4 shrink-0 text-green-500" />
@@ -1614,13 +1792,29 @@ export function UnifiedPractice({
                           : 'text-muted-foreground'
                       }`} />
                     )}
-                    <code className={`text-sm font-mono flex-1 ${
+                    <code className={`text-sm font-mono flex-1 whitespace-pre-wrap ${
                       hasResult
                         ? isCorrect
                           ? 'text-green-400'
                           : 'text-red-400'
                         : ''
-                    }`}>{block.code}</code>
+                    }`}>{(() => {
+                      // 드래그 블록에서는 들여쓰기 제거 (dedent)
+                      const rawCode = block.code.replace(/\\n/g, '\n');
+                      const lines = rawCode.split('\n');
+                      if (lines.length === 0) return rawCode;
+                      // 비어있지 않은 줄들의 최소 들여쓰기 찾기
+                      const minIndent = lines
+                        .filter(line => line.trim().length > 0)
+                        .reduce((min, line) => {
+                          const match = line.match(/^(\s*)/);
+                          const indent = match ? match[1].length : 0;
+                          return Math.min(min, indent);
+                        }, Infinity);
+                      // 최소 들여쓰기만큼 제거
+                      if (minIndent === Infinity || minIndent === 0) return rawCode;
+                      return lines.map(line => line.slice(minIndent)).join('\n');
+                    })()}</code>
                     {hasResult && (
                       isCorrect ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
@@ -1690,25 +1884,58 @@ export function UnifiedPractice({
                 </span>
               </div>
             </div>
-            <pre className="font-mono text-sm whitespace-pre-wrap">
+            <div className="font-mono text-sm">
               {/* fixed_start - 녹색 (고정) */}
-              {problem.fixedStart && (
-                <span className="text-[#6A9955]">{problem.fixedStart}{'\n'}</span>
-              )}
-              {/* 퍼즐 블록 - 하늘색 (변경 가능) */}
-              <span className="text-[#9CDCFE]">
-                {blocks.map(b => {
-                  // baseIndentation + 블록의 상대적 indentation = 최종 들여쓰기
-                  const relativeIndent = b.indentation || 0;
-                  const totalIndent = baseIndentation + relativeIndent;
-                  return '    '.repeat(totalIndent) + b.code;
-                }).join('\n')}
-              </span>
+              {problem.fixedStart && problem.fixedStart.split('\n').map((line, idx) => (
+                <div key={`fixed-start-${idx}`} className="text-[#6A9955]" style={{ whiteSpace: 'pre' }}>
+                  {line || '\u00A0'}
+                </div>
+              ))}
+              {/* 퍼즐 블록 - 하늘색 (변경 가능) - 동적 들여쓰기 계산 */}
+              {blocks.map((b, blockIdx) => {
+                // 동적 들여쓰기: 이전 블록들의 구문 분석을 통해 계산
+                const dynamicIndent = calculateDynamicIndentation(
+                  problem.fixedStart || '',
+                  blocks,
+                  blockIdx
+                );
+                // 멀티라인 블록: 각 줄에 들여쓰기 적용 (\\n → 실제 줄바꿈)
+                const rawCode = b.code.replace(/\\n/g, '\n');
+                const lines = rawCode.split('\n');
+                // 블록 내 최소 들여쓰기 계산 (dedent용)
+                const minBlockIndent = lines
+                  .filter(line => line.trim().length > 0)
+                  .reduce((min, line) => {
+                    const spaces = line.match(/^(\s*)/)?.[1].length || 0;
+                    return Math.min(min, spaces);
+                  }, Infinity);
+                const normalizedMinIndent = minBlockIndent === Infinity ? 0 : minBlockIndent;
+
+                return lines.map((line, lineIdx) => {
+                  // 줄별 상대적 들여쓰기 계산
+                  const lineSpaces = line.match(/^(\s*)/)?.[1].length || 0;
+                  const relativeIndent = Math.floor((lineSpaces - normalizedMinIndent) / 4);
+                  const finalIndent = dynamicIndent + Math.max(0, relativeIndent);
+                  const content = line.trimStart();
+
+                  return (
+                    <div
+                      key={`block-${blockIdx}-${lineIdx}`}
+                      className="text-[#9CDCFE]"
+                      style={{ paddingLeft: `${finalIndent * 2}em` }}
+                    >
+                      {content || '\u00A0'}
+                    </div>
+                  );
+                });
+              })}
               {/* fixed_end - 녹색 (고정) */}
-              {problem.fixedEnd && (
-                <span className="text-[#6A9955]">{'\n'}{problem.fixedEnd}</span>
-              )}
-            </pre>
+              {problem.fixedEnd && problem.fixedEnd.split('\n').map((line, idx) => (
+                <div key={`fixed-end-${idx}`} className="text-[#6A9955]" style={{ whiteSpace: 'pre' }}>
+                  {line || '\u00A0'}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

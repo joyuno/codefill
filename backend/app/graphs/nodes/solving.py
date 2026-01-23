@@ -684,9 +684,10 @@ async def _check_blank_answer(user_answer: dict, problem_context: dict, openrout
 
 async def _check_puzzle_answer(user_answer: list, problem_context: dict) -> tuple:
     """
-    퍼즐 정답 체크 (스마트 검증)
+    퍼즐 정답 체크 (스마트 검증 + Judge0 테스트케이스)
 
     - 정확히 일치하면 정답
+    - 테스트케이스가 있으면 Judge0로 실행 검증 (복수 정답 지원)
     - 함수/클래스 순서가 유연한 경우도 정답으로 처리
     - 의존성 순서만 검증
     """
@@ -695,6 +696,22 @@ async def _check_puzzle_answer(user_answer: list, problem_context: dict) -> tupl
     expected_order = problem_context.get("correct_order", [])
     blocks = problem_context.get("blocks", [])
     language = problem_context.get("language", "python")
+
+    # Judge0 테스트케이스 검증용 데이터
+    fixed_start = problem_context.get("fixed_start", "") or ""
+    fixed_end = problem_context.get("fixed_end", "") or ""
+    input_output = problem_context.get("input_output", [])
+
+    # input_output을 테스트케이스 형식으로 변환
+    test_cases = []
+    if input_output:
+        test_cases = [
+            {"input": tc.get("input", ""), "output": tc.get("output", "")}
+            for tc in input_output
+            if isinstance(tc, dict)
+        ]
+        if test_cases:
+            print(f"[PuzzleCheck] 📦 Using {len(test_cases)} test cases for validation")
 
     if not expected_order:
         return False, "문제 데이터를 불러올 수 없어요."
@@ -705,7 +722,7 @@ async def _check_puzzle_answer(user_answer: list, problem_context: dict) -> tupl
     else:
         block_contents = blocks if blocks else []
 
-    # 스마트 검증 수행
+    # 스마트 검증 수행 (테스트케이스가 있으면 Judge0로 복수 정답 검증)
     try:
         result = await validate_puzzle(
             blocks=block_contents,
@@ -713,6 +730,9 @@ async def _check_puzzle_answer(user_answer: list, problem_context: dict) -> tupl
             correct_order=expected_order,
             language=language,
             strict_mode=False,  # 복수 정답 허용
+            test_cases=test_cases,
+            fixed_start=fixed_start,
+            fixed_end=fixed_end,
         )
 
         return result.is_correct, result.feedback

@@ -1,8 +1,8 @@
-"""
-Blank Problem Hint Agent - 빈칸 채우기 힌트 생성
-"""
+===========================================
+HINT BLANK AGENT (빈칸 채우기 힌트 생성)
+Model: GPT-4o-mini via OpenRouter
+===========================================
 
-BLANK_HINT_SYSTEM_PROMPT = """
 # 빈칸 힌트 에이전트
 
 ## 역할
@@ -57,11 +57,15 @@ BLANK_HINT_SYSTEM_PROMPT = """
 ```
 
 ## 규칙
-1. 현재 빈칸만 힌트
-2. 한국어, **강조** 사용
-"""
+1. 정답 직접 노출 금지 (Level 4도)
+2. 현재 빈칸만 힌트
+3. 한국어 사용
+4. **강조** 마크다운 사용
 
-# 빈칸 유형 패턴
+---
+
+## 빈칸 유형 패턴
+
 BLANK_TYPE_PATTERNS = {
     "operator": ["+", "-", "*", "/", "%", "//", "**", "==", "!=", "<", ">", "<=", ">=", "and", "or", "not", "in"],
     "builtin_function": ["len", "range", "print", "input", "int", "str", "float", "list", "dict", "sum", "max", "min", "abs", "sorted", "enumerate", "zip", "map", "filter"],
@@ -70,6 +74,8 @@ BLANK_TYPE_PATTERNS = {
     "number": ["0", "1", "2", "-1"],
 }
 
+## 힌트 타입 매핑
+
 HINT_TYPE_MAP = {
     1: "context",
     2: "operation",
@@ -77,26 +83,15 @@ HINT_TYPE_MAP = {
     4: "almost",
 }
 
-def extract_surrounding_code(code_template: str, blank_index: int, context_chars: int = 30) -> str:
-    """빈칸 주변 코드 추출"""
-    blanks = code_template.split("___")
-    if blank_index >= len(blanks) - 1:
-        return ""
-    before = blanks[blank_index][-context_chars:]
-    after = blanks[blank_index + 1][:context_chars]
-    return f"...{before}____{after}..."
+## 헬퍼 함수
 
-def generate_answer_hint(answer: str, level: int) -> str:
+def extract_surrounding_code(code_template, blank_index, context_chars=30):
+    """빈칸 주변 코드 추출"""
+    # 빈칸 전후 30자씩 추출
+
+def generate_answer_hint(answer, level):
     """레벨별 정답 힌트 생성"""
-    if level == 1:
-        return f"{len(answer)}글자"
-    elif level == 2:
-        for t, patterns in BLANK_TYPE_PATTERNS.items():
-            if answer in patterns:
-                return {"operator": "연산자", "builtin_function": "내장 함수", "method": "메서드", "keyword": "키워드", "number": "숫자"}.get(t, "식별자")
-        return "식별자"
-    elif level == 3:
-        return f"'{answer[0]}...' ({len(answer)}글자)"
-    elif level == 4:
-        return f"'{answer[:-1]}_'" if len(answer) > 2 else f"'{answer[0]}_'"
-    return ""
+    # Level 1: 글자 수
+    # Level 2: 유형 (연산자, 내장함수, 메서드 등)
+    # Level 3: 첫 글자 + 글자 수
+    # Level 4: 마지막 글자만 숨김

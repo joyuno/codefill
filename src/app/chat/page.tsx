@@ -137,6 +137,9 @@ function ChatPageContent() {
   // Guided 모드 튜터에게 전달할 현재 코드 상태
   const [currentCode, setCurrentCode] = useState<string>('');
 
+  // Puzzle 모드: 사용자가 현재 배치한 블록 순서
+  const [puzzleUserOrder, setPuzzleUserOrder] = useState<string[]>([]);
+
   // Start heartbeat when session starts
   useEffect(() => {
     if (!sessionId) return;
@@ -397,6 +400,7 @@ function ChatPageContent() {
     setFeedbackData(null);
     setSessionId(null);  // Clear session ID
     setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
+    setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
   }, [resetSession, sessionId]);
 
   // 포기하기 (Give up)
@@ -435,6 +439,7 @@ function ChatPageContent() {
     setFeedbackData(null);
     setSessionId(null);
     setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
+    setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
   }, [problem, sessionId, resetSession, toast]);
 
   // ============================================================
@@ -476,6 +481,7 @@ function ChatPageContent() {
     // 세션 정리
     resetSession();
     setSessionId(null);
+    setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
     setShowExitWarning(false);
     setIsExitLoading(false);
 
@@ -572,7 +578,15 @@ function ChatPageContent() {
 
   // Hint request handler - 실제 API 호출
   const handleHintRequest = useCallback(
-    async (level: number, blankId?: string) => {
+    async (level: number, blankIdOrUserOrder?: string | string[]) => {
+      // puzzle인 경우 두 번째 인자가 userOrder 배열
+      const userOrder = Array.isArray(blankIdOrUserOrder) ? blankIdOrUserOrder : undefined;
+      const blankId = typeof blankIdOrUserOrder === 'string' ? blankIdOrUserOrder : undefined;
+
+      // puzzle 배치 순서 저장
+      if (userOrder) {
+        setPuzzleUserOrder(userOrder);
+      }
       if (!problem) return;
 
       try {
@@ -607,8 +621,8 @@ function ChatPageContent() {
           blocks: problem.puzzleBlocks || [],
           fixed_start: problem.fixedStart || '',
           fixed_end: problem.fixedEnd || '',
-          user_order: [],  // 현재 사용자 순서 (TODO: 상태에서 가져오기)
-          correct_blocks: [],  // 이미 맞은 블록들 (TODO: 상태에서 가져오기)
+          user_order: userOrder || puzzleUserOrder,  // 현재 사용자 배치 순서
+          correct_blocks: [],  // 이미 맞은 블록들
         } : baseProblemInfo;
 
         // 힌트 API 호출
@@ -617,11 +631,9 @@ function ChatPageContent() {
           base_problem_id: problem.baseProblemId || problem.originalId,
           problem_type: problemType as 'blank' | 'puzzle' | 'guided',
           problem_info: problemInfo,
-          user_code: problem.codeSnippet,
+          user_code: problemType === 'guided' ? currentCode : undefined,
           user_answers: blankAnswers,
           current_blank_index: currentBlankIndex,
-          attempt_count: previousHints.length,
-          hint_level: hintLevel,
           previous_hints: previousHints,
           user_level: 'intermediate',
         });
@@ -999,7 +1011,7 @@ function ChatPageContent() {
             description: '테스트를 실행합니다',
           });
         }}
-        onHintRequest={(level) => handleHintRequest(level)}
+        onHintRequest={(level, userOrder) => handleHintRequest(level, userOrder)}
         onGiveUp={handleGiveUp}  // 포기하기
         attemptId={attemptId || undefined}  // attempt tracking
         onCodeChange={setCurrentCode}  // guided 모드 튜터에게 현재 코드 전달
@@ -1007,6 +1019,7 @@ function ChatPageContent() {
           // 힌트 사용 시 인덱스 추가 (중복 방지)
           setUsedBlankHintIndices(prev => prev.includes(index) ? prev : [...prev, index]);
         }}
+        onBlockOrderChange={setPuzzleUserOrder}  // 퍼즐 블록 순서 변경 시 업데이트
       />
     );
   };
@@ -1164,6 +1177,8 @@ function ChatPageContent() {
                       problemType={problem?.problemType}
                       currentCode={currentCode}
                       usedBlankHintIndices={usedBlankHintIndices}
+                      puzzleUserOrder={puzzleUserOrder}
+                      blankAnswers={blankAnswers}
                     />
                   )}
                 </div>

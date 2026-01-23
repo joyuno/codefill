@@ -43,6 +43,23 @@ class PuzzleSubmission(BaseModel):
     block_order: List[PuzzleBlockSubmission]  # Blocks in user's arranged order with indentation
 
 
+class PuzzleValidateRequest(BaseModel):
+    """Request for puzzle validation (Judge0 test case support)."""
+    problem_id: str  # problems_puzzle ID 또는 base_problem_id
+    user_order: List[str]  # 사용자가 배치한 블록 ID 순서
+    blocks: Optional[List[Dict[str, Any]]] = None  # 블록 정보 (프론트에서 전달)
+    language: str = "python"
+
+
+class PuzzleValidateResponse(BaseModel):
+    """Response for puzzle validation."""
+    is_correct: bool
+    feedback: str
+    validation_type: str = "smart"  # "exact" | "judge0_testcase" | "smart" | "fallback"
+    first_wrong_position: Optional[int] = None
+    score: Optional[float] = None
+
+
 class NewBadge(BaseModel):
     """Newly earned badge info."""
     code: str

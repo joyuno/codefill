@@ -32,7 +32,7 @@ interface PuzzlePracticeProps {
   problemDescription: string;
   blocks: PuzzleBlock[];
   onSubmit: (blockOrder: Array<{ id: string; indentation: number }>) => void;
-  onHintRequest: (level: number) => void;
+  onHintRequest: (level: number, currentOrder: string[]) => void;  // 현재 배치 순서 추가
   hints: string[];
   results?: Record<string, boolean>;
   isSubmitted?: boolean;
@@ -149,10 +149,11 @@ export function PuzzlePractice({
     onSubmit(submission);
   };
 
-  // Get hint
+  // Get hint - 현재 배치 순서와 함께 전달
   const handleGetHint = () => {
     if (hintLevel < hints.length) {
-      onHintRequest(hintLevel + 1);
+      const currentOrder = arrangedBlocks.map(block => block.id);
+      onHintRequest(hintLevel + 1, currentOrder);
       setHintLevel((prev) => prev + 1);
     }
   };

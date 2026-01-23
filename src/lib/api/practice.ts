@@ -35,6 +35,25 @@ export interface PuzzleResult {
   newBadges?: NewBadge[];
 }
 
+// ============================================================
+// Puzzle Validation (복수 정답 지원 - Judge0 테스트케이스)
+// ============================================================
+
+export interface PuzzleValidateRequest {
+  problemId: string;
+  userOrder: string[];  // 사용자가 배치한 블록 ID 순서
+  blocks?: Array<{ id: string; code: string; order: number }>;
+  language?: string;
+}
+
+export interface PuzzleValidateResult {
+  isCorrect: boolean;
+  feedback: string;
+  validationType: string;  // "exact" | "judge0_testcase" | "smart" | "fallback"
+  firstWrongPosition?: number;
+  score?: number;
+}
+
 export interface RunCodeResult {
   output?: string;
   error?: string;
@@ -363,6 +382,34 @@ export const practiceApi = {
         iconUrl: b.icon_url,
         rarity: b.rarity,
       })),
+    };
+  },
+
+  /**
+   * Validate puzzle answer (Judge0 테스트케이스로 복수 정답 지원)
+   * 정답 확인 전에 먼저 호출하여 복수 정답 여부 판단
+   */
+  async validatePuzzle(request: PuzzleValidateRequest): Promise<PuzzleValidateResult> {
+    const response = await api.post<{
+      is_correct: boolean;
+      feedback: string;
+      validation_type: string;
+      first_wrong_position?: number;
+      score?: number;
+    }>('/practice/puzzle/validate', {
+      problem_id: request.problemId,
+      user_order: request.userOrder,
+      blocks: request.blocks,
+      language: request.language || 'python',
+    });
+    if (response.error) throw new Error(response.error.message);
+    const data = response.data!;
+    return {
+      isCorrect: data.is_correct,
+      feedback: data.feedback,
+      validationType: data.validation_type,
+      firstWrongPosition: data.first_wrong_position,
+      score: data.score,
     };
   },
 

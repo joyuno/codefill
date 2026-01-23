@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # LLM Models per Agent
     # Available aliases: gpt-4o, gpt-4o-mini, claude-sonnet, gemini-flash, gemini-3-pro, deepseek-v3
-    llm_model_chat: str = "gemini-flash"          # Chat agent, intent handler
+    llm_model_chat: str = "gpt-4o-mini"          # Chat agent, intent handler
     llm_model_intent: str = "gemini-flash"        # Intent classifier
     llm_model_blank_gen: str = "gemini-flash"     # Blank problem generation
     llm_model_puzzle_gen: str = "gemini-flash"    # Puzzle problem generation

@@ -148,9 +148,15 @@ MULTI_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 **다중 의도 분�
 ### 3. 카테고리/액션 목록
 **info_collection:** set_topic, set_difficulty, set_language, ask_recommendation
 **discovery:** select_problem, show_more, generate_new, select_problem_type, inquire_problem
-**solving:** request_hint, submit_code, ask_question, give_up, chat_assist, concept_explain, approach_hint, code_review
+**solving:** request_hint, submit_code, ask_question, give_up, chat_assist, concept_explain, approach_hint, validate_direction, code_review
 **confirmation:** affirm, negate
 **general:** greeting, thanks, help, free_chat, progress_check, weak_point, study_plan
+
+### 3-1. 문제 풀이 중 주의사항 (중요!)
+**컨텍스트에 "현재 문제 풀이 중"이 있으면:**
+- 블럭/순서/빈칸 관련 질문은 모두 **solving** 카테고리
+- 숫자가 있어도 select_problem이 아님! (예: "두번째 블럭" → solving/chat_assist)
+- **절대 info_collection이나 discovery로 분류 금지!**
 
 ### 4. 우선순위 및 분기 분류
 **primary (메인 분기 결정)**:
@@ -256,6 +262,14 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 **컨텍스트에 "현재 문제 풀이 중"이라고 되어 있을 때만:**
 - "도와줘", "어렵다", "모르겠어" → **solving / chat_assist** (현재 문제에 대한 도움)
 - solving 카테고리의 모든 액션 적용 가능
+- **절대 info_collection이나 discovery로 분류하지 마세요!**
+
+**빈칸/퍼즐/대화형 문제 풀이 중 특수 케이스:**
+- "블럭 순서", "블록 배치", "빈칸 답변" 관련 질문 → **solving / chat_assist 또는 validate_direction**
+- "두번째 블럭이랑 3번째" 같은 숫자 표현 → 문제 선택이 아님! **solving** 카테고리
+- "이 순서 맞아?", "이렇게 하면 될까?" → **solving / validate_direction**
+- "힌트 더 줘", "다른 힌트" → **solving / chat_assist**
+- 숫자가 포함되어도 블럭/순서/빈칸과 함께면 → **solving** (절대 discovery/select_problem 아님!)
 
 ### 5. 부정/거부 표현 주의! (매우 중요)
 **"X 말고"는 X를 원하지 않는다는 뜻!**
@@ -413,6 +427,22 @@ class IntentTool:
         import re
         msg_lower = message.lower().strip()
 
+        # ============================================================
+        # 문제 풀이 중일 때는 숫자 패턴을 문제 선택으로 해석하지 않음
+        # "두번째 블럭", "3번째 순서" 같은 표현은 퍼즐 관련 질문
+        # ============================================================
+        current_problem = session_state.get("current_problem") or session_state.get("selected_problem")
+        current_practice_state = session_state.get("current_practice_state", {})
+        is_solving = current_problem is not None or current_practice_state.get("problem_id") is not None
+
+        # 퍼즐/빈칸 문제 풀이 중 관련 키워드 감지
+        practice_keywords = ["블럭", "블록", "순서", "위치", "배치", "빈칸", "답변", "코드", "힌트"]
+        has_practice_keyword = any(kw in msg_lower for kw in practice_keywords)
+
+        # 문제 풀이 중이고 관련 키워드가 있으면 문제 선택이 아님
+        if is_solving and has_practice_keyword:
+            return None
+
         # "1번", "첫 번째", "맨 위"
         num_match = re.search(r'^(\d+)\s*번?$', msg_lower)
         if num_match:
@@ -428,6 +458,9 @@ class IntentTool:
 
         ordinal_map = {"첫": 1, "두": 2, "세": 3, "네번": 4, "다섯": 5}
         for word, idx in ordinal_map.items():
+            # 문제 풀이 중에는 서수 패턴 무시 (블럭 순서 질문일 수 있음)
+            if is_solving:
+                continue
             if msg_lower.startswith(word):
                 return IntentResult(
                     category=IntentCategory.DISCOVERY,
@@ -488,13 +521,32 @@ class IntentTool:
         context_parts = []
 
         # 🔥 핵심: 현재 문제 풀이 중인지 여부
+        # current_problem 또는 current_practice_state가 있으면 문제 풀이 중
         current_problem = session_state.get("current_problem") or session_state.get("selected_problem")
+        current_practice_state = session_state.get("current_practice_state", {})
         current_stage = session_state.get("stage", "")
-        is_solving = current_stage == "solving" or current_problem is not None
 
-        if is_solving and current_problem:
-            problem_name = current_problem.get("name") or current_problem.get("title") or "알 수 없음"
+        # current_practice_state에 problem_id가 있으면 문제 풀이 중
+        is_solving = (
+            current_stage == "solving" or
+            current_problem is not None or
+            current_practice_state.get("problem_id") is not None
+        )
+
+        if is_solving:
+            # 문제 이름 추출 (current_problem 또는 current_practice_state에서)
+            problem_name = "알 수 없음"
+            problem_type = ""
+            if current_problem:
+                problem_name = current_problem.get("name") or current_problem.get("title") or "알 수 없음"
+            elif current_practice_state.get("problem_title"):
+                problem_name = current_practice_state.get("problem_title")
+                problem_type = current_practice_state.get("problem_type", "")
+
             context_parts.append(f"- **현재 문제 풀이 중**: {problem_name}")
+            if problem_type:
+                context_parts.append(f"- **문제 유형**: {problem_type} (빈칸/퍼즐/대화형)")
+                context_parts.append("- **주의**: 사용자가 현재 풀고 있는 문제에 대해 질문하면 solving 카테고리로 분류!")
         else:
             context_parts.append("- **문제 풀이 중 아님**: 새 문제 탐색/추천 단계")
 
@@ -663,14 +715,39 @@ class IntentTool:
         """
         # 컨텍스트 구성
         context_parts = []
+
+        # 🔥 핵심: 현재 문제 풀이 중인지 여부 (단일 의도 분류와 동일한 로직)
+        current_problem = session_state.get("current_problem") or session_state.get("selected_problem")
+        current_practice_state = session_state.get("current_practice_state", {})
+        current_stage = session_state.get("stage", "")
+
+        is_solving = (
+            current_stage == "solving" or
+            current_problem is not None or
+            current_practice_state.get("problem_id") is not None
+        )
+
+        if is_solving:
+            problem_name = "알 수 없음"
+            problem_type = ""
+            if current_problem:
+                problem_name = current_problem.get("name") or current_problem.get("title") or "알 수 없음"
+            elif current_practice_state.get("problem_title"):
+                problem_name = current_practice_state.get("problem_title")
+                problem_type = current_practice_state.get("problem_type", "")
+
+            context_parts.append(f"- **현재 문제 풀이 중**: {problem_name}")
+            if problem_type:
+                context_parts.append(f"- **문제 유형**: {problem_type} (빈칸/퍼즐/대화형)")
+        else:
+            context_parts.append("- **문제 풀이 중 아님**: 새 문제 탐색/추천 단계")
+
         if session_state.get("current_step"):
             context_parts.append(f"- 현재 수집 단계: {session_state['current_step']}")
         if session_state.get("topic"):
             context_parts.append(f"- 선택된 주제: {session_state['topic']}")
         if session_state.get("search_results"):
             context_parts.append(f"- 검색 결과: {len(session_state['search_results'])}개 문제")
-        if session_state.get("current_problem"):
-            context_parts.append(f"- 현재 문제: 풀이 중")
 
         context = "\n".join(context_parts) if context_parts else "없음"
 
