@@ -50,10 +50,11 @@ class Settings(BaseSettings):
     # CORS
     frontend_url: str = "http://localhost:3000"
 
-    # LLM API Keys
-    openrouter_api_key: str = ""
-    openrouter_api_key_2: str = ""  # Rotation key 1
-    openrouter_api_key_3: str = ""  # Rotation key 2
+    # LLM API Keys - 용도별 분리 (동시 호출 시 Rate Limit 방지)
+    openrouter_api_key: str = ""              # 기본/Orchestrator 전용
+    openrouter_api_key_problem: str = ""      # 문제 유형 생성용
+    openrouter_api_key_hint: str = ""         # 힌트 생성용
+    openrouter_api_key_codegen: str = ""      # Code generation용
     openai_api_key: str = ""
     groq_api_key: str = ""
 

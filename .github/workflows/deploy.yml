@@ -130,8 +130,9 @@ jobs:
               -e REFRESH_TOKEN_EXPIRE_DAYS="${{ secrets.REFRESH_TOKEN_EXPIRE_DAYS }}" \
               -e FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
               -e OPENROUTER_API_KEY="${{ secrets.OPENROUTER_API_KEY }}" \
-              -e OPENROUTER_API_KEY_2="${{ secrets.OPENROUTER_API_KEY_2 }}" \
-              -e OPENROUTER_API_KEY_3="${{ secrets.OPENROUTER_API_KEY_3 }}" \
+              -e OPENROUTER_API_KEY_PROBLEM="${{ secrets.OPENROUTER_API_KEY_PROBLEM }}" \
+              -e OPENROUTER_API_KEY_HINT="${{ secrets.OPENROUTER_API_KEY_HINT }}" \
+              -e OPENROUTER_API_KEY_CODEGEN="${{ secrets.OPENROUTER_API_KEY_CODEGEN }}" \
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               -e DEBUG="${{ secrets.DEBUG }}" \
               -e APP_NAME="${{ secrets.APP_NAME }}" \

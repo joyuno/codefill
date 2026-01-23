@@ -11,7 +11,7 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 from ..database import get_supabase_client
-from ..services.openrouter import openrouter_service
+from ..services.openrouter import openrouter_hint as openrouter_service
 from ..config import get_settings
 from ..prompts.hint_blank_agent import BLANK_HINT_SYSTEM_PROMPT
 from ..prompts.hint_puzzle_agent import PUZZLE_HINT_SYSTEM_PROMPT
@@ -379,7 +379,7 @@ class HintService:
         DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             # 빈칸 주변 코드 추출
             surrounding_code = self._extract_surrounding_context(code_template, blank_index)
@@ -451,7 +451,7 @@ class HintService:
         빈칸에 해당 값이 들어가야 하는 이유 설명 (1-2줄)
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             # 빈칸 주변 코드 추출 (앞뒤 3줄)
             surrounding_code = self._extract_surrounding_context(code_template, blank_index)
@@ -656,7 +656,7 @@ class HintService:
         DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             # 전체 블록 코드 (컨텍스트용)
             all_code = "\n".join([b.get("code", "") for b in all_blocks])
@@ -799,7 +799,7 @@ class HintService:
         DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             total_steps = len(all_steps)
 

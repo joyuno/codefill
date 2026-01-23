@@ -1,5 +1,11 @@
 from .judge0 import Judge0Service, judge0_service
-from .openrouter import OpenRouterService, openrouter_service
+from .openrouter import (
+    OpenRouterService,
+    openrouter_service,
+    openrouter_problem,
+    openrouter_hint,
+    openrouter_codegen,
+)
 from .embedding import EmbeddingService, embedding_service
 from .rag import RAGService, rag_service
 from .collaborative_filtering import (
@@ -24,6 +30,9 @@ __all__ = [
     "judge0_service",
     "OpenRouterService",
     "openrouter_service",
+    "openrouter_problem",
+    "openrouter_hint",
+    "openrouter_codegen",
     "EmbeddingService",
     "embedding_service",
     "RAGService",

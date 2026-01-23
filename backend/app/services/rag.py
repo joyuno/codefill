@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from ..database import get_supabase_client
 from ..config import get_settings
 from .embedding import embedding_service
-from .openrouter import openrouter_service
+from .openrouter import openrouter_codegen as openrouter_service
 from ..prompts import CODE_GEN_SYSTEM_PROMPT
 
 # LLM 모델 설정

@@ -37,23 +37,43 @@ class OpenRouterService:
     CACHE_TTL = 300  # 캐시 유효 시간 (초)
     CACHE_MAX_SIZE = 1000  # 최대 캐시 항목 수
 
-    def __init__(self):
-        self.settings = get_settings()
+    # 목적별 키 매핑 (purpose -> settings attribute name)
+    PURPOSE_KEY_MAP = {
+        "orchestrator": "openrouter_api_key",       # 기본/Orchestrator 전용
+        "problem": "openrouter_api_key_problem",     # 문제 유형 생성용
+        "hint": "openrouter_api_key_hint",           # 힌트 생성용
+        "codegen": "openrouter_api_key_codegen",     # Code generation용
+    }
 
-        # API 키 로테이션 리스트 구성
+    def __init__(self, purpose: str = "orchestrator"):
+        """
+        Initialize OpenRouter service for a specific purpose.
+
+        Args:
+            purpose: 용도 구분 (orchestrator, problem, hint, codegen)
+        """
+        self.settings = get_settings()
+        self.purpose = purpose
+
+        # 목적별 전용 API 키 가져오기
         self.api_keys: List[str] = []
-        if self.settings.openrouter_api_key:
+        primary_key_attr = self.PURPOSE_KEY_MAP.get(purpose, "openrouter_api_key")
+        primary_key = getattr(self.settings, primary_key_attr, "")
+
+        # 전용 키가 있으면 사용, 없으면 기본 키로 폴백
+        if primary_key:
+            self.api_keys.append(primary_key)
+        elif self.settings.openrouter_api_key:
             self.api_keys.append(self.settings.openrouter_api_key)
-        if self.settings.openrouter_api_key_2:
-            self.api_keys.append(self.settings.openrouter_api_key_2)
-        if self.settings.openrouter_api_key_3:
-            self.api_keys.append(self.settings.openrouter_api_key_3)
+            logger.warning(f"No dedicated key for {purpose}, falling back to default key")
 
         self.current_key_index = 0
         self._last_request_time = 0.0
 
         # 간단한 인메모리 캐시 (TTL 지원)
         self._cache: Dict[str, tuple[Any, float]] = {}
+
+        logger.debug(f"OpenRouterService initialized for purpose: {purpose}")
 
     def _get_current_api_key(self) -> str:
         """현재 활성 API 키 반환."""
@@ -503,5 +523,9 @@ class OpenRouterService:
         raise ValueError(f"Failed to parse JSON from LLM response")
 
 
-# Singleton instance
-openrouter_service = OpenRouterService()
+# 목적별 싱글톤 인스턴스
+# 동시 호출 시 Rate Limit 방지를 위해 용도별로 분리
+openrouter_service = OpenRouterService(purpose="orchestrator")  # 기본/Orchestrator 전용
+openrouter_problem = OpenRouterService(purpose="problem")        # 문제 유형 생성용
+openrouter_hint = OpenRouterService(purpose="hint")              # 힌트 생성용
+openrouter_codegen = OpenRouterService(purpose="codegen")        # Code generation용
