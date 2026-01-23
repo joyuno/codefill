@@ -52,6 +52,8 @@ class Settings(BaseSettings):
 
     # LLM API Keys
     openrouter_api_key: str = ""
+    openrouter_api_key_2: str = ""  # Rotation key 1
+    openrouter_api_key_3: str = ""  # Rotation key 2
     openai_api_key: str = ""
     groq_api_key: str = ""
 
