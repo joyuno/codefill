@@ -25,6 +25,7 @@ import type { NewBadge, SeedAwarded } from '@/lib/api/practice';
 import { apiClient } from '@/lib/api/client';
 import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 import type { HintAgentResponse, FeedbackResponse, BaseProblemInfo } from '@/lib/api/agent';
+import { ga4Events, clarityEvents } from '@/lib/analytics';
 
 const difficultyColors = {
   easy: 'bg-primary/20 text-primary border-primary/30',
@@ -344,6 +345,10 @@ function ChatPageContent() {
     setSolveStartTime(new Date());
     setAttemptCount(0);
 
+    // GA4/Clarity 문제 시작 이벤트
+    ga4Events.problemStart(selectedProblem.id, 'chat');
+    clarityEvents.problemStart(selectedProblem.id);
+
     // 로컬 상태 초기화
     setIsSubmitted(false);
     setXpEarned(0);
@@ -646,6 +651,10 @@ function ChatPageContent() {
         setCurrentHintResponse(response);
         setPreviousHints((prev) => [...prev, response.hint_content]);
 
+        // GA4/Clarity 힌트 요청 이벤트
+        ga4Events.hintRequest(problem.id, level);
+        clarityEvents.hintRequest(level);
+
         // 힌트 내용을 hints 배열에도 추가 (기존 UI 호환)
         setHints((prev) => [...prev, response.hint_content]);
 
@@ -729,6 +738,9 @@ function ChatPageContent() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              // GA4/Clarity 문제 풀이 완료 이벤트
+              ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+              clarityEvents.problemSolve(true);
               // recordSolve에서 추가로 얻은 뱃지가 있으면 표시
               if (recordResult.newBadges && recordResult.newBadges.length > 0) {
                 showBadgePopup(recordResult.newBadges);
@@ -790,6 +802,9 @@ function ChatPageContent() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            // GA4/Clarity 문제 풀이 완료 이벤트
+            ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+            clarityEvents.problemSolve(true);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
             }
@@ -867,6 +882,9 @@ function ChatPageContent() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              // GA4/Clarity 문제 풀이 완료 이벤트
+              ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+              clarityEvents.problemSolve(true);
               // recordSolve에서 추가로 얻은 뱃지가 있으면 표시
               if (recordResult.newBadges && recordResult.newBadges.length > 0) {
                 showBadgePopup(recordResult.newBadges);
@@ -921,6 +939,9 @@ function ChatPageContent() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            // GA4/Clarity 문제 풀이 완료 이벤트
+            ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+            clarityEvents.problemSolve(true);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
             }
@@ -973,6 +994,9 @@ function ChatPageContent() {
           console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            // GA4/Clarity 문제 풀이 완료 이벤트
+            ga4Events.problemSolve(problem.id, true, timeSpentSeconds, hintsUsed ?? previousHints.length);
+            clarityEvents.problemSolve(true);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
             }

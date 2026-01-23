@@ -14,6 +14,7 @@ import Image from 'next/image';
 import { Loader2, Eye, EyeOff, MessageCircle, RefreshCcw, X, Ban, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { authApi, RecoveryRequiredResponse, BannedResponse } from '@/lib/api';
+import { ga4Events } from '@/lib/analytics';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -156,6 +157,9 @@ function LoginPageContent() {
         title: '로그인 성공',
         description: '환영합니다!',
       });
+
+      // GA4 로그인 이벤트
+      ga4Events.login('email');
 
       // Redirect to home page
       router.push('/');

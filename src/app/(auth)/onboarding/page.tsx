@@ -37,6 +37,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/useDebounce';
 import { authApi, solvedacApi, tierToName, getTierColor, type SignupData, type SolvedAcProfile } from '@/lib/api';
+import { ga4Events } from '@/lib/analytics';
 
 // Onboarding data schema
 const onboardingSchema = z.object({
@@ -123,6 +124,11 @@ export default function OnboardingPage() {
   const [solvedAcVerifying, setSolvedAcVerifying] = useState(false);
   const [solvedAcProfile, setSolvedAcProfile] = useState<SolvedAcProfile | null>(null);
   const [solvedAcError, setSolvedAcError] = useState('');
+
+  // GA4 온보딩 시작 이벤트
+  useEffect(() => {
+    ga4Events.onboardingStart();
+  }, []);
 
   const {
     register,
@@ -315,6 +321,10 @@ export default function OnboardingPage() {
 
       // 회원가입 성공 시 토큰이 자동으로 저장됨 (authApi.signup 내부에서 처리)
       if (result.data?.access_token) {
+        // GA4 회원가입 이벤트
+        ga4Events.signUp('email');
+        ga4Events.onboardingComplete(0);
+
         toast({
           title: '회원가입 완료!',
           description: 'CodeFill에 오신 것을 환영합니다!',
