@@ -433,7 +433,7 @@ async def show_solution(state: SolvingState) -> Dict[str, Any]:
 **설명:** 이 문제의 핵심은 {', '.join(problem_context.get('topics', ['알고리즘']))}입니다.
 """
     else:
-        response_message = "정답 코드를 불러올 수 없어요. 다른 문제를 풀어볼까요?"
+        response_message = "아직 포기하기엔 이르지 않을까요? 💪 **힌트 버튼**을 눌러서 단계별로 도움을 받아보세요!"
 
     return {
         "response_message": response_message,
@@ -508,7 +508,7 @@ async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
             messages=messages,
             model="gpt-4o-mini",
             temperature=0.3,
-            max_tokens=150,  # 2-3문장 요약용
+            max_tokens=250,  # 2-3문장 요약용
         )
         summary = openrouter_service.get_content(response)
 
@@ -623,7 +623,7 @@ async def answer_question(state: SolvingState) -> Dict[str, Any]:
             messages=messages,
             model="gpt-4o-mini",
             temperature=0.3,
-            max_tokens=200,
+            max_tokens=250,
         )
         response_message = openrouter_service.get_content(response)
 
