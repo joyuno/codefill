@@ -776,7 +776,7 @@ export function UnifiedPractice({
               problemId: problem.id,
               userOrder,
               blocks: blocks.map(b => ({ id: b.id, code: b.code, order: b.correctOrder })),
-              language: problem.language || 'python',
+              language: problem.framework || 'python',
             });
 
             const correct = validateResult.isCorrect;
