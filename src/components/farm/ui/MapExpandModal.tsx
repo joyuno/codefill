@@ -1,13 +1,12 @@
 'use client';
 
 /**
- * MapExpandModal - 맵 확장 모달
+ * MapExpandModal - 픽셀 RPG 스타일 맵 확장 모달
  */
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Map, X, Coins, Loader2, Check, Lock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { farmApi, type MapExpansionOption } from '@/lib/api/farm';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +24,6 @@ export function MapExpandModal({ isOpen, onClose, gold, currentLevel, onExpand }
   const [isExpanding, setIsExpanding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 확장 옵션 로드
   useEffect(() => {
     if (!isOpen) return;
 
@@ -46,7 +44,6 @@ export function MapExpandModal({ isOpen, onClose, gold, currentLevel, onExpand }
     loadOptions();
   }, [isOpen]);
 
-  // 확장 실행
   const handleExpand = async (targetLevel: number) => {
     try {
       setIsExpanding(true);
@@ -60,176 +57,291 @@ export function MapExpandModal({ isOpen, onClose, gold, currentLevel, onExpand }
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.9, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.9, y: 20 }}
-        onClick={e => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-2xl"
-        style={{
-          background: 'linear-gradient(to bottom, #4A7C59 0%, #2E5339 100%)',
-          border: '6px solid #1E3B28',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-        }}
-      >
-        {/* 헤더 */}
-        <div
-          className="p-4 flex items-center justify-between"
-          style={{
-            background: 'linear-gradient(to bottom, #2E5339 0%, #1E3B28 100%)',
-            borderBottom: '4px solid #0F1F14',
-          }}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4"
+          onClick={onClose}
         >
-          <h2 className="text-xl font-bold text-green-200 flex items-center gap-2">
-            <Map className="w-6 h-6" />
-            맵 확장
-          </h2>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-yellow-300">
-              <Coins className="w-5 h-5" />
-              <span className="font-bold">{gold.toLocaleString()}G</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="text-green-200 hover:text-white hover:bg-green-800"
+          <motion.div
+            initial={{ scale: 0.9, y: 30, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.9, y: 30, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            onClick={e => e.stopPropagation()}
+            className="relative w-full max-w-md overflow-hidden rounded-lg"
+            style={{
+              background: 'linear-gradient(180deg, #1A3D3D 0%, #0F2A2A 100%)',
+              border: '4px solid #2A5D5D',
+              boxShadow: `
+                inset 0 2px 0 #3D6B6B,
+                inset 0 -2px 0 #0A1F1F,
+                0 12px 40px rgba(0,0,0,0.7)
+              `,
+            }}
+          >
+            {/* 상단 장식 라인 */}
+            <div
+              className="absolute top-0 left-6 right-6 h-[2px]"
+              style={{
+                background: 'linear-gradient(90deg, transparent 0%, #4ADEDE 50%, transparent 100%)',
+              }}
+            />
+
+            {/* 코너 장식 */}
+            <div className="absolute -top-1 -left-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
+            <div className="absolute -top-1 -right-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
+            <div className="absolute -bottom-1 -left-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
+            <div className="absolute -bottom-1 -right-1 w-4 h-4" style={{ background: '#2A5D5D' }} />
+
+            {/* 헤더 */}
+            <div
+              className="relative p-4 flex items-center justify-between"
+              style={{
+                background: 'linear-gradient(180deg, #2A4A4A 0%, #1A3D3D 100%)',
+                borderBottom: '3px solid #2A5D5D',
+              }}
             >
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
+              <h2
+                className="text-xl font-black flex items-center gap-2"
+                style={{
+                  color: '#4ADEDE',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(74,222,222,0.3)',
+                }}
+              >
+                <Map className="w-6 h-6" />
+                맵 확장
+              </h2>
 
-        {/* 컨텐츠 */}
-        <div className="p-4 space-y-3">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-8 h-8 text-green-200 animate-spin" />
-            </div>
-          ) : error ? (
-            <div className="text-center py-8 text-red-300">{error}</div>
-          ) : (
-            options.map((option, index) => {
-              const isCurrent = option.level === currentLevel;
-              const isPast = option.level < currentLevel;
-
-              // 순차적 확장: 바로 다음 단계만 확장 가능
-              const currentIndex = options.findIndex(o => o.level === currentLevel);
-              const isNextStep = index === currentIndex + 1;
-              const isLocked = !isCurrent && !isPast && !isNextStep;
-
-              const canUpgrade = isNextStep && gold >= option.cost;
-
-              return (
+              <div className="flex items-center gap-4">
+                {/* 골드 표시 */}
                 <div
-                  key={option.level}
-                  className={cn(
-                    'flex items-center justify-between p-3 rounded-lg transition-all',
-                    isCurrent
-                      ? 'bg-green-600/50 border-2 border-green-300'
-                      : isPast
-                        ? 'bg-gray-700/30 border-2 border-gray-600 opacity-50'
-                        : isLocked
-                          ? 'bg-gray-800/40 border-2 border-gray-700 opacity-60'
-                          : 'bg-black/20 border-2 border-transparent hover:border-green-500/50'
-                  )}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded"
+                  style={{
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '2px solid #C9A227',
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    {/* 맵 크기 미리보기 */}
-                    <div
-                      className={cn(
-                        'w-12 h-8 rounded flex items-center justify-center text-xs font-bold',
-                        isLocked ? 'bg-gray-800/50 text-gray-500' : 'bg-green-800/50 text-green-200'
-                      )}
-                    >
-                      {option.cols}x{option.rows}
-                    </div>
-
-                    <div>
-                      <p className={cn(
-                        'font-bold',
-                        isLocked ? 'text-gray-400' : 'text-green-100'
-                      )}>
-                        {option.name}
-                        {isCurrent && (
-                          <span className="ml-2 text-xs text-green-200 bg-green-700/50 px-2 py-0.5 rounded">
-                            현재
-                          </span>
-                        )}
-                        {isLocked && (
-                          <span className="ml-2 text-xs text-gray-400 bg-gray-700/50 px-2 py-0.5 rounded inline-flex items-center gap-1">
-                            <Lock className="w-3 h-3" />
-                            잠김
-                          </span>
-                        )}
-                      </p>
-                      <p className={cn(
-                        'text-sm',
-                        isLocked ? 'text-gray-500' : 'text-green-300'
-                      )}>
-                        Lv.{option.level} - {option.cols * option.rows} 타일
-                      </p>
-                    </div>
+                  <div
+                    className="w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{
+                      background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
+                      boxShadow: 'inset -1px -1px 2px rgba(0,0,0,0.3)',
+                    }}
+                  >
+                    <span className="text-[8px] font-black text-amber-900">G</span>
                   </div>
-
-                  {/* 액션 버튼 */}
-                  <div className="flex items-center gap-2">
-                    {isCurrent ? (
-                      <div className="flex items-center gap-1 text-green-300">
-                        <Check className="w-5 h-5" />
-                      </div>
-                    ) : isPast ? (
-                      <span className="text-gray-400 text-sm">완료</span>
-                    ) : isLocked ? (
-                      <div className="flex items-center gap-1 text-gray-500">
-                        <Lock className="w-5 h-5" />
-                      </div>
-                    ) : (
-                      <Button
-                        size="sm"
-                        onClick={() => handleExpand(option.level)}
-                        disabled={!canUpgrade || isExpanding}
-                        className={cn(
-                          'border-2 font-bold',
-                          canUpgrade
-                            ? 'bg-green-600 hover:bg-green-500 text-white border-green-400'
-                            : 'bg-gray-600 text-gray-300 border-gray-500 cursor-not-allowed'
-                        )}
-                      >
-                        {isExpanding ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Coins className="w-4 h-4 mr-1" />
-                            {option.cost.toLocaleString()}G
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </div>
+                  <span
+                    className="font-black"
+                    style={{
+                      color: '#FFD700',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                    }}
+                  >
+                    {gold.toLocaleString()}
+                  </span>
                 </div>
-              );
-            })
-          )}
-        </div>
 
-        {/* 안내 문구 */}
-        <div className="p-4 pt-0">
-          <p className="text-xs text-green-300/70 text-center">
-            맵을 확장하면 더 넓은 공간에 건물과 장식을 배치할 수 있습니다
-          </p>
-        </div>
-      </motion.div>
-    </motion.div>
+                {/* 닫기 버튼 */}
+                <motion.button
+                  onClick={onClose}
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  className="w-8 h-8 rounded flex items-center justify-center"
+                  style={{
+                    background: 'linear-gradient(180deg, #5D2A2A 0%, #3D1A1A 100%)',
+                    border: '2px solid #DE4A4A',
+                  }}
+                >
+                  <X className="w-4 h-4 text-red-300" />
+                </motion.button>
+              </div>
+            </div>
+
+            {/* 컨텐츠 */}
+            <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+                </div>
+              ) : error ? (
+                <div
+                  className="text-center py-8"
+                  style={{ color: '#FF6B6B', textShadow: '0 1px 2px #000' }}
+                >
+                  {error}
+                </div>
+              ) : (
+                options.map((option, index) => {
+                  const isCurrent = option.level === currentLevel;
+                  const isPast = option.level < currentLevel;
+                  const currentIndex = options.findIndex(o => o.level === currentLevel);
+                  const isNextStep = index === currentIndex + 1;
+                  const isLocked = !isCurrent && !isPast && !isNextStep;
+                  const canUpgrade = isNextStep && gold >= option.cost;
+
+                  return (
+                    <motion.div
+                      key={option.level}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={cn(
+                        'relative flex items-center justify-between p-3 rounded-lg transition-all',
+                        isLocked && 'opacity-60'
+                      )}
+                      style={{
+                        background: isCurrent
+                          ? 'linear-gradient(180deg, rgba(42,93,93,0.4) 0%, rgba(26,61,61,0.4) 100%)'
+                          : isPast
+                          ? 'rgba(0,0,0,0.2)'
+                          : 'rgba(0,0,0,0.3)',
+                        border: isCurrent
+                          ? '2px solid #4ADEDE'
+                          : isPast
+                          ? '2px solid #2A5D5D40'
+                          : isLocked
+                          ? '2px solid #1A3D3D40'
+                          : '2px solid #2A5D5D80',
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        {/* 맵 크기 미리보기 */}
+                        <div
+                          className="w-14 h-10 rounded flex items-center justify-center font-black text-sm"
+                          style={{
+                            background: isLocked ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.4)',
+                            border: `2px solid ${isLocked ? '#1A3D3D' : '#2A5D5D'}`,
+                            color: isLocked ? '#2A5D5D' : isCurrent ? '#4ADEDE' : '#5BAEAE',
+                            textShadow: '0 1px 2px #000',
+                          }}
+                        >
+                          {option.cols}x{option.rows}
+                        </div>
+
+                        <div>
+                          <p
+                            className="font-bold flex items-center gap-2"
+                            style={{
+                              color: isLocked ? '#3D6B6B' : '#B8E8E8',
+                              textShadow: '0 1px 2px #000',
+                            }}
+                          >
+                            {option.name}
+                            {isCurrent && (
+                              <span
+                                className="text-xs px-2 py-0.5 rounded font-bold"
+                                style={{
+                                  background: 'rgba(74,222,222,0.3)',
+                                  color: '#4ADEDE',
+                                  border: '1px solid #4ADEDE60',
+                                }}
+                              >
+                                현재
+                              </span>
+                            )}
+                            {isLocked && (
+                              <span className="flex items-center gap-1 text-xs">
+                                <Lock className="w-3 h-3" />
+                              </span>
+                            )}
+                          </p>
+                          <p
+                            className="text-sm"
+                            style={{
+                              color: isLocked ? '#2A5D5D' : '#5BAEAE',
+                              textShadow: '0 1px 2px #000',
+                            }}
+                          >
+                            Lv.{option.level} - {option.cols * option.rows} 타일
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* 액션 버튼 */}
+                      <div className="flex items-center gap-2">
+                        {isCurrent ? (
+                          <div style={{ color: '#4ADEDE' }}>
+                            <Check className="w-5 h-5" />
+                          </div>
+                        ) : isPast ? (
+                          <span
+                            className="text-sm font-medium"
+                            style={{ color: '#3D6B6B' }}
+                          >
+                            완료
+                          </span>
+                        ) : isLocked ? (
+                          <Lock className="w-5 h-5" style={{ color: '#2A5D5D' }} />
+                        ) : (
+                          <motion.button
+                            onClick={() => handleExpand(option.level)}
+                            disabled={!canUpgrade || isExpanding}
+                            whileHover={canUpgrade ? { scale: 1.03, y: -1 } : undefined}
+                            whileTap={canUpgrade ? { scale: 0.97 } : undefined}
+                            className={cn(
+                              'px-3 py-1.5 rounded font-bold text-sm flex items-center gap-1',
+                              !canUpgrade && 'opacity-50 cursor-not-allowed'
+                            )}
+                            style={{
+                              background: canUpgrade
+                                ? 'linear-gradient(180deg, #2A5D5D 0%, #1A3D3D 100%)'
+                                : 'linear-gradient(180deg, #1A3D3D 0%, #0F2A2A 100%)',
+                              border: `2px solid ${canUpgrade ? '#4ADEDE' : '#2A5D5D'}`,
+                              color: canUpgrade ? '#90EEEE' : '#3D6B6B',
+                              textShadow: '0 1px 2px #000',
+                              boxShadow: canUpgrade
+                                ? 'inset 0 1px 0 rgba(255,255,255,0.1), 0 3px 6px rgba(0,0,0,0.3)'
+                                : 'none',
+                            }}
+                          >
+                            {isExpanding ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Coins className="w-4 h-4" />
+                                {option.cost.toLocaleString()}G
+                              </>
+                            )}
+                          </motion.button>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 안내 문구 */}
+            <div
+              className="p-3 text-center text-sm font-medium"
+              style={{
+                background: 'rgba(0,0,0,0.3)',
+                borderTop: '2px solid #2A5D5D',
+                color: '#5BAEAE',
+                textShadow: '0 1px 2px #000',
+              }}
+            >
+              맵을 확장하면 더 넓은 공간에 건물과 장식을 배치할 수 있습니다
+            </div>
+
+            {/* 하단 장식 */}
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex gap-1">
+              {[...Array(5)].map((_, i) => (
+                <div
+                  key={i}
+                  className="w-2 h-2 rotate-45"
+                  style={{ background: '#2A5D5D' }}
+                />
+              ))}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
