@@ -15,6 +15,7 @@ import {
   Sparkles,
   Home,
   User,
+  Loader2,
 } from 'lucide-react';
 
 interface CharacterCreationModalProps {
@@ -25,6 +26,10 @@ interface CharacterCreationModalProps {
   initialData?: CharacterData | null;
   /** 수정 모드 여부 */
   isEditing?: boolean;
+  /** 생성/수정 중 로딩 상태 */
+  isLoading?: boolean;
+  /** 에러 메시지 */
+  error?: string | null;
 }
 
 export interface CharacterData {
@@ -386,6 +391,8 @@ export function CharacterCreationModal({
   onComplete,
   initialData,
   isEditing = false,
+  isLoading = false,
+  error = null,
 }: CharacterCreationModalProps) {
   // 입력 상태
   const [name, setName] = useState('');
@@ -478,8 +485,18 @@ export function CharacterCreationModal({
     onComplete(character);
   };
 
+  // 로딩 중에는 모달 닫기 방지
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && isLoading) {
+      return; // 로딩 중에는 닫기 방지
+    }
+    if (!newOpen) {
+      onClose();
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className={cn(
         'sm:max-w-lg p-0 overflow-hidden',
         'border-4 border-amber-700',
@@ -704,32 +721,50 @@ export function CharacterCreationModal({
             />
           </div>
 
+          {/* 에러 메시지 */}
+          {error && (
+            <div className="p-2 rounded bg-red-100 border-2 border-red-400">
+              <p className="text-sm text-red-700 text-center">{error}</p>
+            </div>
+          )}
+
           {/* 하단 버튼 */}
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
               onClick={onClose}
+              disabled={isLoading}
               className={cn(
                 'border-2 border-amber-500 bg-amber-100',
-                'hover:bg-amber-200 text-amber-800'
+                'hover:bg-amber-200 text-amber-800',
+                'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
             >
               취소
             </Button>
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <motion.div whileHover={!isLoading && canComplete ? { scale: 1.02 } : {}} whileTap={!isLoading && canComplete ? { scale: 0.98 } : {}}>
               <Button
                 onClick={handleComplete}
-                disabled={!canComplete}
+                disabled={!canComplete || isLoading}
                 className={cn(
                   'bg-green-500 hover:bg-green-600 text-white font-bold',
                   'border-4 border-green-700',
                   'shadow-[3px_3px_0_0_#166534]',
                   'disabled:opacity-50 disabled:cursor-not-allowed',
-                  'transition-all'
+                  'transition-all min-w-[80px]'
                 )}
               >
-                <Sparkles className="w-4 h-4 mr-1" />
-                OK
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    저장중...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    OK
+                  </>
+                )}
               </Button>
             </motion.div>
           </div>

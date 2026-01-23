@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Expand, X, Coins, Loader2, Check } from 'lucide-react';
+import { Expand, X, Coins, Loader2, Check, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { farmApi, type ExpansionOption } from '@/lib/api/farm';
 import { cn } from '@/lib/utils';
@@ -119,10 +119,16 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
           ) : error ? (
             <div className="text-center py-8 text-red-300">{error}</div>
           ) : (
-            options.map(option => {
+            options.map((option, index) => {
               const isCurrent = option.size === currentSize;
-              const canUpgrade = !isCurrent && gold >= option.cost;
               const isPast = option.size < currentSize;
+
+              // 순차적 확장: 바로 다음 단계만 확장 가능
+              const currentIndex = options.findIndex(o => o.size === currentSize);
+              const isNextStep = index === currentIndex + 1;
+              const isLocked = !isCurrent && !isPast && !isNextStep;
+
+              const canUpgrade = isNextStep && gold >= option.cost;
 
               return (
                 <div
@@ -133,32 +139,55 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                       ? 'bg-green-700/50 border-2 border-green-400'
                       : isPast
                         ? 'bg-gray-700/30 border-2 border-gray-600 opacity-50'
-                        : 'bg-black/20 border-2 border-transparent hover:border-amber-600/50'
+                        : isLocked
+                          ? 'bg-gray-800/40 border-2 border-gray-700 opacity-60'
+                          : 'bg-black/20 border-2 border-transparent hover:border-amber-600/50'
                   )}
                 >
                   <div className="flex items-center gap-3">
                     {/* 그리드 미리보기 */}
                     <div
-                      className="w-10 h-10 grid gap-0.5 bg-amber-900/50 rounded p-1"
+                      className={cn(
+                        'w-10 h-10 grid gap-0.5 rounded p-1',
+                        isLocked ? 'bg-gray-800/50' : 'bg-amber-900/50'
+                      )}
                       style={{
                         gridTemplateColumns: `repeat(${Math.sqrt(option.size)}, 1fr)`,
                       }}
                     >
                       {Array.from({ length: option.size }).map((_, i) => (
-                        <div key={i} className="bg-amber-600/80 rounded-sm" />
+                        <div
+                          key={i}
+                          className={cn(
+                            'rounded-sm',
+                            isLocked ? 'bg-gray-600/50' : 'bg-amber-600/80'
+                          )}
+                        />
                       ))}
                     </div>
 
                     <div>
-                      <p className="font-bold text-amber-100">
+                      <p className={cn(
+                        'font-bold',
+                        isLocked ? 'text-gray-400' : 'text-amber-100'
+                      )}>
                         {option.name}
                         {isCurrent && (
                           <span className="ml-2 text-xs text-green-300 bg-green-800/50 px-2 py-0.5 rounded">
                             현재
                           </span>
                         )}
+                        {isLocked && (
+                          <span className="ml-2 text-xs text-gray-400 bg-gray-700/50 px-2 py-0.5 rounded inline-flex items-center gap-1">
+                            <Lock className="w-3 h-3" />
+                            잠김
+                          </span>
+                        )}
                       </p>
-                      <p className="text-sm text-amber-300">{option.grid}</p>
+                      <p className={cn(
+                        'text-sm',
+                        isLocked ? 'text-gray-500' : 'text-amber-300'
+                      )}>{option.grid}</p>
                     </div>
                   </div>
 
@@ -170,6 +199,10 @@ export function ExpandModal({ isOpen, onClose, gold, currentSize, onExpand }: Ex
                       </div>
                     ) : isPast ? (
                       <span className="text-gray-400 text-sm">완료</span>
+                    ) : isLocked ? (
+                      <div className="flex items-center gap-1 text-gray-500">
+                        <Lock className="w-5 h-5" />
+                      </div>
                     ) : (
                       <Button
                         size="sm"

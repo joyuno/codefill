@@ -12,7 +12,7 @@ export const MAP_COLS = MAP_WIDTH / TILE_SIZE;   // 30
 export const MAP_ROWS = MAP_HEIGHT / TILE_SIZE;  // 20
 
 // 농장 영역 설정 (맵 중앙)
-export const FARM_MAX_SIZE = 6;    // 최대 6x6
+export const FARM_MAX_SIZE = 7;    // 최대 7x7
 export const FARM_START_SIZE = 3;  // 초기 3x3
 
 // 농장 위치 계산 (맵 중앙)

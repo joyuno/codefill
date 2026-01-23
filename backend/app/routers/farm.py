@@ -34,6 +34,7 @@ from ..models.farm import (
     HarvestSlotResponse,
     FarmInitResponse,
     EXPANSION_COSTS,
+    EXPANSION_ORDER,
     INITIAL_GOLD,
     INITIAL_SEEDS_COUNT,
 )
@@ -661,6 +662,7 @@ async def expand_farm(
 
     - farm_size 업데이트
     - farm_slots 배열 자동 확장 (새 슬롯 추가)
+    - 순차적 확장만 허용 (단계 건너뛰기 불가)
     """
     farm = get_or_create_farm(db, user_id)
     current_size = farm.get("farm_size", 1)
@@ -671,6 +673,19 @@ async def expand_farm(
 
     if request.target_size <= current_size:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="현재 크기보다 큰 크기로만 확장할 수 있습니다")
+
+    # 순차적 확장 검증: 현재 크기의 다음 단계만 허용
+    try:
+        current_index = EXPANSION_ORDER.index(current_size)
+        next_size = EXPANSION_ORDER[current_index + 1] if current_index + 1 < len(EXPANSION_ORDER) else None
+        if next_size is None or request.target_size != next_size:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"순차적으로만 확장할 수 있습니다. 다음 단계: {EXPANSION_COSTS.get(next_size, {}).get('grid', 'N/A')}"
+            )
+    except ValueError:
+        # current_size가 EXPANSION_ORDER에 없는 경우 (비정상 상태)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="농장 크기가 비정상적입니다")
 
     cost = EXPANSION_COSTS[request.target_size]["cost"]
 

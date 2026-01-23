@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
 import { usersApi, publicProfileApi, type PublicFarm, type PublicBadge } from '@/lib/api/users';
 import { farmApi, type InventoryItem } from '@/lib/api/farm';
@@ -222,6 +223,8 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   const { user, profile, isLoading, isAuthenticated } = useAuth();
   const [showCharacterModal, setShowCharacterModal] = useState(false);
   const [isEditingCharacter, setIsEditingCharacter] = useState(false);
+  const [isCharacterSaving, setIsCharacterSaving] = useState(false);
+  const [characterError, setCharacterError] = useState<string | null>(null);
   // 본인 프로필: 캐시에서 초기값 로드 (즉시 표시)
   const [farm, setFarm] = useState<UserFarm | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -431,6 +434,9 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
   };
 
   const handleCharacterCreate = async (newCharacter: CharacterData) => {
+    setIsCharacterSaving(true);
+    setCharacterError(null);
+
     try {
       // API 호출로 캐릭터 생성
       // 새 형식: color가 직접 hex 값 (예: '#3d2314')
@@ -456,16 +462,22 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
       setFarm(updatedFarm);
       setFarmToCache(updatedFarm); // 캐시도 업데이트
       setShowCharacterModal(false);
+      toast.success('캐릭터가 생성되었습니다! 🌱');
     } catch (error) {
       console.error('캐릭터 생성 실패:', error);
-      // Fallback: localStorage에도 저장 (오프라인 지원)
-      localStorage.setItem('codefill_character', JSON.stringify(newCharacter));
-      setShowCharacterModal(false);
+      const errorMessage = error instanceof Error ? error.message : '캐릭터 생성에 실패했습니다. 다시 시도해주세요.';
+      setCharacterError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsCharacterSaving(false);
     }
   };
 
   // 캐릭터 수정 핸들러
   const handleCharacterUpdate = async (updatedCharacter: CharacterData) => {
+    setIsCharacterSaving(true);
+    setCharacterError(null);
+
     try {
       const hairColor = updatedCharacter.appearance.color.startsWith('#')
         ? updatedCharacter.appearance.color
@@ -488,8 +500,14 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
       setFarmToCache(updatedFarm);
       setShowCharacterModal(false);
       setIsEditingCharacter(false);
+      toast.success('캐릭터가 수정되었습니다! ✨');
     } catch (error) {
       console.error('캐릭터 수정 실패:', error);
+      const errorMessage = error instanceof Error ? error.message : '캐릭터 수정에 실패했습니다. 다시 시도해주세요.';
+      setCharacterError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsCharacterSaving(false);
     }
   };
 
@@ -641,12 +659,17 @@ export function SidebarProfile({ username, publicData, badges: propBadges }: Sid
       <CharacterCreationModal
         open={showCharacterModal}
         onClose={() => {
-          setShowCharacterModal(false);
-          setIsEditingCharacter(false);
+          if (!isCharacterSaving) {
+            setShowCharacterModal(false);
+            setIsEditingCharacter(false);
+            setCharacterError(null);
+          }
         }}
         onComplete={isEditingCharacter ? handleCharacterUpdate : handleCharacterCreate}
         initialData={isEditingCharacter ? editInitialData : null}
         isEditing={isEditingCharacter}
+        isLoading={isCharacterSaving}
+        error={characterError}
       />
 
       {/* 농장 미니맵 섹션 */}

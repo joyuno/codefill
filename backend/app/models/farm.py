@@ -197,7 +197,7 @@ class SellResponse(BaseModel):
 
 class ExpandRequest(BaseModel):
     """농장 확장 요청"""
-    target_size: int = Field(..., ge=1, le=25)  # 1, 4, 9, 16, 25
+    target_size: int = Field(..., ge=1, le=49)  # 1, 4, 9, 16, 25, 36, 49
 
 
 class ExpandResponse(BaseModel):
@@ -294,14 +294,19 @@ class FarmInitResponse(BaseModel):
 # Constants
 # =====================================================
 
-# 농장 확장 비용 (그리드 기반: 1x1 -> 5x5)
+# 농장 확장 비용 (그리드 기반: 1x1 -> 7x7)
 EXPANSION_COSTS = {
     1: {"grid": "1x1", "name": "씨앗 밭", "cost": 0},
     4: {"grid": "2x2", "name": "작은 농장", "cost": 200},
     9: {"grid": "3x3", "name": "중간 농장", "cost": 500},
     16: {"grid": "4x4", "name": "큰 농장", "cost": 1500},
     25: {"grid": "5x5", "name": "대형 농장", "cost": 4000},
+    36: {"grid": "6x6", "name": "거대 농장", "cost": 8000},
+    49: {"grid": "7x7", "name": "전설 농장", "cost": 15000},
 }
+
+# 순차적 확장을 위한 크기 순서 정의
+EXPANSION_ORDER = [1, 4, 9, 16, 25, 36, 49]
 
 # 캐릭터 생성 시 초기 지급
 INITIAL_GOLD = 100
