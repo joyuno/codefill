@@ -856,6 +856,15 @@ async def chat_agent(
             session_id=session_id,
         )
 
+        # 결과 검증 - None 체크
+        if result is None:
+            logger.error("[Chat] Orchestrator returned None")
+            result = {
+                "stage": "error",
+                "response_message": "죄송합니다. 요청을 처리하는 중 오류가 발생했습니다. 다시 시도해주세요.",
+                "is_complete": False,
+            }
+
         # 결과 추출 - 하드코딩된 폴백 제거, orchestrator가 항상 유효한 응답 반환
         response_message = result.get("response_message", "") or result.get("message", "")
 
