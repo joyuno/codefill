@@ -18,8 +18,8 @@ declare global {
 const CLARITY_ID = process.env.NEXT_PUBLIC_CLARITY_ID;
 
 /**
- * Clarity 스크립트 초기화
- * layout.tsx 또는 _app.tsx에서 호출
+ * Clarity 초기화 확인
+ * 스크립트는 layout.tsx의 next/script로 로드됨
  */
 export function initClarity(): void {
   if (typeof window === 'undefined') return;
@@ -27,24 +27,11 @@ export function initClarity(): void {
     console.warn('[Clarity] NEXT_PUBLIC_CLARITY_ID not set');
     return;
   }
-
-  // 이미 로드된 경우 스킵
-  if (window.clarity) return;
-
-  // Clarity 스크립트 삽입
-  (function (c: Window, l: Document, a: string, r: string, i: string) {
-    (c as unknown as Record<string, unknown>)[a] =
-      (c as unknown as Record<string, unknown>)[a] ||
-      function (...args: unknown[]) {
-        ((c as unknown as Record<string, { q: unknown[][] }>)[a].q =
-          (c as unknown as Record<string, { q: unknown[][] }>)[a].q || []).push(args);
-      };
-    const t = l.createElement(r) as HTMLScriptElement;
-    t.async = true;
-    t.src = 'https://www.clarity.ms/tag/' + i;
-    const y = l.getElementsByTagName(r)[0];
-    y.parentNode?.insertBefore(t, y);
-  })(window, document, 'clarity', 'script', CLARITY_ID);
+  // 스크립트는 layout.tsx에서 로드됨
+  // 여기서는 초기화 확인만 수행
+  if (window.clarity) {
+    console.log('[Clarity] Ready');
+  }
 }
 
 /**

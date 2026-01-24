@@ -12,6 +12,12 @@ import { useToast } from '@/hooks/use-toast';
 import { usePracticeSession } from '@/hooks/usePracticeSession';
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import remarkBreaks from 'remark-breaks';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
@@ -1037,6 +1043,83 @@ function ChatPageContent() {
   // Render practice component based on problem type
   const renderPracticeComponent = () => {
     if (!problem) {
+      // 문제 정보가 있으면 (problems 페이지에서 넘어온 경우) 먼저 문제 내용 표시
+      if (initialBaseProblem) {
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="h-full overflow-auto p-6"
+          >
+            {/* 문제 헤더 */}
+            <div className="mb-6">
+              <h1 className="text-xl font-bold mb-3">{initialBaseProblem.name}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={cn('capitalize', difficultyColors[initialBaseProblem.difficulty])}
+                >
+                  {initialBaseProblem.difficulty}
+                </Badge>
+                {initialBaseProblem.tags?.slice(0, 4).map((tag) => (
+                  <Badge key={tag} variant="secondary" className="text-xs">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* 문제 설명 */}
+            <div className="bg-muted/30 rounded-lg border border-border p-5">
+              <div className="prose prose-sm dark:prose-invert max-w-none [&_pre]:bg-background/50 [&_pre]:p-3 [&_pre]:rounded-md [&_code]:text-primary [&_code]:bg-background/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_p]:text-[13px] [&_li]:text-[13px]">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {initialBaseProblem.question || initialBaseProblem.description || ''}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            {/* 테스트케이스 (있으면) */}
+            {initialBaseProblem.input_output?.inputs && initialBaseProblem.input_output.inputs.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-medium mb-3 text-muted-foreground">테스트케이스</h3>
+                <div className="space-y-3">
+                  {initialBaseProblem.input_output.inputs.slice(0, 2).map((input, idx) => (
+                    <div key={idx} className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-border overflow-hidden">
+                        <div className="bg-muted/50 px-3 py-1.5 border-b border-border text-xs font-medium">
+                          Input
+                        </div>
+                        <pre className="p-3 text-xs font-mono overflow-auto max-h-24 text-blue-600 dark:text-blue-400">
+                          {input}
+                        </pre>
+                      </div>
+                      <div className="rounded-lg border border-border overflow-hidden">
+                        <div className="bg-muted/50 px-3 py-1.5 border-b border-border text-xs font-medium">
+                          Output
+                        </div>
+                        <pre className="p-3 text-xs font-mono overflow-auto max-h-24 text-red-600 dark:text-red-400">
+                          {initialBaseProblem.input_output?.outputs?.[idx] || ''}
+                        </pre>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 유형 선택 안내 */}
+            <div className="mt-8 text-center py-4 bg-primary/5 rounded-lg border border-primary/20">
+              <p className="text-sm text-muted-foreground">
+                👉 오른쪽에서 <span className="text-primary font-medium">문제 유형을 선택</span>하면 풀이를 시작합니다
+              </p>
+            </div>
+          </motion.div>
+        );
+      }
+
       return (
         <div className="flex h-full items-center justify-center text-muted-foreground">
           <div className="text-center">
