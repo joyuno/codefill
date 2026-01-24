@@ -286,7 +286,8 @@ class RAGService:
         try:
             print(f"[RAG:Metadata] Searching with metadata only: topics={topics}, diff={difficulty}, lang={language}")
 
-            db_query = self.db.table("base_problems").select("*")
+            # programmers 제외 (저작권)
+            db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             # 난이도 필터
             if difficulty:
@@ -486,7 +487,9 @@ class RAGService:
                     difficulty = user_context["preferred_difficulty"]
 
             # Step 1: Build base query with filters
-            db_query = self.db.table("base_problems").select("*")
+            # ⚠️ programmers 문제는 저작권 문제로 검색 결과에서 제외
+            # (programmers_embeddings는 code generation RAG 컨텍스트로만 사용)
+            db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             # Apply difficulty filter
             if difficulty:
@@ -599,7 +602,8 @@ class RAGService:
     ) -> Tuple[List[Dict[str, Any]], bool]:
         """Fallback search without difficulty filter."""
         try:
-            db_query = self.db.table("base_problems").select("*")
+            # programmers 제외 (저작권)
+            db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             if topics:
                 expanded_topics = self._expand_topics(topics)
@@ -655,7 +659,8 @@ class RAGService:
         Fallback keyword-based search.
         """
         try:
-            query = self.db.table("base_problems").select("*")
+            # programmers 제외 (저작권)
+            query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             if difficulty:
                 query = query.eq("difficulty", difficulty)
@@ -1267,6 +1272,255 @@ class RAGService:
         except Exception as e:
             # 품질 평가 실패는 검색 결과에 영향을 주지 않음
             print(f"[RAG:Quality] Evaluation failed (non-blocking): {e}")
+
+    # ============================================================
+    # Code Generation RAG: programmers_embeddings 통합
+    # ============================================================
+
+    # 코테/대기업 관련 키워드
+    CODING_TEST_KEYWORDS = [
+        # 일반 코테 키워드
+        "코테", "코딩테스트", "코딩 테스트", "coding test",
+        "기출", "기출문제", "기출 문제",
+        # 대기업 키워드
+        "대기업", "빅테크", "big tech",
+        "카카오", "kakao", "네이버", "naver", "라인", "line",
+        "삼성", "samsung", "lg", "엘지", "sk", "에스케이",
+        "쿠팡", "coupang", "배민", "배달의민족", "woowa", "우아한형제들",
+        "토스", "toss", "당근", "당근마켓", "karrot",
+        # 채용 키워드
+        "채용", "인턴", "인턴십", "공채", "신입",
+    ]
+
+    def _detect_coding_test_intent(self, query: str) -> bool:
+        """
+        쿼리에서 코테/대기업 키워드 감지
+
+        Args:
+            query: 사용자 쿼리
+
+        Returns:
+            True: 코테/대기업 관련 요청
+            False: 일반 요청
+        """
+        query_lower = query.lower()
+        for keyword in self.CODING_TEST_KEYWORDS:
+            if keyword.lower() in query_lower:
+                print(f"[RAG:CodeGen] Detected coding test keyword: '{keyword}'")
+                return True
+        return False
+
+    def _extract_company_filter(self, query: str) -> Optional[str]:
+        """
+        쿼리에서 특정 회사 필터 추출
+
+        Args:
+            query: 사용자 쿼리
+
+        Returns:
+            회사 키워드 (있으면) 또는 None
+        """
+        company_keywords = {
+            "카카오": "카카오",
+            "kakao": "카카오",
+            "네이버": "네이버",
+            "naver": "네이버",
+            "라인": "라인",
+            "line": "라인",
+            "삼성": "삼성",
+            "samsung": "삼성",
+        }
+        query_lower = query.lower()
+        for keyword, company in company_keywords.items():
+            if keyword in query_lower:
+                return company
+        return None
+
+    async def search_programmers_for_codegen(
+        self,
+        query: str,
+        topics: List[str] = None,
+        difficulty: str = None,
+        limit: int = 5,
+        company_filter: str = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        [내부 전용] programmers 문제를 RAG 컨텍스트로 검색
+
+        ⚠️ 저작권 주의:
+        - 이 함수의 결과를 사용자에게 직접 제공하면 안 됨
+        - generate_problem_with_rag()에 전달하여 새 문제 생성용으로만 사용
+        - 대기업 기출 스타일의 새 문제를 생성할 때 참고 자료로 활용
+
+        Args:
+            query: 검색 쿼리
+            topics: 주제 필터
+            difficulty: 난이도 필터
+            limit: 최대 결과 수
+            company_filter: 회사 필터 (카카오, 네이버 등)
+
+        Returns:
+            RAG 컨텍스트용 programmers 문제 목록 (내부 사용 전용)
+        """
+        try:
+            print(f"[RAG:Programmers] Searching programmers problems: query={query}, company={company_filter}")
+
+            # Step 1: Query embedding 생성
+            query_embedding = await embedding_service.generate_embedding(query)
+
+            # Step 2: programmers 문제 필터링
+            db_query = self.db.table("base_problems").select("*").eq("source", "programmers")
+
+            # 회사 필터 (name에 회사명 포함)
+            if company_filter:
+                db_query = db_query.ilike("name", f"%{company_filter}%")
+
+            # 난이도 필터
+            if difficulty:
+                db_query = db_query.eq("difficulty", difficulty)
+
+            # 토픽 필터
+            if topics:
+                expanded_topics = self._expand_topics(topics)
+                db_query = db_query.overlaps("tags", expanded_topics)
+
+            db_query = db_query.limit(100)
+            response = db_query.execute()
+            problems = response.data or []
+
+            if not problems:
+                print(f"[RAG:Programmers] No problems found with filters")
+                # 필터 없이 재시도
+                problems = self.db.table("base_problems").select("*").eq("source", "programmers").limit(50).execute().data or []
+
+            if not problems:
+                return []
+
+            # Step 3: programmers_embeddings에서 임베딩 조회
+            problem_ids = [p["id"] for p in problems]
+            embeddings_response = self.db.table("programmers_embeddings").select(
+                "base_problem_id, embedding"
+            ).in_("base_problem_id", problem_ids).execute()
+
+            embeddings_map = {}
+            for e in (embeddings_response.data or []):
+                emb = e.get("embedding")
+                if isinstance(emb, str):
+                    emb = json.loads(emb)
+                embeddings_map[e["base_problem_id"]] = emb
+
+            # Step 4: 유사도 계산 및 정렬
+            import numpy as np
+            query_vec = np.array(query_embedding)
+
+            results = []
+            for problem in problems:
+                pid = problem["id"]
+                emb = embeddings_map.get(pid)
+                if emb:
+                    prob_vec = np.array(emb)
+                    similarity = float(np.dot(query_vec, prob_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(prob_vec)))
+                    problem["similarity"] = similarity
+                    results.append(problem)
+
+            results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+            print(f"[RAG:Programmers] Found {len(results)} problems, returning top {limit}")
+
+            return results[:limit]
+
+        except Exception as e:
+            print(f"[RAG:Programmers] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    async def search_problems_for_codegen(
+        self,
+        query: str,
+        topics: List[str] = None,
+        difficulty: str = None,
+        language: str = None,
+        limit: int = 5,
+    ) -> Tuple[List[Dict[str, Any]], bool, str]:
+        """
+        [내부 전용] Code Generation용 RAG 컨텍스트 검색
+
+        ⚠️ 저작권 주의:
+        - 이 함수의 결과를 사용자에게 직접 제공하면 안 됨
+        - generate_problem_with_rag()에 전달하여 새 문제 생성용으로만 사용
+
+        동작:
+        - 코테/대기업 키워드 감지 시: programmers 기출을 참고하여 유사 문제 생성
+        - 일반 요청 시: 모든 문제를 참고하여 새 문제 생성
+
+        Args:
+            query: 검색 쿼리
+            topics: 주제 필터
+            difficulty: 난이도 필터
+            language: 언어 필터
+            limit: 최대 결과 수
+
+        Returns:
+            Tuple of (rag_context, is_coding_test, search_source)
+        """
+        # 코테/대기업 키워드 감지
+        is_coding_test = self._detect_coding_test_intent(query)
+        company_filter = self._extract_company_filter(query)
+
+        if is_coding_test:
+            # programmers 문제만 검색
+            print(f"[RAG:CodeGen] Using PROGRAMMERS-ONLY search (coding test intent)")
+            results = await self.search_programmers_for_codegen(
+                query=query,
+                topics=topics,
+                difficulty=difficulty,
+                limit=limit,
+                company_filter=company_filter,
+            )
+            return results, True, "programmers"
+
+        else:
+            # 통합 검색: 두 테이블 모두 사용
+            print(f"[RAG:CodeGen] Using COMBINED search (both embeddings)")
+
+            # 1. 일반 문제 검색 (problem_embeddings)
+            general_results, _ = await self.search_problems_hybrid(
+                query=query,
+                topics=topics,
+                difficulty=difficulty,
+                language=language,
+                limit=limit,
+            )
+
+            # 2. programmers 문제 검색 (추가 컨텍스트)
+            programmers_results = await self.search_programmers_for_codegen(
+                query=query,
+                topics=topics,
+                difficulty=difficulty,
+                limit=2,  # 보조 컨텍스트로 2개만
+            )
+
+            # 3. 결과 병합 (중복 제거)
+            seen_ids = set()
+            combined = []
+
+            for r in general_results:
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    combined.append(r)
+
+            for r in programmers_results:
+                if r["id"] not in seen_ids and len(combined) < limit:
+                    seen_ids.add(r["id"])
+                    r["source_note"] = "programmers_reference"
+                    combined.append(r)
+
+            # 유사도 순 정렬
+            combined.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+
+            print(f"[RAG:CodeGen] Combined results: {len(combined)} (general: {len(general_results)}, programmers: {len(programmers_results)})")
+
+            return combined[:limit], False, "combined"
 
 
 # Singleton instance
