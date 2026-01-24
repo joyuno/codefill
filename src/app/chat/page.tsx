@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Resizer } from '@/components/ui/resizer';
-import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn } from 'lucide-react';
+import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { usePracticeSession } from '@/hooks/usePracticeSession';
@@ -32,6 +32,7 @@ import { apiClient } from '@/lib/api/client';
 import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 import type { HintAgentResponse, FeedbackResponse, BaseProblemInfo } from '@/lib/api/agent';
 import { ga4Events, clarityEvents } from '@/lib/analytics';
+import { translateText, type LanguageCode } from '@/lib/api/translate';
 
 const difficultyColors = {
   easy: 'bg-primary/20 text-primary border-primary/30',
@@ -250,6 +251,61 @@ function ChatPageContent() {
   const [initialBaseProblem, setInitialBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [isLoadingInitialProblem, setIsLoadingInitialProblem] = useState(false);
 
+  // Translation state - 번역 상태 (localStorage로 유지)
+  const [translatedQuestion, setTranslatedQuestion] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showTranslated, setShowTranslated] = useState(() => {
+    // localStorage에서 번역 상태 복원
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('codefill_show_translated') === 'true';
+    }
+    return false;
+  });
+
+  // 번역 상태가 변경될 때 localStorage에 저장
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('codefill_show_translated', showTranslated.toString());
+    }
+  }, [showTranslated]);
+
+  // 번역 함수
+  const handleTranslate = async () => {
+    if (!initialBaseProblem?.question) return;
+
+    // 이미 번역됐으면 토글만
+    if (translatedQuestion) {
+      setShowTranslated(!showTranslated);
+      return;
+    }
+
+    // 캐시에서 번역 확인
+    const cacheKey = `translate_${initialBaseProblem.id}`;
+    const cached = typeof window !== 'undefined' ? localStorage.getItem(cacheKey) : null;
+    if (cached) {
+      setTranslatedQuestion(cached);
+      setShowTranslated(true);
+      return;
+    }
+
+    setIsTranslating(true);
+    try {
+      const result = await translateText(initialBaseProblem.question, 'ko' as LanguageCode);
+      if (result.success && result.translated_text) {
+        setTranslatedQuestion(result.translated_text);
+        setShowTranslated(true);
+        // 캐시에 저장
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(cacheKey, result.translated_text);
+        }
+      }
+    } catch (err) {
+      console.error('Translation failed:', err);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   // Practice results (reset on new problem)
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
   const [puzzleResults, setPuzzleResults] = useState<Record<string, boolean>>({});
@@ -416,7 +472,12 @@ function ChatPageContent() {
     setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
     setEarnedSeed(null);  // 씨앗 보상 초기화
     setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
-  }, [resetSession, sessionId]);
+
+    // URL에 problem_id가 있으면 /chat으로 리다이렉트 (세션 완전 초기화)
+    if (urlProblemId) {
+      router.push('/chat');
+    }
+  }, [resetSession, sessionId, urlProblemId, router]);
 
   // 포기하기 (Give up)
   const handleGiveUp = useCallback(async () => {
@@ -1053,19 +1114,40 @@ function ChatPageContent() {
           >
             {/* 문제 헤더 */}
             <div className="mb-6">
-              <h1 className="text-xl font-bold mb-3">{initialBaseProblem.name}</h1>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className={cn('capitalize', difficultyColors[initialBaseProblem.difficulty])}
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h1 className="text-xl font-bold mb-3">{initialBaseProblem.name}</h1>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={cn('capitalize', difficultyColors[initialBaseProblem.difficulty])}
+                    >
+                      {initialBaseProblem.difficulty}
+                    </Badge>
+                    {initialBaseProblem.tags?.slice(0, 4).map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                {/* 번역 버튼 */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleTranslate}
+                  disabled={isTranslating}
+                  className={cn('shrink-0', showTranslated && translatedQuestion && 'text-primary')}
                 >
-                  {initialBaseProblem.difficulty}
-                </Badge>
-                {initialBaseProblem.tags?.slice(0, 4).map((tag) => (
-                  <Badge key={tag} variant="secondary" className="text-xs">
-                    {tag}
-                  </Badge>
-                ))}
+                  {isTranslating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Globe className="h-4 w-4" />
+                  )}
+                  <span className="ml-1.5">
+                    {showTranslated && translatedQuestion ? '원본' : '번역'}
+                  </span>
+                </Button>
               </div>
             </div>
 
@@ -1076,7 +1158,9 @@ function ChatPageContent() {
                   remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                   rehypePlugins={[rehypeKatex]}
                 >
-                  {initialBaseProblem.question || initialBaseProblem.description || ''}
+                  {showTranslated && translatedQuestion
+                    ? translatedQuestion
+                    : (initialBaseProblem.question || initialBaseProblem.description || '')}
                 </ReactMarkdown>
               </div>
             </div>

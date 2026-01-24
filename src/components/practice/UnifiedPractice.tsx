@@ -49,76 +49,57 @@ import type { ConvertedProblem, ConvertedProblemType, ConvertedTestCase, Convert
 import { checkBlankAnswers, checkPuzzleOrder } from '@/lib/problemChecker';
 
 /**
- * Python 구문 분석을 통한 동적 들여쓰기 계산
- * - 콜론(:)으로 끝나는 구문 다음은 +1 들여쓰기
- * - 블록 종료 키워드 후에는 들여쓰기 유지 또는 감소
+ * Python 퍼즐 블록의 들여쓰기 계산
+ *
+ * 방식: 블록에 저장된 원래 indentation 값을 우선 사용
+ * - 백엔드에서 각 블록의 정확한 들여쓰기 레벨을 계산하여 저장
+ * - fixed_start의 마지막 줄 들여쓰기를 기준으로 상대적 위치 계산
+ *
+ * @param fixedStart - 고정된 시작 코드 (import, class, def 등)
+ * @param blocks - 퍼즐 블록 배열 (code, indentation 포함)
+ * @param blockIndex - 현재 블록 인덱스
+ * @param blockIndentation - 블록에 저장된 원래 들여쓰기 레벨 (optional)
  */
 function calculateDynamicIndentation(
   fixedStart: string,
-  blocks: Array<{ code: string }>,
-  blockIndex: number
+  blocks: Array<{ code: string; indentation?: number }>,
+  blockIndex: number,
+  blockIndentation?: number
 ): number {
-  // Python 블록 시작 키워드 (콜론으로 끝나는 구문들)
-  const blockStartPattern = /:\s*(#.*)?$/;
-  // 블록 종료/감소 키워드
-  const dedentKeywords = ['return', 'break', 'continue', 'pass', 'raise'];
+  // 블록에 원래 indentation 값이 있으면 그것을 사용
+  if (typeof blockIndentation === 'number' && blockIndentation >= 0) {
+    return blockIndentation;
+  }
 
-  let currentIndent = 0;
-  const indentStack: number[] = [0]; // 들여쓰기 스택 (스코프 추적)
+  // 블록 배열에서 현재 블록의 indentation 값 확인
+  const currentBlock = blocks[blockIndex];
+  if (currentBlock && typeof currentBlock.indentation === 'number' && currentBlock.indentation >= 0) {
+    return currentBlock.indentation;
+  }
 
-  // fixed_start 분석
+  // fallback: fixed_start 마지막 줄 기준으로 계산
+  let baseIndent = 0;
+
   if (fixedStart) {
     const lines = fixedStart.split('\n');
-    for (const line of lines) {
+    // 마지막 비어있지 않은 줄 찾기
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
+      if (trimmed && !trimmed.startsWith('#')) {
+        // 마지막 줄의 들여쓰기 레벨 (4칸 = 1레벨)
+        baseIndent = Math.floor((line.match(/^(\s*)/)?.[1].length || 0) / 4);
 
-      // 현재 줄의 들여쓰기 레벨 계산 (4칸 = 1레벨)
-      const lineIndent = Math.floor((line.match(/^(\s*)/)?.[1].length || 0) / 4);
-
-      // 스택에서 현재 레벨보다 깊은 것들 제거
-      while (indentStack.length > 1 && indentStack[indentStack.length - 1] > lineIndent) {
-        indentStack.pop();
-      }
-
-      // 콜론으로 끝나면 다음 줄 들여쓰기 증가
-      if (blockStartPattern.test(trimmed)) {
-        currentIndent = lineIndent + 1;
-        indentStack.push(currentIndent);
-      } else {
-        currentIndent = lineIndent;
-      }
-    }
-  }
-
-  // 이전 블록들 분석 (blockIndex까지)
-  for (let i = 0; i < blockIndex; i++) {
-    const blockCode = blocks[i].code.replace(/\\n/g, '\n');
-    const lines = blockCode.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      // dedent 키워드 확인
-      const firstWord = trimmed.split(/\s|\(/)[0];
-      if (dedentKeywords.includes(firstWord)) {
-        // 스코프 종료 - 스택에서 제거
-        if (indentStack.length > 1) {
-          indentStack.pop();
-          currentIndent = indentStack[indentStack.length - 1];
+        // 콜론으로 끝나면 다음 줄은 +1
+        if (/:\s*(#.*)?$/.test(trimmed)) {
+          baseIndent += 1;
         }
-      }
-
-      // 콜론으로 끝나면 들여쓰기 증가
-      if (blockStartPattern.test(trimmed)) {
-        currentIndent = currentIndent + 1;
-        indentStack.push(currentIndent);
+        break;
       }
     }
   }
 
-  return currentIndent;
+  return baseIndent;
 }
 
 // CodeEditor 동적 임포트 (Monaco Editor 번들 분리 - 초기 로딩 성능 향상)
@@ -545,12 +526,13 @@ export function UnifiedPractice({
         parts.push(problem.fixedStart);
       }
 
-      // 퍼즐 블록들 - 동적 들여쓰기 적용
+      // 퍼즐 블록들 - 블록에 저장된 원래 들여쓰기 사용
       blocks.forEach((b, blockIdx) => {
         const dynamicIndent = calculateDynamicIndentation(
           problem.fixedStart || '',
           blocks,
-          blockIdx
+          blockIdx,
+          b.indentation  // 블록에 저장된 원래 들여쓰기 값 전달
         );
         const baseIndent = '    '.repeat(dynamicIndent);
 
@@ -1266,7 +1248,7 @@ export function UnifiedPractice({
           <span className="mr-4 w-8 select-none text-right text-[#858585]">
             {lineIdx + 1}
           </span>
-          <span className="flex-1">{parts.length > 0 ? parts : line}</span>
+          <span className="flex-1 whitespace-pre">{parts.length > 0 ? parts : line}</span>
         </div>
       );
     });
@@ -1891,13 +1873,14 @@ export function UnifiedPractice({
                   {line || '\u00A0'}
                 </div>
               ))}
-              {/* 퍼즐 블록 - 하늘색 (변경 가능) - 동적 들여쓰기 계산 */}
+              {/* 퍼즐 블록 - 하늘색 (변경 가능) - 블록에 저장된 원래 들여쓰기 사용 */}
               {blocks.map((b, blockIdx) => {
-                // 동적 들여쓰기: 이전 블록들의 구문 분석을 통해 계산
+                // 블록에 저장된 원래 들여쓰기 값 사용
                 const dynamicIndent = calculateDynamicIndentation(
                   problem.fixedStart || '',
                   blocks,
-                  blockIdx
+                  blockIdx,
+                  b.indentation  // 블록에 저장된 원래 들여쓰기 값 전달
                 );
                 // 멀티라인 블록: 각 줄에 들여쓰기 적용 (\\n → 실제 줄바꿈)
                 const rawCode = b.code.replace(/\\n/g, '\n');
