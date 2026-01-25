@@ -1,6 +1,8 @@
 """
 OpenRouter Service
 LLM API calls via OpenRouter with caching, rate limit handling, and key rotation
+
+Gemini 모델은 GeminiService로 라우팅됨 (직접 Gemini API 사용)
 """
 
 import httpx
@@ -14,6 +16,9 @@ from functools import lru_cache
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Gemini 모델 키 목록 (이 모델들은 GeminiService로 라우팅)
+GEMINI_MODEL_KEYS = {"gemini-flash", "gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-3-pro"}
 
 
 class OpenRouterService:
@@ -159,6 +164,22 @@ class OpenRouterService:
         Returns:
             API response dict
         """
+        # Gemini 모델은 GeminiService로 라우팅
+        if model in GEMINI_MODEL_KEYS:
+            from .gemini import gemini_service
+            return await gemini_service.chat_completion(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                **{k: v for k, v in [
+                    ("stop", stop),
+                    ("frequency_penalty", frequency_penalty),
+                    ("presence_penalty", presence_penalty),
+                ] if v}
+            )
+
         if not self.api_keys:
             raise ValueError("OpenRouter API key not configured")
 

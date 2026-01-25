@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     # LLM API Keys
-    openrouter_api_key: str = ""              # OpenRouter API 키 (모든 용도 통합)
+    openrouter_api_key: str = ""              # OpenRouter API 키 (gpt-4o-mini용)
+    gemini_api_keys: str = ""                 # Gemini API 키들 (쉼표 구분, 로테이션)
     openai_api_key: str = ""
     groq_api_key: str = ""
 
