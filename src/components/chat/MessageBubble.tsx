@@ -40,68 +40,38 @@ const getActionIcon = (value: string) => {
   return <Sparkles className="h-3 w-3" />;
 };
 
-// 티어 텍스트 → difficulty key 매핑
-const TIER_TEXT_TO_KEY: Record<string, string> = {
-  '실버': 'easy',
-  '골드': 'medium',
-  '플래티넘': 'medium_hard',
-  '다이아': 'hard',
-  '마스터': 'very_hard',
-};
-
 /**
- * 힌트 메시지 포맷팅 (마크다운 스타일링 + 티어 아이콘)
+ * 힌트 메시지 포맷팅 (마크다운 스타일링)
  * [라벨] 또는 **bold** 형식을 굵은 텍스트 + 색상으로 변환
- * (실버), (골드) 등 티어 텍스트를 TierIcon으로 변환
  */
 function formatHintContent(content: string): React.ReactNode {
-  // 1단계: 티어 패턴을 마커로 변환 (나중에 아이콘으로 대체)
-  // 패턴: (실버), (골드), (플래티넘), (다이아), (마스터)
-  const tierPattern = /\((실버|골드|플래티넘|다이아|마스터)\)/g;
-  const processedContent = content.replace(tierPattern, '[[TIER:$1]]');
-
-  // 2단계: 모든 패턴 찾기 ([라벨], **bold**, [[TIER:xxx]])
-  const pattern = /\[([^\]]+)\]|\*\*([^*]+)\*\*|\[\[TIER:([^\]]+)\]\]/g;
+  // [라벨] 또는 **bold** 패턴 찾기
+  const pattern = /\[([^\]]+)\]|\*\*([^*]+)\*\*/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
   let keyIndex = 0;
 
-  while ((match = pattern.exec(processedContent)) !== null) {
+  while ((match = pattern.exec(content)) !== null) {
     // 패턴 앞의 텍스트
     if (match.index > lastIndex) {
-      parts.push(processedContent.slice(lastIndex, match.index));
+      parts.push(content.slice(lastIndex, match.index));
     }
 
-    if (match[3]) {
-      // [[TIER:xxx]] 패턴 - 티어 아이콘으로 변환
-      const tierText = match[3];
-      const tierKey = TIER_TEXT_TO_KEY[tierText];
-      const TierIcon = tierKey ? TIER_ICONS[tierKey] : null;
-      const tierColor = tierKey ? TIER_COLORS[tierKey] : '';
-
-      parts.push(
-        <span key={keyIndex++} className={`inline-flex items-center gap-0.5 ${tierColor}`}>
-          {TierIcon && <TierIcon size={14} />}
-          <span className="font-medium">{tierText}</span>
-        </span>
-      );
-    } else {
-      // [라벨] 또는 **bold** 스타일링
-      const text = match[1] || match[2];
-      parts.push(
-        <span key={keyIndex++} className="font-semibold text-primary">
-          {text}
-        </span>
-      );
-    }
+    // [라벨] 또는 **bold** 스타일링
+    const text = match[1] || match[2]; // [라벨]은 group 1, **bold**는 group 2
+    parts.push(
+      <span key={keyIndex++} className="font-semibold text-primary">
+        {text}
+      </span>
+    );
 
     lastIndex = match.index + match[0].length;
   }
 
   // 나머지 텍스트
-  if (lastIndex < processedContent.length) {
-    parts.push(processedContent.slice(lastIndex));
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
   }
 
   return parts.length > 0 ? parts : content;

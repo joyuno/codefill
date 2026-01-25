@@ -92,6 +92,15 @@ const PROBLEM_TYPE_LABELS: Record<string, string> = {
   implementation: '구현',
 };
 
+// Difficulty → Tier 매핑
+const DIFFICULTY_TO_TIER: Record<string, string> = {
+  easy: '실버',
+  medium: '골드',
+  medium_hard: '플래티넘',
+  hard: '다이아',
+  very_hard: '마스터',
+};
+
 // Helper function to convert input_output to testCases
 function convertInputOutputToTestCases(inputOutput?: { inputs: string[]; outputs: string[] }) {
   if (!inputOutput || !inputOutput.inputs || !inputOutput.outputs) {
@@ -759,10 +768,10 @@ export function PracticeChatPanel({
         return [...filtered, {
           id: `generated-result-${Date.now()}`,
           role: 'assistant' as const,
-          content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${generatedProblem.difficulty})\n\n${generatedProblem.description || generatedProblem.question || ''}`,
+          content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})\n\n${generatedProblem.description || generatedProblem.question || ''}`,
           timestamp: new Date().toISOString(),
           chips: [{
-            label: `${generatedProblem.title || generatedProblem.name} (${generatedProblem.difficulty})`,
+            label: `${generatedProblem.title || generatedProblem.name} (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})`,
             value: 'problem-0',
             category: 'action' as const,
           }],
@@ -1802,7 +1811,7 @@ export function PracticeChatPanel({
           content: `${fallbackNotice}${responseMessage}`,
           timestamp: new Date().toISOString(),
           chips: [{
-            label: `${actionData.generated_problem.title || actionData.generated_problem.name} (${actionData.generated_problem.difficulty})`,
+            label: `${actionData.generated_problem.title || actionData.generated_problem.name} (${DIFFICULTY_TO_TIER[actionData.generated_problem.difficulty] || actionData.generated_problem.difficulty})`,
             value: 'problem-0',
             category: 'action' as const,
           }],
@@ -1830,7 +1839,7 @@ export function PracticeChatPanel({
 
         // 문제 칩 5개 + 추가 옵션 칩
         const problemChips = actionData.problems.slice(0, 5).map((p, i) => ({
-          label: `${p.name || p.title} (${p.difficulty})`,
+          label: `${p.name || p.title} (${DIFFICULTY_TO_TIER[p.difficulty] || p.difficulty})`,
           value: `problem-${i}`,
           category: 'action' as const,
         }));
@@ -1867,7 +1876,7 @@ export function PracticeChatPanel({
           content: `${fallbackNotice}${responseMessage}`,
           timestamp: new Date().toISOString(),
           chips: [{
-            label: `${actionData.generated_problem.title} (${actionData.generated_problem.difficulty})`,
+            label: `${actionData.generated_problem.title} (${DIFFICULTY_TO_TIER[actionData.generated_problem.difficulty] || actionData.generated_problem.difficulty})`,
             value: 'problem-0',
             category: 'action' as const,
           }],
@@ -2053,7 +2062,7 @@ export function PracticeChatPanel({
           content: `요청하신 조건에 맞는 문제들을 찾았어요! 아래에서 선택해주세요:`,
           timestamp: new Date().toISOString(),
           chips: problems.slice(0, 4).map((p, i) => ({
-            label: `${p.title} (${p.difficulty})`,
+            label: `${p.title} (${DIFFICULTY_TO_TIER[p.difficulty] || p.difficulty})`,
             value: `problem-${i}`,
             category: 'action' as const,
           })),
