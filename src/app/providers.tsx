@@ -9,14 +9,14 @@ import { usePathname } from 'next/navigation';
 import { AnalyticsProvider } from '@/components/AnalyticsProvider';
 import { WebSocketProvider } from '@/contexts/WebSocketContext';
 
-// WebSocket을 비활성화할 경로 (문제 풀이 집중 모드)
-const WEBSOCKET_DISABLED_PATHS = ['/chat'];
+// WebSocket을 활성화할 경로 (친구/DM 기능이 필요한 곳만)
+const WEBSOCKET_ENABLED_PATHS = ['/friends'];
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  // /chat 페이지에서는 WebSocket 비활성화 (문제 풀이 집중)
-  const isWebSocketDisabled = WEBSOCKET_DISABLED_PATHS.some(
+  // /friends 페이지에서만 WebSocket 활성화
+  const isWebSocketEnabled = WEBSOCKET_ENABLED_PATHS.some(
     path => pathname?.startsWith(path)
   );
 
@@ -41,7 +41,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WebSocketProvider disabled={isWebSocketDisabled}>
+        <WebSocketProvider disabled={!isWebSocketEnabled}>
           <AnalyticsProvider>
             {children}
           </AnalyticsProvider>
