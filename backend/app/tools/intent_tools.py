@@ -432,7 +432,7 @@ class IntentTool:
         # "두번째 블럭", "3번째 순서" 같은 표현은 퍼즐 관련 질문
         # ============================================================
         current_problem = session_state.get("current_problem") or session_state.get("selected_problem")
-        current_practice_state = session_state.get("current_practice_state", {})
+        current_practice_state = session_state.get("current_practice_state") or {}
         is_solving = current_problem is not None or current_practice_state.get("problem_id") is not None
 
         # 퍼즐/빈칸 문제 풀이 중 관련 키워드 감지
@@ -523,7 +523,7 @@ class IntentTool:
         # 🔥 핵심: 현재 문제 풀이 중인지 여부
         # current_problem 또는 current_practice_state가 있으면 문제 풀이 중
         current_problem = session_state.get("current_problem") or session_state.get("selected_problem")
-        current_practice_state = session_state.get("current_practice_state", {})
+        current_practice_state = session_state.get("current_practice_state") or {}
         current_stage = session_state.get("stage", "")
 
         # current_practice_state에 problem_id가 있으면 문제 풀이 중
@@ -718,7 +718,7 @@ class IntentTool:
 
         # 🔥 핵심: 현재 문제 풀이 중인지 여부 (단일 의도 분류와 동일한 로직)
         current_problem = session_state.get("current_problem") or session_state.get("selected_problem")
-        current_practice_state = session_state.get("current_practice_state", {})
+        current_practice_state = session_state.get("current_practice_state") or {}
         current_stage = session_state.get("stage", "")
 
         is_solving = (
