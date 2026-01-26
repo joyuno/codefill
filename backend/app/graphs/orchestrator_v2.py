@@ -799,6 +799,7 @@ class ChatOrchestratorV2:
             "response_message": result.get("response_message", ""),
             "action_trigger": result.get("action_trigger"),
             "action_data": result.get("action_data"),
+            "chips": result.get("chips"),  # 문제 유형 선택 칩 등
             "next_stage": result.get("route_to", "respond"),
             "is_complete": result.get("is_confirmed", False),
         }

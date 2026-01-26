@@ -808,10 +808,18 @@ async def confirm_problem_node(state: DiscoveryState) -> Dict[str, Any]:
         "• **1:1 대화형** - 단계별 대화로 풀기"
     )
 
+    # 문제 유형 선택 칩 정의
+    problem_type_chips = [
+        {"label": "빈칸 채우기", "value": "blank", "category": "problem_type"},
+        {"label": "퍼즐 맞추기", "value": "puzzle", "category": "problem_type"},
+        {"label": "1:1 대화형", "value": "guided", "category": "problem_type"},
+    ]
+
     action_data = {
         "action_trigger": "select_problem_type",
         "next_action": "show_problem_type_selector",
         "selected_problem": selected_problem,
+        "chips": problem_type_chips,
     }
 
     return {
@@ -819,6 +827,7 @@ async def confirm_problem_node(state: DiscoveryState) -> Dict[str, Any]:
         "response_message": response_message,
         "action_data": action_data,
         "action_trigger": "select_problem_type",
+        "chips": problem_type_chips,  # 프론트엔드용 칩 직접 전달
         "route_to": "solving",  # 문제 풀이 단계로 라우팅
         "next_node": "respond",
     }

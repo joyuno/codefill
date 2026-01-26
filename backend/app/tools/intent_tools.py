@@ -426,6 +426,15 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - 풀기/선택 의도 → select_problem
 - 둘 다 없으면 문맥으로 판단 (단순 문제명만 → select_problem)
 
+### 8. selection_index 설정 방법 (매우 중요!)
+컨텍스트의 검색 결과 목록을 보고 사용자가 언급한 문제의 번호를 찾아 설정:
+- 컨텍스트: "1번: taco_749, 2번: Eligibility, 3번: frog_123"
+- 사용자: "Eligibility 문제로 할게요" → **selection_index=2** (2번이므로)
+- 사용자: "taco_749" → **selection_index=1** (1번이므로)
+- 사용자: "3번 풀래" → **selection_index=3**
+- 문제 이름이 부분 매칭되어도 OK (예: "Elig" → Eligibility = 2번)
+- **반드시 검색 결과에서 해당 문제의 번호를 찾아 selection_index 설정!**
+
 ## 응답 형식 (JSON)
 {{
   "category": "info_collection|discovery|solving|confirmation|general",
@@ -653,13 +662,17 @@ class IntentTool:
         # 🔥 핵심: 검색 결과가 있으면 discovery 카테고리 우선!
         search_results = session_state.get("search_results", [])
         if search_results:
-            problem_names = []
-            for idx, p in enumerate(search_results[:5], 1):
-                name = p.get("name") or p.get("title") or f"문제{idx}"
-                problem_names.append(f"{idx}. {name}")
             context_parts.append(f"- **검색 결과 {len(search_results)}개 존재** (문제 선택/질문 가능):")
-            context_parts.append("  " + ", ".join(problem_names))
+            for idx, p in enumerate(search_results[:5], 1):
+                name = p.get("name") or ""
+                title = p.get("title") or ""
+                # 이름과 제목 모두 표시 (매칭 용이하게)
+                display = f"{idx}번: {name}"
+                if title and title != name:
+                    display += f" ({title})"
+                context_parts.append(f"  {display}")
             context_parts.append("- **주의**: 문제명/번호 언급 시 discovery 카테고리로 분류!")
+            context_parts.append("- **중요**: 사용자가 문제를 선택하면 해당 번호를 selection_index에 설정!")
 
         if session_state.get("current_step"):
             context_parts.append(f"- 현재 수집 단계: {session_state['current_step']}")
