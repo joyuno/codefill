@@ -1858,8 +1858,8 @@ async def generate_puzzle_problem(
         indent_info = [(b.get("id"), b.get("indentation", 0), b.get("code", "")[:30]) for b in blocks[:5]]
         print(f"[Puzzle Gen] Block indentations (first 5): {indent_info}")
 
-        # 4. 블록 수가 15개 초과시 자동 병합
-        MAX_BLOCKS = 15
+        # 4. 블록 수가 10개 초과시 자동 병합
+        MAX_BLOCKS = 10
         if len(blocks) > MAX_BLOCKS:
             print(f"[Puzzle Gen] Merging blocks: {len(blocks)} -> {MAX_BLOCKS}")
             blocks = _merge_puzzle_blocks(blocks, MAX_BLOCKS)
