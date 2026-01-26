@@ -514,88 +514,9 @@ class IntentTool:
                 )
 
         # ============================================================
-        # 문제 이름/번호로 선택 또는 질문 감지 (search_results와 매칭)
+        # 나머지는 LLM에 맡김 (문제명 선택, 질문 등)
+        # search_results가 있으면 LLM이 select_problem/inquire_problem 분류
         # ============================================================
-        search_results = session_state.get("search_results", [])
-        if not search_results:
-            return None
-
-        # Markdown bold 제거: **text** → text
-        clean_msg = re.sub(r'\*\*([^*]+)\*\*', r'\1', message)
-        # 난이도 표기 제거: (medium), (easy) 등
-        clean_msg = re.sub(r'\s*\([^)]+\)\s*', ' ', clean_msg)
-        clean_msg_lower = clean_msg.lower().strip()
-
-        # 선택 키워드
-        selection_keywords = ["풀래", "할래", "할게", "선택", "이거로", "그거로", "풀자", "풀고", "시작"]
-        has_selection_keyword = any(kw in msg_lower for kw in selection_keywords)
-
-        # 질문 키워드
-        inquiry_keywords = ["?", "뭐야", "뭔데", "어때", "어떤", "요약", "설명", "풀만", "괜찮", "좋아", "추천", "도움", "내용"]
-        has_inquiry_keyword = any(kw in msg_lower for kw in inquiry_keywords)
-
-        # 문제명/번호 매칭
-        matched_idx = None
-        matched_type = None
-
-        for idx, problem in enumerate(search_results, 1):
-            problem_name = (problem.get("name") or problem.get("title") or "").lower()
-            problem_title = (problem.get("title") or problem.get("name") or "").lower()
-
-            # 문제 이름/제목이 메시지에 포함되어 있으면 매칭
-            if problem_name and problem_name in clean_msg_lower:
-                matched_idx = idx
-                matched_type = "name"
-                break
-            if problem_title and problem_title in clean_msg_lower:
-                matched_idx = idx
-                matched_type = "title"
-                break
-
-        # 숫자로 문제 참조 ("3번 문제 어때?", "2번 요약해줘")
-        if not matched_idx:
-            num_match = re.search(r'(\d+)\s*번?\s*(문제|거)?', msg_lower)
-            if num_match:
-                ref_idx = int(num_match.group(1))
-                if 1 <= ref_idx <= len(search_results):
-                    matched_idx = ref_idx
-                    matched_type = "number_ref"
-
-        # 매칭된 문제가 있으면
-        if matched_idx:
-            # 질문인지 선택인지 판단
-            if has_inquiry_keyword and not has_selection_keyword:
-                # 질문 (inquire_problem)
-                return IntentResult(
-                    category=IntentCategory.DISCOVERY,
-                    action=ActionType.INQUIRE_PROBLEM,
-                    confidence=0.90,
-                    inquiry_target=str(matched_idx),
-                    inquiry_question=message,
-                    suggested_route="discovery",
-                )
-            else:
-                # 선택 (select_problem) - 키워드 없어도 문제명만 있으면 선택으로 간주
-                return IntentResult(
-                    category=IntentCategory.DISCOVERY,
-                    action=ActionType.SELECT_PROBLEM,
-                    confidence=0.95 if has_selection_keyword else 0.85,
-                    selection_index=matched_idx,
-                    selection_type=matched_type,
-                    suggested_route="discovery",
-                )
-
-        # 문제명 매칭 없이 질문만 있는 경우 ("이 중에 뭐가 좋아?", "추천해줘")
-        if has_inquiry_keyword and not has_selection_keyword:
-            return IntentResult(
-                category=IntentCategory.DISCOVERY,
-                action=ActionType.INQUIRE_PROBLEM,
-                confidence=0.80,
-                inquiry_target="general",  # 특정 문제 지정 없음
-                inquiry_question=message,
-                suggested_route="discovery",
-            )
-
         return None
 
     @track_intent_method("_classify_with_llm", tags=["llm", "gpt-4o-mini"])
