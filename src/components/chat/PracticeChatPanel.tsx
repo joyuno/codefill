@@ -1900,33 +1900,44 @@ export function PracticeChatPanel({
       if (chatResponse.action_trigger === 'select_problem_type') {
         console.log('[processAgentResponse] Problem type selection triggered');
 
-        // 백엔드에서 전달한 칩 사용, 없으면 기본 칩
-        const typeChips: QuickChip[] = chatResponse.chips?.length
-          ? chatResponse.chips.map((chip: any) => ({
-              label: chip.label,
-              value: chip.value,
-              category: 'action' as const,
-            }))
-          : [
-              { label: '빈칸 채우기', value: 'blank', category: 'action' as const },
-              { label: '퍼즐 맞추기', value: 'puzzle', category: 'action' as const },
-              { label: '1:1 대화형', value: 'guided', category: 'action' as const },
-            ];
+        // 선택된 문제 찾기
+        let selectedProblem: BaseProblemInfo | undefined;
 
-        // 선택된 문제 저장
+        // 1. 백엔드에서 직접 전달된 selected_problem 사용
         if (chatResponse.selected_problem) {
-          setSelectedBaseProblem(chatResponse.selected_problem as BaseProblemInfo);
+          selectedProblem = chatResponse.selected_problem as BaseProblemInfo;
         }
 
-        const assistantMessage: Message = {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: responseMessage,
-          timestamp: new Date().toISOString(),
-          chips: typeChips,
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        setFlowState('type_selection');
+        // 2. recommendedProblems에서 찾기 (이름으로 매칭)
+        if (!selectedProblem && recommendedProblemsRef.current.length > 0) {
+          const problemName = backendActionData?.selected_problem as string;
+          if (problemName) {
+            selectedProblem = recommendedProblemsRef.current.find(
+              p => p.name === problemName || p.title === problemName
+            );
+          }
+        }
+
+        if (selectedProblem) {
+          setSelectedBaseProblem(selectedProblem);
+          showProblemTypeSelection(selectedProblem);  // 기존 함수 사용 (구현 포함!)
+        } else {
+          // Fallback - 문제를 찾지 못한 경우 기본 칩 표시
+          const assistantMessage: Message = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: responseMessage,
+            timestamp: new Date().toISOString(),
+            chips: [
+              { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
+              { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
+              { label: '1대1 대화형', value: 'type-guided', category: 'action' },
+              { label: '구현', value: 'type-implementation', category: 'action' },
+            ],
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setFlowState('type_selection');
+        }
         return; // 여기서 리턴
       }
 
