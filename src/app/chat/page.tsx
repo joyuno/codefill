@@ -391,6 +391,10 @@ function ChatPageContent() {
   const [feedbackData, setFeedbackData] = useState<FeedbackResponse | null>(null);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
 
+  // 문제 완료 상태 (정답 맞춘 후 돌아가기 시 true)
+  const [isProblemCompleted, setIsProblemCompleted] = useState(false);
+  const [postCompletionChatCount, setPostCompletionChatCount] = useState(0);  // 완료 후 채팅 횟수
+
   // Layout state
   const [showChat, setShowChat] = useState(true);
   const [chatWidth, setChatWidth] = useState(400); // 40% of 1000px default
@@ -493,6 +497,8 @@ function ChatPageContent() {
     setCurrentHintResponse(null);
     setShowFeedbackPopup(false);
     setFeedbackData(null);
+    setIsProblemCompleted(false);  // 문제 완료 상태 초기화
+    setPostCompletionChatCount(0);  // 완료 후 채팅 횟수 초기화
 
     // Start practice session - create pending attempt for tracking
     try {
@@ -554,6 +560,8 @@ function ChatPageContent() {
     setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
     setEarnedSeed(null);  // 씨앗 보상 초기화
     setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
+    setIsProblemCompleted(false);  // 문제 완료 상태 초기화
+    setPostCompletionChatCount(0);  // 완료 후 채팅 횟수 초기화
 
     // URL에 problem_id가 있으면 /chat으로 리다이렉트 (세션 완전 초기화)
     if (urlProblemId) {
@@ -737,6 +745,16 @@ function ChatPageContent() {
   // Hint request handler - 실제 API 호출
   const handleHintRequest = useCallback(
     async (level: number, blankIdOrUserOrder?: string | string[]) => {
+      // 문제 완료 후에는 힌트 사용 금지
+      if (isProblemCompleted) {
+        toast({
+          title: '힌트 사용 불가',
+          description: '이미 완료한 문제입니다. 힌트를 사용할 수 없습니다.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       // puzzle인 경우 두 번째 인자가 userOrder 배열
       const userOrder = Array.isArray(blankIdOrUserOrder) ? blankIdOrUserOrder : undefined;
       const blankId = typeof blankIdOrUserOrder === 'string' ? blankIdOrUserOrder : undefined;
@@ -1351,6 +1369,7 @@ function ChatPageContent() {
           setUsedBlankHintIndices(prev => prev.includes(index) ? prev : [...prev, index]);
         }}
         onBlockOrderChange={setPuzzleUserOrder}  // 퍼즐 블록 순서 변경 시 업데이트
+        isProblemCompleted={isProblemCompleted}  // 문제 완료 상태
       />
     );
   };
@@ -1531,6 +1550,9 @@ function ChatPageContent() {
                       onBaseProblemPreview={setPreviewBaseProblem}
                       startProblemRequest={startProblemRequest}
                       onStartProblemHandled={() => setStartProblemRequest(null)}
+                      isProblemCompleted={isProblemCompleted}
+                      postCompletionChatCount={postCompletionChatCount}
+                      onPostCompletionChat={() => setPostCompletionChatCount(prev => prev + 1)}
                     />
                   )}
                 </div>
@@ -1543,7 +1565,11 @@ function ChatPageContent() {
       {/* Correct Answer Popup */}
       <CorrectAnswerPopup
         isOpen={showFeedbackPopup}
-        onClose={() => setShowFeedbackPopup(false)}
+        onClose={() => {
+          setShowFeedbackPopup(false);
+          setIsProblemCompleted(true);  // 문제 완료 상태로 설정
+          setPostCompletionChatCount(0);  // 완료 후 채팅 횟수 초기화
+        }}
         onNextProblem={handleResetSession}
         feedback={feedbackData}
         xpEarned={xpEarned}

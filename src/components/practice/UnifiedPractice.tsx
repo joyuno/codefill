@@ -233,6 +233,7 @@ interface UnifiedPracticeProps {
   onCodeChange?: (code: string) => void;  // 코드 변경 콜백 (guided 모드 튜터에게 전달용)
   onBlankHintUsed?: (index: number) => void;  // 빈칸/퍼즐 힌트 사용 시 콜백 (채팅 도움용)
   onBlockOrderChange?: (userOrder: string[]) => void;  // 퍼즐 블록 순서 변경 콜백 (채팅 힌트용)
+  isProblemCompleted?: boolean;  // 문제 완료 상태 (힌트 비활성화용)
 }
 
 export function UnifiedPractice({
@@ -246,6 +247,7 @@ export function UnifiedPractice({
   onCodeChange,
   onBlankHintUsed,
   onBlockOrderChange,
+  isProblemCompleted = false,
 }: UnifiedPracticeProps) {
   // 공통 상태
   const [code, setCode] = useState('');
@@ -1159,8 +1161,8 @@ export function UnifiedPractice({
                 placeholder={placeholder}
                 disabled={isSubmitted}
               />
-              {/* 빈칸별 힌트 버튼 - 팝업 내 버튼 클릭 방식 */}
-              {!isSubmitted && (
+              {/* 빈칸별 힌트 버튼 - 팝업 내 버튼 클릭 방식 (문제 완료 후 비활성화) */}
+              {!isSubmitted && !isProblemCompleted && (
                 <Popover>
                   <PopoverTrigger asChild>
                     <button
@@ -2090,9 +2092,9 @@ export function UnifiedPractice({
 
         {/* Actions Bar */}
         <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t border-border bg-card z-10">
-          {/* 힌트 버튼 (Puzzle 모드) */}
+          {/* 힌트 버튼 (Puzzle 모드) - 문제 완료 후 비활성화 */}
           <div>
-            {problemType === 'puzzle' && !isSubmitted && Object.keys(puzzleResults).length > 0 && (
+            {problemType === 'puzzle' && !isSubmitted && !isProblemCompleted && Object.keys(puzzleResults).length > 0 && (
               <Button
                 data-tutorial="hint-btn"
                 variant="outline"

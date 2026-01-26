@@ -86,6 +86,19 @@ interface PracticeChatPanelProps {
    * startProblemRequest 처리 완료 시 호출 (상태 리셋용)
    */
   onStartProblemHandled?: () => void;
+  /**
+   * 문제 완료 상태 (정답 맞춘 후 "문제풀이로 돌아가기" 클릭 시 true)
+   * true일 때 채팅 횟수 제한 (3회)
+   */
+  isProblemCompleted?: boolean;
+  /**
+   * 문제 완료 후 채팅 횟수
+   */
+  postCompletionChatCount?: number;
+  /**
+   * 문제 완료 후 채팅 시 호출 (횟수 증가)
+   */
+  onPostCompletionChat?: () => void;
 }
 
 // Session state interface for LangGraph
@@ -255,6 +268,9 @@ export function PracticeChatPanel({
   onBaseProblemPreview,
   startProblemRequest,
   onStartProblemHandled,
+  isProblemCompleted = false,
+  postCompletionChatCount = 0,
+  onPostCompletionChat,
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile, refreshProfile } = useAuth();
@@ -1674,6 +1690,22 @@ export function PracticeChatPanel({
   // Send message to Chat Agent
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoading) return;
+
+    // 문제 완료 후 채팅 제한 (3회)
+    const POST_COMPLETION_CHAT_LIMIT = 3;
+    if (isProblemCompleted && postCompletionChatCount >= POST_COMPLETION_CHAT_LIMIT) {
+      toast({
+        title: '채팅 제한',
+        description: '이미 완료한 문제입니다. 추가 질문은 제한됩니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // 문제 완료 후 채팅 횟수 증가
+    if (isProblemCompleted && onPostCompletionChat) {
+      onPostCompletionChat();
+    }
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
