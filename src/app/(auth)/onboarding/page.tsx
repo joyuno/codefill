@@ -37,6 +37,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useDebounce } from '@/hooks/useDebounce';
 import { authApi, solvedacApi, tierToName, getTierColor, type SignupData, type SolvedAcProfile } from '@/lib/api';
+import { ga4Events } from '@/lib/analytics';
 
 // Onboarding data schema
 const onboardingSchema = z.object({
@@ -123,6 +124,11 @@ export default function OnboardingPage() {
   const [solvedAcVerifying, setSolvedAcVerifying] = useState(false);
   const [solvedAcProfile, setSolvedAcProfile] = useState<SolvedAcProfile | null>(null);
   const [solvedAcError, setSolvedAcError] = useState('');
+
+  // GA4 온보딩 시작 이벤트
+  useEffect(() => {
+    ga4Events.onboardingStart();
+  }, []);
 
   const {
     register,
@@ -315,12 +321,15 @@ export default function OnboardingPage() {
 
       // 회원가입 성공 시 토큰이 자동으로 저장됨 (authApi.signup 내부에서 처리)
       if (result.data?.access_token) {
-        toast({
-          title: '🎉 회원가입 완료!',
-          description: '10,000 크레딧이 지급되었습니다. 문제 생성 시 크레딧이 소모됩니다.',
-        });
+        // GA4 회원가입 이벤트
+        ga4Events.signUp('email');
+        ga4Events.onboardingComplete(0);
 
-        // 자동 로그인되어 대시보드로 이동
+        // 메인 페이지에서 환영 모달을 표시하기 위한 플래그 저장
+        localStorage.setItem('showWelcomeModal', 'true');
+        localStorage.setItem('welcomeUsername', data.nickname);
+
+        // 메인 페이지로 이동
         router.push('/');
       } else {
         // 예외 상황: 토큰이 없는 경우

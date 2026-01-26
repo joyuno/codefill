@@ -12,13 +12,13 @@ export const VIEWPORT_HEIGHT = 640;  // 20 타일
 export const VIEWPORT_COLS = VIEWPORT_WIDTH / TILE_SIZE;   // 30
 export const VIEWPORT_ROWS = VIEWPORT_HEIGHT / TILE_SIZE;  // 20
 
-// 맵 확장 단계 (중심에서 사방으로 확장)
+// 맵 확장 단계 (최소 30x20=뷰포트, 최대 60x40)
 export const MAP_EXPANSION_STAGES = {
   1: { cols: 30, rows: 20, name: '작은 땅', cost: 0 },
-  2: { cols: 45, rows: 30, name: '넓은 땅', cost: 5000 },
-  3: { cols: 60, rows: 40, name: '큰 땅', cost: 15000 },
-  4: { cols: 80, rows: 50, name: '대농장', cost: 35000 },
-  5: { cols: 100, rows: 60, name: '거대 농장', cost: 70000 },
+  2: { cols: 38, rows: 25, name: '넓은 땅', cost: 5000 },
+  3: { cols: 45, rows: 30, name: '중간 땅', cost: 15000 },
+  4: { cols: 52, rows: 35, name: '큰 땅', cost: 35000 },
+  5: { cols: 60, rows: 40, name: '대농장', cost: 70000 },
 } as const;
 
 export const MAP_EXPANSION_ORDER = [1, 2, 3, 4, 5] as const;

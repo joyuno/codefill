@@ -1,15 +1,30 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { StatCards } from '@/components/dashboard/StatCards';
 import { GrassHeatmap } from '@/components/dashboard/GrassHeatmap';
 import { Button } from '@/components/ui/button';
 import { Play, Sparkles } from 'lucide-react';
+import { WelcomeModal } from '@/components/modals/WelcomeModal';
 
 export default function HomePage() {
-  // useAuth 훅에서 이미 프로필을 로드하므로 refreshProfile() 호출 제거
-  // 프로필 갱신이 필요한 경우 (문제 풀이 후 등) 해당 페이지에서 직접 호출
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [welcomeUsername, setWelcomeUsername] = useState('');
+
+  // 회원가입 후 환영 모달 표시 체크
+  useEffect(() => {
+    const shouldShow = localStorage.getItem('showWelcomeModal');
+    if (shouldShow === 'true') {
+      const username = localStorage.getItem('welcomeUsername') || '';
+      setWelcomeUsername(username);
+      setShowWelcomeModal(true);
+      // 플래그 제거
+      localStorage.removeItem('showWelcomeModal');
+      localStorage.removeItem('welcomeUsername');
+    }
+  }, []);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -45,6 +60,13 @@ export default function HomePage() {
       >
         <GrassHeatmap />
       </motion.div>
+
+      {/* 회원가입 환영 모달 */}
+      <WelcomeModal
+        open={showWelcomeModal}
+        onClose={() => setShowWelcomeModal(false)}
+        username={welcomeUsername}
+      />
     </div>
   );
 }

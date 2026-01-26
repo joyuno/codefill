@@ -1,21 +1,27 @@
 """
 OpenRouter Service
-LLM API calls via OpenRouter
+LLM API calls via OpenRouter with caching, rate limit handling, and key rotation
+Includes OpenAI direct fallback for GPT models when OpenRouter times out
 """
 
 import httpx
 import json
 import logging
-from typing import Optional, Dict, Any, AsyncGenerator
+import asyncio
+import hashlib
+import time
+from typing import Optional, Dict, Any, AsyncGenerator, List
+from functools import lru_cache
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 class OpenRouterService:
-    """Service for calling LLMs via OpenRouter API."""
+    """Service for calling LLMs via OpenRouter API with rate limit handling."""
 
     BASE_URL = "https://openrouter.ai/api/v1"
+    OPENAI_BASE_URL = "https://api.openai.com/v1"
 
     # Model IDs (OpenRouter format)
     MODELS = {
@@ -25,21 +31,246 @@ class OpenRouterService:
         "gemini-flash": "google/gemini-3-flash-preview",
         "gemini-3-pro": "google/gemini-3-pro-preview",
         "deepseek-v3": "deepseek/deepseek-v3.2",
-
     }
 
-    def __init__(self):
+    # OpenRouter model ID -> OpenAI model ID (for fallback)
+    OPENAI_FALLBACK_MODELS = {
+        "openai/gpt-4o": "gpt-4o",
+        "openai/gpt-4o-mini": "gpt-4o-mini",
+    }
+
+    # Rate limit handling settings
+    MAX_RETRIES = 2  # 최대 재시도 횟수
+    REQUEST_DELAY = 0.5  # 요청 간 딜레이 (초)
+    CACHE_TTL = 300  # 캐시 유효 시간 (초)
+    CACHE_MAX_SIZE = 1000  # 최대 캐시 항목 수
+
+    # Timeout settings
+    OPENROUTER_TIMEOUT = 60.0  # OpenRouter 타임아웃 (초)
+    OPENAI_FALLBACK_TIMEOUT = 90.0  # OpenAI fallback 타임아웃 (초)
+
+    # 목적별 키 매핑 (purpose -> settings attribute name)
+    PURPOSE_KEY_MAP = {
+        "orchestrator": "openrouter_api_key",       # 기본/Orchestrator 전용
+        "problem": "openrouter_api_key_problem",     # 문제 유형 생성용
+        "hint": "openrouter_api_key_hint",           # 힌트 생성용
+        "codegen": "openrouter_api_key_codegen",     # Code generation용
+    }
+
+    def __init__(self, purpose: str = "orchestrator"):
+        """
+        Initialize OpenRouter service for a specific purpose.
+
+        Args:
+            purpose: 용도 구분 (orchestrator, problem, hint, codegen)
+        """
         self.settings = get_settings()
-        self.api_key = self.settings.openrouter_api_key
+        self.purpose = purpose
+
+        # 목적별 전용 API 키 가져오기
+        self.api_keys: List[str] = []
+        primary_key_attr = self.PURPOSE_KEY_MAP.get(purpose, "openrouter_api_key")
+        primary_key = getattr(self.settings, primary_key_attr, "")
+
+        # 전용 키가 있으면 사용, 없으면 기본 키로 폴백
+        if primary_key:
+            self.api_keys.append(primary_key)
+        elif self.settings.openrouter_api_key:
+            self.api_keys.append(self.settings.openrouter_api_key)
+            logger.warning(f"No dedicated key for {purpose}, falling back to default key")
+
+        self.current_key_index = 0
+        self._last_request_time = 0.0
+
+        # 간단한 인메모리 캐시 (TTL 지원)
+        self._cache: Dict[str, tuple[Any, float]] = {}
+
+        logger.debug(f"OpenRouterService initialized for purpose: {purpose}")
+
+    def _get_current_api_key(self) -> str:
+        """현재 활성 API 키 반환."""
+        if not self.api_keys:
+            raise ValueError("No OpenRouter API keys configured")
+        return self.api_keys[self.current_key_index]
+
+    def _rotate_api_key(self) -> bool:
+        """
+        다음 API 키로 로테이션.
+
+        Returns:
+            True if rotation successful, False if all keys exhausted
+        """
+        if len(self.api_keys) <= 1:
+            return False
+
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        logger.info(f"Rotated to API key index {self.current_key_index}")
+        return True
 
     def _get_headers(self) -> Dict[str, str]:
-        """Get request headers."""
+        """Get request headers with current API key."""
         return {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {self._get_current_api_key()}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://codefill.app",
             "X-Title": "CodeFill",
         }
+
+    def _get_openai_headers(self) -> Dict[str, str]:
+        """Get request headers for OpenAI direct API."""
+        return {
+            "Authorization": f"Bearer {self.settings.openai_api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _can_fallback_to_openai(self, model_id: str) -> bool:
+        """Check if model can fallback to OpenAI direct API."""
+        return (
+            model_id in self.OPENAI_FALLBACK_MODELS
+            and bool(self.settings.openai_api_key)
+        )
+
+    async def _call_openai_direct(
+        self,
+        model_id: str,
+        payload: Dict[str, Any],
+        cache_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Call OpenAI API directly as fallback.
+
+        Args:
+            model_id: OpenRouter model ID (e.g., "openai/gpt-4o-mini")
+            payload: Request payload (will be modified for OpenAI format)
+            cache_key: Optional cache key for storing result
+
+        Returns:
+            API response dict
+        """
+        openai_model = self.OPENAI_FALLBACK_MODELS.get(model_id)
+        if not openai_model:
+            raise ValueError(f"No OpenAI fallback available for model: {model_id}")
+
+        # OpenAI용 payload 수정
+        openai_payload = payload.copy()
+        openai_payload["model"] = openai_model
+
+        logger.info(f"Falling back to OpenAI direct API for model: {openai_model}")
+
+        async with httpx.AsyncClient(timeout=self.OPENAI_FALLBACK_TIMEOUT) as client:
+            response = await client.post(
+                f"{self.OPENAI_BASE_URL}/chat/completions",
+                headers=self._get_openai_headers(),
+                json=openai_payload,
+            )
+
+            if response.status_code != 200:
+                logger.error(f"OpenAI fallback error: {response.text[:500]}")
+            response.raise_for_status()
+
+            result = response.json()
+
+            # LangSmith 토큰 사용량 로깅 (OpenAI direct로 표시)
+            usage = result.get("usage", {})
+            if usage:
+                from .langsmith_tracker import langsmith_tracker
+                langsmith_tracker.log_llm_usage(
+                    model=f"openai-direct/{openai_model}",
+                    prompt_tokens=usage.get("prompt_tokens", 0),
+                    completion_tokens=usage.get("completion_tokens", 0),
+                    total_tokens=usage.get("total_tokens", 0),
+                )
+
+            # 캐시 저장
+            if cache_key:
+                self._set_cache(cache_key, result)
+
+            logger.info(f"OpenAI fallback successful for model: {openai_model}")
+            return result
+
+    async def _call_openai_direct_stream(
+        self,
+        model_id: str,
+        payload: Dict[str, Any],
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream from OpenAI API directly as fallback.
+
+        Args:
+            model_id: OpenRouter model ID
+            payload: Request payload
+
+        Yields:
+            Content chunks as strings
+        """
+        openai_model = self.OPENAI_FALLBACK_MODELS.get(model_id)
+        if not openai_model:
+            raise ValueError(f"No OpenAI fallback available for model: {model_id}")
+
+        openai_payload = payload.copy()
+        openai_payload["model"] = openai_model
+
+        logger.info(f"Falling back to OpenAI direct streaming for model: {openai_model}")
+
+        async with httpx.AsyncClient(timeout=self.OPENAI_FALLBACK_TIMEOUT) as client:
+            async with client.stream(
+                "POST",
+                f"{self.OPENAI_BASE_URL}/chat/completions",
+                headers=self._get_openai_headers(),
+                json=openai_payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        data = line[6:]
+                        if data == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data)
+                            content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+
+    def _generate_cache_key(self, model: str, messages: list, **kwargs) -> str:
+        """Generate cache key from request parameters."""
+        cache_data = {
+            "model": model,
+            "messages": messages,
+            **{k: v for k, v in kwargs.items() if v is not None}
+        }
+        cache_str = json.dumps(cache_data, sort_keys=True)
+        return hashlib.md5(cache_str.encode()).hexdigest()
+
+    def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Get cached response if valid."""
+        if cache_key in self._cache:
+            result, timestamp = self._cache[cache_key]
+            if time.time() - timestamp < self.CACHE_TTL:
+                logger.debug(f"Cache hit for key {cache_key[:8]}...")
+                return result
+            else:
+                # 만료된 캐시 삭제
+                del self._cache[cache_key]
+        return None
+
+    def _set_cache(self, cache_key: str, result: Dict[str, Any]):
+        """Store result in cache with TTL."""
+        # 캐시 크기 제한
+        if len(self._cache) >= self.CACHE_MAX_SIZE:
+            # 가장 오래된 항목 삭제
+            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
+            del self._cache[oldest_key]
+
+        self._cache[cache_key] = (result, time.time())
+
+    async def _apply_request_delay(self):
+        """Apply delay between requests to avoid rate limiting."""
+        elapsed = time.time() - self._last_request_time
+        if elapsed < self.REQUEST_DELAY:
+            await asyncio.sleep(self.REQUEST_DELAY - elapsed)
+        self._last_request_time = time.time()
 
     async def chat_completion(
         self,
@@ -52,9 +283,10 @@ class OpenRouterService:
         stop: Optional[list] = None,
         frequency_penalty: float = 0.0,
         presence_penalty: float = 0.0,
+        use_cache: bool = True,
     ) -> Dict[str, Any]:
         """
-        Call chat completion API.
+        Call chat completion API with retry and key rotation.
 
         Args:
             model: Model key (gpt-4o-mini, claude-sonnet, gemini-flash)
@@ -66,14 +298,28 @@ class OpenRouterService:
             stop: Optional list of stop sequences
             frequency_penalty: Reduce repetition of same tokens (0.0-2.0)
             presence_penalty: Encourage new topics (0.0-2.0)
+            use_cache: Whether to use caching (default: True)
 
         Returns:
             API response dict
         """
-        if not self.api_key:
+        if not self.api_keys:
             raise ValueError("OpenRouter API key not configured")
 
         model_id = self.MODELS.get(model, model)
+
+        # 캐시 확인 (temperature가 0일 때만 캐싱 효과적)
+        cache_key = None
+        if use_cache and temperature == 0:
+            cache_key = self._generate_cache_key(
+                model, messages,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                json_schema=json_schema,
+            )
+            cached = self._get_from_cache(cache_key)
+            if cached:
+                return cached
 
         payload = {
             "model": model_id,
@@ -102,30 +348,121 @@ class OpenRouterService:
         if presence_penalty > 0:
             payload["presence_penalty"] = presence_penalty
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{self.BASE_URL}/chat/completions",
-                headers=self._get_headers(),
-                json=payload,
-            )
-            if response.status_code != 200:
-                logger.error(f"Error response: {response.text[:500]}")
-            response.raise_for_status()
+        last_error = None
+        keys_tried = 0
+        should_try_openai_fallback = False
 
-            result = response.json()
+        # 모든 키를 시도할 때까지 반복
+        while keys_tried < len(self.api_keys):
+            for attempt in range(self.MAX_RETRIES + 1):
+                try:
+                    # 요청 간 딜레이 적용
+                    await self._apply_request_delay()
 
-            # LangSmith 토큰 사용량 로깅
-            usage = result.get("usage", {})
-            if usage:
-                from .langsmith_tracker import langsmith_tracker
-                langsmith_tracker.log_llm_usage(
-                    model=model_id,
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                    total_tokens=usage.get("total_tokens", 0),
-                )
+                    async with httpx.AsyncClient(timeout=self.OPENROUTER_TIMEOUT) as client:
+                        response = await client.post(
+                            f"{self.BASE_URL}/chat/completions",
+                            headers=self._get_headers(),
+                            json=payload,
+                        )
 
-            return result
+                        # Rate limit 에러 체크
+                        if response.status_code == 429:
+                            logger.warning(f"Rate limit hit on key index {self.current_key_index}, attempt {attempt + 1}")
+
+                            # 재시도 횟수 소진 시 키 로테이션
+                            if attempt >= self.MAX_RETRIES:
+                                if self._rotate_api_key():
+                                    keys_tried += 1
+                                    break  # 새 키로 재시도
+                                else:
+                                    raise httpx.HTTPStatusError(
+                                        "All API keys exhausted due to rate limits",
+                                        request=response.request,
+                                        response=response
+                                    )
+
+                            # 재시도 전 대기 (지수 백오프)
+                            wait_time = min(2 ** attempt, 10)
+                            logger.info(f"Waiting {wait_time}s before retry...")
+                            await asyncio.sleep(wait_time)
+                            continue
+
+                        if response.status_code != 200:
+                            logger.error(f"Error response: {response.text[:500]}")
+                        response.raise_for_status()
+
+                        result = response.json()
+
+                        # LangSmith 토큰 사용량 로깅
+                        usage = result.get("usage", {})
+                        if usage:
+                            from .langsmith_tracker import langsmith_tracker
+                            langsmith_tracker.log_llm_usage(
+                                model=model_id,
+                                prompt_tokens=usage.get("prompt_tokens", 0),
+                                completion_tokens=usage.get("completion_tokens", 0),
+                                total_tokens=usage.get("total_tokens", 0),
+                            )
+
+                        # 캐시 저장
+                        if cache_key:
+                            self._set_cache(cache_key, result)
+
+                        return result
+
+                except httpx.HTTPStatusError as e:
+                    last_error = e
+                    if e.response.status_code == 429:
+                        continue  # 이미 위에서 처리됨
+                    raise
+                except (httpx.TimeoutException, httpx.ConnectError) as e:
+                    # 타임아웃 또는 연결 에러 - OpenAI fallback 시도 대상
+                    last_error = e
+                    logger.warning(f"OpenRouter timeout/connection error: {e}")
+                    should_try_openai_fallback = True
+                    if attempt < self.MAX_RETRIES:
+                        await asyncio.sleep(1)
+                        continue
+                    # 재시도 모두 실패 - 루프 탈출하여 fallback 시도
+                    break
+                except Exception as e:
+                    last_error = e
+                    logger.error(f"Request failed: {e}")
+                    if attempt < self.MAX_RETRIES:
+                        await asyncio.sleep(1)
+                        continue
+                    raise
+
+            # 타임아웃으로 인한 fallback 시도 필요
+            if should_try_openai_fallback:
+                break
+
+            # 현재 키로 모든 재시도 실패 - 다음 키로 시도
+            if keys_tried < len(self.api_keys) - 1:
+                if self._rotate_api_key():
+                    keys_tried += 1
+                else:
+                    break
+            else:
+                break
+
+        # OpenAI fallback 시도 (타임아웃/연결 에러 발생 시)
+        if should_try_openai_fallback and self._can_fallback_to_openai(model_id):
+            try:
+                logger.info(f"Attempting OpenAI direct fallback for {model_id}")
+                return await self._call_openai_direct(model_id, payload, cache_key)
+            except Exception as fallback_error:
+                logger.error(f"OpenAI fallback also failed: {fallback_error}")
+                # 원래 에러를 raise
+                if last_error:
+                    raise last_error
+                raise fallback_error
+
+        # 모든 시도 실패
+        if last_error:
+            raise last_error
+        raise RuntimeError("Unexpected error in chat_completion")
 
     async def chat_completion_stream(
         self,
@@ -135,12 +472,13 @@ class OpenRouterService:
         max_tokens: int = 4096,
     ) -> AsyncGenerator[str, None]:
         """
-        Stream chat completion.
+        Stream chat completion with retry and key rotation.
+        Falls back to OpenAI direct API for GPT models on timeout.
 
         Yields:
             Content chunks as strings
         """
-        if not self.api_key:
+        if not self.api_keys:
             raise ValueError("OpenRouter API key not configured")
 
         model_id = self.MODELS.get(model, model)
@@ -153,26 +491,99 @@ class OpenRouterService:
             "stream": True,
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                f"{self.BASE_URL}/chat/completions",
-                headers=self._get_headers(),
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                            if content:
-                                yield content
-                        except json.JSONDecodeError:
-                            continue
+        last_error = None
+        keys_tried = 0
+        should_try_openai_fallback = False
+
+        while keys_tried < len(self.api_keys):
+            for attempt in range(self.MAX_RETRIES + 1):
+                try:
+                    await self._apply_request_delay()
+
+                    async with httpx.AsyncClient(timeout=self.OPENROUTER_TIMEOUT) as client:
+                        async with client.stream(
+                            "POST",
+                            f"{self.BASE_URL}/chat/completions",
+                            headers=self._get_headers(),
+                            json=payload,
+                        ) as response:
+                            if response.status_code == 429:
+                                logger.warning(f"Rate limit hit on streaming, key index {self.current_key_index}")
+                                if attempt >= self.MAX_RETRIES:
+                                    if self._rotate_api_key():
+                                        keys_tried += 1
+                                        break
+                                    raise httpx.HTTPStatusError(
+                                        "All API keys exhausted",
+                                        request=response.request,
+                                        response=response
+                                    )
+                                await asyncio.sleep(min(2 ** attempt, 10))
+                                continue
+
+                            response.raise_for_status()
+                            async for line in response.aiter_lines():
+                                if line.startswith("data: "):
+                                    data = line[6:]
+                                    if data == "[DONE]":
+                                        return
+                                    try:
+                                        chunk = json.loads(data)
+                                        content = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                        if content:
+                                            yield content
+                                    except json.JSONDecodeError:
+                                        continue
+                            return
+
+                except httpx.HTTPStatusError as e:
+                    last_error = e
+                    if e.response.status_code == 429:
+                        continue
+                    raise
+                except (httpx.TimeoutException, httpx.ConnectError) as e:
+                    # 타임아웃 또는 연결 에러 - OpenAI fallback 시도 대상
+                    last_error = e
+                    logger.warning(f"OpenRouter streaming timeout/connection error: {e}")
+                    should_try_openai_fallback = True
+                    if attempt < self.MAX_RETRIES:
+                        await asyncio.sleep(1)
+                        continue
+                    break
+                except Exception as e:
+                    last_error = e
+                    if attempt < self.MAX_RETRIES:
+                        await asyncio.sleep(1)
+                        continue
+                    raise
+
+            # 타임아웃으로 인한 fallback 시도 필요
+            if should_try_openai_fallback:
+                break
+
+            if keys_tried < len(self.api_keys) - 1:
+                if self._rotate_api_key():
+                    keys_tried += 1
+                else:
+                    break
+            else:
+                break
+
+        # OpenAI fallback 시도 (타임아웃/연결 에러 발생 시)
+        if should_try_openai_fallback and self._can_fallback_to_openai(model_id):
+            try:
+                logger.info(f"Attempting OpenAI direct streaming fallback for {model_id}")
+                async for chunk in self._call_openai_direct_stream(model_id, payload):
+                    yield chunk
+                return
+            except Exception as fallback_error:
+                logger.error(f"OpenAI streaming fallback also failed: {fallback_error}")
+                if last_error:
+                    raise last_error
+                raise fallback_error
+
+        if last_error:
+            raise last_error
 
     def get_content(self, response: Dict[str, Any]) -> str:
         """Extract content from API response."""
@@ -296,5 +707,9 @@ class OpenRouterService:
         raise ValueError(f"Failed to parse JSON from LLM response")
 
 
-# Singleton instance
-openrouter_service = OpenRouterService()
+# 목적별 싱글톤 인스턴스
+# 동시 호출 시 Rate Limit 방지를 위해 용도별로 분리
+openrouter_service = OpenRouterService(purpose="orchestrator")  # 기본/Orchestrator 전용
+openrouter_problem = OpenRouterService(purpose="problem")        # 문제 유형 생성용
+openrouter_hint = OpenRouterService(purpose="hint")              # 힌트 생성용
+openrouter_codegen = OpenRouterService(purpose="codegen")        # Code generation용

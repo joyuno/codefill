@@ -1,7 +1,11 @@
 """
 Judge0 Code Execution Service
 
-RapidAPI를 통해 Judge0 CE API와 통신하여 코드를 실행합니다.
+Judge0 API와 통신하여 코드를 실행합니다.
+셀프 호스팅 또는 RapidAPI 모드 모두 지원합니다.
+
+- 셀프 호스팅: JUDGE0_API_HOST가 비어있으면 X-Auth-Token 헤더 사용
+- RapidAPI: JUDGE0_API_HOST가 설정되면 X-RapidAPI-Key/Host 헤더 사용
 """
 
 import httpx
@@ -54,12 +58,21 @@ class Judge0Service:
         self.api_host = settings.judge0_api_host
 
     def _get_headers(self) -> Dict[str, str]:
-        """RapidAPI 헤더 생성"""
-        return {
-            "Content-Type": "application/json",
-            "X-RapidAPI-Key": self.api_key,
-            "X-RapidAPI-Host": self.api_host,
-        }
+        """API 헤더 생성 (셀프 호스팅 또는 RapidAPI 지원)"""
+        headers = {"Content-Type": "application/json"}
+
+        # 셀프 호스팅: X-Auth-Token 사용
+        # RapidAPI: X-RapidAPI-Key, X-RapidAPI-Host 사용
+        if self.api_host:
+            # RapidAPI 모드
+            headers["X-RapidAPI-Key"] = self.api_key
+            headers["X-RapidAPI-Host"] = self.api_host
+        else:
+            # 셀프 호스팅 모드
+            if self.api_key:
+                headers["X-Auth-Token"] = self.api_key
+
+        return headers
 
     def get_language_id(self, language: str) -> int:
         """언어 이름을 ID로 변환"""

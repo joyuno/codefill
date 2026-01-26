@@ -345,18 +345,18 @@ EXPANSION_COSTS = {
 EXPANSION_ORDER = [1, 4, 9, 16, 25, 36, 49]
 
 # 캐릭터 생성 시 초기 지급
-INITIAL_GOLD = 5000
+INITIAL_GOLD = 100000
 INITIAL_FARM_SIZE = 9  # 3x3 그리드
 INITIAL_SEEDS_QUANTITY = 10  # 모든 씨앗 종류별 10개씩
 INITIAL_MAP_LEVEL = 1  # 초기 맵 레벨
 
-# 맵 확장 비용 (레벨 기반: 1 -> 5)
+# 맵 확장 비용 (레벨 기반: 1 -> 5, 최소 30x20=뷰포트, 최대 60x40)
 MAP_EXPANSION_COSTS = {
     1: {"cols": 30, "rows": 20, "name": "작은 땅", "cost": 0},
-    2: {"cols": 45, "rows": 30, "name": "넓은 땅", "cost": 5000},
-    3: {"cols": 60, "rows": 40, "name": "큰 땅", "cost": 15000},
-    4: {"cols": 80, "rows": 50, "name": "대농장", "cost": 35000},
-    5: {"cols": 100, "rows": 60, "name": "거대 농장", "cost": 70000},
+    2: {"cols": 38, "rows": 25, "name": "넓은 땅", "cost": 5000},
+    3: {"cols": 45, "rows": 30, "name": "중간 땅", "cost": 15000},
+    4: {"cols": 52, "rows": 35, "name": "큰 땅", "cost": 35000},
+    5: {"cols": 60, "rows": 40, "name": "대농장", "cost": 70000},
 }
 
 MAP_EXPANSION_ORDER = [1, 2, 3, 4, 5]

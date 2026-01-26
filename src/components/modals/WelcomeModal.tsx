@@ -14,23 +14,22 @@ export function WelcomeModal({ open, onClose, username }: WelcomeModalProps) {
   return (
     <AnimatePresence>
       {open && (
-        <>
-          {/* Backdrop */}
+          /* Backdrop + Modal Container */
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
             onClick={onClose}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-          />
-
+          >
           {/* Modal */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
             transition={{ type: 'spring', duration: 0.5 }}
-            className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 p-4"
+            className="w-full max-w-sm p-4"
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="relative overflow-hidden rounded-2xl bg-card border border-border shadow-2xl">
               {/* Close button */}
@@ -137,7 +136,7 @@ export function WelcomeModal({ open, onClose, username }: WelcomeModalProps) {
               </div>
             </div>
           </motion.div>
-        </>
+          </motion.div>
       )}
     </AnimatePresence>
   );
