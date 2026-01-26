@@ -33,7 +33,6 @@ from ..prompts import (
     PUZZLE_PROBLEM_SYSTEM_PROMPT,
     GUIDED_PROBLEM_SYSTEM_PROMPT,
     CODE_GEN_SYSTEM_PROMPT,
-    HINT_AGENT_SYSTEM_PROMPT,
     FREE_CHAT_SYSTEM_PROMPT,
     INTENT_ACTION_MAP,
     CONTEXT_REQUIRED_INTENTS,
@@ -960,6 +959,15 @@ async def chat_agent(
             session_state=session_state,
             session_id=session_id,
         )
+
+        # 결과 검증 - None 체크
+        if result is None:
+            logger.error("[Chat] Orchestrator returned None")
+            result = {
+                "stage": "error",
+                "response_message": "죄송합니다. 요청을 처리하는 중 오류가 발생했습니다. 다시 시도해주세요.",
+                "is_complete": False,
+            }
 
         # 결과 추출 - 하드코딩된 폴백 제거, orchestrator가 항상 유효한 응답 반환
         response_message = result.get("response_message", "") or result.get("message", "")
@@ -2606,60 +2614,71 @@ async def _generate_problem_by_type(
 @router.post("/hint", response_model=HintAgentResponse)
 async def generate_hint(request: HintAgentRequest, db=Depends(get_db)):
     """
-    Generate AI-powered hint for a problem.
+    Generate hint for a problem (simplified).
 
-    Supports 4 hint levels (progressive disclosure).
-    Routes to type-specific hint generators:
-    - blank: 빈칸 채우기 전용 힌트
-    - puzzle: 블록 순서 힌트 (TODO)
-    - guided: 단계별 도움 (TODO)
+    각 문제 유형별 단순화된 힌트:
+    - blank: 정답 + 짧은 설명 (힌트 레벨 없음)
+    - puzzle: 첫 번째 틀린 블록의 올바른 위치 (힌트 레벨 없음)
+    - guided: 사용자가 작성해야 할 정답 코드의 첫 번째 줄
     """
     try:
         hint_service = get_hint_service()
         problem_type = request.problem_type.value if request.problem_type else "blank"
 
-        # Blank 문제 힌트 생성
+        # ============================================================
+        # Blank 문제: 정답 + 짧은 설명
+        # ============================================================
         if problem_type == "blank":
-            result = await hint_service.generate_blank_hint_legacy(
+            blank_index = request.current_blank_index or 0
+            result = await hint_service.generate_blank_hint(
                 problem_id=request.problem_id,
-                base_problem_id=request.base_problem_id,
-                hint_level=request.hint_level,
-                current_blank_index=request.current_blank_index or 0,
-                user_answers=request.user_answers,
-                previous_hints=request.previous_hints,
-                user_level=request.user_level.value,
+                blank_index=blank_index,
                 additional_info=request.problem_info,
             )
-            return HintAgentResponse(**result)
+            # HintAgentResponse 형식으로 변환
+            answer = result.get("answer", "")
+            hint_content = result.get("hint_content", "")
+            return HintAgentResponse(
+                hint_content=f"[정답] {answer}\n\n{hint_content}",
+                hint_type="answer",
+                encouragement="이해가 안 되면 질문해주세요!",
+                code_snippet=answer,
+            )
 
-        # Puzzle 문제 힌트 생성
+        # ============================================================
+        # Puzzle 문제: LLM 기반 힌트 생성
+        # ============================================================
         elif problem_type == "puzzle":
-            # user_order와 correct_blocks 추출 (problem_info에서)
             user_order = request.problem_info.get("user_order", []) if request.problem_info else []
             correct_blocks = request.problem_info.get("correct_blocks", []) if request.problem_info else []
+            hint_count = len(request.previous_hints) if request.previous_hints else 0
 
             result = await hint_service.generate_puzzle_hint(
                 problem_id=request.problem_id,
                 base_problem_id=request.base_problem_id,
-                hint_level=request.hint_level,
+                hint_level=min(hint_count + 1, 4),  # 1-4 레벨
                 user_order=user_order,
                 correct_blocks=correct_blocks,
                 previous_hints=request.previous_hints,
                 user_level=request.user_level.value,
                 additional_info=request.problem_info,
             )
-            return HintAgentResponse(**result)
 
-        # Guided 문제 도움 생성
+            return HintAgentResponse(
+                hint_content=result.get("hint_content", "힌트를 생성할 수 없습니다."),
+                hint_type=result.get("hint_type", "hint"),
+                encouragement=result.get("encouragement", ""),
+                code_snippet=result.get("code_snippet"),
+            )
+
+        # ============================================================
+        # Guided 문제: 정답 코드의 첫 번째 줄
+        # ============================================================
         elif problem_type == "guided":
-            # current_step 추출 (problem_info에서)
-            current_step = request.problem_info.get("current_step", 0) if request.problem_info else 0
-
             result = await hint_service.generate_guided_help(
                 problem_id=request.problem_id,
                 base_problem_id=request.base_problem_id,
-                help_level=request.hint_level,
-                current_step=current_step,
+                help_level=len(request.previous_hints) if request.previous_hints else 0,
                 user_code=request.user_code,
                 previous_helps=request.previous_hints,
                 user_level=request.user_level.value,
@@ -2676,6 +2695,8 @@ async def generate_hint(request: HintAgentRequest, db=Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Hint generation error: {str(e)}"

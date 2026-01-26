@@ -725,7 +725,7 @@ class FeedbackService:
 
         try:
             response = await openrouter_service.chat_completion(
-                model=settings.llm_model_hint,  # 가벼운 모델 사용
+                model=settings.llm_model_hint,  # gemini-flash
                 messages=messages,
                 temperature=0.7,
                 response_format={"type": "json_object"},
@@ -2043,7 +2043,7 @@ class FeedbackService:
             ]
 
             response = await openrouter_service.chat_completion(
-                model=settings.llm_model_hint,  # 가벼운 모델 사용
+                model=settings.llm_model_hint,  # gemini-flash
                 messages=messages,
                 temperature=0.3,
                 response_format={"type": "json_object"},

@@ -64,6 +64,14 @@ interface PracticeChatPanelProps {
    * 힌트 사용한 빈칸/블록 인덱스 배열 (채팅에서 해당 빈칸만 정답 설명 가능)
    */
   usedBlankHintIndices?: number[];
+  /**
+   * 퍼즐 문제에서 사용자가 현재 배치한 블록 순서 (힌트 요청 시 필요)
+   */
+  puzzleUserOrder?: string[];
+  /**
+   * 빈칸 문제에서 사용자가 현재 입력한 답변 (채팅에서 현재 상황 파악용)
+   */
+  blankAnswers?: Record<string, string>;
 }
 
 // Session state interface for LangGraph
@@ -233,6 +241,8 @@ export function PracticeChatPanel({
   problemType,
   currentCode,
   usedBlankHintIndices = [],
+  puzzleUserOrder = [],
+  blankAnswers = {},
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile, refreshProfile } = useAuth();
@@ -927,11 +937,22 @@ export function PracticeChatPanel({
       timestamp: new Date().toISOString(),
     };
 
+    // 🚀 현재 Python만 지원 - Java/C++ 선택 시 Python으로 대체
+    let targetLanguage = (selectedBaseProblem.language || 'python') as 'python' | 'java' | 'cpp';
+    let languageNotice: string | null = null;
+
+    if (targetLanguage === 'java' || targetLanguage === 'cpp') {
+      languageNotice = `⚠️ ${targetLanguage === 'java' ? 'Java' : 'C++'} 문제는 준비 중이에요. Python으로 진행할게요!`;
+      targetLanguage = 'python';
+    }
+
     const loadingMsgId = `loading-${Date.now()}`;
     const loadingMsg: Message = {
       id: loadingMsgId,
       role: 'assistant',
-      content: `${PROBLEM_TYPE_LABELS[type]} 문제를 준비하고 있어요...`,
+      content: languageNotice
+        ? `${languageNotice}\n\n${PROBLEM_TYPE_LABELS[type]} 문제를 준비하고 있어요...`
+        : `${PROBLEM_TYPE_LABELS[type]} 문제를 준비하고 있어요...`,
       timestamp: new Date().toISOString(),
     };
 
@@ -941,15 +962,16 @@ export function PracticeChatPanel({
     // 로딩 메시지 실시간 업데이트 헬퍼
     const updateLoadingMessage = (newContent: string) => {
       setMessages(prev => prev.map(m =>
-        m.id === loadingMsgId ? { ...m, content: newContent } : m
+        m.id === loadingMsgId ? { ...m, content: languageNotice ? `${languageNotice}\n\n${newContent}` : newContent } : m
       ));
     };
 
     try {
       // Extract code from solutions array if not directly available
-      const targetLanguage = (selectedBaseProblem.language || 'python') as 'python' | 'java' | 'cpp';
+
       const extractedCode = selectedBaseProblem.code ||
         selectedBaseProblem.solutions?.find(s => s.language === targetLanguage)?.code ||
+        selectedBaseProblem.solutions?.find(s => s.language === 'python')?.code ||  // Python fallback
         selectedBaseProblem.solutions?.[0]?.code || '';
 
       // Validate that we have code to work with
@@ -1217,6 +1239,8 @@ export function PracticeChatPanel({
         });
 
         setFlowState('guided_learning');
+        // ✅ useEffect에서 중복 메시지 생성 방지
+        setIsGuidedSessionInitialized(true);
 
         // Guided 모드: 왼쪽에 에디터 표시 + 오른쪽에 채팅 유지
         if (onProblemSelect) {
@@ -1358,12 +1382,14 @@ export function PracticeChatPanel({
         problemInfo.blank_count = currentProblem.blanks?.length || 0;
       }
 
-      // Puzzle 문제: blocks, correct_order 정보 추가
+      // Puzzle 문제: blocks, correct_order, user_order 정보 추가
       if (problemType === 'puzzle') {
         problemInfo.blocks = currentProblem.puzzleBlocks || currentProblem.blocks;
         problemInfo.correct_order = currentProblem.correctOrder;
         problemInfo.fixed_start = currentProblem.fixedStart;
         problemInfo.fixed_end = currentProblem.fixedEnd;
+        // 사용자가 현재 배치한 블록 순서 (힌트 생성에 필수)
+        problemInfo.user_order = puzzleUserOrder;
       }
 
       // Guided 문제: flow, checkpoints 정보 추가
@@ -1376,58 +1402,51 @@ export function PracticeChatPanel({
 
       const response = await agentApi.getHint({
         problem_id: currentProblem.id,
+        base_problem_id: currentProblem.baseProblemId || currentProblem.originalId,
         problem_type: problemType,
         problem_info: problemInfo,
-        user_code: undefined,
-        attempt_count: hintLevel,
-        hint_level: (hintLevel + 1) as 1 | 2 | 3 | 4,
+        user_code: problemType === 'guided' ? currentCode : undefined,
         previous_hints: previousHints,
         user_level: 'intermediate',
       });
 
+      const newHintCount = hintLevel + 1;
       const hintMessage: Message = {
         id: `hint-${Date.now()}`,
         role: 'assistant',
-        content: `${response.hint_content}\n\n${response.encouragement}`,
+        content: `${response.hint_content}${response.encouragement ? `\n\n${response.encouragement}` : ''}`,
         timestamp: new Date().toISOString(),
-        chips: response.hint_level < 4 ? [
+        chips: newHintCount < 4 ? [
           { label: '다음 힌트', value: 'hint', category: 'action' },
         ] : undefined,
       };
 
       setMessages(prev => [...prev, hintMessage]);
-      setHintLevel(prev => prev + 1);
+      setHintLevel(newHintCount);
       setPreviousHints(prev => [...prev, response.hint_content]);
 
       if (onHintRequest) {
-        onHintRequest(response.hint_level);
+        onHintRequest(newHintCount);
       }
 
     } catch (error) {
-      // Fallback to local hints
-      const hintTexts = [
-        `힌트 1: 이 문제는 ${currentProblem.topics?.[0] || '알고리즘'}에 관한 문제입니다.`,
-        `힌트 2: ${currentProblem.keyConcepts?.slice(0, 2).join(', ') || '핵심 개념'}를 활용해보세요.`,
-        `힌트 3: ${currentProblem.keyConcepts?.join(', ') || '개념들'}를 순서대로 적용해보세요.`,
-        `힌트 4 (마지막): 정답에 매우 가까워요! 한 번 더 시도해보세요.`,
-      ];
-
-      const hintMessage: Message = {
-        id: `hint-fallback-${Date.now()}`,
+      // API 실패 시 에러 메시지
+      console.error('[PracticeChatPanel] Hint request failed:', error);
+      const errorMessage: Message = {
+        id: `hint-error-${Date.now()}`,
         role: 'assistant',
-        content: hints[hintLevel] || hintTexts[hintLevel] || '더 이상의 힌트가 없습니다.',
+        content: '힌트를 불러오는 데 실패했어요. 다시 시도해주세요.',
         timestamp: new Date().toISOString(),
-        chips: hintLevel < 3 ? [
-          { label: '다음 힌트', value: 'hint', category: 'action' },
-        ] : undefined,
+        chips: [
+          { label: '다시 시도', value: 'hint', category: 'action' },
+        ],
       };
 
-      setMessages(prev => [...prev, hintMessage]);
-      setHintLevel(prev => Math.min(prev + 1, 4));
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
-  }, [hintLevel, hints, previousHints, onHintRequest]);
+  }, [hintLevel, previousHints, onHintRequest, currentCode, puzzleUserOrder]);
 
   // Show key concepts - uses ref to avoid stale closure
   const showKeyConcepts = useCallback(() => {
@@ -1637,6 +1656,24 @@ export function PracticeChatPanel({
       // LangGraph API 호출 (refs 사용으로 stale closure 방지)
       // Note: session_id가 있으면 백엔드가 DB에서 대화 히스토리를 로드
       // conversation_history는 fallback용 (비로그인 또는 세션 에러 시)
+
+      // 현재 문제 풀이 상황 (빈칸/퍼즐 문제에서 채팅이 현재 상황 파악용)
+      const currentPracticeState = problem ? {
+        problem_id: problem.id,
+        problem_type: problemType || problem.problemType,
+        problem_title: problem.title,
+        // 빈칸 문제: 사용자가 입력한 답변
+        blank_answers: problemType === 'blank' ? blankAnswers : undefined,
+        // 퍼즐 문제: 사용자가 배치한 블록 순서
+        puzzle_user_order: problemType === 'puzzle' ? puzzleUserOrder : undefined,
+        // 이전에 받은 힌트들
+        previous_hints: hints,
+        // 힌트 사용한 빈칸/블록 인덱스
+        used_hint_indices: usedBlankHintIndices,
+        // guided 모드: 현재 코드
+        current_code: problemType === 'guided' ? currentCode : undefined,
+      } : undefined;
+
       const chatResponse = await agentApi.chatMain({
         message: content,
         conversation_history: conversationHistory,
@@ -1649,6 +1686,8 @@ export function PracticeChatPanel({
           awaiting_confirmation: currentSessionState.awaiting_confirmation || false,
           suggested_value: currentSessionState.suggested_value || null,
           ...currentSessionState,
+          // 현재 문제 풀이 상황 추가
+          current_practice_state: currentPracticeState,
         },
         // DB 기반 세션 관리용 session_id
         session_id: sessionId || undefined,

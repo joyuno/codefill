@@ -211,12 +211,10 @@ export interface HintAgentRequest {
   base_problem_id?: string;  // base_problems 테이블의 UUID
   problem_type: 'blank' | 'puzzle' | 'guided';  // 문제 유형
   problem_info: Record<string, unknown>;
-  user_code?: string;
+  user_code?: string;  // guided: 사용자가 작성한 코드
   user_answers?: Record<string, string>;  // blank: 현재 입력한 답들 {"0": "len", "1": ""}
   current_blank_index?: number;  // blank: 현재 질문하는 빈칸 번호 (0부터)
-  attempt_count: number;
-  hint_level: 1 | 2 | 3 | 4;
-  previous_hints: string[];
+  previous_hints?: string[];  // guided: 이전 힌트 (힌트 횟수 계산용)
   user_level: 'beginner' | 'elementary' | 'intermediate' | 'advanced';
 }
 
@@ -234,17 +232,18 @@ export interface BlankFocus {
 }
 
 export interface HintAgentResponse {
-  hint_level: number;
   hint_content: string;
-  hint_type: 'direction' | 'approach' | 'specific' | 'final' | 'context' | 'operation' | 'range' | 'almost';
-  questions: string[];
-  related_concept?: RelatedConcept;
-  encouragement: string;
+  hint_type?: string;  // answer, position, code_line, complete, exhausted 등
+  questions?: string[];
+  encouragement?: string;
   next_hint_preview?: string;
   code_snippet?: string;
-  common_mistake_check?: string;
   // Blank 문제 전용 필드
   blank_focus?: BlankFocus;
+  // 레거시 호환 (optional)
+  hint_level?: number;
+  related_concept?: RelatedConcept;
+  common_mistake_check?: string;
   wrong_answer_feedback?: string;
 }
 
@@ -548,12 +547,39 @@ export const agentApi = {
   /**
    * Chat Agent - 정식 LangGraph 기반 채팅
    * 3단계 그래프: Intent → Discovery → Solving
-   * 타임아웃: 20초
+   * 타임아웃: 26초 (기존 20초에서 30% 증가)
+   * 타임아웃 시 1회 재시도
    */
   async chatMain(request: ChatV2Request): Promise<ChatV2Response> {
-    const response = await api.post<ChatV2Response>('/agent/chat', request, false, 20000);
-    if (response.error) throw new Error(response.error.message);
-    return response.data!;
+    const TIMEOUT_MS = 26000;  // 30% 증가 (20000 -> 26000)
+    const MAX_RETRIES = 1;
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const response = await api.post<ChatV2Response>('/agent/chat', request, false, TIMEOUT_MS);
+
+      if (response.error) {
+        // 타임아웃 에러인 경우 재시도
+        if (response.error.code === 'TIMEOUT_ERROR' && attempt < MAX_RETRIES) {
+          console.warn(`[chatMain] Timeout on attempt ${attempt + 1}, retrying...`);
+          lastError = new Error(response.error.message);
+          continue;
+        }
+
+        // 타임아웃 에러이고 재시도도 실패한 경우 사용자 친화적 메시지
+        if (response.error.code === 'TIMEOUT_ERROR') {
+          throw new Error('요청 시간이 초과되었습니다. 다시 한번 조금 더 짧게 말씀해주세요.');
+        }
+
+        throw new Error(response.error.message);
+      }
+
+      return response.data!;
+    }
+
+    // 모든 재시도 실패 (이론상 여기 도달 안 함)
+    throw lastError || new Error('요청 시간이 초과되었습니다. 다시 한번 조금 더 짧게 말씀해주세요.');
   },
 
   /**

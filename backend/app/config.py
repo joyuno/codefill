@@ -51,13 +51,14 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     # LLM API Keys
-    openrouter_api_key: str = ""
+    openrouter_api_key: str = ""              # OpenRouter API 키 (gpt-4o-mini용)
+    gemini_api_keys: str = ""                 # Gemini API 키들 (쉼표 구분, 로테이션)
     openai_api_key: str = ""
     groq_api_key: str = ""
 
     # LLM Models per Agent
     # Available aliases: gpt-4o, gpt-4o-mini, claude-sonnet, gemini-flash, gemini-3-pro, deepseek-v3
-    llm_model_chat: str = "gemini-flash"          # Chat agent, intent handler
+    llm_model_chat: str = "gpt-4o-mini"          # Chat agent, intent handler
     llm_model_intent: str = "gemini-flash"        # Intent classifier
     llm_model_blank_gen: str = "gemini-flash"     # Blank problem generation
     llm_model_puzzle_gen: str = "gemini-flash"    # Puzzle problem generation

@@ -164,6 +164,45 @@ class DynamicResponseGenerator:
         if user_context.get("rejected_topics"):
             lines.append(f"- 거부한 주제: {', '.join(user_context['rejected_topics'])}")
 
+        # 현재 문제 풀이 상황 (빈칸/퍼즐 문제에서 채팅이 현재 상황 파악용)
+        practice_state = user_context.get("current_practice_state", {})
+        if practice_state and practice_state.get("problem_id"):
+            problem_type = practice_state.get("problem_type", "")
+            problem_title = practice_state.get("problem_title", "")
+            lines.append(f"\n## 현재 문제 풀이 상황")
+            lines.append(f"- 문제: {problem_title}")
+            lines.append(f"- 유형: {problem_type}")
+
+            # 빈칸 문제
+            if problem_type == "blank":
+                blank_answers = practice_state.get("blank_answers", {})
+                if blank_answers:
+                    answers_info = ", ".join([f"{k}: '{v}'" for k, v in blank_answers.items() if v])
+                    if answers_info:
+                        lines.append(f"- 현재 입력한 답변: {answers_info}")
+
+            # 퍼즐 문제
+            elif problem_type == "puzzle":
+                puzzle_order = practice_state.get("puzzle_user_order", [])
+                if puzzle_order:
+                    lines.append(f"- 현재 블록 배치: {len(puzzle_order)}개 배치됨")
+
+            # guided 모드
+            elif problem_type == "guided":
+                current_code = practice_state.get("current_code", "")
+                if current_code:
+                    code_preview = current_code[:200] + "..." if len(current_code) > 200 else current_code
+                    lines.append(f"- 현재 코드: ```{code_preview}```")
+
+            # 이전 힌트
+            previous_hints = practice_state.get("previous_hints", [])
+            if previous_hints:
+                lines.append(f"- 받은 힌트 수: {len(previous_hints)}개")
+                # 마지막 힌트 요약
+                last_hint = previous_hints[-1]
+                hint_preview = last_hint[:100] + "..." if len(last_hint) > 100 else last_hint
+                lines.append(f"- 최근 힌트: {hint_preview}")
+
         return "\n".join(lines) if lines else "- 추가 정보 없음"
 
     def _infer_action(self, intent: str, message: str) -> Optional[str]:

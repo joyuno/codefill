@@ -978,7 +978,7 @@ class AnalysisService:
             # LLM 호출
             logger.info("LLM 분석 생성 시작")
             response = await openrouter_service.chat_completion(
-                model=settings.llm_model_analysis,
+                model=settings.llm_model_analysis,  # gemini-flash
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": "위 데이터를 분석해주세요."}
@@ -1083,7 +1083,7 @@ class AnalysisService:
 """
 
             response = await openrouter_service.chat_completion(
-                model=settings.llm_model_analysis,
+                model=settings.llm_model_analysis,  # gemini-flash
                 messages=[
                     {"role": "user", "content": prompt}
                 ],

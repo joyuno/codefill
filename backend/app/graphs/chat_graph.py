@@ -224,6 +224,7 @@ class ChatGraph:
         user_context: dict = None,
         collected_info: dict = None,
         search_results: list = None,
+        current_practice_state: dict = None,
     ) -> Dict[str, Any]:
         """
         그래프를 실행합니다.
@@ -234,6 +235,7 @@ class ChatGraph:
             user_context: 사용자 컨텍스트
             collected_info: 이미 수집된 정보
             search_results: 이미 검색된 문제 목록
+            current_practice_state: 현재 문제 풀이 상황 (빈칸 답변, 퍼즐 순서, 힌트 등)
 
         Returns:
             그래프 실행 결과
@@ -245,6 +247,7 @@ class ChatGraph:
             "user_context": user_context or {},
             "collected_info": collected_info or {},
             "search_results": search_results or [],
+            "current_practice_state": current_practice_state or {},
         }
 
         # 그래프 실행

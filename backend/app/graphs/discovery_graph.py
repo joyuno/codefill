@@ -41,6 +41,7 @@ from .discovery_state import (
 from .nodes.confirm import confirm_generation_node, should_confirm_generation
 from ..services.edge_case_logger import edge_case_logger
 from ..services.langsmith_tracker import track_discovery_node
+from ..prompts.chat_agent import DIFFICULTY_MAP
 
 
 # ============================================================
@@ -413,18 +414,16 @@ async def filter_results_node(state: DiscoveryState) -> Dict[str, Any]:
             start_num = search_offset + 1
             end_num = search_offset + len(filtered_results)
             problem_list = "\n".join([
-                f"  {start_num + i}. {p.get('name') or p.get('title', 'Unknown')} ({p.get('difficulty', 'medium')})"
+                f"  {start_num + i}. {p.get('name') or p.get('title', 'Unknown')} ({DIFFICULTY_MAP.get(p.get('difficulty', 'medium'), '골드')})"
                 for i, p in enumerate(filtered_results)
             ])
             response_message = f"{notice_text}추가로 찾은 문제들이에요 ({start_num}~{end_num}번):\n{problem_list}\n\n어떤 문제를 풀어볼까요?"
         else:
             problem_list = "\n".join([
-                f"  {i+1}. {p.get('name') or p.get('title', 'Unknown')} ({p.get('difficulty', 'medium')})"
+                f"  {i+1}. {p.get('name') or p.get('title', 'Unknown')} ({DIFFICULTY_MAP.get(p.get('difficulty', 'medium'), '골드')})"
                 for i, p in enumerate(filtered_results)
             ])
-            # 최대 개수 안내
-            more_hint = f"\n\n💡 더 보려면 \"더 보여줘\" 또는 \"N개 더 보여줘\"라고 말해주세요! (최대 {MAX_SEARCH_LIMIT}개)"
-            response_message = f"{notice_text}찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요? 번호로 선택해주세요!{more_hint}"
+            response_message = f"{notice_text}찾은 문제들이에요:\n{problem_list}\n\n어떤 문제를 풀어볼까요? 번호로 선택해주세요!"
 
         action_data = {
             "status": "found",

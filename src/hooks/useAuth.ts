@@ -249,6 +249,7 @@ export function useAuth() {
         localStorage.removeItem('codefill_character');
         localStorage.removeItem('codefill_farm_level');
         localStorage.removeItem('codefill_farm_cache');  // 농장 캐시 삭제
+        localStorage.removeItem('codefill_practice_session');  // 문제 풀이 세션 삭제
         sessionStorage.removeItem(PROFILE_CACHE_KEY);  // 프로필 캐시 삭제
         sessionStorage.removeItem('codefill_badge_count');  // 뱃지 카운트 캐시 삭제
         sessionStorage.removeItem('codefill_badges_cache');  // 뱃지 전체 캐시 삭제

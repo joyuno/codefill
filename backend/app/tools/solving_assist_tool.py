@@ -47,40 +47,50 @@ class AssistResult:
 # LLM 프롬프트
 # ============================================================
 
-ASSIST_SYSTEM_PROMPT = """당신은 코딩 교육 전문가입니다. 학생이 문제를 풀고 있습니다.
+ASSIST_SYSTEM_PROMPT = """당신은 코딩 교육 전문가입니다. 학생이 {problem_type_name} 문제를 풀고 있습니다.
 
 ## 핵심 원칙 (절대 위반 금지)
-1. **힌트를 사용하지 않은 빈칸/블록의 정답은 절대 알려주지 마세요**
-2. **힌트를 사용한 빈칸/블록**에 대해서만 정답과 이유를 설명할 수 있어요
+1. **힌트를 사용하지 않은 {element_name}의 정답은 절대 알려주지 마세요**
+2. **힌트를 사용한 {element_name}**에 대해서만 정답과 이유를 설명할 수 있어요
 3. 대신 **개념**과 **사고 방향**으로 유도하세요
 4. **소크라테스식 질문**으로 스스로 깨닫게 유도하세요
 
 ## 힌트 사용 여부에 따른 규칙
-- **[힌트 사용한 빈칸/블록]**: 정답과 그 이유를 자세히 설명해도 됨
-- **[힌트 미사용 빈칸/블록]**: 정답 절대 금지! 직접적인 힌트보다 간접적인 힌트 제공
+- **[힌트 사용한 {element_name}]**: 정답과 그 이유를 자세히 설명해도 됨
+- **[힌트 미사용 {element_name}]**: 정답 절대 금지! 직접적인 힌트보다 간접적인 힌트 제공
 
 ## 허용되는 도움
 - 관련 개념/알고리즘 설명 (예: "이 문제는 DP를 활용하면 좋아요")
-- 힌트 사용한 빈칸에 대한 추가 설명 (예: "4번 빈칸의 idx+1은 인덱스를 1부터 시작하기 위함이에요")
+- 힌트 사용한 {element_name}에 대한 추가 설명
 - 학생의 방향이 맞는지 확인 (예: "좋은 방향이에요! 계속해보세요")
 
 ## 금지되는 도움
-- 힌트 미사용 빈칸/블록의 정답 공개
+- 힌트 미사용 {element_name}의 정답 공개
 - 정답 코드 전체 공개
-- "여기에 for문을 넣으세요" 같은 구체적 지시 (힌트 미사용 시)
+- 구체적 지시 (힌트 미사용 시)
 
 ## 도움 유형별 응답
 {assist_type_guide}
 
-## 응답 형식
-- 1-3문장으로 간결하게 (최대 150토큰)
+## 응답 형식 (필수! 구조화된 형식으로 답변)
+아래 형식을 **반드시** 따르세요:
+
+**[한 줄 요약]**
+핵심 내용을 한 문장으로
+
+**[설명]**
+2-3문장으로 쉽게 설명
+
+**[예시]** (있으면)
+간단한 예시 코드나 상황
+
 - 격려하는 톤 유지
-- 힌트 사용한 빈칸 질문 → 정답과 이유 설명 OK
-- 힌트 미사용 빈칸 질문 → "힌트 버튼을 눌러보세요!" 유도
+- 힌트 사용한 {element_name} 질문 → 정답과 이유 설명 OK
+- 힌트 미사용 {element_name} 질문 → "힌트 버튼을 눌러보세요!" 유도
 
 ## 절대 금지 (Guardrails)
 - 새로운 문제를 생성하거나 만들어내지 마세요
-- 힌트 미사용 빈칸의 정답을 유추하게 하는 힌트도 금지
+- 힌트 미사용 {element_name}의 정답을 유추하게 하는 힌트도 금지
 """
 
 ASSIST_TYPE_GUIDES = {
@@ -146,7 +156,8 @@ class SolvingAssistTool:
             enriched_context = await self._enrich_problem_context(problem_context)
 
             # 2. LLM 프롬프트 구성
-            system_prompt = self._build_system_prompt(assist_type)
+            problem_type = enriched_context.get("problem_type", "blank")
+            system_prompt = self._build_system_prompt(assist_type, problem_type)
             user_prompt = self._build_user_prompt(
                 message=message,
                 problem_context=enriched_context,
@@ -171,7 +182,7 @@ class SolvingAssistTool:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_hint,  # 가벼운 모델 사용
                 messages=messages,
-                temperature=0.7,
+                temperature=0.5,
                 max_tokens=250,
             )
 
@@ -261,10 +272,26 @@ class SolvingAssistTool:
 
         return enriched
 
-    def _build_system_prompt(self, assist_type: AssistType) -> str:
+    def _build_system_prompt(self, assist_type: AssistType, problem_type: str = "blank") -> str:
         """시스템 프롬프트 구성"""
         type_guide = ASSIST_TYPE_GUIDES.get(assist_type, ASSIST_TYPE_GUIDES[AssistType.GENERAL_HELP])
-        return ASSIST_SYSTEM_PROMPT.format(assist_type_guide=type_guide)
+
+        # 문제 유형별 용어 설정
+        if problem_type == "puzzle":
+            problem_type_name = "퍼즐 (블록 정렬)"
+            element_name = "블록"
+        elif problem_type == "guided":
+            problem_type_name = "1대1 대화형"
+            element_name = "단계"
+        else:  # blank
+            problem_type_name = "빈칸 채우기"
+            element_name = "빈칸"
+
+        return ASSIST_SYSTEM_PROMPT.format(
+            assist_type_guide=type_guide,
+            problem_type_name=problem_type_name,
+            element_name=element_name
+        )
 
     def _build_user_prompt(
         self,

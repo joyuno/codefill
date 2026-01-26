@@ -26,6 +26,33 @@ from ...prompts import (
 
 
 # ============================================================
+# Helper Functions for Message Handling
+# ============================================================
+
+def _get_message_content(msg) -> str:
+    """메시지에서 content 추출 (dict 또는 LangChain Message 객체 모두 지원)"""
+    if hasattr(msg, 'content'):
+        return msg.content
+    if isinstance(msg, dict):
+        return msg.get("content", "")
+    return str(msg)
+
+def _get_message_role(msg) -> str:
+    """메시지에서 role 추출 (dict 또는 LangChain Message 객체 모두 지원)"""
+    if hasattr(msg, 'type'):
+        # LangChain Message: type이 'human' 또는 'ai'
+        return 'user' if msg.type == 'human' else 'assistant'
+    if isinstance(msg, dict):
+        role = msg.get("role", msg.get("type", "user"))
+        return 'user' if role in ['user', 'human'] else 'assistant'
+    return 'user'
+
+def _is_user_message(msg) -> bool:
+    """사용자 메시지인지 확인"""
+    role = _get_message_role(msg)
+    return role == 'user'
+
+# ============================================================
 # Helper Functions for Initial Guide Parsing
 # ============================================================
 
@@ -149,8 +176,8 @@ async def retrieve_context_node(state: AgenticRAGState) -> Dict[str, Any]:
     # 마지막 사용자 메시지
     last_message = ""
     for msg in reversed(messages):
-        if msg.get("role") == "user" or msg.get("type") == "human":
-            last_message = msg.get("content", "")
+        if _is_user_message(msg):
+            last_message = _get_message_content(msg)
             break
 
     if not last_message:
@@ -206,8 +233,8 @@ async def grade_context_node(state: AgenticRAGState) -> Dict[str, Any]:
     # 마지막 사용자 메시지
     last_message = ""
     for msg in reversed(messages):
-        if msg.get("role") == "user" or msg.get("type") == "human":
-            last_message = msg.get("content", "")
+        if _is_user_message(msg):
+            last_message = _get_message_content(msg)
             break
 
     # 문서 내용 요약
@@ -266,7 +293,7 @@ async def assess_understanding_node(state: AgenticRAGState) -> Dict[str, Any]:
     # 최근 대화만 분석 (최대 10개)
     recent_messages = messages[-10:] if len(messages) > 10 else messages
     conversation = "\n".join([
-        f"{m.get('role', 'user')}: {m.get('content', '')}"
+        f"{_get_message_role(m)}: {_get_message_content(m)}"
         for m in recent_messages
     ])
 
@@ -399,7 +426,7 @@ async def generate_response_node(state: AgenticRAGState) -> Dict[str, Any]:
 
     # 대화 히스토리 포맷
     conversation_history = "\n".join([
-        f"{'학생' if m.get('role') in ['user', 'human'] else '튜터'}: {m.get('content', '')}"
+        f"{'학생' if _is_user_message(m) else '튜터'}: {_get_message_content(m)}"
         for m in recent_messages
     ])
 
@@ -450,12 +477,9 @@ async def generate_response_node(state: AgenticRAGState) -> Dict[str, Any]:
         # 대화 히스토리 구성
         chat_messages = [{"role": "system", "content": system_prompt}]
         for msg in recent_messages:
-            role = msg.get("role", "user")
-            if role == "human":
-                role = "user"
-            elif role == "ai":
-                role = "assistant"
-            chat_messages.append({"role": role, "content": msg.get("content", "")})
+            role = _get_message_role(msg)
+            content = _get_message_content(msg)
+            chat_messages.append({"role": role, "content": content})
 
         response = await openrouter_service.chat_completion(
             model="gpt-4o-mini",

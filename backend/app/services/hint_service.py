@@ -11,11 +11,11 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 from ..database import get_supabase_client
-from ..services.openrouter import openrouter_service
+from ..services.openrouter import openrouter_hint as openrouter_service
 from ..config import get_settings
 from ..prompts.hint_blank_agent import BLANK_HINT_SYSTEM_PROMPT
 from ..prompts.hint_puzzle_agent import PUZZLE_HINT_SYSTEM_PROMPT
-from ..prompts.hint_guided_agent import GUIDED_HINT_SYSTEM_PROMPT
+# GUIDED_HINT_CONFIG와 GUIDED_HINT_SYSTEM_PROMPT는 함수 내에서 import
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -379,7 +379,7 @@ class HintService:
         DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             # 빈칸 주변 코드 추출
             surrounding_code = self._extract_surrounding_context(code_template, blank_index)
@@ -451,7 +451,7 @@ class HintService:
         빈칸에 해당 값이 들어가야 하는 이유 설명 (1-2줄)
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             # 빈칸 주변 코드 추출 (앞뒤 3줄)
             surrounding_code = self._extract_surrounding_context(code_template, blank_index)
@@ -656,7 +656,7 @@ class HintService:
         DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             # 전체 블록 코드 (컨텍스트용)
             all_code = "\n".join([b.get("code", "") for b in all_blocks])
@@ -799,7 +799,7 @@ class HintService:
         DeepSeek V3 사용 - 코드 이해력이 뛰어남
         """
         try:
-            from .openrouter import openrouter_service
+            from .openrouter import openrouter_hint as openrouter_service
 
             total_steps = len(all_steps)
 
@@ -1075,6 +1075,7 @@ class HintService:
     ) -> Dict[str, Any]:
         """
         퍼즐 힌트 - 스마트 검증 + 첫 틀린 블록 (2줄 이내)
+        Judge0 테스트케이스 검증으로 복수 정답 지원
 
         Args:
             problem_id: problems_puzzle 테이블의 ID
@@ -1088,18 +1089,32 @@ class HintService:
                 hint_content: str (2줄 이내),
                 first_wrong_position: int or None,
                 correct_block_id: str or None,
-                validation_type: "smart" | "strict" | "fallback"
+                validation_type: "smart" | "strict" | "judge0_testcase" | "fallback"
             }
         """
         from .puzzle_validator import validate_puzzle
 
-        # 블록 정보 가져오기
+        # 퍼즐 문제 정보 가져오기
+        puzzle_problem = None
+        fixed_start = ""
+        fixed_end = ""
+        test_cases = []
+
         if not blocks:
             puzzle_problem = self.get_puzzle_problem(problem_id)
             if puzzle_problem:
                 blocks = puzzle_problem.get("blocks", [])
+                fixed_start = puzzle_problem.get("fixed_start", "") or ""
+                fixed_end = puzzle_problem.get("fixed_end", "") or ""
             elif additional_info:
                 blocks = additional_info.get("blocks", [])
+                fixed_start = additional_info.get("fixed_start", "") or ""
+                fixed_end = additional_info.get("fixed_end", "") or ""
+        else:
+            # blocks가 이미 있어도 fixed_start/end는 추가로 조회
+            if additional_info:
+                fixed_start = additional_info.get("fixed_start", "") or ""
+                fixed_end = additional_info.get("fixed_end", "") or ""
 
         if not blocks:
             return {
@@ -1114,6 +1129,21 @@ class HintService:
         language = "python"
         if additional_info:
             language = additional_info.get("language", "python")
+
+        # base_problem_id로 테스트케이스(input_output) 조회
+        base_problem_id = self.resolve_base_problem_id(problem_id, "puzzle")
+        if base_problem_id:
+            base_problem = self.get_base_problem(base_problem_id)
+            if base_problem:
+                input_output = base_problem.get("input_output", [])
+                # input_output을 테스트케이스 형식으로 변환
+                if input_output:
+                    test_cases = [
+                        {"input": tc.get("input", ""), "output": tc.get("output", "")}
+                        for tc in input_output
+                        if isinstance(tc, dict)
+                    ]
+                    print(f"[HintService] 📦 Loaded {len(test_cases)} test cases for puzzle validation")
 
         # 정답 순서 계산 (order 필드 기준)
         sorted_blocks = sorted(blocks, key=lambda b: b.get("order", 0))
@@ -1139,7 +1169,7 @@ class HintService:
                 user_order, blocks, correct_order_ids
             )
 
-        # 스마트 검증 수행
+        # 스마트 검증 수행 (테스트케이스가 있으면 Judge0로 복수 정답 검증)
         try:
             result = await validate_puzzle(
                 blocks=block_contents,
@@ -1147,6 +1177,9 @@ class HintService:
                 correct_order=correct_order_indices,
                 language=language,
                 strict_mode=False,
+                test_cases=test_cases,
+                fixed_start=fixed_start,
+                fixed_end=fixed_end,
             )
 
             if result.is_correct:
@@ -1364,44 +1397,35 @@ class HintService:
             topics = additional_info.get("topics", [])
             solution_code = additional_info.get("solution_code", "(정답 코드 없음)")
 
-        # 3. 블록 정보 구성
+        # 3. 블록 정보 구성 (간결하게)
         total_blocks = len(blocks)
         blocks_info = self._format_blocks_info(blocks)
-        correct_order_hint = self._prepare_puzzle_order_hint(blocks, hint_level)
 
-        # 4. 시스템 프롬프트 구성
+        # 정답 순서 (블록 ID 순서)
+        sorted_blocks = sorted(blocks, key=lambda b: b.get("id", 0))
+        correct_order = [b.get("id") for b in sorted_blocks]
+
+        # 4. 시스템 프롬프트 구성 (간결)
         system_prompt = PUZZLE_HINT_SYSTEM_PROMPT.format(
-            title=title,
-            description=description,
-            difficulty=difficulty,
-            language=language,
-            topics=", ".join(topics) if topics else "알고리즘",
-            fixed_start=fixed_start or "(없음)",
-            fixed_end=fixed_end or "(없음)",
             total_blocks=total_blocks,
-            user_order=json.dumps(user_order, ensure_ascii=False) if user_order else "(아직 정렬 안 함)",
-            correct_blocks=json.dumps(correct_blocks, ensure_ascii=False) if correct_blocks else "(없음)",
+            user_order=json.dumps(user_order, ensure_ascii=False) if user_order else "[]",
+            correct_order_hint=json.dumps(correct_order, ensure_ascii=False),
             blocks_info=blocks_info,
-            correct_order_hint=correct_order_hint,
-            solution_code=solution_code,
-            hint_level=hint_level,
-            previous_hints=json.dumps(previous_hints, ensure_ascii=False) if previous_hints else "없음",
         )
 
         # 5. LLM 호출
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Level {hint_level} 힌트를 생성해주세요."},
+            {"role": "user", "content": "첫 번째 틀린 블록 위치와 이유를 알려주세요."},
         ]
 
         try:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_hint,
                 messages=messages,
-                temperature=0.5,  # 힌트는 일관성 있게
-                max_tokens=450,   # 힌트는 간결하게
+                temperature=0.5,
+                max_tokens=100,   # 첫 번째 틀린 위치 + 간단한 이유
                 response_format={"type": "json_object"},
-                frequency_penalty=0.3,  # 반복 방지
             )
 
             content = openrouter_service.get_content(response)
@@ -1502,7 +1526,7 @@ class HintService:
         }
 
     # ============================================================
-    # Guided 도움 생성
+    # Guided 도움 생성 (LLM 기반)
     # ============================================================
 
     async def generate_guided_help(
@@ -1517,124 +1541,190 @@ class HintService:
         additional_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        1대1 대화형 문제 도움 생성
+        1대1 대화형 문제 LLM 기반 힌트 생성
+        사용자 코드와 정답 코드를 비교하여 사용자 스타일에 맞는 다음 줄 제공
 
         Args:
             problem_id: problems_guided 테이블의 ID
             base_problem_id: base_problems 테이블의 ID (선택)
-            help_level: 도움 레벨 (1-4)
+            help_level: 힌트 횟수 (1-4, 이전 힌트 횟수로 사용)
             current_step: 현재 학습 단계 (0부터 시작)
             user_code: 사용자가 현재 작성 중인 코드
-            previous_helps: 이전에 제공한 도움들
+            previous_helps: 이전에 제공한 도움들 (힌트 횟수 계산용)
             user_level: 사용자 레벨
             additional_info: 추가 문제 정보 (프론트에서 전달)
 
         Returns:
-            도움 응답 딕셔너리
+            LLM 기반 힌트 응답 딕셔너리
         """
-        previous_helps = previous_helps or []
+        from ..prompts.hint_guided_agent import GUIDED_HINT_SYSTEM_PROMPT, GUIDED_HINT_CONFIG
+
         user_code = user_code or ""
+        hint_count = len(previous_helps) if previous_helps else 0
+        max_hints = GUIDED_HINT_CONFIG["max_hints"]
 
-        # 1. problems_guided에서 데이터 조회
-        guided_problem = self.get_guided_problem(problem_id)
+        # base_problem_id 해결 (DB 저장용)
+        resolved_base_id = base_problem_id or self.resolve_base_problem_id(problem_id, "guided")
 
-        if not guided_problem:
-            logger.warning(f"[HintService] Guided problem not found: {problem_id}")
-            # 프론트에서 전달한 정보로 폴백
-            if additional_info:
-                guided_problem = {
-                    "concepts": additional_info.get("concepts", []),
-                    "flow": additional_info.get("flow", []),
-                    "checkpoints": additional_info.get("checkpoints", []),
-                    "language": additional_info.get("language", "python"),
-                }
-            else:
-                return self._error_response("문제를 찾을 수 없습니다.")
+        # 힌트 횟수 초과 체크
+        if hint_count >= max_hints:
+            return {
+                "hint_content": "힌트를 모두 사용했습니다. 정답 코드를 확인해보세요!",
+                "hint_type": "exhausted",
+                "encouragement": "최선을 다했어요!",
+            }
 
-        concepts = guided_problem.get("concepts", [])
-        flow = guided_problem.get("flow", [])
-        checkpoints = guided_problem.get("checkpoints", [])
-        language = guided_problem.get("language", "python")
-
-        # 2. base_problems에서 문제 정보 조회
+        # 1. 정답 코드 및 문제 정보 조회
+        solution_code = ""
+        language = "python"
         title = "문제"
         description = ""
-        difficulty = "medium"
-        topics = []
-        solution_code = "(정답 코드 없음)"
 
+        # problems_guided에서 데이터 조회
+        guided_problem = self.get_guided_problem(problem_id)
+        if guided_problem:
+            language = guided_problem.get("language", "python")
+
+        # base_problems에서 정답 코드 조회
         if base_problem_id:
             base_problem = self.get_base_problem(base_problem_id)
             if base_problem:
                 title = base_problem.get("name", "문제")
                 description = base_problem.get("question", "")[:500]
-                difficulty = base_problem.get("difficulty", "medium")
-                topics = base_problem.get("tags", [])
-                # solutions에서 정답 코드 추출
                 solutions = base_problem.get("solutions", [])
                 if solutions:
                     matching_sol = next((s for s in solutions if s.get("language") == language), None)
                     if matching_sol:
-                        solution_code = matching_sol.get("code", "(정답 코드 없음)")
+                        solution_code = matching_sol.get("code", "")
                     elif solutions[0]:
-                        solution_code = solutions[0].get("code", "(정답 코드 없음)")
-        elif additional_info:
-            title = additional_info.get("title", "문제")
-            description = additional_info.get("description", "")[:500]
-            difficulty = additional_info.get("difficulty", "medium")
-            topics = additional_info.get("topics", [])
-            solution_code = additional_info.get("solution_code") or additional_info.get("final_code", "(정답 코드 없음)")
+                        solution_code = solutions[0].get("code", "")
 
-        # 3. 학습 구조 정보 구성
-        total_steps = len(flow) if flow else 1
-        concepts_str = self._format_list_as_string(concepts, "개념")
-        flow_str = self._format_list_as_string(flow, "단계")
-        checkpoints_str = self._format_list_as_string(checkpoints, "체크포인트")
+        # additional_info에서 정답 코드 폴백
+        if not solution_code and additional_info:
+            solution_code = additional_info.get("solution_code") or additional_info.get("final_code", "")
+            title = additional_info.get("title", title)
+            description = additional_info.get("description", description)
 
-        # 4. 시스템 프롬프트 구성
+        if not solution_code:
+            logger.warning(f"[HintService] No solution code found for guided problem: {problem_id}")
+            return self._error_response("정답 코드를 찾을 수 없습니다.")
+
+        # 2. LLM 호출을 위한 프롬프트 구성
+        remaining_hints = max_hints - hint_count - 1
+
+        # 디버그 로그: 전달되는 코드 확인
+        logger.info(f"[HintService] Guided hint - user_code length: {len(user_code) if user_code else 0}")
+        logger.info(f"[HintService] Guided hint - user_code preview: {(user_code or '')[:200]}...")
+        logger.info(f"[HintService] Guided hint - solution_code preview: {solution_code[:200]}...")
+
         system_prompt = GUIDED_HINT_SYSTEM_PROMPT.format(
             title=title,
-            description=description,
-            difficulty=difficulty,
+            description=description[:300] if description else "(설명 없음)",
             language=language,
-            topics=", ".join(topics) if topics else "알고리즘",
-            concepts=concepts_str,
-            flow=flow_str,
-            checkpoints=checkpoints_str,
             solution_code=solution_code,
-            current_step=current_step + 1,  # 1-based for display
-            total_steps=total_steps,
-            user_code=user_code or "(아직 코드 작성 안 함)",
-            help_level=help_level,
-            previous_helps=json.dumps(previous_helps, ensure_ascii=False) if previous_helps else "없음",
+            user_code=user_code or "(아직 코드를 작성하지 않음)",
+            hint_count=hint_count + 1,
+            remaining_hints=remaining_hints,
         )
 
-        # 5. LLM 호출
+        # 3. LLM 호출
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Level {help_level} 도움을 생성해주세요."},
+            {"role": "user", "content": "사용자 코드를 분석하고 다음 줄 힌트를 JSON으로 제공해주세요."},
         ]
 
         try:
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_hint,
                 messages=messages,
-                temperature=0.5,  # 힌트는 일관성 있게
-                max_tokens=450,   # 힌트는 간결하게
+                temperature=0.3,
+                max_tokens=150,   # 다음 줄 코드 + 간단한 설명
                 response_format={"type": "json_object"},
-                frequency_penalty=0.3,  # 반복 방지
             )
 
             content = openrouter_service.get_content(response)
             result = openrouter_service.parse_json_response(content)
 
-            logger.info(f"[HintService] Guided help generated: level={help_level}, step={current_step}")
+            logger.info(f"[HintService] Guided LLM hint: status={result.get('status')}, line={result.get('line_number')}")
 
-            return result
+            # 4. HintAgentResponse 형식으로 변환
+            status = result.get("status", "hint")
+            hint_content = result.get("hint_content", "")
+            line_number = result.get("line_number")
+            explanation = result.get("explanation", "")
+            user_progress = result.get("user_progress", "")
+
+            if status == "complete":
+                return {
+                    "hint_content": "코드가 정답과 의미적으로 일치합니다!",
+                    "hint_type": "complete",
+                    "encouragement": "잘하셨어요! 🎉",
+                }
+
+            # 힌트 응답 구성 (마크다운 없이 깔끔하게)
+            hint_display = f"[다음 줄 코드]\n{hint_content}"
+            if explanation:
+                hint_display += f"\n\n[설명] {explanation}"
+
+            # DB에 힌트 저장 (base_problem_id가 있을 때)
+            if resolved_base_id:
+                self.save_hint_to_cache(
+                    problem_id=resolved_base_id,
+                    problem_type="guided",
+                    hint_index=hint_count,  # 힌트 횟수를 인덱스로 사용
+                    hint_content=hint_display,
+                )
+
+            return {
+                "hint_content": hint_display,
+                "hint_type": "code_line",
+                "encouragement": f"힌트 {hint_count + 1}/{max_hints} 사용 (남은 힌트: {remaining_hints}개)",
+                "code_snippet": hint_content,
+            }
 
         except Exception as e:
-            logger.error(f"[HintService] Guided help generation error: {e}")
-            return self._fallback_guided_help(help_level, current_step, flow)
+            logger.error(f"[HintService] Guided LLM hint error: {e}")
+            # LLM 실패 시 폴백 (단순 문자열 비교)
+            return self._fallback_guided_hint(user_code, solution_code, hint_count, max_hints)
+
+    def _fallback_guided_hint(
+        self,
+        user_code: str,
+        solution_code: str,
+        hint_count: int,
+        max_hints: int,
+    ) -> Dict[str, Any]:
+        """LLM 실패 시 폴백 - 단순 문자열 비교"""
+        from ..prompts.hint_guided_agent import GUIDED_HINT_CONFIG
+
+        user_lines = [line for line in user_code.strip().split('\n') if line.strip()] if user_code else []
+        solution_lines = [line for line in solution_code.strip().split('\n') if line.strip()]
+
+        # 사용자 코드가 비어있으면 첫 번째 줄 제공
+        if not user_lines and solution_lines:
+            return {
+                "hint_content": f"[첫 번째 줄]\n{solution_lines[0]}",
+                "hint_type": "code_line",
+                "encouragement": f"힌트 {hint_count + 1}/{max_hints} 사용",
+                "code_snippet": solution_lines[0],
+            }
+
+        # 다음 줄 찾기
+        user_len = len(user_lines)
+        if user_len < len(solution_lines):
+            next_line = solution_lines[user_len]
+            return {
+                "hint_content": f"[Line {user_len + 1}]\n{next_line}",
+                "hint_type": "code_line",
+                "encouragement": f"힌트 {hint_count + 1}/{max_hints} 사용",
+                "code_snippet": next_line,
+            }
+
+        return {
+            "hint_content": "코드 비교에 문제가 발생했습니다. 다시 시도해주세요.",
+            "hint_type": "error",
+            "encouragement": "",
+        }
 
     def _format_list_as_string(self, items: List[Any], label: str) -> str:
         """리스트를 문자열로 포맷"""
@@ -1874,15 +1964,12 @@ class HintService:
                     continue
 
                 # 힌트 생성 태스크 추가
-                # guided는 variables를 steps로 변환하여 처리
-                variable_info = variables[idx] if idx < len(variables) else {}
-                steps = [variable_info]  # 단일 변수를 step으로 취급
-
+                # guided는 variables 전체를 steps로 전달 (step_index로 해당 변수 접근)
                 tasks.append(
                     self.generate_guided_step_hint(
                         problem_id=problem_id,
                         step_index=idx,
-                        steps=steps,
+                        steps=variables,  # 전체 variables 배열 전달
                         additional_info={"variables_guide": variables_guide},
                     )
                 )

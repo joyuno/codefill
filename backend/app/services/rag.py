@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from ..database import get_supabase_client
 from ..config import get_settings
 from .embedding import embedding_service
-from .openrouter import openrouter_service
+from .openrouter import openrouter_codegen as openrouter_service
 from ..prompts import CODE_GEN_SYSTEM_PROMPT
 
 # LLM 모델 설정
@@ -25,45 +25,159 @@ class RAGService:
     # Agentic RAG: Minimum metadata for skipping semantic search
     MIN_METADATA_FOR_SKIP = 2  # topics + difficulty 있으면 메타데이터 검색만
 
-    # Topic mapping (Korean -> English variations)
+    # ============================================================
+    # Topic Mapping (한국어 ↔ 영어/백준 태그)
+    # 검색 시 양방향으로 사용됨
+    # ============================================================
     TOPIC_MAPPING = {
-        "DP": ["Dynamic programming", "DP", "Memoization"],
-        "동적 프로그래밍": ["Dynamic programming", "DP", "Memoization"],
-        "이진 탐색": ["Binary search", "Divide and conquer", "Sorting"],
-        "그래프": ["Graph algorithms", "Graph traversal", "BFS", "DFS"],
-        "정렬": ["Sorting", "Implementation"],
-        "문자열": ["String algorithms", "String"],
-        "수학": ["Mathematics", "Number theory", "Math"],
-        "그리디": ["Greedy algorithms", "Greedy"],
-        "완전 탐색": ["Complete search", "Brute force", "Implementation"],
-        "스택": ["Data structures", "Stack"],
-        "큐": ["Data structures", "Queue"],
-        "해시": ["Data structures", "Hash"],
-        "트리": ["Tree algorithms", "Data structures"],
-        "재귀": ["Recursion", "Divide and conquer"],
-        # 추가 매핑
-        "미로 탐색": ["BFS", "DFS", "Graph algorithms", "Graph traversal", "Maze"],
-        "미로": ["BFS", "DFS", "Graph algorithms", "Graph traversal", "Maze"],
-        "bfs": ["BFS", "Graph algorithms", "Graph traversal", "Breadth-first search"],
-        "dfs": ["DFS", "Graph algorithms", "Graph traversal", "Depth-first search"],
-        "너비 우선 탐색": ["BFS", "Graph algorithms", "Graph traversal", "Breadth-first search"],
-        "깊이 우선 탐색": ["DFS", "Graph algorithms", "Graph traversal", "Depth-first search"],
-        "최단 경로": ["BFS", "Shortest path", "Graph algorithms", "Dijkstra"],
-        "다익스트라": ["Dijkstra", "Shortest path", "Graph algorithms"],
-        "플로이드": ["Floyd-Warshall", "Shortest path", "Graph algorithms"],
-        "백트래킹": ["Backtracking", "DFS", "Complete search", "Recursion"],
-        "분할 정복": ["Divide and conquer", "Recursion"],
-        "투 포인터": ["Two pointers", "Sliding window"],
-        "슬라이딩 윈도우": ["Sliding window", "Two pointers"],
-        "구현": ["Implementation", "Simulation"],
-        "시뮬레이션": ["Simulation", "Implementation"],
-        "브루트포스": ["Brute force", "Complete search", "Implementation"],
-        "이분 탐색": ["Binary search", "Divide and conquer"],
-        "힙": ["Heap", "Priority queue", "Data structures"],
-        "우선순위 큐": ["Priority queue", "Heap", "Data structures"],
-        "유니온 파인드": ["Union-Find", "Disjoint set", "Graph algorithms"],
-        "세그먼트 트리": ["Segment tree", "Data structures"],
-        "비트마스킹": ["Bitmask", "Bit manipulation"],
+        # ==================== 기본 알고리즘 ====================
+        "DP": ["dp", "dynamic_programming", "dp_tree", "dp_digit", "dp_bitfield", "dp_deque", "dp_sum_over_subsets", "dp_connection_profile", "memoization", "knapsack"],
+        "동적 프로그래밍": ["dp", "dynamic_programming", "dp_tree", "dp_digit", "dp_bitfield", "dp_deque", "memoization", "knapsack"],
+        "그리디": ["greedy", "greedy_algorithms"],
+        "탐욕법": ["greedy", "greedy_algorithms"],
+        "완전 탐색": ["bruteforcing", "brute_force", "complete_search", "exhaustive_search"],
+        "브루트포스": ["bruteforcing", "brute_force", "complete_search"],
+        "백트래킹": ["backtracking", "dfs", "recursion"],
+        "분할 정복": ["divide_and_conquer", "divide_and_conquer_optimization", "recursion"],
+
+        # ==================== 그래프 ====================
+        "그래프": ["graphs", "graph_traversal", "bfs", "dfs", "shortest_path"],
+        "BFS": ["bfs", "0_1_bfs", "graph_traversal", "breadth_first_search", "flood_fill"],
+        "DFS": ["dfs", "graph_traversal", "depth_first_search", "flood_fill"],
+        "너비 우선 탐색": ["bfs", "0_1_bfs", "graph_traversal", "breadth_first_search"],
+        "깊이 우선 탐색": ["dfs", "graph_traversal", "depth_first_search"],
+        "최단 경로": ["shortest_path", "dijkstra", "bellman_ford", "floyd_warshall", "0_1_bfs"],
+        "다익스트라": ["dijkstra", "shortest_path"],
+        "벨만 포드": ["bellman_ford", "shortest_path"],
+        "플로이드": ["floyd_warshall", "shortest_path"],
+        "플로이드 워셜": ["floyd_warshall", "shortest_path"],
+        "미로": ["bfs", "dfs", "graph_traversal", "flood_fill"],
+        "미로 탐색": ["bfs", "dfs", "graph_traversal", "flood_fill"],
+        "위상 정렬": ["topological_sort", "dag", "graphs"],
+        "사이클 검출": ["graphs", "dfs", "functional_graph"],
+        "유니온 파인드": ["disjoint_set", "union_find", "graphs"],
+        "서로소 집합": ["disjoint_set", "union_find"],
+        "최소 신장 트리": ["mst", "graphs", "greedy"],
+        "MST": ["mst", "graphs", "greedy"],
+        "강한 연결 요소": ["scc", "graphs", "dfs"],
+        "SCC": ["scc", "graphs"],
+        "이분 그래프": ["bipartite_graph", "graphs", "bfs", "dfs"],
+        "이분 매칭": ["bipartite_matching", "flow", "graphs"],
+        "네트워크 플로우": ["flow", "mcmf", "mfmc", "circulation"],
+        "플로우": ["flow", "mcmf", "mfmc"],
+        "LCA": ["lca", "trees", "sparse_table"],
+        "최소 공통 조상": ["lca", "trees"],
+
+        # ==================== 탐색/정렬 ====================
+        "이진 탐색": ["binary_search", "parametric_search"],
+        "이분 탐색": ["binary_search", "parametric_search"],
+        "정렬": ["sorting", "merge_sort", "quick_sort"],
+        "투 포인터": ["two_pointers", "sliding_window"],
+        "슬라이딩 윈도우": ["sliding_window", "two_pointers", "deque_trick", "monotone_queue_optimization"],
+
+        # ==================== 자료구조 ====================
+        "스택": ["stack", "data_structures"],
+        "큐": ["queue", "deque", "data_structures"],
+        "덱": ["deque", "deque_trick", "data_structures"],
+        "힙": ["priority_queue", "heap", "data_structures"],
+        "우선순위 큐": ["priority_queue", "heap", "data_structures"],
+        "해시": ["hashing", "hash_set", "data_structures"],
+        "해시맵": ["hashing", "hash_set", "data_structures"],
+        "트리": ["trees", "tree_diameter", "tree_isomorphism", "data_structures"],
+        "세그먼트 트리": ["segtree", "lazyprop", "multi_segtree", "pst", "merge_sort_tree"],
+        "펜윅 트리": ["segtree", "data_structures"],
+        "트라이": ["trie", "string", "data_structures"],
+        "연결 리스트": ["linked_list", "data_structures"],
+
+        # ==================== 문자열 ====================
+        "문자열": ["string", "kmp", "rabin_karp", "trie", "suffix_array", "manacher", "aho_corasick", "hashing"],
+        "KMP": ["kmp", "string"],
+        "라빈 카프": ["rabin_karp", "string", "hashing"],
+        "접미사 배열": ["suffix_array", "string"],
+        "팰린드롬": ["manacher", "palindrome_tree", "string"],
+        "LCS": ["lcs", "dp", "string"],
+        "최장 공통 부분 수열": ["lcs", "dp", "string"],
+        "LIS": ["lis", "dp", "binary_search"],
+        "최장 증가 부분 수열": ["lis", "dp", "binary_search"],
+
+        # ==================== 수학/정수론 ====================
+        "수학": ["math", "arithmetic", "number_theory"],
+        "정수론": ["number_theory", "prime_factorization", "sieve", "euclidean", "modular_multiplicative_inverse"],
+        "소수": ["primality_test", "sieve", "miller_rabin", "pollard_rho"],
+        "소수 판별": ["primality_test", "sieve", "miller_rabin"],
+        "에라토스테네스": ["sieve", "primality_test"],
+        "유클리드": ["euclidean", "extended_euclidean", "gcd"],
+        "확장 유클리드": ["extended_euclidean", "euclidean"],
+        "모듈러 연산": ["modular_multiplicative_inverse", "exponentiation_by_squaring"],
+        "조합론": ["combinatorics", "permutation_cycle_decomposition", "lucas", "crt"],
+        "확률": ["probability", "linearity_of_expectation", "statistics"],
+        "기하": ["geometry", "convex_hull", "rotating_calipers", "line_intersection", "geometry_3d"],
+        "기하학": ["geometry", "convex_hull", "rotating_calipers", "line_intersection"],
+        "볼록 껍질": ["convex_hull", "geometry", "rotating_calipers"],
+        "컨벡스 헐": ["convex_hull", "geometry"],
+        "CCW": ["geometry", "convex_hull", "line_intersection"],
+        "행렬": ["linear_algebra", "gaussian_elimination", "matrix_exponentiation"],
+        "FFT": ["fft", "math", "polynomial_interpolation"],
+
+        # ==================== 게임 이론/기타 ====================
+        "게임 이론": ["game_theory", "sprague_grundy", "hackenbush"],
+        "스프라그 그런디": ["sprague_grundy", "game_theory"],
+        "비트마스킹": ["bitmask", "bitset", "dp_bitfield"],
+        "비트마스크": ["bitmask", "bitset", "dp_bitfield"],
+        "구현": ["implementation", "simulation", "case_work", "ad_hoc"],
+        "시뮬레이션": ["simulation", "implementation"],
+        "파싱": ["parsing", "string", "implementation"],
+        "정규표현식": ["regex", "string"],
+        "좌표 압축": ["coordinate_compression", "sorting"],
+        "누적 합": ["prefix_sum", "difference_array"],
+        "구간 합": ["prefix_sum", "segtree"],
+        "재귀": ["recursion", "divide_and_conquer", "dfs"],
+        "메모이제이션": ["dp", "memoization", "recursion"],
+
+        # ==================== 고급 알고리즘 ====================
+        "센트로이드 분할": ["centroid", "centroid_decomposition", "trees"],
+        "HLD": ["hld", "trees", "segtree"],
+        "Heavy-Light 분할": ["hld", "trees"],
+        "CHT": ["cht", "li_chao_tree", "dp"],
+        "컨벡스 헐 트릭": ["cht", "li_chao_tree", "dp"],
+        "Mo's 알고리즘": ["mo", "sqrt_decomposition"],
+        "제곱근 분할": ["sqrt_decomposition", "mo"],
+        "오일러 투어": ["euler_tour_technique", "trees"],
+        "오일러 경로": ["eulerian_path", "graphs"],
+        "단절점": ["articulation", "graphs", "dfs"],
+        "단절선": ["articulation", "graphs", "dfs"],
+
+        # ==================== 백준 영어 태그 → 한국어 검색 지원 ====================
+        # (영어 태그로 검색해도 찾을 수 있도록)
+        "dp": ["dp", "dynamic_programming", "dp_tree", "dp_digit"],
+        "bfs": ["bfs", "0_1_bfs", "graph_traversal"],
+        "dfs": ["dfs", "graph_traversal", "backtracking"],
+        "greedy": ["greedy"],
+        "implementation": ["implementation", "simulation", "ad_hoc"],
+        "simulation": ["simulation", "implementation"],
+        "string": ["string", "kmp", "trie", "hashing"],
+        "binary_search": ["binary_search", "parametric_search"],
+        "graphs": ["graphs", "graph_traversal", "bfs", "dfs"],
+        "sorting": ["sorting"],
+        "math": ["math", "arithmetic", "number_theory"],
+        "geometry": ["geometry", "convex_hull"],
+        "data_structures": ["data_structures", "segtree", "stack", "queue"],
+        "trees": ["trees", "lca", "hld"],
+        "number_theory": ["number_theory", "sieve", "primality_test"],
+        "combinatorics": ["combinatorics", "probability"],
+        "backtracking": ["backtracking", "dfs", "recursion"],
+        "dijkstra": ["dijkstra", "shortest_path"],
+        "shortest_path": ["shortest_path", "dijkstra", "bellman_ford", "floyd_warshall"],
+        "flow": ["flow", "mcmf", "bipartite_matching"],
+        "segtree": ["segtree", "lazyprop", "pst"],
+        "divide_and_conquer": ["divide_and_conquer", "recursion"],
+        "prefix_sum": ["prefix_sum", "difference_array"],
+        "priority_queue": ["priority_queue", "heap"],
+        "disjoint_set": ["disjoint_set", "union_find"],
+        "mst": ["mst", "graphs"],
+        "hashing": ["hashing", "string"],
+        "recursion": ["recursion", "dfs", "divide_and_conquer"],
+        "bruteforcing": ["bruteforcing", "brute_force", "exhaustive_search"],
     }
 
     # Difficulty mapping (Korean -> English)
@@ -172,7 +286,8 @@ class RAGService:
         try:
             print(f"[RAG:Metadata] Searching with metadata only: topics={topics}, diff={difficulty}, lang={language}")
 
-            db_query = self.db.table("base_problems").select("*")
+            # programmers 제외 (저작권)
+            db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             # 난이도 필터
             if difficulty:
@@ -372,7 +487,9 @@ class RAGService:
                     difficulty = user_context["preferred_difficulty"]
 
             # Step 1: Build base query with filters
-            db_query = self.db.table("base_problems").select("*")
+            # ⚠️ programmers 문제는 저작권 문제로 검색 결과에서 제외
+            # (programmers_embeddings는 code generation RAG 컨텍스트로만 사용)
+            db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             # Apply difficulty filter
             if difficulty:
@@ -485,7 +602,8 @@ class RAGService:
     ) -> Tuple[List[Dict[str, Any]], bool]:
         """Fallback search without difficulty filter."""
         try:
-            db_query = self.db.table("base_problems").select("*")
+            # programmers 제외 (저작권)
+            db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             if topics:
                 expanded_topics = self._expand_topics(topics)
@@ -541,7 +659,8 @@ class RAGService:
         Fallback keyword-based search.
         """
         try:
-            query = self.db.table("base_problems").select("*")
+            # programmers 제외 (저작권)
+            query = self.db.table("base_problems").select("*").neq("source", "programmers")
 
             if difficulty:
                 query = query.eq("difficulty", difficulty)
@@ -1153,6 +1272,255 @@ class RAGService:
         except Exception as e:
             # 품질 평가 실패는 검색 결과에 영향을 주지 않음
             print(f"[RAG:Quality] Evaluation failed (non-blocking): {e}")
+
+    # ============================================================
+    # Code Generation RAG: programmers_embeddings 통합
+    # ============================================================
+
+    # 코테/대기업 관련 키워드
+    CODING_TEST_KEYWORDS = [
+        # 일반 코테 키워드
+        "코테", "코딩테스트", "코딩 테스트", "coding test",
+        "기출", "기출문제", "기출 문제",
+        # 대기업 키워드
+        "대기업", "빅테크", "big tech",
+        "카카오", "kakao", "네이버", "naver", "라인", "line",
+        "삼성", "samsung", "lg", "엘지", "sk", "에스케이",
+        "쿠팡", "coupang", "배민", "배달의민족", "woowa", "우아한형제들",
+        "토스", "toss", "당근", "당근마켓", "karrot",
+        # 채용 키워드
+        "채용", "인턴", "인턴십", "공채", "신입",
+    ]
+
+    def _detect_coding_test_intent(self, query: str) -> bool:
+        """
+        쿼리에서 코테/대기업 키워드 감지
+
+        Args:
+            query: 사용자 쿼리
+
+        Returns:
+            True: 코테/대기업 관련 요청
+            False: 일반 요청
+        """
+        query_lower = query.lower()
+        for keyword in self.CODING_TEST_KEYWORDS:
+            if keyword.lower() in query_lower:
+                print(f"[RAG:CodeGen] Detected coding test keyword: '{keyword}'")
+                return True
+        return False
+
+    def _extract_company_filter(self, query: str) -> Optional[str]:
+        """
+        쿼리에서 특정 회사 필터 추출
+
+        Args:
+            query: 사용자 쿼리
+
+        Returns:
+            회사 키워드 (있으면) 또는 None
+        """
+        company_keywords = {
+            "카카오": "카카오",
+            "kakao": "카카오",
+            "네이버": "네이버",
+            "naver": "네이버",
+            "라인": "라인",
+            "line": "라인",
+            "삼성": "삼성",
+            "samsung": "삼성",
+        }
+        query_lower = query.lower()
+        for keyword, company in company_keywords.items():
+            if keyword in query_lower:
+                return company
+        return None
+
+    async def search_programmers_for_codegen(
+        self,
+        query: str,
+        topics: List[str] = None,
+        difficulty: str = None,
+        limit: int = 5,
+        company_filter: str = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        [내부 전용] programmers 문제를 RAG 컨텍스트로 검색
+
+        ⚠️ 저작권 주의:
+        - 이 함수의 결과를 사용자에게 직접 제공하면 안 됨
+        - generate_problem_with_rag()에 전달하여 새 문제 생성용으로만 사용
+        - 대기업 기출 스타일의 새 문제를 생성할 때 참고 자료로 활용
+
+        Args:
+            query: 검색 쿼리
+            topics: 주제 필터
+            difficulty: 난이도 필터
+            limit: 최대 결과 수
+            company_filter: 회사 필터 (카카오, 네이버 등)
+
+        Returns:
+            RAG 컨텍스트용 programmers 문제 목록 (내부 사용 전용)
+        """
+        try:
+            print(f"[RAG:Programmers] Searching programmers problems: query={query}, company={company_filter}")
+
+            # Step 1: Query embedding 생성
+            query_embedding = await embedding_service.generate_embedding(query)
+
+            # Step 2: programmers 문제 필터링
+            db_query = self.db.table("base_problems").select("*").eq("source", "programmers")
+
+            # 회사 필터 (name에 회사명 포함)
+            if company_filter:
+                db_query = db_query.ilike("name", f"%{company_filter}%")
+
+            # 난이도 필터
+            if difficulty:
+                db_query = db_query.eq("difficulty", difficulty)
+
+            # 토픽 필터
+            if topics:
+                expanded_topics = self._expand_topics(topics)
+                db_query = db_query.overlaps("tags", expanded_topics)
+
+            db_query = db_query.limit(100)
+            response = db_query.execute()
+            problems = response.data or []
+
+            if not problems:
+                print(f"[RAG:Programmers] No problems found with filters")
+                # 필터 없이 재시도
+                problems = self.db.table("base_problems").select("*").eq("source", "programmers").limit(50).execute().data or []
+
+            if not problems:
+                return []
+
+            # Step 3: programmers_embeddings에서 임베딩 조회
+            problem_ids = [p["id"] for p in problems]
+            embeddings_response = self.db.table("programmers_embeddings").select(
+                "base_problem_id, embedding"
+            ).in_("base_problem_id", problem_ids).execute()
+
+            embeddings_map = {}
+            for e in (embeddings_response.data or []):
+                emb = e.get("embedding")
+                if isinstance(emb, str):
+                    emb = json.loads(emb)
+                embeddings_map[e["base_problem_id"]] = emb
+
+            # Step 4: 유사도 계산 및 정렬
+            import numpy as np
+            query_vec = np.array(query_embedding)
+
+            results = []
+            for problem in problems:
+                pid = problem["id"]
+                emb = embeddings_map.get(pid)
+                if emb:
+                    prob_vec = np.array(emb)
+                    similarity = float(np.dot(query_vec, prob_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(prob_vec)))
+                    problem["similarity"] = similarity
+                    results.append(problem)
+
+            results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+            print(f"[RAG:Programmers] Found {len(results)} problems, returning top {limit}")
+
+            return results[:limit]
+
+        except Exception as e:
+            print(f"[RAG:Programmers] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    async def search_problems_for_codegen(
+        self,
+        query: str,
+        topics: List[str] = None,
+        difficulty: str = None,
+        language: str = None,
+        limit: int = 5,
+    ) -> Tuple[List[Dict[str, Any]], bool, str]:
+        """
+        [내부 전용] Code Generation용 RAG 컨텍스트 검색
+
+        ⚠️ 저작권 주의:
+        - 이 함수의 결과를 사용자에게 직접 제공하면 안 됨
+        - generate_problem_with_rag()에 전달하여 새 문제 생성용으로만 사용
+
+        동작:
+        - 코테/대기업 키워드 감지 시: programmers 기출을 참고하여 유사 문제 생성
+        - 일반 요청 시: 모든 문제를 참고하여 새 문제 생성
+
+        Args:
+            query: 검색 쿼리
+            topics: 주제 필터
+            difficulty: 난이도 필터
+            language: 언어 필터
+            limit: 최대 결과 수
+
+        Returns:
+            Tuple of (rag_context, is_coding_test, search_source)
+        """
+        # 코테/대기업 키워드 감지
+        is_coding_test = self._detect_coding_test_intent(query)
+        company_filter = self._extract_company_filter(query)
+
+        if is_coding_test:
+            # programmers 문제만 검색
+            print(f"[RAG:CodeGen] Using PROGRAMMERS-ONLY search (coding test intent)")
+            results = await self.search_programmers_for_codegen(
+                query=query,
+                topics=topics,
+                difficulty=difficulty,
+                limit=limit,
+                company_filter=company_filter,
+            )
+            return results, True, "programmers"
+
+        else:
+            # 통합 검색: 두 테이블 모두 사용
+            print(f"[RAG:CodeGen] Using COMBINED search (both embeddings)")
+
+            # 1. 일반 문제 검색 (problem_embeddings)
+            general_results, _ = await self.search_problems_hybrid(
+                query=query,
+                topics=topics,
+                difficulty=difficulty,
+                language=language,
+                limit=limit,
+            )
+
+            # 2. programmers 문제 검색 (추가 컨텍스트)
+            programmers_results = await self.search_programmers_for_codegen(
+                query=query,
+                topics=topics,
+                difficulty=difficulty,
+                limit=2,  # 보조 컨텍스트로 2개만
+            )
+
+            # 3. 결과 병합 (중복 제거)
+            seen_ids = set()
+            combined = []
+
+            for r in general_results:
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    combined.append(r)
+
+            for r in programmers_results:
+                if r["id"] not in seen_ids and len(combined) < limit:
+                    seen_ids.add(r["id"])
+                    r["source_note"] = "programmers_reference"
+                    combined.append(r)
+
+            # 유사도 순 정렬
+            combined.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+
+            print(f"[RAG:CodeGen] Combined results: {len(combined)} (general: {len(general_results)}, programmers: {len(programmers_results)})")
+
+            return combined[:limit], False, "combined"
 
 
 # Singleton instance

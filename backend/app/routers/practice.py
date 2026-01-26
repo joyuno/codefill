@@ -12,6 +12,8 @@ from ..dependencies import (
 from ..models.practice import (
     BlankSubmission,
     PuzzleSubmission,
+    PuzzleValidateRequest,
+    PuzzleValidateResponse,
     SubmissionResponse,
     SubmissionResult,
     CodeExecutionRequest,
@@ -142,24 +144,6 @@ def format_submitted_answer(
     return None
 
 
-def check_blank_answers(submitted: dict, correct: list) -> tuple[bool, dict]:
-    """Check blank fill answers."""
-    results = {}
-    all_correct = True
-
-    for blank in correct:
-        blank_id = blank["id"]
-        correct_answer = blank["answer"].strip().lower()
-        submitted_answer = submitted.get(blank_id, "").strip().lower()
-
-        is_correct = correct_answer == submitted_answer
-        results[blank_id] = is_correct
-        if not is_correct:
-            all_correct = False
-
-    return all_correct, results
-
-
 async def resolve_base_problem_id(db, problem_id: str) -> Optional[str]:
     """
     problem_id에서 base_problem_id를 결정합니다.
@@ -246,6 +230,113 @@ async def resolve_base_problem_id(db, problem_id: str) -> Optional[str]:
     except Exception as e:
         print(f"[resolve_base_problem_id] Error: {e}")
         return None
+
+
+async def update_base_problem_stats(
+    db,
+    base_problem_id: str,
+    is_correct: bool,
+    solve_time_seconds: int = 0,
+) -> bool:
+    """
+    base_problems 테이블의 통계 갱신 (ELO, success_rate, avg_solve_time)
+
+    ELO 계산 공식:
+    - 정답 시: ELO가 낮아짐 (쉬운 문제로 판단)
+    - 오답 시: ELO가 높아짐 (어려운 문제로 판단)
+    - K-factor: 16 (초기), 8 (update_count > 30)
+
+    Args:
+        db: Supabase client
+        base_problem_id: base_problems.id
+        is_correct: 정답 여부
+        solve_time_seconds: 풀이 시간 (초)
+
+    Returns:
+        성공 여부
+    """
+    try:
+        # 1. 현재 문제 통계 조회
+        result = db.table("base_problems") \
+            .select("elo_rating, success_rate, avg_solve_time_seconds, elo_update_count, solve_count") \
+            .eq("id", base_problem_id) \
+            .single() \
+            .execute()
+
+        if not result.data:
+            print(f"[update_base_problem_stats] Problem not found: {base_problem_id}")
+            return False
+
+        current = result.data
+        old_elo = current.get("elo_rating") or 1000
+        old_success_rate = current.get("success_rate") or 0.5
+        old_avg_time = current.get("avg_solve_time_seconds") or 0
+        update_count = current.get("elo_update_count") or 0
+        solve_count = current.get("solve_count") or 0
+
+        # 2. ELO 레이팅 계산
+        # K-factor: 업데이트 횟수가 적을수록 변동폭이 큼
+        if update_count < 10:
+            k_factor = 16
+        elif update_count < 30:
+            k_factor = 12
+        else:
+            k_factor = 8
+
+        # 예상 성공률 (현재 ELO 기반)
+        # ELO가 높을수록 어려운 문제 → 낮은 예상 성공률
+        expected_success = 1 / (1 + 10 ** ((old_elo - 1000) / 400))
+
+        # 실제 결과 (정답=1, 오답=0)
+        actual_score = 1.0 if is_correct else 0.0
+
+        # ELO 변동 계산
+        # 정답 시: 예상보다 쉬웠음 → ELO 하락
+        # 오답 시: 예상보다 어려웠음 → ELO 상승
+        elo_change = int(k_factor * (expected_success - actual_score))
+        new_elo = max(100, min(3000, old_elo + elo_change))  # 100~3000 범위 제한
+
+        # 3. success_rate 갱신 (이동 평균)
+        total_attempts = update_count + 1
+        new_success_rate = (old_success_rate * update_count + actual_score) / total_attempts
+
+        # 4. avg_solve_time 갱신 (정답인 경우만, 이동 평균)
+        new_avg_time = old_avg_time
+        if is_correct and solve_time_seconds > 0:
+            if solve_count > 0 and old_avg_time > 0:
+                # 기존 평균과 새 시간의 가중 평균
+                new_avg_time = int((old_avg_time * (solve_count - 1) + solve_time_seconds) / solve_count)
+            else:
+                new_avg_time = solve_time_seconds
+
+        # 5. DB 업데이트
+        update_data = {
+            "elo_rating": new_elo,
+            "success_rate": round(new_success_rate, 4),
+            "elo_update_count": update_count + 1,
+            "updated_at": "now()",
+        }
+
+        # avg_solve_time은 정답이고 유효한 시간일 때만 업데이트
+        if is_correct and solve_time_seconds > 0:
+            update_data["avg_solve_time_seconds"] = new_avg_time
+
+        db.table("base_problems") \
+            .update(update_data) \
+            .eq("id", base_problem_id) \
+            .execute()
+
+        print(f"[update_base_problem_stats] Updated problem {base_problem_id[:8]}...: "
+              f"ELO {old_elo}→{new_elo} ({elo_change:+d}), "
+              f"success_rate {old_success_rate:.2%}→{new_success_rate:.2%}, "
+              f"avg_time {old_avg_time}→{new_avg_time}s, "
+              f"is_correct={is_correct}")
+
+        return True
+
+    except Exception as e:
+        print(f"[update_base_problem_stats] Error: {e}")
+        return False
 
 
 # ============================================================
@@ -481,292 +572,139 @@ def record_hint_log(
         return False
 
 
-@router.post("/submit/blank", response_model=SubmissionResponse)
-async def submit_blank(
-    submission: BlankSubmission,
-    user_id: UUID = Depends(get_user_id_from_token),
+@router.post("/puzzle/validate", response_model=PuzzleValidateResponse)
+async def validate_puzzle_answer(
+    request: PuzzleValidateRequest,
     db=Depends(get_db)
 ):
-    """Submit answer for blank-fill problem."""
+    """
+    퍼즐 정답 검증 (Judge0 테스트케이스 지원)
+
+    복수 정답 지원: elif 순서 등 실행 결과가 같으면 정답 처리
+    """
+    from ..services.puzzle_validator import validate_puzzle
+    from ..services.hint_service import get_hint_service
+
+    hint_service = get_hint_service()
+
     try:
-        # Get problem and correct answers (+ title, tags for complete recording)
-        result = db.table("problems")\
-            .select("answer_data, difficulty, title, tags")\
-            .eq("id", str(submission.problem_id))\
-            .single()\
-            .execute()
+        # 1. 블록 정보 가져오기
+        blocks = request.blocks
+        fixed_start = ""
+        fixed_end = ""
+        test_cases = []
 
-        if not result.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Problem not found"
-            )
-
-        answer_data = result.data.get("answer_data", {})
-        correct_blanks = answer_data.get("blanks", [])
-        difficulty = result.data.get("difficulty")
-        problem_name = result.data.get("title")
-        topics = result.data.get("tags", [])
-
-        # Check answers
-        is_correct, blank_results = check_blank_answers(submission.answers, correct_blanks)
-
-        # Check if already solved (for repeat solve detection)
-        already_solved = False
-        if is_correct:
-            prev_attempt = db.table("attempts")\
-                .select("id")\
-                .eq("user_id", str(user_id))\
-                .eq("problem_id", str(submission.problem_id))\
-                .eq("is_correct", True)\
+        if not blocks:
+            # problems_puzzle 테이블에서 조회
+            puzzle_result = db.table("problems_puzzle")\
+                .select("blocks, fixed_start, fixed_end, base_problem_id")\
+                .eq("id", request.problem_id)\
                 .limit(1)\
                 .execute()
-            already_solved = bool(prev_attempt.data)
 
-        # Calculate XP based on difficulty (1/4 if repeat)
-        base_xp = XPConfig.get_xp_for_difficulty(difficulty, "blank") if is_correct else 0
-        xp_earned = base_xp // 4 if already_solved else base_xp
-
-        # Save attempt with all fields
-        attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
-        attempt_result = db.table("attempts").insert({
-            "user_id": str(user_id),
-            "problem_id": str(submission.problem_id),
-            "is_correct": is_correct,
-            "submitted_answer": str(submission.answers),
-            "xp_earned": xp_earned,
-            "attempt_number": attempt_number,
-            "problem_type": "blank",
-            "difficulty": difficulty,
-            "problem_name": problem_name,
-            "topics": topics,
-            "hints_used": 0,
-            "total_hints_requested": 0,
-            "started_at": datetime.utcnow().isoformat(),
-        }).execute()
-
-        # Record attempt_details for submission
-        if attempt_result.data and len(attempt_result.data) > 0:
-            attempt_id = attempt_result.data[0]["id"]
-
-            # 🚀 빈칸별 상세 기록 (첫 번째 빈칸 + 나머지)
-            import json
-            answers_list = list(submission.answers.items())
-
-            for idx, (blank_id, user_answer) in enumerate(answers_list):
-                # 정답 찾기
-                correct_answer = None
-                for blank in correct_blanks:
-                    if blank.get("id") == blank_id:
-                        correct_answer = blank.get("answer")
-                        break
-
-                record_attempt_detail(
-                    db=db,
-                    attempt_id=str(attempt_id),
-                    action_type=AttemptDetailAction.BLANK_SUBMIT.value,
-                    step_number=idx + 1,
-                    blank_index=idx,
-                    blank_user_answer=user_answer,
-                    blank_correct_answer=correct_answer,
-                    blank_is_correct=blank_results.get(blank_id, False),
-                )
-
-        # Update user stats and check badges if correct
-        new_badges = None
-        if is_correct:
-            db.rpc("increment_user_stats", {
-                "p_user_id": str(user_id),
-                "p_xp": xp_earned,
-                "p_problem_type": "blank",
-                "p_difficulty": difficulty,
-                "p_is_repeat": already_solved,
-            }).execute()
-
-            # Check and award badges (only for first solve)
-            badge_service = get_badge_service()
-            awarded = await badge_service.check_and_award_badges(
-                user_id=str(user_id),
-                trigger_type='solve',
-                problem_type='blank',
-                difficulty=difficulty,
-            ) if not already_solved else []
-            if awarded:
-                new_badges = [NewBadge(**b) for b in awarded]
-
-        return SubmissionResponse(
-            result=SubmissionResult.CORRECT if is_correct else SubmissionResult.INCORRECT,
-            is_correct=is_correct,
-            xp_earned=xp_earned,
-            blank_results=blank_results,
-            feedback="정답입니다!" if is_correct else "틀린 빈칸이 있습니다. 다시 확인해보세요.",
-            new_badges=new_badges,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to submit: {str(e)}"
-        )
-
-
-@router.post("/submit/puzzle", response_model=SubmissionResponse)
-async def submit_puzzle(
-    submission: PuzzleSubmission,
-    user_id: UUID = Depends(get_user_id_from_token),
-    db=Depends(get_db)
-):
-    """Submit answer for puzzle (Parsons) problem."""
-    try:
-        # Get problem and correct answer data (+ title, tags for complete recording)
-        result = db.table("problems")\
-            .select("answer_data, difficulty, title, tags")\
-            .eq("id", str(submission.problem_id))\
-            .single()\
-            .execute()
-
-        if not result.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Problem not found"
-            )
-
-        answer_data = result.data.get("answer_data", {})
-        correct_order = answer_data.get("correct_order", [])
-        correct_blocks = {b["id"]: b for b in answer_data.get("blocks", [])}
-        difficulty = result.data.get("difficulty")
-        problem_name = result.data.get("title")
-        topics = result.data.get("tags", [])
-
-        # Check block order and indentation
-        puzzle_results = {}
-        all_correct = True
-        wrong_positions = []
-
-        submitted_ids = [b.id for b in submission.block_order]
-        user_order = [{"id": b.id, "indent": b.indentation} for b in submission.block_order]
-
-        # Check if order matches
-        for i, block in enumerate(submission.block_order):
-            block_id = block.id
-
-            # Check if block is in correct position
-            is_correct_position = (i < len(correct_order) and correct_order[i] == block_id)
-
-            # Check if indentation is correct
-            correct_block = correct_blocks.get(block_id, {})
-            correct_indent = correct_block.get("indentation", 0)
-            is_correct_indent = (block.indentation == correct_indent)
-
-            is_block_correct = is_correct_position and is_correct_indent
-            puzzle_results[block_id] = is_block_correct
-
-            if not is_block_correct:
-                all_correct = False
-                wrong_positions.append({
-                    "index": i,
-                    "block_id": block_id,
-                    "wrong_position": not is_correct_position,
-                    "wrong_indent": not is_correct_indent,
-                })
-
-        # Also check if all required blocks are present
-        if len(submission.block_order) != len(correct_order):
-            all_correct = False
-
-        # Check if already solved (for repeat solve detection)
-        already_solved = False
-        if all_correct:
-            prev_attempt = db.table("attempts")\
-                .select("id")\
-                .eq("user_id", str(user_id))\
-                .eq("problem_id", str(submission.problem_id))\
-                .eq("is_correct", True)\
-                .limit(1)\
-                .execute()
-            already_solved = bool(prev_attempt.data)
-
-        # Calculate XP based on difficulty (1/4 if repeat)
-        base_xp = XPConfig.get_xp_for_difficulty(difficulty, "puzzle") if all_correct else 0
-        xp_earned = base_xp // 4 if already_solved else base_xp
-
-        # Save attempt with all fields
-        attempt_number = get_next_attempt_number(db, str(user_id), str(submission.problem_id))
-        attempt_result = db.table("attempts").insert({
-            "user_id": str(user_id),
-            "problem_id": str(submission.problem_id),
-            "is_correct": all_correct,
-            "submitted_answer": str(user_order),
-            "xp_earned": xp_earned,
-            "attempt_number": attempt_number,
-            "problem_type": "puzzle",
-            "difficulty": difficulty,
-            "problem_name": problem_name,
-            "topics": topics,
-            "hints_used": 0,
-            "total_hints_requested": 0,
-            "started_at": datetime.utcnow().isoformat(),
-        }).execute()
-
-        # Record attempt_details for submission
-        if attempt_result.data and len(attempt_result.data) > 0:
-            attempt_id = attempt_result.data[0]["id"]
-            record_attempt_detail(
-                db=db,
-                attempt_id=str(attempt_id),
-                action_type=AttemptDetailAction.PUZZLE_SUBMIT.value,
-                step_number=1,
-                puzzle_user_order=user_order,
-                puzzle_correct_order=correct_order,
-                puzzle_wrong_positions=wrong_positions if wrong_positions else None,
-            )
-
-        # Update user stats and check badges if correct
-        new_badges = None
-        if all_correct:
-            db.rpc("increment_user_stats", {
-                "p_user_id": str(user_id),
-                "p_xp": xp_earned,
-                "p_problem_type": "puzzle",
-                "p_difficulty": difficulty,
-                "p_is_repeat": already_solved,
-            }).execute()
-
-            # Check and award badges (only for first solve)
-            if not already_solved:
-                badge_service = get_badge_service()
-                awarded = await badge_service.check_and_award_badges(
-                    user_id=str(user_id),
-                    trigger_type='solve',
-                    problem_type='puzzle',
-                    difficulty=difficulty,
-                )
-                if awarded:
-                    new_badges = [NewBadge(**b) for b in awarded]
-
-        if all_correct:
-            feedback = "정답입니다! 코드 블록을 올바른 순서와 들여쓰기로 배열했습니다."
+            if puzzle_result.data and len(puzzle_result.data) > 0:
+                puzzle_data = puzzle_result.data[0]
+                blocks = puzzle_data.get("blocks", [])
+                fixed_start = puzzle_data.get("fixed_start", "") or ""
+                fixed_end = puzzle_data.get("fixed_end", "") or ""
+                base_problem_id = puzzle_data.get("base_problem_id")
+            else:
+                # base_problems에서 직접 조회 시도
+                base_problem_id = request.problem_id
         else:
-            wrong_count = sum(1 for v in puzzle_results.values() if not v)
-            feedback = f"틀렸습니다. {wrong_count}개의 블록이 잘못된 위치나 들여쓰기를 가지고 있습니다."
+            # 블록이 제공된 경우 base_problem_id 해결
+            base_problem_id = hint_service.resolve_base_problem_id(request.problem_id, "puzzle")
 
-        return SubmissionResponse(
-            result=SubmissionResult.CORRECT if all_correct else SubmissionResult.INCORRECT,
-            is_correct=all_correct,
-            xp_earned=xp_earned,
-            feedback=feedback,
-            puzzle_results=puzzle_results,
-            new_badges=new_badges,
+        if not blocks:
+            return PuzzleValidateResponse(
+                is_correct=False,
+                feedback="블록 정보를 불러올 수 없습니다.",
+                validation_type="error",
+            )
+
+        # 2. 테스트케이스 조회 (base_problems.input_output)
+        if base_problem_id:
+            base_result = db.table("base_problems")\
+                .select("input_output")\
+                .eq("id", base_problem_id)\
+                .limit(1)\
+                .execute()
+
+            if base_result.data and len(base_result.data) > 0:
+                input_output = base_result.data[0].get("input_output", [])
+                if input_output:
+                    test_cases = [
+                        {"input": tc.get("input", ""), "output": tc.get("output", "")}
+                        for tc in input_output
+                        if isinstance(tc, dict)
+                    ]
+                    print(f"[PuzzleValidate] 📦 Loaded {len(test_cases)} test cases")
+
+        # 3. 정답 순서 계산 (order 필드 기준)
+        sorted_blocks = sorted(blocks, key=lambda b: b.get("order", 0))
+        correct_order_ids = [str(b.get("id")) for b in sorted_blocks]
+
+        # 블록 내용 추출
+        block_contents = [b.get("code", "") for b in sorted_blocks]
+
+        # 4. user_order를 인덱스로 변환
+        id_to_idx = {str(b.get("id")): i for i, b in enumerate(sorted_blocks)}
+        try:
+            user_order_indices = [id_to_idx.get(str(uid), -1) for uid in request.user_order]
+            correct_order_indices = list(range(len(sorted_blocks)))
+
+            if -1 in user_order_indices:
+                raise ValueError("Invalid block ID in user_order")
+        except Exception as e:
+            print(f"[PuzzleValidate] Index conversion error: {e}")
+            # 폴백: 단순 문자열 비교
+            user_order_str = [str(uid) for uid in request.user_order]
+            is_correct = user_order_str == correct_order_ids
+            return PuzzleValidateResponse(
+                is_correct=is_correct,
+                feedback="정답입니다! 🎉" if is_correct else "블록 순서가 맞지 않아요.",
+                validation_type="fallback",
+            )
+
+        # 5. 스마트 검증 수행 (Judge0 테스트케이스 포함)
+        result = await validate_puzzle(
+            blocks=block_contents,
+            user_order=user_order_indices,
+            correct_order=correct_order_indices,
+            language=request.language,
+            strict_mode=False,
+            test_cases=test_cases,
+            fixed_start=fixed_start,
+            fixed_end=fixed_end,
         )
 
-    except HTTPException:
-        raise
+        print(f"[PuzzleValidate] ✓ Result: is_correct={result.is_correct}, validation_type={result.details.get('validation_type', 'smart')}")
+
+        return PuzzleValidateResponse(
+            is_correct=result.is_correct,
+            feedback=result.feedback,
+            validation_type=result.details.get("validation_type", "smart") if result.details else "smart",
+            first_wrong_position=result.first_wrong_position,
+            score=result.score,
+        )
+
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to submit: {str(e)}"
+        print(f"[PuzzleValidate] Error: {e}")
+        # 에러 시 단순 비교로 폴백
+        if request.blocks:
+            sorted_blocks = sorted(request.blocks, key=lambda b: b.get("order", 0))
+            correct_order_ids = [str(b.get("id")) for b in sorted_blocks]
+            user_order_str = [str(uid) for uid in request.user_order]
+            is_correct = user_order_str == correct_order_ids
+            return PuzzleValidateResponse(
+                is_correct=is_correct,
+                feedback="정답입니다! 🎉" if is_correct else "블록 순서가 맞지 않아요.",
+                validation_type="fallback",
+            )
+        return PuzzleValidateResponse(
+            is_correct=False,
+            feedback="검증 중 오류가 발생했습니다.",
+            validation_type="error",
         )
 
 
@@ -1309,7 +1247,7 @@ async def record_solve(
             try:
                 from ..services.feedback_service import get_feedback_service
                 feedback_service = get_feedback_service()
-                await feedback_service.update_skill_profile(
+                skill_result = await feedback_service.update_skill_profile(
                     user_id=str(user_id),
                     problem_topics=submission.topics,
                     difficulty=submission.difficulty or "medium",
@@ -1321,6 +1259,34 @@ async def record_solve(
                     attempt_number=attempt_number_used,  # 5회 초과 시 정답이어도 ELO 변화 없음
                 )
                 print(f"[RecordSolve] Updated skill profile for topics: {submission.topics}, type={submission.problem_type}, base_problem_id={base_problem_id}, attempt_number={attempt_number_used}")
+
+                # ============================================================
+                # 📊 ELO 변화 데이터를 attempts 테이블에 저장 (분석 그래프용)
+                # ============================================================
+                if attempt_id_used and skill_result:
+                    elo_changes = skill_result.get("elo_changes", [])
+                    elo_overall = skill_result.get("elo_overall")
+                    elo_skipped = skill_result.get("elo_skipped", False)
+
+                    if elo_changes and not elo_skipped:
+                        # 첫 번째 토픽의 ELO 변화를 대표값으로 사용
+                        # (대부분의 문제는 주요 토픽 1개로 평가)
+                        first_change = elo_changes[0]
+                        elo_before = first_change.get("before")
+                        elo_after = first_change.get("after")
+                        elo_change = first_change.get("change")
+
+                        try:
+                            db.table("attempts").update({
+                                "elo_before": elo_before,
+                                "elo_after": elo_after,
+                                "elo_change": elo_change,
+                            }).eq("id", attempt_id_used).execute()
+                            print(f"[RecordSolve] 📊 ELO tracking saved: before={elo_before}, after={elo_after}, change={elo_change:+d}")
+                        except Exception as elo_save_err:
+                            print(f"[RecordSolve] ⚠️ Failed to save ELO tracking: {elo_save_err}")
+                    elif elo_skipped:
+                        print(f"[RecordSolve] 📊 ELO update skipped: {skill_result.get('skip_reason', 'unknown')}")
 
                 # ============================================================
                 # 🚀 매 10문제마다 전체 스킬 프로필 재계산 (LLM 분석 포함)
@@ -1493,6 +1459,20 @@ async def record_solve(
                         print(f"[RecordSolve] solve_count update: incremented={incremented}, new_count={new_solve_count}")
                 except Exception as solve_err:
                     print(f"[RecordSolve] solve_count increment error (non-blocking): {solve_err}")
+
+            # ============================================================
+            # 🚀 base_problems 통계 갱신 (ELO, success_rate, avg_solve_time)
+            # ============================================================
+            if base_problem_id:
+                try:
+                    await update_base_problem_stats(
+                        db=db,
+                        base_problem_id=base_problem_id,
+                        is_correct=submission.is_correct,
+                        solve_time_seconds=submission.time_spent or 0,
+                    )
+                except Exception as stats_err:
+                    print(f"[RecordSolve] base_problems stats update error (non-blocking): {stats_err}")
 
         # ============================================================
         # 마일스톤 체크: 특정 문제 수 도달 시 전체 스킬 프로필 재계산
@@ -2225,13 +2205,14 @@ async def session_end(
                         from ..services.feedback_service import get_feedback_service
                         feedback_service = get_feedback_service()
 
-                        # attempt_number 조회 (base_problem_id 기반)
+                        # attempt_number 및 attempt_id 조회 (base_problem_id 기반)
                         attempt_number = 1
+                        attempt_id = None
                         base_problem_id = session_metadata.get("base_problem_id")
                         if base_problem_id:
                             try:
                                 attempt_count_result = db.table("attempts") \
-                                    .select("attempt_number") \
+                                    .select("id, attempt_number") \
                                     .eq("user_id", str(user_id)) \
                                     .eq("base_problem_id", base_problem_id) \
                                     .order("attempt_number", desc=True) \
@@ -2239,10 +2220,11 @@ async def session_end(
                                     .execute()
                                 if attempt_count_result.data:
                                     attempt_number = attempt_count_result.data[0].get("attempt_number", 1)
+                                    attempt_id = attempt_count_result.data[0].get("id")
                             except Exception:
                                 pass
 
-                        await feedback_service.update_skill_profile(
+                        skill_result = await feedback_service.update_skill_profile(
                             user_id=str(user_id),
                             problem_topics=topics,
                             difficulty=session_metadata.get("difficulty", "medium"),
@@ -2254,6 +2236,22 @@ async def session_end(
                             attempt_number=attempt_number,
                         )
                         print(f"[SessionEnd] ELO decreased for skip: user={str(user_id)[:8]}, topics={topics}")
+
+                        # 📊 ELO 변화 데이터를 attempts 테이블에 저장
+                        if attempt_id and skill_result:
+                            elo_changes = skill_result.get("elo_changes", [])
+                            elo_skipped = skill_result.get("elo_skipped", False)
+                            if elo_changes and not elo_skipped:
+                                first_change = elo_changes[0]
+                                try:
+                                    db.table("attempts").update({
+                                        "elo_before": first_change.get("before"),
+                                        "elo_after": first_change.get("after"),
+                                        "elo_change": first_change.get("change"),
+                                    }).eq("id", attempt_id).execute()
+                                    print(f"[SessionEnd] 📊 ELO tracking saved for skip: change={first_change.get('change'):+d}")
+                                except Exception as elo_save_err:
+                                    print(f"[SessionEnd] ⚠️ Failed to save ELO tracking: {elo_save_err}")
                     except Exception as elo_err:
                         print(f"[SessionEnd] ELO update error (non-blocking): {elo_err}")
 
@@ -2303,13 +2301,14 @@ async def session_end(
                         from ..services.feedback_service import get_feedback_service
                         feedback_service = get_feedback_service()
 
-                        # attempt_number 조회 (base_problem_id 기반)
+                        # attempt_number 및 attempt_id 조회 (base_problem_id 기반)
                         attempt_number = 1
+                        attempt_id = None
                         base_problem_id = session_metadata.get("base_problem_id")
                         if base_problem_id:
                             try:
                                 attempt_count_result = db.table("attempts") \
-                                    .select("attempt_number") \
+                                    .select("id, attempt_number") \
                                     .eq("user_id", str(user_id)) \
                                     .eq("base_problem_id", base_problem_id) \
                                     .order("attempt_number", desc=True) \
@@ -2317,10 +2316,11 @@ async def session_end(
                                     .execute()
                                 if attempt_count_result.data:
                                     attempt_number = attempt_count_result.data[0].get("attempt_number", 1)
+                                    attempt_id = attempt_count_result.data[0].get("id")
                             except Exception:
                                 pass
 
-                        await feedback_service.update_skill_profile(
+                        skill_result = await feedback_service.update_skill_profile(
                             user_id=str(user_id),
                             problem_topics=topics,
                             difficulty=session_metadata.get("difficulty", "medium"),
@@ -2332,6 +2332,22 @@ async def session_end(
                             attempt_number=attempt_number,
                         )
                         print(f"[SessionEnd] ELO decreased for abandon: user={str(user_id)[:8]}, topics={topics}")
+
+                        # 📊 ELO 변화 데이터를 attempts 테이블에 저장
+                        if attempt_id and skill_result:
+                            elo_changes = skill_result.get("elo_changes", [])
+                            elo_skipped = skill_result.get("elo_skipped", False)
+                            if elo_changes and not elo_skipped:
+                                first_change = elo_changes[0]
+                                try:
+                                    db.table("attempts").update({
+                                        "elo_before": first_change.get("before"),
+                                        "elo_after": first_change.get("after"),
+                                        "elo_change": first_change.get("change"),
+                                    }).eq("id", attempt_id).execute()
+                                    print(f"[SessionEnd] 📊 ELO tracking saved for abandon: change={first_change.get('change'):+d}")
+                                except Exception as elo_save_err:
+                                    print(f"[SessionEnd] ⚠️ Failed to save ELO tracking: {elo_save_err}")
                     except Exception as elo_err:
                         print(f"[SessionEnd] ELO update error (non-blocking): {elo_err}")
 
@@ -2714,6 +2730,7 @@ async def guided_tutor_chat(
             key_concepts=base_problem.get("tags", []),  # tags를 key_concepts로 사용
             conversation_history=request.conversation_history or [],
             session_id=request.session_id,
+            current_student_code=request.user_code or "",  # 유저가 작성 중인 코드
         )
 
         # 6. attempt_details에 대화 기록 (선택)

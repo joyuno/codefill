@@ -177,7 +177,7 @@ export function usePracticeSession(): UsePracticeSessionReturn {
     setSolveStartTimeState(null);
     setAttemptCount(0);
     setAttemptIdState(null);
-    // chatSessionId는 유지 (대화 히스토리 재사용)
+    setChatSessionIdState(null);  // 채팅 세션도 초기화 (새 문제 = 새 대화)
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 

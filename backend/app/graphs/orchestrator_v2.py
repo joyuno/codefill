@@ -214,6 +214,8 @@ class ChatOrchestratorV2:
             "suggested_value": session_state.get("suggested_value"),
             "search_results": search_results,
             "current_problem": user_context.get("current_problem"),
+            # 현재 문제 풀이 상황 (빈칸/퍼즐 질문 vs 문제 선택 구분용)
+            "current_practice_state": session_state.get("current_practice_state"),
         }
 
         # ============================================================
@@ -407,12 +409,18 @@ class ChatOrchestratorV2:
         if intent_result.category == IntentCategory.GENERAL:
             from ..services.dynamic_response import dynamic_response_generator
 
+            # 현재 문제 풀이 상황을 user_context에 추가 (dynamic_response에서 활용)
+            enriched_user_context = dict(user_context) if user_context else {}
+            current_practice_state = session_state.get("current_practice_state", {})
+            if current_practice_state:
+                enriched_user_context["current_practice_state"] = current_practice_state
+
             # LLM 기반 동적 응답 생성 (하드코딩 제거)
             dynamic_response = await dynamic_response_generator.generate(
                 message=message,
                 intent=intent_result.action.value if intent_result.action else "general",
                 conversation_history=conversation_history,
-                user_context=user_context,
+                user_context=enriched_user_context,
             )
 
             return {

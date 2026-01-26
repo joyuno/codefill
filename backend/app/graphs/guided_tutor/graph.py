@@ -146,6 +146,7 @@ class GuidedTutorGraph:
         conversation_history: list = None,
         student_progress: dict = None,
         session_id: str = None,
+        current_student_code: str = "",
     ) -> Dict[str, Any]:
         """
         그래프 실행
@@ -158,6 +159,7 @@ class GuidedTutorGraph:
             conversation_history: 이전 대화 히스토리
             student_progress: 학생 진행 상황
             session_id: 세션 ID (상태 영속화용)
+            current_student_code: 학생이 현재 작성 중인 코드
 
         Returns:
             {
@@ -176,6 +178,7 @@ class GuidedTutorGraph:
             "problem_context": problem_context,
             "solution_code": solution_code,
             "key_concepts": key_concepts or problem_context.get("topics", []),
+            "current_student_code": current_student_code,  # 학생이 작성 중인 코드
             "student_progress": student_progress or {
                 "understanding_score": 0.5,
                 "concepts_mastered": [],
@@ -202,6 +205,8 @@ class GuidedTutorGraph:
             "student_progress": result.get("student_progress", {}),
             "tutor_action": result.get("tutor_action", ""),
             "is_complete": result.get("is_complete", False),
+            "is_initial_guide": result.get("is_initial_guide", False),
+            "initial_guide": result.get("initial_guide"),
             "suggested_next_step": result.get("suggested_next_step"),
             # 대화 히스토리에 튜터 응답 추가
             "messages": result.get("messages", []) + [

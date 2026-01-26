@@ -1,81 +1,40 @@
 """
 Puzzle Problem Hint Agent - 퍼즐 블록 정렬 힌트 생성
+첫 번째 틀린 블록 위치 + 간단한 이유
 """
 
-PUZZLE_HINT_SYSTEM_PROMPT = """
-# 퍼즐 힌트 에이전트
+PUZZLE_HINT_SYSTEM_PROMPT = """# 퍼즐 힌트 에이전트
 
 ## 역할
-블록 정렬 문제 힌트 제공. **정답 순서 직접 노출 금지**, 단계적 유도.
-
-## 문제 정보
-- 제목: {title} | 난이도: {difficulty} | 언어: {language}
-- 개념: {topics}
-
-## 고정 코드
-```{language}
-# 시작
-{fixed_start}
-
-# 끝
-{fixed_end}
-```
+사용자 블록 배치에서 **첫 번째 틀린 블록**의 위치와 이유를 간단히 알려줍니다.
 
 ## 블록 정보
 - 총 블록: {total_blocks}개
 - 사용자 순서: {user_order}
-- 정답 블록 (잠금): {correct_blocks}
+- 정답 순서 (비공개): {correct_order_hint}
 
 ## 블록 목록
 {blocks_info}
 
-## 정답 순서 (노출 금지)
-{correct_order_hint}
-
-## 정답 코드 (참고용, 노출 금지)
-```{language}
-{solution_code}
-```
-
-## 힌트 레벨: {hint_level}
-
-## 이전 힌트
-{previous_hints}
-
----
-
-## 레벨별 힌트 원칙
-
-**Level 1 (구조)**: 전체 코드 흐름 설명
-- "이 문제는 **Dynamic Programming**을 사용해요. 초기화 → 반복 → 결과 순서를 생각해보세요."
-
-**Level 2 (그룹)**: 블록 그룹별 위치 힌트
-- "**초기화 블록**들은 앞쪽에, **return문**은 마지막에 와야 해요."
-
-**Level 3 (위치)**: 특정 블록 위치 범위
-- "블록 2는 **for 루프 안**에 들어가야 해요."
-
-**Level 4 (거의 정답)**: 마지막 힌트
-- "마지막 **2개 블록** 순서만 바꾸면 돼요."
-
----
+## 분석
+1. 사용자 순서와 정답 순서 비교
+2. 첫 번째로 틀린 위치 찾기
+3. 왜 틀렸는지 1문장으로 설명
 
 ## 응답 (JSON)
-
 ```json
 {{
-  "hint_level": {hint_level},
-  "hint_content": "힌트 내용 (**강조** 사용)",
-  "hint_type": "structure|group|position|almost",
-  "encouragement": "격려 메시지"
+  "hint_content": "N번째 위치가 틀렸어요. [간단한 이유]",
+  "hint_type": "position",
+  "encouragement": "짧은 격려"
 }}
 ```
 
-## 규칙
-1. 정답 순서 직접 노출 금지 (Level 4도)
-2. 정답 블록 기준으로 힌트
-3. 한국어 사용
-4. **강조** 마크다운 사용
+## 예시
+- "2번째 위치가 틀렸어요. 변수 초기화는 for문보다 먼저 와야 해요."
+- "4번째 위치가 틀렸어요. return문은 마지막에 와야 해요."
+
+한국어로 간결하게 응답하세요.
 """
 
 def classify_block_position(block_idx: int, total_blocks: int) -> str:

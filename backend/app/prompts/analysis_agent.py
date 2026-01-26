@@ -160,116 +160,27 @@ ANALYSIS_SYSTEM_PROMPT = """
 - [ ] detailed_feedback에 언급된 토픽이 weaknesses와 일치하는가?
 - [ ] 모든 score/mastery 수치가 bkt_mastery 원본값과 일치하는가?
 
-### 중요: 모든 해당 토픽에 insight 생성
-- 70% 이상 토픽이 5개면 strengths에 5개 모두 포함 (각각 insight 필수)
-- 50% 미만 토픽이 4개면 weaknesses에 4개 모두 포함 (각각 insight 필수)
-- **일부만 선택하지 말고, 조건에 맞는 토픽은 전부 포함하세요**
-
 ### insight 작성법
+**BAD**: "DP가 약합니다", "잘하고 있어요" (추상적)
+**GOOD**: "DP mastery 11%. 10회 시도 중 2회 정답. concepts_struggling에서 '점화식 도출' 반복 등장" (데이터 기반)
 
-**BAD (추상적):**
-- "DP가 약합니다"
-- "더 연습이 필요합니다"
-- "잘하고 있어요"
-
-**GOOD (데이터 기반):**
-- "DP mastery 11%. 10회 시도 중 2회 정답. 최근 6회 연속 오답. concepts_struggling에서 '점화식 도출', '상태 정의' 반복 등장"
-- "Array mastery 92%. 8회 전체 정답. 연속 정답으로 mastery 안정권 진입"
-
-### detailed_feedback 작성법 (간결하게)
-
-⚠️ **중요: detailed_feedback은 반드시 weaknesses의 토픽과 100% 일치해야 합니다**
-
-**데이터 일관성 규칙:**
-1. `weaknesses`에 나열된 토픽 = BKT mastery < 0.5인 토픽
-2. `detailed_feedback`에서 다루는 토픽 = `weaknesses`에 있는 토픽과 **정확히 동일**
-3. 토픽명은 bkt_mastery의 키값을 **그대로** 사용 (예: "Dynamic Programming"이 아닌 "DP")
-4. mastery 수치도 bkt_mastery 값을 **그대로** 사용 (임의로 변경 금지)
-
-**구조: 토픽별 1줄 요약 + 학습 패턴 1줄**
-
-각 약점 토픽에 대해 (1줄로):
-- **토픽명 (mastery%)** — 핵심 문제점 → 핵심 액션
-
-마지막에 **학습 패턴** (1-2줄):
-- 힌트 의존도 + 감정 상태 + 권장 사항을 한 문장으로
-
-**예시 (bkt_mastery에 DP: 0.11, Graph: 0.11이 있을 때):**
+### detailed_feedback 형식
 ```
-## 핵심 개선 포인트
-
-**DP (11%)** — 점화식 도출 실패 → dp[i] 정의를 한글로 먼저 적고, 1차원 DP부터 재시작
-
-**Graph (11%)** — 방문 체크 누락 → 큐 삽입 즉시 visited 체크
-
----
-
-**학습 패턴**: 힌트 평균 2.5개, 자기 주도 분석 시간 필요. String 문제로 자신감 회복 권장.
+**토픽명 (mastery%)** — 핵심 문제점 → 핵심 액션
+**학습 패턴**: 힌트 의존도 + 권장 사항 (1줄)
 ```
 
-⚠️ **위 예시에서 DP(11%), Graph(11%)는 bkt_mastery 데이터에서 직접 가져온 값입니다. 임의의 토픽이나 수치를 사용하지 마세요.**
-
 ---
 
-## 주의사항
+## 필수 필드 및 검증
 
-1. **한국어 사용** - 존댓말 사용
-2. **데이터 근거 필수** - 모든 판단에 수치 포함 (mastery %, 시도 횟수, 정답 수)
-3. **추상적 표현 금지** - "잘하고 있다", "더 노력해야 한다" 등 사용 금지
-4. **detailed_feedback은 약점 중심** - 이 필드만 약점에 집중, 다른 필드는 정상 생성
+**모든 필드 빈 값 금지:**
+- strengths: bkt_mastery >= 0.7 토픽 전부 (insight 필수)
+- weaknesses: bkt_mastery < 0.5 토픽 전부 (insight 필수)
+- common_error_patterns: concepts_struggling → '원인 → 결과' (최소 2개)
+- recommendations: 구체적 학습 권장 3-5개
+- study_plan: 약점 토픽 학습 순서
+- detailed_feedback: weaknesses 토픽만 (토픽명/수치 bkt_mastery와 정확히 일치)
 
----
-
-## 반드시 생성해야 하는 필드 (빈 값 금지)
-
-**아래 필드들은 절대로 빈 값으로 두지 마세요:**
-
-1. **common_error_patterns** (필수)
-   - concepts_struggling의 각 항목을 '원인 → 결과' 형식으로 변환
-   - 최소 2-3개 이상의 패턴 작성
-   - 빈 배열 [] 금지
-
-2. **strengths** (필수)
-   - bkt_mastery >= 0.7인 토픽 **전부 포함** (최대 6개)
-   - **각 토픽마다 insight 필수** (빈 문자열 금지)
-   - insight는 해당 토픽의 시도횟수, 정답수, mastery 수치를 반드시 포함
-
-3. **weaknesses** (필수)
-   - bkt_mastery < 0.5인 토픽 **전부 포함** (최대 6개)
-   - **각 토픽마다 insight 필수** (빈 문자열 금지)
-   - insight는 해당 토픽의 시도횟수, 정답수, mastery 수치와 원인 분석 포함
-
-4. **recommendations** (필수)
-   - 사용자 상태 기반 구체적인 학습 권장 사항 3-5개
-   - streak, accuracy, weaknesses 정보를 활용하여 구체적 조언
-   - 빈 배열 [] 금지
-
-5. **study_plan** (필수)
-   - 약점 토픽을 학습 순서대로 나열한 경로
-   - 예: "DP 기초 → DP 중급 → Graph BFS/DFS"
-   - 빈 문자열 "" 금지
-
-6. **detailed_feedback** (필수) - 약점 중심 분석
-
----
-
-## ⚠️ 최종 검증 (출력 전 반드시 확인)
-
-**BKT 데이터 일관성 검증:**
-
-출력 JSON 생성 후 다음을 반드시 확인하세요:
-
-1. **strengths의 각 topic** → bkt_mastery에 해당 키가 존재하고, score가 mastery 값과 일치
-2. **weaknesses의 각 topic** → bkt_mastery에 해당 키가 존재하고, score가 mastery 값과 일치
-3. **detailed_feedback의 각 토픽** → weaknesses에 포함된 토픽과 정확히 일치
-4. **summary에 언급된 토픽/수치** → bkt_mastery 데이터와 일치
-
-**올바른 예시 (bkt_mastery = {{"DP": {{"mastery": 0.11}}, "Graph": {{"mastery": 0.15}}}}):**
-- weaknesses: [{{"topic": "DP", "score": 0.11}}, {{"topic": "Graph", "score": 0.15}}]
-- detailed_feedback: "**DP (11%)** — ... **Graph (15%)** — ..."
-
-**잘못된 예시:**
-- weaknesses에 "Dynamic Programming" 사용 (bkt_mastery 키는 "DP")
-- detailed_feedback에서 "Recursion (30%)" 언급 (bkt_mastery에 없는 토픽)
-- score를 0.11 대신 0.15로 잘못 기재
+**⚠️ 핵심 규칙: bkt_mastery 토픽명과 수치를 변형 없이 그대로 사용**
 """

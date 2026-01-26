@@ -44,25 +44,39 @@ const DIFFICULTY_OPTIONS = [
   { value: 'very_hard', label: '마스터', Icon: MasterIcon, color: 'text-rose-500' },
 ];
 
+// DB base_problems.source 기준 (빈도순)
 const SOURCE_OPTIONS = [
   { value: 'all', label: '모든 출처' },
   { value: 'baekjoon', label: 'Baekjoon' },
   { value: 'codeforces', label: 'Codeforces' },
-  { value: 'leetcode', label: 'LeetCode' },
   { value: 'geeksforgeeks', label: 'GeeksforGeeks' },
+  { value: 'codewars', label: 'Codewars' },
+  { value: 'codechef', label: 'CodeChef' },
+  { value: 'programmers', label: 'Programmers' },
   { value: 'hackerrank', label: 'HackerRank' },
+  { value: 'leetcode', label: 'LeetCode' },
+  { value: 'atcoder', label: 'AtCoder' },
 ];
 
+// DB base_problems.tags 기준 (빈도순 상위 태그)
 const TAG_OPTIONS = [
   { value: 'all', label: '모든 태그' },
-  { value: 'Dynamic programming', label: 'DP' },
-  { value: 'Graph algorithms', label: 'Graph' },
-  { value: 'Binary search', label: 'Binary Search' },
-  { value: 'Sorting', label: 'Sorting' },
-  { value: 'Math', label: 'Math' },
-  { value: 'String', label: 'String' },
-  { value: 'Implementation', label: 'Implementation' },
-  { value: 'Greedy', label: 'Greedy' },
+  { value: '수학', label: '수학' },
+  { value: '구현', label: '구현' },
+  { value: '자료구조', label: '자료구조' },
+  { value: 'DP', label: 'DP' },
+  { value: '그리디', label: '그리디' },
+  { value: '그래프', label: '그래프' },
+  { value: '문자열', label: '문자열' },
+  { value: '정렬', label: '정렬' },
+  { value: '완전탐색', label: '완전탐색' },
+  { value: '정수론', label: '정수론' },
+  { value: '트리', label: '트리' },
+  { value: '이분탐색', label: '이분탐색' },
+  { value: 'BFS', label: 'BFS' },
+  { value: 'DFS', label: 'DFS' },
+  { value: '시뮬레이션', label: '시뮬레이션' },
+  { value: '백트래킹', label: '백트래킹' },
 ];
 
 export const ProblemFilters = memo(function ProblemFilters({

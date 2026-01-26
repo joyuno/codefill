@@ -20,7 +20,8 @@ declare global {
 export const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 /**
- * GA4 스크립트 초기화
+ * GA4 초기화 확인
+ * 스크립트는 layout.tsx의 next/script로 로드됨
  */
 export function initGA4(): void {
   if (typeof window === 'undefined') return;
@@ -28,26 +29,11 @@ export function initGA4(): void {
     console.warn('[GA4] NEXT_PUBLIC_GA_ID not set');
     return;
   }
-
-  // 이미 로드된 경우 스킵
-  if (window.gtag) return;
-
-  // dataLayer 초기화
-  window.dataLayer = window.dataLayer || [];
-  window.gtag = function gtag(...args: unknown[]) {
-    window.dataLayer.push(args);
-  };
-  window.gtag('js', new Date());
-  window.gtag('config', GA_MEASUREMENT_ID, {
-    page_path: window.location.pathname,
-    send_page_view: true,
-  });
-
-  // GA4 스크립트 로드
-  const script = document.createElement('script');
-  script.async = true;
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`;
-  document.head.appendChild(script);
+  // 스크립트는 layout.tsx에서 로드됨
+  // 여기서는 초기화 확인만 수행
+  if (window.gtag) {
+    console.log('[GA4] Ready');
+  }
 }
 
 /**

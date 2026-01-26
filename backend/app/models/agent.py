@@ -292,12 +292,10 @@ class HintAgentRequest(BaseModel):
     base_problem_id: Optional[str] = None  # base_problems 테이블의 ID
     problem_type: ProblemTypeEnum = ProblemTypeEnum.BLANK  # 문제 유형
     problem_info: Dict[str, Any] = {}  # 추가 문제 정보 (선택)
-    user_code: Optional[str] = None
+    user_code: Optional[str] = None  # guided: 사용자가 작성한 코드
     user_answers: Optional[Dict[str, str]] = None  # blank: 현재 입력한 답들
     current_blank_index: Optional[int] = None  # blank: 현재 질문하는 빈칸 번호
-    attempt_count: int = 0
-    hint_level: int = Field(1, ge=1, le=4)
-    previous_hints: List[str] = []
+    previous_hints: List[str] = []  # guided: 이전 힌트 (힌트 횟수 계산용)
     user_level: UserLevelEnum = UserLevelEnum.INTERMEDIATE
 
 
@@ -317,17 +315,18 @@ class BlankFocus(BaseModel):
 
 class HintAgentResponse(BaseModel):
     """AI-generated hint response."""
-    hint_level: int
     hint_content: str
-    hint_type: str  # context, operation, range, almost (for blank) / direction, approach, specific, final (general)
+    hint_type: str = "hint"  # answer, position, code_line, complete, exhausted 등
     questions: List[str] = []
-    related_concept: Optional[RelatedConcept] = None
     encouragement: str = ""
     next_hint_preview: Optional[str] = None
     code_snippet: Optional[str] = None
-    common_mistake_check: Optional[str] = None
     # Blank 전용 필드
     blank_focus: Optional[BlankFocus] = None
+    # 레거시 호환 (optional)
+    hint_level: Optional[int] = None
+    related_concept: Optional[RelatedConcept] = None
+    common_mistake_check: Optional[str] = None
     wrong_answer_feedback: Optional[str] = None
 
 

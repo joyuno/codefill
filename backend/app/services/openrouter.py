@@ -1,7 +1,9 @@
 """
 OpenRouter Service
 LLM API calls via OpenRouter with caching, rate limit handling, and key rotation
-Includes OpenAI direct fallback for GPT models when OpenRouter times out
+
+Gemini 모델은 GeminiService로 라우팅됨 (직접 Gemini API 사용)
+OpenAI GPT 모델은 타임아웃 시 OpenAI 직접 API로 폴백
 """
 
 import httpx
@@ -15,6 +17,9 @@ from functools import lru_cache
 from ..config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Gemini 모델 키 목록 (이 모델들은 GeminiService로 라우팅)
+GEMINI_MODEL_KEYS = {"gemini-flash", "gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-3-pro"}
 
 
 class OpenRouterService:
@@ -49,35 +54,20 @@ class OpenRouterService:
     OPENROUTER_TIMEOUT = 60.0  # OpenRouter 타임아웃 (초)
     OPENAI_FALLBACK_TIMEOUT = 90.0  # OpenAI fallback 타임아웃 (초)
 
-    # 목적별 키 매핑 (purpose -> settings attribute name)
-    PURPOSE_KEY_MAP = {
-        "orchestrator": "openrouter_api_key",       # 기본/Orchestrator 전용
-        "problem": "openrouter_api_key_problem",     # 문제 유형 생성용
-        "hint": "openrouter_api_key_hint",           # 힌트 생성용
-        "codegen": "openrouter_api_key_codegen",     # Code generation용
-    }
-
-    def __init__(self, purpose: str = "orchestrator"):
+    def __init__(self, purpose: str = "default"):
         """
-        Initialize OpenRouter service for a specific purpose.
+        Initialize OpenRouter service.
 
         Args:
-            purpose: 용도 구분 (orchestrator, problem, hint, codegen)
+            purpose: 용도 구분 (로깅용, 모든 용도에서 동일한 키 사용)
         """
         self.settings = get_settings()
         self.purpose = purpose
 
-        # 목적별 전용 API 키 가져오기
+        # 단일 API 키 사용
         self.api_keys: List[str] = []
-        primary_key_attr = self.PURPOSE_KEY_MAP.get(purpose, "openrouter_api_key")
-        primary_key = getattr(self.settings, primary_key_attr, "")
-
-        # 전용 키가 있으면 사용, 없으면 기본 키로 폴백
-        if primary_key:
-            self.api_keys.append(primary_key)
-        elif self.settings.openrouter_api_key:
+        if self.settings.openrouter_api_key:
             self.api_keys.append(self.settings.openrouter_api_key)
-            logger.warning(f"No dedicated key for {purpose}, falling back to default key")
 
         self.current_key_index = 0
         self._last_request_time = 0.0
@@ -303,6 +293,22 @@ class OpenRouterService:
         Returns:
             API response dict
         """
+        # Gemini 모델은 GeminiService로 라우팅
+        if model in GEMINI_MODEL_KEYS:
+            from .gemini import gemini_service
+            return await gemini_service.chat_completion(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                **{k: v for k, v in [
+                    ("stop", stop),
+                    ("frequency_penalty", frequency_penalty),
+                    ("presence_penalty", presence_penalty),
+                ] if v}
+            )
+
         if not self.api_keys:
             raise ValueError("OpenRouter API key not configured")
 
@@ -473,7 +479,6 @@ class OpenRouterService:
     ) -> AsyncGenerator[str, None]:
         """
         Stream chat completion with retry and key rotation.
-        Falls back to OpenAI direct API for GPT models on timeout.
 
         Yields:
             Content chunks as strings
@@ -707,9 +712,9 @@ class OpenRouterService:
         raise ValueError(f"Failed to parse JSON from LLM response")
 
 
-# 목적별 싱글톤 인스턴스
-# 동시 호출 시 Rate Limit 방지를 위해 용도별로 분리
-openrouter_service = OpenRouterService(purpose="orchestrator")  # 기본/Orchestrator 전용
-openrouter_problem = OpenRouterService(purpose="problem")        # 문제 유형 생성용
-openrouter_hint = OpenRouterService(purpose="hint")              # 힌트 생성용
-openrouter_codegen = OpenRouterService(purpose="codegen")        # Code generation용
+# 싱글톤 인스턴스 (모든 용도에서 동일한 키 사용)
+openrouter_service = OpenRouterService(purpose="default")
+# 하위 호환성을 위한 별칭
+openrouter_problem = openrouter_service
+openrouter_hint = openrouter_service
+openrouter_codegen = openrouter_service

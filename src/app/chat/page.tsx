@@ -6,12 +6,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Resizer } from '@/components/ui/resizer';
-import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn } from 'lucide-react';
+import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { usePracticeSession } from '@/hooks/usePracticeSession';
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import remarkBreaks from 'remark-breaks';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 import { UnifiedPractice } from '@/components/practice/UnifiedPractice';
 import { PracticeChatPanel } from '@/components/chat/PracticeChatPanel';
@@ -25,6 +31,8 @@ import type { NewBadge, SeedAwarded } from '@/lib/api/practice';
 import { apiClient } from '@/lib/api/client';
 import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 import type { HintAgentResponse, FeedbackResponse, BaseProblemInfo } from '@/lib/api/agent';
+import { ga4Events, clarityEvents } from '@/lib/analytics';
+import { translateText, type LanguageCode } from '@/lib/api/translate';
 
 const difficultyColors = {
   easy: 'bg-primary/20 text-primary border-primary/30',
@@ -140,6 +148,9 @@ function ChatPageContent() {
   // Guided 모드 튜터에게 전달할 현재 코드 상태
   const [currentCode, setCurrentCode] = useState<string>('');
 
+  // Puzzle 모드: 사용자가 현재 배치한 블록 순서
+  const [puzzleUserOrder, setPuzzleUserOrder] = useState<string[]>([]);
+
   // Start heartbeat when session starts
   useEffect(() => {
     if (!sessionId) return;
@@ -239,6 +250,61 @@ function ChatPageContent() {
   // Initial problem (from URL parameter) - 정보수집 단계 생략용
   const [initialBaseProblem, setInitialBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [isLoadingInitialProblem, setIsLoadingInitialProblem] = useState(false);
+
+  // Translation state - 번역 상태 (localStorage로 유지)
+  const [translatedQuestion, setTranslatedQuestion] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [showTranslated, setShowTranslated] = useState(() => {
+    // localStorage에서 번역 상태 복원
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('codefill_show_translated') === 'true';
+    }
+    return false;
+  });
+
+  // 번역 상태가 변경될 때 localStorage에 저장
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('codefill_show_translated', showTranslated.toString());
+    }
+  }, [showTranslated]);
+
+  // 번역 함수
+  const handleTranslate = async () => {
+    if (!initialBaseProblem?.question) return;
+
+    // 이미 번역됐으면 토글만
+    if (translatedQuestion) {
+      setShowTranslated(!showTranslated);
+      return;
+    }
+
+    // 캐시에서 번역 확인
+    const cacheKey = `translate_${initialBaseProblem.id}`;
+    const cached = typeof window !== 'undefined' ? localStorage.getItem(cacheKey) : null;
+    if (cached) {
+      setTranslatedQuestion(cached);
+      setShowTranslated(true);
+      return;
+    }
+
+    setIsTranslating(true);
+    try {
+      const result = await translateText(initialBaseProblem.question, 'ko' as LanguageCode);
+      if (result.success && result.translated_text) {
+        setTranslatedQuestion(result.translated_text);
+        setShowTranslated(true);
+        // 캐시에 저장
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(cacheKey, result.translated_text);
+        }
+      }
+    } catch (err) {
+      console.error('Translation failed:', err);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   // Practice results (reset on new problem)
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
@@ -341,6 +407,10 @@ function ChatPageContent() {
     setSolveStartTime(new Date());
     setAttemptCount(0);
 
+    // GA4/Clarity 문제 시작 이벤트
+    ga4Events.problemStart(selectedProblem.id, 'chat');
+    clarityEvents.problemStart(selectedProblem.id);
+
     // 로컬 상태 초기화
     setIsSubmitted(false);
     setXpEarned(0);
@@ -401,7 +471,13 @@ function ChatPageContent() {
     setSessionId(null);  // Clear session ID
     setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
     setEarnedSeed(null);  // 씨앗 보상 초기화
-  }, [resetSession, sessionId]);
+    setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
+
+    // URL에 problem_id가 있으면 /chat으로 리다이렉트 (세션 완전 초기화)
+    if (urlProblemId) {
+      router.push('/chat');
+    }
+  }, [resetSession, sessionId, urlProblemId, router]);
 
   // 포기하기 (Give up)
   const handleGiveUp = useCallback(async () => {
@@ -439,6 +515,7 @@ function ChatPageContent() {
     setFeedbackData(null);
     setSessionId(null);
     setUsedBlankHintIndices([]);  // 힌트 사용 인덱스 초기화
+    setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
   }, [problem, sessionId, resetSession, toast]);
 
   // ============================================================
@@ -480,6 +557,7 @@ function ChatPageContent() {
     // 세션 정리
     resetSession();
     setSessionId(null);
+    setInitialBaseProblem(null);  // 채팅 초기화를 위해 initialBaseProblem도 초기화
     setShowExitWarning(false);
     setIsExitLoading(false);
 
@@ -576,7 +654,15 @@ function ChatPageContent() {
 
   // Hint request handler - 실제 API 호출
   const handleHintRequest = useCallback(
-    async (level: number, blankId?: string) => {
+    async (level: number, blankIdOrUserOrder?: string | string[]) => {
+      // puzzle인 경우 두 번째 인자가 userOrder 배열
+      const userOrder = Array.isArray(blankIdOrUserOrder) ? blankIdOrUserOrder : undefined;
+      const blankId = typeof blankIdOrUserOrder === 'string' ? blankIdOrUserOrder : undefined;
+
+      // puzzle 배치 순서 저장
+      if (userOrder) {
+        setPuzzleUserOrder(userOrder);
+      }
       if (!problem) return;
 
       try {
@@ -611,8 +697,8 @@ function ChatPageContent() {
           blocks: problem.puzzleBlocks || [],
           fixed_start: problem.fixedStart || '',
           fixed_end: problem.fixedEnd || '',
-          user_order: [],  // 현재 사용자 순서 (TODO: 상태에서 가져오기)
-          correct_blocks: [],  // 이미 맞은 블록들 (TODO: 상태에서 가져오기)
+          user_order: userOrder || puzzleUserOrder,  // 현재 사용자 배치 순서
+          correct_blocks: [],  // 이미 맞은 블록들
         } : baseProblemInfo;
 
         // 힌트 API 호출
@@ -621,11 +707,9 @@ function ChatPageContent() {
           base_problem_id: problem.baseProblemId || problem.originalId,
           problem_type: problemType as 'blank' | 'puzzle' | 'guided',
           problem_info: problemInfo,
-          user_code: problem.codeSnippet,
+          user_code: problemType === 'guided' ? currentCode : undefined,
           user_answers: blankAnswers,
           current_blank_index: currentBlankIndex,
-          attempt_count: previousHints.length,
-          hint_level: hintLevel,
           previous_hints: previousHints,
           user_level: 'intermediate',
         });
@@ -633,6 +717,10 @@ function ChatPageContent() {
         // 힌트 응답 저장
         setCurrentHintResponse(response);
         setPreviousHints((prev) => [...prev, response.hint_content]);
+
+        // GA4/Clarity 힌트 요청 이벤트
+        ga4Events.hintRequest(problem.id, level);
+        clarityEvents.hintRequest(level);
 
         // 힌트 내용을 hints 배열에도 추가 (기존 UI 호환)
         setHints((prev) => [...prev, response.hint_content]);
@@ -717,6 +805,9 @@ function ChatPageContent() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              // GA4/Clarity 문제 풀이 완료 이벤트
+              ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+              clarityEvents.problemSolve(true);
               // recordSolve에서 추가로 얻은 뱃지가 있으면 표시
               if (recordResult.newBadges && recordResult.newBadges.length > 0) {
                 showBadgePopup(recordResult.newBadges);
@@ -778,6 +869,9 @@ function ChatPageContent() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            // GA4/Clarity 문제 풀이 완료 이벤트
+            ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+            clarityEvents.problemSolve(true);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
             }
@@ -855,6 +949,9 @@ function ChatPageContent() {
             });
             if (recordResult.success) {
               setXpEarned(recordResult.xpEarned);
+              // GA4/Clarity 문제 풀이 완료 이벤트
+              ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+              clarityEvents.problemSolve(true);
               // recordSolve에서 추가로 얻은 뱃지가 있으면 표시
               if (recordResult.newBadges && recordResult.newBadges.length > 0) {
                 showBadgePopup(recordResult.newBadges);
@@ -909,6 +1006,9 @@ function ChatPageContent() {
           });
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            // GA4/Clarity 문제 풀이 완료 이벤트
+            ga4Events.problemSolve(problem.id, true, timeSpentSeconds, previousHints.length);
+            clarityEvents.problemSolve(true);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
             }
@@ -961,6 +1061,9 @@ function ChatPageContent() {
           console.log('[RecordSolve] Result:', recordResult, 'hintsUsed:', hintsUsed);
           if (recordResult.success) {
             setXpEarned(recordResult.xpEarned);
+            // GA4/Clarity 문제 풀이 완료 이벤트
+            ga4Events.problemSolve(problem.id, true, timeSpentSeconds, hintsUsed ?? previousHints.length);
+            clarityEvents.problemSolve(true);
             if (recordResult.newBadges && recordResult.newBadges.length > 0) {
               showBadgePopup(recordResult.newBadges);
             }
@@ -1001,6 +1104,106 @@ function ChatPageContent() {
   // Render practice component based on problem type
   const renderPracticeComponent = () => {
     if (!problem) {
+      // 문제 정보가 있으면 (problems 페이지에서 넘어온 경우) 먼저 문제 내용 표시
+      if (initialBaseProblem) {
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="h-full overflow-auto p-6"
+          >
+            {/* 문제 헤더 */}
+            <div className="mb-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h1 className="text-xl font-bold mb-3">{initialBaseProblem.name}</h1>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={cn('capitalize', difficultyColors[initialBaseProblem.difficulty])}
+                    >
+                      {initialBaseProblem.difficulty}
+                    </Badge>
+                    {initialBaseProblem.tags?.slice(0, 4).map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                {/* 번역 버튼 */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleTranslate}
+                  disabled={isTranslating}
+                  className={cn('shrink-0', showTranslated && translatedQuestion && 'text-primary')}
+                >
+                  {isTranslating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Globe className="h-4 w-4" />
+                  )}
+                  <span className="ml-1.5">
+                    {showTranslated && translatedQuestion ? '원본' : '번역'}
+                  </span>
+                </Button>
+              </div>
+            </div>
+
+            {/* 문제 설명 */}
+            <div className="bg-muted/30 rounded-lg border border-border p-5">
+              <div className="prose prose-sm dark:prose-invert max-w-none [&_pre]:bg-background/50 [&_pre]:p-3 [&_pre]:rounded-md [&_code]:text-primary [&_code]:bg-background/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_p]:text-[13px] [&_li]:text-[13px]">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {showTranslated && translatedQuestion
+                    ? translatedQuestion
+                    : (initialBaseProblem.question || initialBaseProblem.description || '')}
+                </ReactMarkdown>
+              </div>
+            </div>
+
+            {/* 테스트케이스 (있으면) */}
+            {initialBaseProblem.input_output?.inputs && initialBaseProblem.input_output.inputs.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-medium mb-3 text-muted-foreground">테스트케이스</h3>
+                <div className="space-y-3">
+                  {initialBaseProblem.input_output.inputs.slice(0, 2).map((input, idx) => (
+                    <div key={idx} className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-border overflow-hidden">
+                        <div className="bg-muted/50 px-3 py-1.5 border-b border-border text-xs font-medium">
+                          Input
+                        </div>
+                        <pre className="p-3 text-xs font-mono overflow-auto max-h-24 text-blue-600 dark:text-blue-400">
+                          {input}
+                        </pre>
+                      </div>
+                      <div className="rounded-lg border border-border overflow-hidden">
+                        <div className="bg-muted/50 px-3 py-1.5 border-b border-border text-xs font-medium">
+                          Output
+                        </div>
+                        <pre className="p-3 text-xs font-mono overflow-auto max-h-24 text-red-600 dark:text-red-400">
+                          {initialBaseProblem.input_output?.outputs?.[idx] || ''}
+                        </pre>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 유형 선택 안내 */}
+            <div className="mt-8 text-center py-4 bg-primary/5 rounded-lg border border-primary/20">
+              <p className="text-sm text-muted-foreground">
+                👉 오른쪽에서 <span className="text-primary font-medium">문제 유형을 선택</span>하면 풀이를 시작합니다
+              </p>
+            </div>
+          </motion.div>
+        );
+      }
+
       return (
         <div className="flex h-full items-center justify-center text-muted-foreground">
           <div className="text-center">
@@ -1023,7 +1226,7 @@ function ChatPageContent() {
             description: '테스트를 실행합니다',
           });
         }}
-        onHintRequest={(level) => handleHintRequest(level)}
+        onHintRequest={(level, userOrder) => handleHintRequest(level, userOrder)}
         onGiveUp={handleGiveUp}  // 포기하기
         attemptId={attemptId || undefined}  // attempt tracking
         onCodeChange={setCurrentCode}  // guided 모드 튜터에게 현재 코드 전달
@@ -1031,6 +1234,7 @@ function ChatPageContent() {
           // 힌트 사용 시 인덱스 추가 (중복 방지)
           setUsedBlankHintIndices(prev => prev.includes(index) ? prev : [...prev, index]);
         }}
+        onBlockOrderChange={setPuzzleUserOrder}  // 퍼즐 블록 순서 변경 시 업데이트
       />
     );
   };
@@ -1188,6 +1392,8 @@ function ChatPageContent() {
                       problemType={problem?.problemType}
                       currentCode={currentCode}
                       usedBlankHintIndices={usedBlankHintIndices}
+                      puzzleUserOrder={puzzleUserOrder}
+                      blankAnswers={blankAnswers}
                     />
                   )}
                 </div>
