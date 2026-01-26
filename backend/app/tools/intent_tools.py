@@ -254,12 +254,19 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - 이 경우 programmers_embeddings + problem_embeddings 모두에서 RAG 검색
 - extracted_values에 is_corporate_test: true 설정
 
-**discovery:**
-- select_problem: 문제 선택 ("첫 번째", "1번", "맨 위 거")
+**discovery (검색 결과가 있을 때만!):**
+- select_problem: 문제 선택 - 검색 결과 중 특정 문제를 풀겠다는 의도
+  - 번호로 선택: "1번", "첫 번째", "맨 위 거", "2번 할래"
+  - 이름으로 선택: "taco_749", "Two Sum", "frog_123 풀래", "그거"
+  - 암묵적 선택: "풀래", "할게", "그걸로", "시작" (검색 결과 1개일 때)
+  - **중요**: 문제명이 언급되면 select_problem! (질문 키워드 없으면)
 - show_more: 더 보기 ("다른 거", "더 보여줘", "더 찾아")
 - generate_new: 새 문제 생성 ("새로운 문제", "비슷한 문제 생성")
 - select_problem_type: 문제 유형 선택 ("빈칸", "퍼즐", "대화형")
-- inquire_problem: 검색 결과 문제에 대한 질문 ("taco_749 요약해줘", "두 번째 문제 뭐야?", "이거 뭐에 도움되냐", "3번 어떤 내용이야?")
+- inquire_problem: 검색 결과 문제에 대한 **질문** (요약, 설명, 비교 등)
+  - "taco_749 요약해줘", "두 번째 문제 뭐야?", "이거 뭐에 도움되냐"
+  - "3번 어떤 내용이야?", "어떤 게 더 쉬워?", "추천해줘"
+  - **구분**: 질문/설명 요청 = inquire_problem, 풀겠다 = select_problem
 
 **solving:**
 - request_hint: 명시적 힌트 버튼 요청 ("힌트 줘", "hint")
@@ -334,6 +341,15 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - "두 번째 문제 뭐야?" → inquiry_target="2"
 - "3번 어떤 내용이야?" → inquiry_target="3"
 - 질문의 의도: 요약, 도움말, 내용 설명, 난이도 설명 등
+
+### 7. 문제 선택 (select_problem) - selection_index 설정!
+검색 결과가 있을 때 사용자가 문제를 선택하면:
+- "1번" → selection_index=1
+- "첫 번째" → selection_index=1
+- "두 번째 문제 풀래" → selection_index=2
+- "taco_749" (문제명) → 해당 문제의 번호를 selection_index에 설정
+- "그거", "그걸로" (결과 1개일 때) → selection_index=1
+- **핵심**: action=select_problem일 때 반드시 selection_index 설정!
 
 ## 응답 형식 (JSON)
 {{
@@ -558,6 +574,17 @@ class IntentTool:
                 context_parts.append("- **주의**: 사용자가 현재 풀고 있는 문제에 대해 질문하면 solving 카테고리로 분류!")
         else:
             context_parts.append("- **문제 풀이 중 아님**: 새 문제 탐색/추천 단계")
+
+        # 🔥 핵심: 검색 결과가 있으면 discovery 카테고리 우선!
+        search_results = session_state.get("search_results", [])
+        if search_results:
+            problem_names = []
+            for idx, p in enumerate(search_results[:5], 1):
+                name = p.get("name") or p.get("title") or f"문제{idx}"
+                problem_names.append(f"{idx}. {name}")
+            context_parts.append(f"- **검색 결과 {len(search_results)}개 존재** (문제 선택/질문 가능):")
+            context_parts.append("  " + ", ".join(problem_names))
+            context_parts.append("- **주의**: 문제명/번호 언급 시 discovery 카테고리로 분류!")
 
         if session_state.get("current_step"):
             context_parts.append(f"- 현재 수집 단계: {session_state['current_step']}")
