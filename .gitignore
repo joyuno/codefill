@@ -76,3 +76,5 @@ screenshots/
 
 # Backend .env files
 backend/.env.local
+
+website
