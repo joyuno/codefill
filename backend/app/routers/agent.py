@@ -2073,41 +2073,6 @@ async def generate_guided_problem(
                     result.get("variables_guide") and
                     result.get("approach_guide") and
                     result.get("starter_code")):
-
-                    # starter_code 검증: 핵심 로직 포함 여부 체크
-                    import re
-                    starter = result.get("starter_code", "")
-                    issues = []
-
-                    # for/while 루프 카운트 (2개 이상이면 핵심 로직 포함 가능성)
-                    loop_count = len(re.findall(r'\b(for|while)\s', starter))
-                    if loop_count >= 2:
-                        issues.append(f"for/while 루프가 {loop_count}개 있음")
-
-                    # print/return 감지
-                    if re.search(r'\bprint\s*\([^)]+\)', starter):
-                        issues.append("print문 포함")
-                    if re.search(r'\breturn\s+[^\n]+', starter):
-                        issues.append("return문 포함")
-
-                    # 솔루션 코드와의 줄 수 비교 (70% 이상이면 너무 많음)
-                    solution_lines = len([l for l in code.strip().split('\n') if l.strip()])
-                    starter_lines = len([l for l in starter.strip().split('\n') if l.strip()])
-                    if solution_lines > 0 and starter_lines / solution_lines > 0.7:
-                        issues.append(f"솔루션의 {starter_lines}/{solution_lines}줄({int(starter_lines/solution_lines*100)}%) 포함")
-
-                    if issues and attempt < MAX_RETRIES - 1:
-                        print(f"[Guided Gen] ⚠️ starter_code 문제 발견: {issues}")
-                        messages.append({"role": "assistant", "content": content})
-                        messages.append({
-                            "role": "user",
-                            "content": f"starter_code에 문제가 있습니다: {', '.join(issues)}. "
-                                       f"starter_code는 import, 함수 정의, 변수 초기화만 포함하고, "
-                                       f"for/while 루프, print/return문, 핵심 알고리즘 로직은 반드시 제외해주세요. "
-                                       f"학생이 핵심 로직을 직접 작성해야 합니다."
-                        })
-                        continue  # 재시도
-
                     print(f"[Guided Gen] ✓ Valid output on attempt {attempt + 1}")
                     break
                 else:
@@ -2121,13 +2086,6 @@ async def generate_guided_problem(
                     if not result.get("starter_code"):
                         missing.append("starter_code")
                     print(f"[Guided Gen] ⚠️ Missing fields: {missing}")
-
-                    if attempt < MAX_RETRIES - 1:
-                        messages.append({"role": "assistant", "content": content})
-                        messages.append({
-                            "role": "user",
-                            "content": f"다음 필드가 누락되었습니다: {missing}. 모든 필드를 채워주세요."
-                        })
 
             except ValueError as e:
                 print(f"[Guided Gen] ⚠️ Attempt {attempt + 1} parse error: {e}")

@@ -33,29 +33,19 @@ GUIDED_PROBLEM_SYSTEM_PROMPT = """
 
 ---
 
-## ⚠️ 핵심 규칙 (매우 중요!)
+## ⚠️ 핵심 규칙
 
-### 🚨 절대 하지 말 것 (위반 시 실패)
-- ❌ **starter_code에 핵심 알고리즘 로직 포함 금지** (for/while 루프, 재귀 호출, 핵심 조건문)
-- ❌ **starter_code에 결과 계산 로직 포함 금지** (점화식, 누적 계산, 탐색 로직)
-- ❌ **starter_code에 print/return 문 포함 금지** (출력은 학생이 직접)
-- ❌ 정답 코드 전체를 알려주지 않음
-- ❌ 원본 솔루션과 다른 접근법 제시 금지
+### 🚨 starter_code 규칙 (가장 중요!)
+**"정답 코드에서 첫 번째 핵심 for/while 루프 직전까지만 제공"**
+
+- ❌ **for/while 루프 포함 금지** (핵심 알고리즘)
+- ❌ **print/return 문 포함 금지**
+- ❌ **주석 포함 금지**
+- ✅ import, 함수 정의, 입력 처리, 자료구조 초기화만 포함
 
 ### ✅ 해야 할 것
-- ✅ 개념을 쉽게 설명 (비유, 예시 활용)
-- ✅ 변수가 왜 필요한지, 무슨 역할인지 설명
-- ✅ **starter_code에는 준비 단계만 포함**: import, 함수 정의, 입력 처리, 변수 초기화
-- ✅ 핵심 알고리즘 로직은 반드시 제외 (학생이 직접 구현)
-- ✅ **주석 금지**: starter_code에 주석(#, //, /* */) 포함 금지
-
-### 📋 starter_code 자체 검증 체크리스트
-출력 전 아래 항목을 반드시 확인하세요:
-1. [ ] starter_code에 for/while 루프가 포함되어 있으면 → 해당 루프 삭제
-2. [ ] starter_code에 if/elif/else 조건문이 핵심 로직이면 → 삭제
-3. [ ] starter_code에 print() 또는 return이 있으면 → 삭제
-4. [ ] starter_code에 재귀 호출이 있으면 → 삭제
-5. [ ] starter_code가 원본 코드의 50% 이상이면 → 줄이기
+- 개념을 쉽게 설명 (비유, 예시 활용)
+- 변수가 왜 필요한지, 무슨 역할인지 설명
 
 ---
 
@@ -132,65 +122,73 @@ GUIDED_PROBLEM_SYSTEM_PROMPT = """
 "dp[0] = 1, dp[1] = 1로 초기화하고, for문으로 dp[i] = dp[i-1] + dp[i-2]를 계산하세요."  // 정답 그대로
 ```
 
-### 4. starter_code (스타터 코드) ⭐ 중요!
-- **정답 코드의 구조를 따라야 함**
+### 4. starter_code (스타터 코드) ⭐ 매우 중요!
+
+**핵심 원칙: 정답 코드에서 "첫 번째 핵심 for/while 루프 직전까지"만 제공**
+
 - **포함해야 할 것:**
-  - import문 (sys, collections 등 라이브러리 불러오기)
-  - 함수 정의 (def solve(): 등)
-  - 입력 처리 (input(), sys.stdin 등)
-  - 모든 변수 초기화 (리스트, 딕셔너리, 카운터 등)
-- **제외할 것 (학생이 작성):**
-  - 핵심 알고리즘 로직 (for/while 반복문, 핵심 조건문)
-  - 결과 계산 부분
+  - import문
+  - 함수 정의 (있는 경우)
+  - 입력 처리
+  - 자료구조 초기화 (dp 배열, graph 등)
+  - 초기값 설정 (dp[0][0] = 1 등)
+- **제외할 것 (학생이 직접 구현):**
+  - 핵심 알고리즘 for/while 루프
+  - 점화식/탐색 로직
   - print/return 문
 
-**좋은 예 (함수형 - 변수 초기화까지 모두 포함):**
+**구체적 예시 (DP 문제):**
+
+정답 코드:
 ```python
 import sys
-sys.setrecursionlimit(2000)
-
-def solve():
-    input_data = sys.stdin.read().split()
-    if not input_data:
-        return
-    X = int(input_data[0])
-    Y = int(input_data[1])
-    sX = str(X)
-    sY = str(Y)
-    min_len = len(sX)
-    max_len = len(sY)
-    LIMIT = 19
-    ones = [0] * LIMIT
-    powers = [1] * LIMIT
-    curr_one = 0
-    count = 0
+def input():
+    return sys.stdin.readline().rstrip()
+T = int(input())
+dp = [[0 for _ in range(31)] for _ in range(31)]
+dp[0][0] = 1
+for num in range(1,31):
+    dp[num][0] = 1
+    for pick in range(1,31):
+        dp[num][pick] = dp[num-1][pick] + dp[num-1][pick-1]
+for _ in range(T):
+    N, M = map(int,input().split())
+    print(dp[M][N])
 ```
-→ 여기까지 제공하고, for 루프와 핵심 로직은 학생이 작성
 
-**좋은 예 (일반 형태 - 모든 초기화 포함):**
+✅ **올바른 starter_code (for 루프 직전까지):**
+```python
+import sys
+def input():
+    return sys.stdin.readline().rstrip()
+
+T = int(input())
+dp = [[0 for _ in range(31)] for _ in range(31)]
+dp[0][0] = 1
+```
+→ 여기까지만! for 루프와 print는 학생이 작성
+
+❌ **잘못된 starter_code (for 루프 포함):**
+```python
+for num in range(1,31):
+    dp[num][0] = 1
+    for pick in range(1,31):
+        dp[num][pick] = dp[num-1][pick] + dp[num-1][pick-1]
+```
+→ 핵심 알고리즘 로직 절대 포함 금지!
+
+**BFS/DFS 예시:**
+
+✅ **올바른 starter_code:**
 ```python
 from collections import deque
 
 n, m = map(int, input().split())
 graph = [[] for _ in range(n + 1)]
 visited = [False] * (n + 1)
-result = []
+queue = deque()
 ```
-→ 여기까지 제공하고, BFS/DFS 로직은 학생이 작성
-
-**나쁜 예 (너무 짧음 - 변수 초기화 누락):**
-```python
-n = int(input())
-dp = [0] * (n + 1)
-```
-→ 이렇게 2줄만 주면 안됨! 모든 변수 초기화까지 포함해야 함
-
-**나쁜 예 (핵심 로직 포함):**
-```python
-for i in range(2, n + 1):
-    dp[i] = dp[i-1] + dp[i-2]
-```
-→ 핵심 알고리즘 로직은 제외!
+→ 탐색 로직(while queue:)은 학생이 작성
 
 ---
 
