@@ -1893,6 +1893,43 @@ export function PracticeChatPanel({
         return;  // 여기서 리턴하여 나머지 처리 스킵
       }
 
+      // ============================================================
+      // 🔥 문제 유형 선택 (select_problem_type) - 최우선 처리!
+      // 사용자가 문제를 선택한 후 유형 선택 단계
+      // ============================================================
+      if (chatResponse.action_trigger === 'select_problem_type') {
+        console.log('[processAgentResponse] Problem type selection triggered');
+
+        // 백엔드에서 전달한 칩 사용, 없으면 기본 칩
+        const typeChips: QuickChip[] = chatResponse.chips?.length
+          ? chatResponse.chips.map((chip: any) => ({
+              label: chip.label,
+              value: chip.value,
+              category: 'action' as const,
+            }))
+          : [
+              { label: '빈칸 채우기', value: 'blank', category: 'action' as const },
+              { label: '퍼즐 맞추기', value: 'puzzle', category: 'action' as const },
+              { label: '1:1 대화형', value: 'guided', category: 'action' as const },
+            ];
+
+        // 선택된 문제 저장
+        if (chatResponse.selected_problem) {
+          setSelectedBaseProblem(chatResponse.selected_problem as BaseProblemInfo);
+        }
+
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: responseMessage,
+          timestamp: new Date().toISOString(),
+          chips: typeChips,
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setFlowState('type_selection');
+        return; // 여기서 리턴
+      }
+
       // "새 문제 생성" 버튼: generated_problem 우선 처리 (search_results보다 먼저!)
       if (actionData?.action_trigger === 'problem_generated' && actionData?.generated_problem) {
         // CodeGen generated a new problem
