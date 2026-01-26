@@ -2088,41 +2088,6 @@ export function PracticeChatPanel({
           }
           setFlowState('practicing');
         }
-      } else if (actionData?.action_trigger === 'select_problem_type') {
-        // User selected a problem, show type selection
-        const selectedProblemName = actionData.selected_problem;
-        const selectedIndex = actionData.selected_problem_index;
-
-        // Find the selected problem from recommendedProblems (use ref for latest)
-        let selectedProblem: BaseProblemInfo | undefined;
-        if (selectedIndex !== undefined && currentProblems[selectedIndex - 1]) {
-          selectedProblem = currentProblems[selectedIndex - 1];
-        } else if (selectedProblemName) {
-          selectedProblem = currentProblems.find(
-            p => p.name === selectedProblemName || p.title === selectedProblemName
-          );
-        }
-
-        if (selectedProblem) {
-          setSelectedBaseProblem(selectedProblem);
-          showProblemTypeSelection(selectedProblem);
-        } else {
-          // Fallback - just show the message
-          const assistantMessage: Message = {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: responseMessage,
-            timestamp: new Date().toISOString(),
-            chips: [
-              { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
-              { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
-              { label: '1대1 대화형', value: 'type-guided', category: 'action' },
-              { label: '구현', value: 'type-implementation', category: 'action' },
-            ],
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-          setFlowState('type_selection');
-        }
       } else if (actionData.awaiting_confirmation && actionData.suggested_value) {
         // 정보 수집 단계: LLM 추천 + 네/아니오 칩
         const confirmationChips: QuickChip[] = [
