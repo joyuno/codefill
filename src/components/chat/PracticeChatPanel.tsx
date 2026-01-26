@@ -403,11 +403,11 @@ export function PracticeChatPanel({
 
       if (problem.conceptExplanation) {
         // 새 스키마: concept_explanation, variables_guide, approach_guide
-        welcomeContent += `[핵심 개념]\n\n${problem.conceptExplanation}\n\n`;
+        welcomeContent += `**[핵심 개념]**\n\n${problem.conceptExplanation}\n\n`;
 
         // 변수 가이드 표시
         if (problem.variablesGuide?.variables?.length) {
-          welcomeContent += `---\n\n[필요한 변수들] (총 ${problem.variablesGuide.total_count}개)\n\n`;
+          welcomeContent += `---\n\n**[필요한 변수들]** (총 ${problem.variablesGuide.total_count}개)\n\n`;
           problem.variablesGuide.variables.forEach((v, idx) => {
             welcomeContent += `${idx + 1}. \`${v.name}\` (${v.type})\n`;
             welcomeContent += `   - 역할: ${v.role}\n`;
@@ -418,12 +418,12 @@ export function PracticeChatPanel({
 
         // 접근법 가이드 표시
         if (problem.approachGuide) {
-          welcomeContent += `---\n\n[접근법]\n\n${problem.approachGuide}\n\n`;
+          welcomeContent += `---\n\n**[접근법]**\n\n${problem.approachGuide}\n\n`;
         }
 
         // 시작 코드 안내
         if (problem.starterCode) {
-          welcomeContent += `---\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
+          welcomeContent += `---\n\n**[시작 코드]**\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
         }
       } else {
         // 레거시 또는 새 스키마 없이 진입한 경우
@@ -1281,11 +1281,11 @@ export function PracticeChatPanel({
 
         if (generatedProblem.conceptExplanation) {
           // 새 스키마: concept_explanation, variables_guide, approach_guide
-          welcomeContent += `[핵심 개념]\n\n${generatedProblem.conceptExplanation}\n\n`;
+          welcomeContent += `**[핵심 개념]**\n\n${generatedProblem.conceptExplanation}\n\n`;
 
           // 변수 가이드 표시
           if (generatedProblem.variablesGuide?.variables?.length) {
-            welcomeContent += `---\n\n[필요한 변수들] (총 ${generatedProblem.variablesGuide.total_count}개)\n\n`;
+            welcomeContent += `---\n\n**[필요한 변수들]** (총 ${generatedProblem.variablesGuide.total_count}개)\n\n`;
             generatedProblem.variablesGuide.variables.forEach((v, idx) => {
               welcomeContent += `${idx + 1}. \`${v.name}\` (${v.type})\n`;
               welcomeContent += `   - 역할: ${v.role}\n`;
@@ -1296,12 +1296,12 @@ export function PracticeChatPanel({
 
           // 접근법 가이드 표시
           if (generatedProblem.approachGuide) {
-            welcomeContent += `---\n\n[접근법]\n\n${generatedProblem.approachGuide}\n\n`;
+            welcomeContent += `---\n\n**[접근법]**\n\n${generatedProblem.approachGuide}\n\n`;
           }
 
           // 시작 코드 안내
           if (generatedProblem.starterCode) {
-            welcomeContent += `---\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
+            welcomeContent += `---\n\n**[시작 코드]**\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
           }
         } else if (generatedProblem.concepts?.length || generatedProblem.flow?.length) {
           // 레거시 스키마 지원 (concepts[], flow[], checkpoints[])
