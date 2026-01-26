@@ -258,7 +258,7 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 
 1. **select_problem**: 문제 선택 - 검색 결과 중 특정 문제를 **풀겠다**는 의도
    - 번호로 선택: "1번", "첫 번째", "맨 위 거", "2번 할래", "세 번째"
-   - 이름으로 선택: "taco_749", "Two Sum", "frog_123 풀래"
+   - 이름으로 선택: "Two Sum", "Binary Search 풀래", "Valid Parentheses"
    - 암묵적 선택: "그거", "그걸로", "이거", "시작", "풀래", "할게" (검색 결과 참조)
    - **핵심**: 문제를 풀겠다/선택하겠다 = select_problem
 
@@ -287,7 +287,7 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
    - **핵심**: 대기업 + 생성 = generate_new with is_corporate_test
 
 6. **inquire_problem**: 검색 결과 문제에 대한 **질문**
-   - 특정 문제 질문: "1번 요약해줘", "taco_749 어떤 내용?", "3번 풀만해?"
+   - 특정 문제 질문: "1번 요약해줘", "Two Sum 어떤 내용?", "3번 풀만해?"
    - 비교/추천: "어떤 게 더 쉬워?", "뭐가 좋을까?", "추천해줘"
    - 설명 요청: "이거 뭐에 도움돼?", "난이도 어때?"
    - inquiry_target에 문제 번호/이름 설정, inquiry_question에 질문 내용
@@ -383,13 +383,13 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 **select_problem (문제 선택):**
 - "1번", "첫 번째" → category=discovery, action=select_problem, selection_index=1
 - "두 번째 문제 풀래" → selection_index=2
-- "taco_749" (문제명 직접) → 해당 번호를 selection_index에 설정
+- "Two Sum" (문제명 직접) → 해당 번호를 selection_index에 설정
 - "그거", "그걸로", "이거 풀래" → selection_index=1
 - **필수**: selection_index 설정!
 
 **inquire_problem (문제 질문):**
 - "1번 요약해줘" → inquiry_target="1", inquiry_question="요약해줘"
-- "taco_749 어떤 내용?" → inquiry_target="taco_749"
+- "Two Sum 어떤 내용?" → inquiry_target="Two Sum"
 - "3번 풀만해?" → inquiry_target="3"
 - "어떤 게 더 쉬워?" → inquiry_target="general" (비교 질문)
 - **필수**: inquiry_target 설정!
@@ -428,9 +428,9 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 
 ### 8. selection_index 설정 방법 (매우 중요!)
 컨텍스트의 검색 결과 목록을 보고 사용자가 언급한 문제의 번호를 찾아 설정:
-- 컨텍스트: "1번: taco_749, 2번: Eligibility, 3번: frog_123"
+- 컨텍스트: "1번: Two Sum, 2번: Eligibility, 3번: Valid Parentheses"
 - 사용자: "Eligibility 문제로 할게요" → **selection_index=2** (2번이므로)
-- 사용자: "taco_749" → **selection_index=1** (1번이므로)
+- 사용자: "Two Sum" → **selection_index=1** (1번이므로)
 - 사용자: "3번 풀래" → **selection_index=3**
 - 문제 이름이 부분 매칭되어도 OK (예: "Elig" → Eligibility = 2번)
 - **반드시 검색 결과에서 해당 문제의 번호를 찾아 selection_index 설정!**
