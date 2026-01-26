@@ -254,19 +254,60 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - 이 경우 programmers_embeddings + problem_embeddings 모두에서 RAG 검색
 - extracted_values에 is_corporate_test: true 설정
 
-**discovery (검색 결과가 있을 때만!):**
-- select_problem: 문제 선택 - 검색 결과 중 특정 문제를 풀겠다는 의도
-  - 번호로 선택: "1번", "첫 번째", "맨 위 거", "2번 할래"
-  - 이름으로 선택: "taco_749", "Two Sum", "frog_123 풀래", "그거"
-  - 암묵적 선택: "풀래", "할게", "그걸로", "시작" (검색 결과 1개일 때)
-  - **중요**: 문제명이 언급되면 select_problem! (질문 키워드 없으면)
-- show_more: 더 보기 ("다른 거", "더 보여줘", "더 찾아")
-- generate_new: 새 문제 생성 ("새로운 문제", "비슷한 문제 생성")
-- select_problem_type: 문제 유형 선택 ("빈칸", "퍼즐", "대화형")
-- inquire_problem: 검색 결과 문제에 대한 **질문** (요약, 설명, 비교 등)
-  - "taco_749 요약해줘", "두 번째 문제 뭐야?", "이거 뭐에 도움되냐"
-  - "3번 어떤 내용이야?", "어떤 게 더 쉬워?", "추천해줘"
-  - **구분**: 질문/설명 요청 = inquire_problem, 풀겠다 = select_problem
+**discovery (검색 결과가 있을 때 - 매우 중요!):**
+
+1. **select_problem**: 문제 선택 - 검색 결과 중 특정 문제를 **풀겠다**는 의도
+   - 번호로 선택: "1번", "첫 번째", "맨 위 거", "2번 할래", "세 번째"
+   - 이름으로 선택: "taco_749", "Two Sum", "frog_123 풀래"
+   - 암묵적 선택: "그거", "그걸로", "이거", "시작", "풀래", "할게" (검색 결과 참조)
+   - **핵심**: 문제를 풀겠다/선택하겠다 = select_problem
+
+2. **show_more**: 다른 문제 검색/더 보기 - 현재 결과가 마음에 안 들 때
+   - "다른 거", "다른 문제", "더 보여줘", "더 찾아줘", "다시 찾아"
+   - "이거 말고 다른 거", "비슷한 다른 문제", "더 없어?"
+   - **핵심**: 기존 검색 조건으로 추가/다른 결과 원함
+
+3. **change_filter**: 검색 조건 변경 - 주제/난이도/출처 변경
+   - "정렬 문제로 바꿔줘" (기존: 구현) → 새 주제로 변경
+   - "쉬운 거로 다시" (기존: hard) → 난이도 변경
+   - "백준 문제로" (기존: leetcode) → 출처 변경
+   - **핵심**: 검색 조건 변경 요청 = change_filter
+   - extracted_values에 변경할 값 설정 (topic, difficulty, source 등)
+
+4. **generate_new**: 새 문제 **생성** 요청 - DB에 없는 문제
+   - "새로운 문제 만들어줘", "문제 생성해줘", "비슷한 문제 생성"
+   - "이런 유형으로 새 문제", "연습 문제 만들어줘"
+   - extracted_values: wants_generation=true
+   - **핵심**: "생성", "만들어" 키워드 = generate_new
+
+5. **generate_new + 대기업**: 대기업 코테 스타일 생성 요청
+   - "카카오 스타일 문제 만들어줘", "대기업 기출 생성해줘"
+   - "네이버 코테 같은 문제 생성", "삼성 기출 스타일로"
+   - action=generate_new, extracted_values: is_corporate_test=true, wants_generation=true
+   - **핵심**: 대기업 + 생성 = generate_new with is_corporate_test
+
+6. **inquire_problem**: 검색 결과 문제에 대한 **질문**
+   - 특정 문제 질문: "1번 요약해줘", "taco_749 어떤 내용?", "3번 풀만해?"
+   - 비교/추천: "어떤 게 더 쉬워?", "뭐가 좋을까?", "추천해줘"
+   - 설명 요청: "이거 뭐에 도움돼?", "난이도 어때?"
+   - inquiry_target에 문제 번호/이름 설정, inquiry_question에 질문 내용
+   - **핵심**: 질문/설명/비교 = inquire_problem
+
+7. **free_chat (general)**: 검색 결과와 무관한 일반 질문
+   - "정렬 알고리즘이 뭐야?", "시간복잡도 설명해줘"
+   - "코테 팁 알려줘", "자바 vs 파이썬"
+   - **핵심**: 검색 결과 문제 언급 없이 일반적 질문 = general / free_chat
+
+8. **select_problem_type**: 문제 유형 선택 (문제 선택 후)
+   - "빈칸으로", "퍼즐로 풀래", "대화형으로"
+
+**검색 결과 있을 때 분류 우선순위 (중요!):**
+1. 문제 번호/이름 + 풀겠다/선택 → **select_problem** (selection_index 필수!)
+2. 문제 번호/이름 + 질문/설명/비교 → **inquire_problem** (inquiry_target 필수!)
+3. "다른"/"더" + 문제/찾아 → **show_more**
+4. 새 조건(주제/난이도/출처) 언급 → **change_filter** (extracted_values에 변경값)
+5. "생성"/"만들어" 키워드 → **generate_new** (wants_generation=true)
+6. 검색 결과 무관 일반 질문 → **general / free_chat**
 
 **solving:**
 - request_hint: 명시적 힌트 버튼 요청 ("힌트 줘", "hint")
@@ -336,20 +377,54 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - "기초 말고 아무거나" → {{"topic": null}} (기초를 넣으면 안 됨!)
 - "이분탐색 문제 풀래" → {{"topic": "이분탐색"}} (긍정이므로 넣음)
 
-### 6. 문제 질문 (inquire_problem)
-- "taco_749 요약해줘" → inquiry_target="taco_749"
-- "두 번째 문제 뭐야?" → inquiry_target="2"
-- "3번 어떤 내용이야?" → inquiry_target="3"
-- 질문의 의도: 요약, 도움말, 내용 설명, 난이도 설명 등
+### 6. 검색 결과가 있을 때 분류 (매우 중요!)
+컨텍스트에 "검색 결과 N개 존재"가 있으면 discovery 카테고리 우선!
 
-### 7. 문제 선택 (select_problem) - selection_index 설정!
-검색 결과가 있을 때 사용자가 문제를 선택하면:
-- "1번" → selection_index=1
-- "첫 번째" → selection_index=1
+**select_problem (문제 선택):**
+- "1번", "첫 번째" → category=discovery, action=select_problem, selection_index=1
 - "두 번째 문제 풀래" → selection_index=2
-- "taco_749" (문제명) → 해당 문제의 번호를 selection_index에 설정
-- "그거", "그걸로" (결과 1개일 때) → selection_index=1
-- **핵심**: action=select_problem일 때 반드시 selection_index 설정!
+- "taco_749" (문제명 직접) → 해당 번호를 selection_index에 설정
+- "그거", "그걸로", "이거 풀래" → selection_index=1
+- **필수**: selection_index 설정!
+
+**inquire_problem (문제 질문):**
+- "1번 요약해줘" → inquiry_target="1", inquiry_question="요약해줘"
+- "taco_749 어떤 내용?" → inquiry_target="taco_749"
+- "3번 풀만해?" → inquiry_target="3"
+- "어떤 게 더 쉬워?" → inquiry_target="general" (비교 질문)
+- **필수**: inquiry_target 설정!
+
+**show_more (더 보기):**
+- "다른 문제", "더 찾아줘", "이거 말고" → action=show_more
+- 기존 조건 유지하고 추가 결과 요청
+
+**change_filter (조건 변경):**
+- "정렬로 바꿔", "쉬운 거로" → action=change_filter
+- extracted_values에 변경할 값 설정
+
+**generate_new (문제 생성):**
+- "새 문제 만들어줘", "비슷한 문제 생성해줘" → action=generate_new
+- extracted_values: wants_generation=true
+- 대기업 스타일: is_corporate_test=true 추가
+
+**free_chat (일반 질문):**
+- 검색 결과 문제와 무관한 일반 코딩 질문
+- "정렬이 뭐야?", "시간복잡도 설명해줘"
+
+### 7. select_problem vs inquire_problem 구분법
+**select_problem (풀겠다):**
+- "1번 풀래", "이거", "그거로 할게", "시작", "선택"
+- 질문 키워드 없음 → select_problem
+
+**inquire_problem (질문):**
+- "요약해줘", "설명해줘", "어때?", "풀만해?", "뭐야?", "어떤 내용?"
+- 비교: "어떤 게 좋아?", "추천해줘"
+- 질문 키워드 있음 → inquire_problem
+
+**핵심 규칙:**
+- 질문/설명 요청 → inquire_problem
+- 풀기/선택 의도 → select_problem
+- 둘 다 없으면 문맥으로 판단 (단순 문제명만 → select_problem)
 
 ## 응답 형식 (JSON)
 {{
