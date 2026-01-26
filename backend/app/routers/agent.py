@@ -796,6 +796,7 @@ class ChatResponse(BaseModel):
     generated_problem_data: Optional[Dict[str, Any]] = Field(default=None, description="문제 유형별 데이터 (blank/puzzle/guided)")
     action_trigger: Optional[str] = Field(default=None, description="프론트엔드 액션 트리거")
     action_data: Optional[Dict[str, Any]] = Field(default=None, description="액션에 필요한 추가 데이터")
+    chips: Optional[List[Dict[str, Any]]] = Field(default=None, description="선택 칩 목록 (문제유형 선택 등)")
     next_stage: Optional[str] = Field(default=None, description="다음 단계")
     is_complete: bool = Field(default=False, description="대화 완료 여부")
     awaiting_confirmation: bool = Field(default=False, description="네/아니오 응답 대기 중")
@@ -1049,6 +1050,7 @@ async def chat_agent(
             generated_problem_data=result.get("generated_problem_data"),
             action_trigger=result.get("action_trigger"),
             action_data=result.get("action_data"),
+            chips=result.get("chips"),  # 문제 유형 선택 칩 등
             next_stage=result.get("next_stage"),
             is_complete=result.get("is_complete", False),
             # 정보 수집 단계: 네/아니오 응답 대기
