@@ -1893,6 +1893,54 @@ export function PracticeChatPanel({
         return;  // 여기서 리턴하여 나머지 처리 스킵
       }
 
+      // ============================================================
+      // 🔥 문제 유형 선택 (select_problem_type) - 최우선 처리!
+      // 사용자가 문제를 선택한 후 유형 선택 단계
+      // ============================================================
+      if (chatResponse.action_trigger === 'select_problem_type') {
+        console.log('[processAgentResponse] Problem type selection triggered');
+
+        // 선택된 문제 찾기
+        let selectedProblem: BaseProblemInfo | undefined;
+
+        // 1. 백엔드에서 직접 전달된 selected_problem 사용
+        if (chatResponse.selected_problem) {
+          selectedProblem = chatResponse.selected_problem as BaseProblemInfo;
+        }
+
+        // 2. recommendedProblems에서 찾기 (이름으로 매칭)
+        if (!selectedProblem && recommendedProblemsRef.current.length > 0) {
+          const problemName = backendActionData?.selected_problem as string;
+          if (problemName) {
+            selectedProblem = recommendedProblemsRef.current.find(
+              p => p.name === problemName || p.title === problemName
+            );
+          }
+        }
+
+        if (selectedProblem) {
+          setSelectedBaseProblem(selectedProblem);
+          showProblemTypeSelection(selectedProblem);  // 기존 함수 사용 (구현 포함!)
+        } else {
+          // Fallback - 문제를 찾지 못한 경우 기본 칩 표시
+          const assistantMessage: Message = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: responseMessage,
+            timestamp: new Date().toISOString(),
+            chips: [
+              { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
+              { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
+              { label: '1대1 대화형', value: 'type-guided', category: 'action' },
+              { label: '구현', value: 'type-implementation', category: 'action' },
+            ],
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setFlowState('type_selection');
+        }
+        return; // 여기서 리턴
+      }
+
       // "새 문제 생성" 버튼: generated_problem 우선 처리 (search_results보다 먼저!)
       if (actionData?.action_trigger === 'problem_generated' && actionData?.generated_problem) {
         // CodeGen generated a new problem
@@ -2039,41 +2087,6 @@ export function PracticeChatPanel({
             onProblemSelect(convertedProblem);
           }
           setFlowState('practicing');
-        }
-      } else if (actionData?.action_trigger === 'select_problem_type') {
-        // User selected a problem, show type selection
-        const selectedProblemName = actionData.selected_problem;
-        const selectedIndex = actionData.selected_problem_index;
-
-        // Find the selected problem from recommendedProblems (use ref for latest)
-        let selectedProblem: BaseProblemInfo | undefined;
-        if (selectedIndex !== undefined && currentProblems[selectedIndex - 1]) {
-          selectedProblem = currentProblems[selectedIndex - 1];
-        } else if (selectedProblemName) {
-          selectedProblem = currentProblems.find(
-            p => p.name === selectedProblemName || p.title === selectedProblemName
-          );
-        }
-
-        if (selectedProblem) {
-          setSelectedBaseProblem(selectedProblem);
-          showProblemTypeSelection(selectedProblem);
-        } else {
-          // Fallback - just show the message
-          const assistantMessage: Message = {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: responseMessage,
-            timestamp: new Date().toISOString(),
-            chips: [
-              { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
-              { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
-              { label: '1대1 대화형', value: 'type-guided', category: 'action' },
-              { label: '구현', value: 'type-implementation', category: 'action' },
-            ],
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-          setFlowState('type_selection');
         }
       } else if (actionData.awaiting_confirmation && actionData.suggested_value) {
         // 정보 수집 단계: LLM 추천 + 네/아니오 칩
