@@ -199,11 +199,85 @@ class ChatOrchestratorV2:
                 collected_info["difficulty"] = history_context["difficulty"]
 
         # ============================================================
-        # 통합 Intent Tool로 의도 분류 (다중 의도 지원)
+        # 🚀 Ultra Fast-Path: 칩 클릭 감지 (Intent Classifier 전)
+        # - 정확한 키워드 매칭 시 LLM 호출 없이 바로 InfoCollectionGraph로
+        # - "?"가 포함되면 질문이므로 LLM 호출 필요
         # ============================================================
-        # collected_info에서 topic 추출 (topics 배열에서 첫 번째 요소)
+        message_stripped = message.strip()
+        message_lower = message_stripped.lower()
+        is_question_mark = "?" in message
+
+        CHIP_TOPIC_KEYWORDS = {
+            "구현": "구현", "정렬": "정렬", "dp": "DP", "DP": "DP",
+            "그리디": "그리디", "이분탐색": "이분탐색", "문자열": "문자열",
+            "그래프": "그래프", "bfs/dfs": "BFS/DFS", "BFS/DFS": "BFS/DFS",
+            "트리": "트리", "수학": "수학", "자료구조": "자료구조",
+            "완전탐색": "완전탐색", "백트래킹": "백트래킹", "분할정복": "분할정복",
+            "시뮬레이션": "시뮬레이션", "기초": "기초", "최단경로": "최단경로",
+            "투포인터": "투포인터", "스택": "스택", "큐": "큐", "힙": "힙",
+        }
+        CHIP_DIFFICULTY_KEYWORDS = {
+            "실버": "easy", "silver": "easy", "easy": "easy", "쉬움": "easy",
+            "골드": "medium", "gold": "medium", "medium": "medium", "보통": "medium",
+            "플래티넘": "medium_hard", "platinum": "medium_hard",
+            "다이아": "hard", "diamond": "hard", "hard": "hard",
+            "마스터": "very_hard", "master": "very_hard",
+        }
+        CHIP_LANGUAGE_KEYWORDS = {
+            "파이썬": "python", "python": "python", "Python": "python",
+            "자바": "java", "java": "java", "Java": "java",
+            "c++": "cpp", "cpp": "cpp", "C++": "cpp",
+        }
+
+        # collected_info에서 기존 값 추출
         topics_list = collected_info.get("topics", [])
         existing_topic = topics_list[0] if topics_list and isinstance(topics_list, list) and len(topics_list) > 0 else collected_info.get("topic")
+        existing_difficulty = collected_info.get("difficulty")
+        existing_language = collected_info.get("language")
+
+        chip_matched_value = None
+        chip_matched_step = None
+
+        # "?"가 없을 때만 키워드 매칭 시도
+        if not is_question_mark:
+            # topic 매칭 (기존 값 없을 때)
+            if not existing_topic:
+                chip_matched_value = CHIP_TOPIC_KEYWORDS.get(message_stripped) or CHIP_TOPIC_KEYWORDS.get(message_lower)
+                if chip_matched_value:
+                    chip_matched_step = "topic"
+
+            # difficulty 매칭 (기존 값 없을 때)
+            if not chip_matched_value and not existing_difficulty:
+                chip_matched_value = CHIP_DIFFICULTY_KEYWORDS.get(message_stripped) or CHIP_DIFFICULTY_KEYWORDS.get(message_lower)
+                if chip_matched_value:
+                    chip_matched_step = "difficulty"
+
+            # language 매칭 (기존 값 없을 때)
+            if not chip_matched_value and not existing_language:
+                chip_matched_value = CHIP_LANGUAGE_KEYWORDS.get(message_stripped) or CHIP_LANGUAGE_KEYWORDS.get(message_lower)
+                if chip_matched_value:
+                    chip_matched_step = "language"
+
+        # 키워드 매칭 성공 → Intent Classifier 건너뛰고 바로 InfoCollectionGraph로
+        if chip_matched_value and chip_matched_step:
+            logger.info(f"[Orchestrator] ⚡ ULTRA FAST-PATH: {chip_matched_step}={chip_matched_value} (no LLM)")
+
+            # extracted_values 구성
+            fast_extracted = {chip_matched_step: chip_matched_value}
+
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info=collected_info,
+                intent="set_" + chip_matched_step,
+                session_state=session_state,
+                extracted_values=fast_extracted,
+            )
+
+        # ============================================================
+        # 통합 Intent Tool로 의도 분류 (다중 의도 지원)
+        # ============================================================
 
         intent_session_state = {
             "current_step": collected_info.get("current_step"),
@@ -275,7 +349,18 @@ class ChatOrchestratorV2:
         logger.debug(f"IntentTool: category={intent_result.category}, action={intent_result.action}, route={intent_result.suggested_route}")
 
         # ============================================================
-        # 0. 이전 action_trigger 기반 라우팅 (세션 컨텍스트 우선)
+        # 0. QUICK_START 처리 - 정보 수집 스킵하고 바로 문제 유형 선택
+        # ============================================================
+        if intent_result.action == ActionType.QUICK_START:
+            logger.info("[Orchestrator] QUICK_START detected - skipping info collection")
+            return await self._process_quick_start(
+                message=message,
+                user_context=user_context,
+                conversation_history=conversation_history,
+            )
+
+        # ============================================================
+        # 0-1. 이전 action_trigger 기반 라우팅 (세션 컨텍스트 우선)
         # - select_problem_type: 문제 유형 선택 대기 중
         # ============================================================
         if pending_action == "select_problem_type" and selected_problem:
@@ -444,6 +529,82 @@ class ChatOrchestratorV2:
             session_state=session_state,
         )
 
+    @track_orchestrator_method("_process_quick_start", tags=["quick-start", "skip"])
+    async def _process_quick_start(
+        self,
+        message: str,
+        user_context: dict,
+        conversation_history: list,
+    ) -> Dict[str, Any]:
+        """
+        QUICK_START 처리 - 정보 수집 단계를 스킵하고 바로 랜덤 문제 검색 후 문제 유형 선택
+
+        사용자가 "빨리 시작하자", "스킵", "귀찮아" 등의 의도를 가질 때
+        주제/난이도/언어 선택을 건너뛰고 랜덤으로 문제를 선택함
+        """
+        from ..tools.user_tools import get_user_tools
+        import random
+
+        user_tools = get_user_tools()
+        user_id = user_context.get("user_id")
+
+        # 사용자 프로필에서 기본값 가져오기
+        experience_level = user_context.get("experience_level", "unknown")
+        learning_goal = user_context.get("learning_goal", "unknown")
+        preferred_language = user_context.get("preferred_language", "python")
+
+        # 레벨에 따른 기본 난이도
+        LEVEL_TO_DIFFICULTY = {
+            "beginner": "easy",
+            "elementary": "easy",
+            "intermediate": "medium",
+            "advanced": "hard",
+            "unknown": "easy",
+        }
+        default_difficulty = LEVEL_TO_DIFFICULTY.get(experience_level, "easy")
+
+        # 추천 주제 가져오기 (히스토리 기반 또는 기본)
+        recommended_topic = "구현"  # 기본값
+        try:
+            if user_id:
+                history_rec = await user_tools.get_history_based_recommendation(user_id)
+                if history_rec.get("success"):
+                    recommended_topic = history_rec.get("recommended_topic", "구현")
+            else:
+                # 비로그인 사용자 → 랜덤 주제
+                available_topics = ["구현", "정렬", "문자열", "그리디", "BFS/DFS", "DP"]
+                recommended_topic = random.choice(available_topics)
+        except Exception as e:
+            logger.warning(f"[QuickStart] Failed to get recommendation: {e}")
+
+        # 자동 설정된 정보로 Discovery 호출
+        collected_info = {
+            "topics": [recommended_topic],
+            "difficulty": default_difficulty,
+            "language": preferred_language or "python",
+        }
+
+        logger.info(f"[QuickStart] Auto-selected: topic={recommended_topic}, difficulty={default_difficulty}, language={preferred_language}")
+
+        # Discovery 그래프로 문제 검색
+        result = await self._process_discovery(
+            message=message,
+            intent="quick_start",
+            collected_info=collected_info,
+            conversation_history=conversation_history,
+            user_context=user_context,
+            search_results=[],
+        )
+
+        # 응답 메시지에 스킵 안내 추가
+        original_message = result.get("response_message", "")
+        quick_start_notice = "빠르게 시작할게요! 문제를 찾았어요.\n\n"
+
+        result["response_message"] = quick_start_notice + original_message
+        result["is_quick_start"] = True
+
+        return result
+
     @track_orchestrator_method("_process_info_collection", tags=["collection", "graph"])
     async def _process_info_collection(
         self,
@@ -486,6 +647,19 @@ class ChatOrchestratorV2:
         if extracted_values.get("language"):
             existing_language = extracted_values["language"]
 
+        # 출처 및 생성 관련 필드 추출
+        existing_source = collected_info.get("source") or extracted_values.get("source")
+        existing_wants_generation = collected_info.get("wants_generation", False) or extracted_values.get("wants_generation", False)
+        existing_generation_details = collected_info.get("generation_details") or extracted_values.get("generation_details")
+        existing_is_corporate_test = collected_info.get("is_corporate_test", False) or extracted_values.get("is_corporate_test", False)
+
+        if existing_source:
+            logger.info(f"[InfoCollection] Source filter detected: {existing_source}")
+        if existing_wants_generation:
+            logger.info(f"[InfoCollection] Generation requested: details={existing_generation_details}")
+        if existing_is_corporate_test:
+            logger.info(f"[InfoCollection] Corporate test mode enabled")
+
         # ============================================================
         # 대화 중 언급된 goal/level 정보를 user_context에 반영
         # "대기업 코테 목표" 같은 메시지에서 추출된 정보
@@ -524,6 +698,11 @@ class ChatOrchestratorV2:
             existing_awaiting_confirmation=existing_awaiting_confirmation,
             existing_suggested_value=existing_suggested_value,
             existing_rejected_values=existing_rejected_values,
+            # 출처 및 생성 관련 필드
+            existing_source=existing_source,
+            existing_wants_generation=existing_wants_generation,
+            existing_generation_details=existing_generation_details,
+            existing_is_corporate_test=existing_is_corporate_test,
         )
 
         # 수집된 정보 병합
@@ -532,6 +711,11 @@ class ChatOrchestratorV2:
             "topics": [new_collected.get("topic")] if new_collected.get("topic") else collected_info.get("topics", []),
             "difficulty": new_collected.get("difficulty") or collected_info.get("difficulty"),
             "language": new_collected.get("language") or collected_info.get("language"),
+            # 출처 및 생성 관련 필드
+            "source": new_collected.get("source") or existing_source,
+            "wants_generation": new_collected.get("wants_generation", False) or existing_wants_generation,
+            "generation_details": new_collected.get("generation_details") or existing_generation_details,
+            "is_corporate_test": new_collected.get("is_corporate_test", False) or existing_is_corporate_test,
         }
         logger.debug(f"Info merge: new={new_collected}, original={collected_info}, merged={merged_info}")
 
@@ -655,7 +839,7 @@ class ChatOrchestratorV2:
     # Primary 의도: 메인 분기를 결정하는 의도
     PRIMARY_ACTIONS = {
         # info_collection
-        "set_topic", "set_difficulty", "set_language", "ask_recommendation",
+        "set_topic", "set_difficulty", "set_language", "ask_recommendation", "quick_start",
         # discovery
         "select_problem", "show_more", "generate_new", "select_problem_type", "inquire_problem",
         # solving
@@ -964,6 +1148,14 @@ class ChatOrchestratorV2:
         # ============================================================
         # 카테고리별 라우팅
         # ============================================================
+
+        # 0. Quick Start (정보 수집 스킵)
+        if intent_result.action == ActionType.QUICK_START:
+            return await self._process_quick_start(
+                message=message,
+                user_context=user_context,
+                conversation_history=conversation_history,
+            )
 
         # 1. Solving
         if intent_result.category == IntentCategory.SOLVING:

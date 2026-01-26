@@ -439,22 +439,6 @@ for _ in range(T):
 5. **fixed_end 필수** - 마지막 코드 최소 1줄은 반드시 fixed_end에 포함!
 """
 
-# 난이도별 설정
-PUZZLE_DIFFICULTY_CONFIG = {
-    "easy": {
-        "block_count": (5, 8),
-        "max_blocks": 20
-    },
-    "medium": {
-        "block_count": (8, 12),
-        "max_blocks": 20
-    },
-    "hard": {
-        "block_count": (12, 15),
-        "max_blocks": 20
-    }
-}
-
 # 최대 블록 수 상수
 MAX_PUZZLE_BLOCKS = 20
 OPTIMAL_PUZZLE_BLOCKS = 15

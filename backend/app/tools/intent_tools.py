@@ -37,6 +37,10 @@ class ActionType(str, Enum):
     SET_DIFFICULTY = "set_difficulty"
     SET_LANGUAGE = "set_language"
     ASK_RECOMMENDATION = "ask_recommendation"
+    QUICK_START = "quick_start"  # 정보 수집 스킵하고 바로 문제 유형 선택으로
+    SET_SOURCE = "set_source"  # 문제 출처 설정 (백준, 리트코드, 프로그래머스)
+    REQUEST_GENERATION = "request_generation"  # 새 문제 생성 요청
+    CORPORATE_TEST = "corporate_test"  # 대기업 코테 관련 요청
 
     # Discovery
     SELECT_PROBLEM = "select_problem"
@@ -146,7 +150,7 @@ MULTI_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 **다중 의도 분�
 - "1번으로 하고 빈칸으로 할게" → [select_problem, select_problem_type]
 
 ### 3. 카테고리/액션 목록
-**info_collection:** set_topic, set_difficulty, set_language, ask_recommendation
+**info_collection:** set_topic, set_difficulty, set_language, ask_recommendation, quick_start, set_source, request_generation, corporate_test
 **discovery:** select_problem, show_more, generate_new, select_problem_type, inquire_problem
 **solving:** request_hint, submit_code, ask_question, give_up, chat_assist, concept_explain, approach_hint, validate_direction, code_review
 **confirmation:** affirm, negate
@@ -214,7 +218,41 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - set_topic: 주제 선택 (정렬, 구현, 이분탐색 등)
 - set_difficulty: 난이도 선택 (실버~마스터, 쉬움~어려움)
 - set_language: 언어 선택 (python, java, cpp)
-- ask_recommendation: 추천 요청, 학습 목표/레벨 언급 ("추천해줘", "대기업 코테", "초보인데")
+- ask_recommendation: 추천 요청, 학습 목표/레벨 언급 ("추천해줘", "대기업 코테", "초보인데", "모르겠어", "아무거나 추천해줘")
+- quick_start: 정보 수집 단계를 건너뛰고 빠르게 문제 풀이 시작 ("빨리 시작하자", "스킵", "귀찮아", "바로 문제 줘", "정보 수집 건너뛰고")
+
+### 2-1. ask_recommendation vs quick_start 구분 (매우 중요!)
+**ask_recommendation (info_collection 내에서 추천):**
+- "모르겠어" → 무엇을 풀지 모르겠다, 도움이 필요함 → info_collection에서 추천
+- "아무거나 추천해줘" → 추천을 원함 → info_collection에서 추천
+- "뭐 풀까?", "뭐가 좋을까?" → 조언 요청 → info_collection에서 추천
+
+**quick_start (바로 문제 유형 선택으로):**
+- "빨리", "스킵", "귀찮아", "빠르게" → 시간이 없거나 절차를 생략하고 싶음
+- "정보 수집 건너뛰고", "바로 문제 줘" → 명시적으로 단계 생략 요청
+- "그냥 아무 문제나 줘" + 급한 어조 → 빠른 시작 원함
+
+**핵심 차이:**
+- ask_recommendation: 사용자가 **도움이 필요**해서 추천을 원함 (느긋함)
+- quick_start: 사용자가 **빨리 시작**하고 싶어서 절차를 생략하고 싶음 (급함)
+
+### 2-2. 출처/생성/대기업 코테 의도 (매우 중요!)
+**set_source (출처 지정):**
+- "백준 문제 풀고 싶어" → source: "baekjoon"
+- "리트코드 문제 줘" → source: "leetcode"
+- "프로그래머스 문제로" → source: "programmers"
+- 출처 설정만 하고 나머지 정보 수집은 계속 진행
+
+**request_generation (새 문제 생성 요청):**
+- "새로운 문제 만들어줘", "문제 생성해줘", "DB에 없는 새 문제" → 새 문제 생성 의도
+- 이 경우 추가 정보 수집(generation_details) 단계가 필요함
+- extracted_values에 wants_generation: true 설정
+
+**corporate_test (대기업 코테):**
+- "카카오 코테 준비", "대기업 기출", "네이버 코딩테스트", "기출문제 풀고 싶어"
+- "입사 코테", "채용 코테", "기업 코딩테스트"
+- 이 경우 programmers_embeddings + problem_embeddings 모두에서 RAG 검색
+- extracted_values에 is_corporate_test: true 설정
 
 **discovery:**
 - select_problem: 문제 선택 ("첫 번째", "1번", "맨 위 거")
@@ -249,6 +287,10 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - topic: 구현, 정렬, 문자열, 이분탐색, 그리디, 백트래킹, BFS/DFS, 트리, 기초, 수학 등
 - difficulty: easy, medium, medium_hard, hard, very_hard
 - language: python, java, cpp
+- source: 문제 출처 (baekjoon, leetcode) - "백준 문제", "리트코드 문제" 등
+- wants_generation: true/false - 새 문제 생성 요청 여부 ("새 문제 만들어줘", "생성해줘")
+- generation_details: 문자열 - 어떤 문제를 원하는지 자유 양식 설명 ("카카오 스타일로", "실전같은 문제")
+- is_corporate_test: true/false - 대기업 코테 관련 여부 ("카카오", "네이버", "대기업", "기출", "입사", "채용")
 - learning_goal: big_tech (대기업/코테), mid_startup (스타트업), skill_up (실력향상)
 - experience_level: beginner (입문), elementary (초급), intermediate (중급), advanced (고급)
 - problem_type: blank (빈칸), puzzle (퍼즐/파슨스), guided (대화형/1대1)
@@ -298,7 +340,7 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
   "category": "info_collection|discovery|solving|confirmation|general",
   "action": "액션값",
   "confidence": 0.0-1.0,
-  "extracted_values": {{"topic": null, "difficulty": null, "language": null, "learning_goal": null, "experience_level": null, "problem_type": null}},
+  "extracted_values": {{"topic": null, "difficulty": null, "language": null, "learning_goal": null, "experience_level": null, "problem_type": null, "source": null, "wants_generation": false, "generation_details": null, "is_corporate_test": false}},
   "selection_index": null,
   "inquiry_target": null,
   "inquiry_question": null,

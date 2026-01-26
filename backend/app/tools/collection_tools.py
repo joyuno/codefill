@@ -211,9 +211,27 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 AI 코딩 학습 도우미 챗봇의 메�
 4. 동의어 인식: "다이나믹"="DP", "실버"="easy"
 5. 확장 의도(coding_concept 등)는 is_collection_related=false로 설정
 
+## 4. 단순 키워드 판단 (is_simple_keyword) - 성능 최적화용
+메시지가 **단순 키워드 매칭**으로 처리 가능한지 판단합니다.
+
+**is_simple_keyword = true** (단순 입력, 추가 분석 불필요):
+- 주제 단독 입력: "정렬", "DP", "그리디", "이분탐색", "구현", "문자열"
+- 난이도 단독 입력: "쉬운거", "골드", "플래티넘", "어려운거", "easy", "medium"
+- 언어 단독 입력: "파이썬", "자바", "python", "C++"
+- 단순 긍정: "응", "네", "ㅇㅇ", "굳", "좋아"
+- 단순 부정 (대안 없음): "아니", "ㄴㄴ"
+
+**is_simple_keyword = false** (복잡한 의도, 추가 분석 필요):
+- 질문 포함: "정렬 어려워?", "DP가 뭐야?"
+- 거절 + 대안: "정렬 말고 그리디", "다른 거로 해줘"
+- 복합 입력: "쉬운 정렬 파이썬으로"
+- 추천 요청: "뭐가 좋아?", "추천해줘"
+- 조건 포함: "빨리 끝나는 거", "요즘 코테 자주 나오는 거"
+
 ## JSON 응답 형식
 {
   "is_collection_related": true | false,
+  "is_simple_keyword": true | false,
   "intent": "positive" | "negative" | "value_input" | "question" | "unclear" | "off_topic" | "coding_concept" | "syntax_help" | "error_debug" | "learning_advice" | "code_review" | "hint_request" | "progress_inquiry" | "service_help" | "account_inquiry" | "greeting" | "chitchat",
   "confidence": 0.0-1.0,
   "values": {
@@ -259,6 +277,7 @@ class UnifiedAnalysisResult:
     rejection_reason: Optional[str]       # "too_hard", "want_different", ...
     alternative: Optional[Dict[str, str]] # {"value": "DP", "step": "topic"}
     is_collection_related: bool = True    # 정보 수집과 관련 있는 메시지인지
+    is_simple_keyword: bool = False       # 단순 키워드 매칭으로 처리 가능한지 (Hybrid fast-path용)
     question_info: Optional[QuestionInfo] = None  # 질문 분석 정보 (intent=question일 때)
     extended_info: Optional[ExtendedInfo] = None  # 확장 의도 정보 (코딩 학습 관련)
 
@@ -370,6 +389,9 @@ class CollectionTool:
                     print(f"[CollectionTool] Extended intent: {intent}, category={extended_info.category}, "
                           f"keywords={extended_info.keywords}, needs_search={extended_info.needs_search}")
 
+            # is_simple_keyword 파싱 (Hybrid fast-path용)
+            is_simple_keyword = result.get("is_simple_keyword", False)
+
             analysis = UnifiedAnalysisResult(
                 intent=intent,
                 confidence=result.get("confidence", 0.5),
@@ -378,6 +400,7 @@ class CollectionTool:
                 rejection_reason=result.get("rejection_reason"),
                 alternative=alternative if alternative.get("value") else None,
                 is_collection_related=is_related,
+                is_simple_keyword=is_simple_keyword,
                 question_info=question_info,
                 extended_info=extended_info,
             )
@@ -387,7 +410,7 @@ class CollectionTool:
                 self._analysis_cache.clear()
             self._analysis_cache[cache_key] = analysis
 
-            print(f"[CollectionTool] Unified analysis: intent={analysis.intent}, values={analysis.values}")
+            print(f"[CollectionTool] Unified analysis: intent={analysis.intent}, values={analysis.values}, is_simple_keyword={is_simple_keyword}")
             return analysis
 
         except Exception as e:
@@ -400,6 +423,7 @@ class CollectionTool:
                 rejection_reason=None,
                 alternative=None,
                 is_collection_related=True,  # 에러 시 기본값은 관련 있음으로
+                is_simple_keyword=False,     # 에러 시 안전하게 full analysis
                 question_info=None,
                 extended_info=None,
             )
@@ -414,6 +438,7 @@ class CollectionTool:
         current_step: str = "topic",
         existing_values: Optional[Dict[str, str]] = None,
         use_llm_fallback: bool = True,
+        existing_analysis: Optional[UnifiedAnalysisResult] = None,  # 기존 분석 결과 재사용
     ) -> ExtractionResult:
         """
         메시지에서 topic/difficulty/language 값 추출 (통합 분석 사용)
@@ -423,15 +448,16 @@ class CollectionTool:
             current_step: 현재 수집 단계 (우선순위 결정용)
             existing_values: 이미 수집된 값 (덮어쓰기 방지)
             use_llm_fallback: LLM 사용 여부 (기본 True)
+            existing_analysis: 이미 수행된 분석 결과 (중복 LLM 호출 방지)
 
         Returns:
             ExtractionResult
         """
         existing_values = existing_values or {}
 
-        # LLM First: 통합 분석 사용
+        # LLM First: 통합 분석 사용 (기존 분석 결과가 있으면 재사용)
         if use_llm_fallback:
-            analysis = await self.analyze(message)
+            analysis = existing_analysis or await self.analyze(message)
 
             # 거부된 값이 있으면 details에 기록
             details = {
@@ -463,32 +489,22 @@ class CollectionTool:
                 details["extended_info"] = analysis.extended_info.to_dict()
                 print(f"[CollectionTool] Extended info added: {analysis.intent}")
 
-            # 신뢰도 높으면 바로 반환
-            if analysis.confidence >= 0.60:
-                return ExtractionResult(
-                    values=analysis.values,
-                    confidence=analysis.confidence,
-                    extraction_type="unified_llm",
-                    details=details
-                )
-
-        # Fallback: 임베딩 기반 매칭 (LLM 실패 시)
-        embedding_result = await self._extract_with_embedding(message, current_step)
-
-        current_value = embedding_result.values.get(current_step)
-        if current_value and embedding_result.confidence >= 0.75:
-            return embedding_result
-
-        # 둘 다 낮은 신뢰도면 LLM 결과 우선
-        if use_llm_fallback:
-            analysis = await self.analyze(message)
+            # LLM 결과 바로 반환 (임베딩 fallback 제거로 속도 개선)
+            # 신뢰도가 낮아도 LLM 결과가 가장 정확함
             return ExtractionResult(
                 values=analysis.values,
                 confidence=analysis.confidence,
                 extraction_type="unified_llm",
-                details={"unified_analysis": True}
+                details=details
             )
-        return embedding_result
+
+        # use_llm_fallback=False인 경우 (거의 사용 안함)
+        return ExtractionResult(
+            values={"topic": None, "difficulty": None, "language": None},
+            confidence=0.0,
+            extraction_type="none",
+            details={"error": "llm_disabled"}
+        )
 
     async def _extract_with_embedding(
         self,
@@ -580,29 +596,14 @@ class CollectionTool:
         has_additional = bool(additional_values)
         extracted_value = analysis.values.get(current_step)
 
-        result = ConfirmationResult(
+        # LLM 결과 바로 반환 (임베딩 fallback 제거로 속도 개선)
+        return ConfirmationResult(
             response=response,
             confidence=analysis.confidence,
             extracted_value=extracted_value,
             has_additional_info=has_additional,
             additional_values=additional_values if has_additional else None
         )
-
-        # LLM 신뢰도 높으면 바로 반환
-        if analysis.confidence >= 0.70:
-            return result
-
-        # Fallback: 임베딩 기반 체크 (LLM 신뢰도 낮을 때만)
-        embedding_result = await self._check_confirmation_embedding(message)
-        if embedding_result.confidence >= 0.85:
-            # 임베딩 결과에 추가 값 정보 병합
-            if embedding_result.response == "positive" and has_additional:
-                embedding_result.has_additional_info = True
-                embedding_result.additional_values = additional_values
-                embedding_result.extracted_value = extracted_value
-            return embedding_result
-
-        return result
 
     async def _check_confirmation_embedding(self, message: str) -> ConfirmationResult:
         """임베딩 기반 긍정/부정 체크 (fallback용)"""
@@ -677,28 +678,14 @@ class CollectionTool:
         elif alternative:
             suggested_action = "suggest_different"
 
-        result = RejectionResult(
+        # LLM 결과 바로 반환 (임베딩 fallback 제거로 속도 개선)
+        return RejectionResult(
             reason=analysis.rejection_reason or "want_different",
             alternative=alternative,
             alternative_step=alternative_step,
             confidence=analysis.confidence,
             suggested_action=suggested_action
         )
-
-        # 신뢰도 높으면 바로 반환
-        if analysis.confidence >= 0.70:
-            return result
-
-        # Fallback: 임베딩으로 대안 값 추출 시도
-        extraction = await self._extract_with_embedding(message, current_step)
-        emb_alternative = extraction.values.get(current_step)
-        if emb_alternative and emb_alternative not in rejected_values:
-            result.alternative = emb_alternative
-            result.alternative_step = current_step
-            result.confidence = max(result.confidence, extraction.confidence)
-            result.suggested_action = "suggest_different"
-
-        return result
 
     # ============================================================
     # Helper 메서드

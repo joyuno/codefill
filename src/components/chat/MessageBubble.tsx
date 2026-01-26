@@ -10,22 +10,34 @@ import {
   MasterIcon,
 } from '@/components/icons/tiers';
 
-// 난이도 value에 따른 티어 아이콘 매핑
+// 난이도 value에 따른 티어 아이콘 매핑 (영어 + 한글 키 지원)
 const TIER_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   easy: SilverIcon,
   medium: GoldIcon,
   medium_hard: PlatinumIcon,
   hard: DiamondIcon,
   very_hard: MasterIcon,
+  // 한글 키
+  실버: SilverIcon,
+  골드: GoldIcon,
+  플래티넘: PlatinumIcon,
+  다이아: DiamondIcon,
+  마스터: MasterIcon,
 };
 
-// 난이도 value에 따른 색상 매핑
+// 난이도 value에 따른 색상 매핑 (영어 + 한글 키 지원)
 const TIER_COLORS: Record<string, string> = {
   easy: 'text-gray-500',
   medium: 'text-amber-500',
   medium_hard: 'text-cyan-500',
   hard: 'text-violet-500',
   very_hard: 'text-rose-500',
+  // 한글 키
+  실버: 'text-gray-500',
+  골드: 'text-amber-500',
+  플래티넘: 'text-cyan-500',
+  다이아: 'text-violet-500',
+  마스터: 'text-rose-500',
 };
 
 /**
@@ -42,11 +54,21 @@ const getActionIcon = (value: string) => {
 
 /**
  * 힌트 메시지 포맷팅 (마크다운 스타일링)
- * [라벨] 또는 **bold** 형식을 굵은 텍스트 + 색상으로 변환
+ * 특정 라벨 패턴 [한 줄 요약], [설명], [예시] 등과 **bold** 형식만 강조
+ * 코드 내 대괄호 (dp[i], arr[0] 등)는 그대로 유지
  */
 function formatHintContent(content: string): React.ReactNode {
-  // [라벨] 또는 **bold** 패턴 찾기
-  const pattern = /\[([^\]]+)\]|\*\*([^*]+)\*\*/g;
+  // 허용된 라벨 목록 (코드가 아닌 실제 라벨만)
+  const allowedLabels = [
+    '한 줄 요약', '요약', '설명', '예시', '힌트', '정답',
+    '핵심', '팁', '주의', '참고', 'TIP', 'NOTE', 'HINT',
+    '개념', '풀이', '접근법', '시간복잡도', '공간복잡도',
+  ];
+
+  // 허용된 라벨 또는 **bold** 패턴만 찾기
+  const labelPattern = allowedLabels.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const pattern = new RegExp(`\\[(${labelPattern})\\]|\\*\\*([^*]+)\\*\\*`, 'g');
+
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;

@@ -24,6 +24,11 @@ class CollectedInfo(TypedDict, total=False):
     time_available: Optional[int]
     selected_problem: Optional[str]
     selected_problem_index: Optional[int]
+    # 출처 및 생성 관련
+    source: Optional[str]  # 문제 출처 (baekjoon, leetcode) - 검색 필터용
+    wants_generation: bool  # 새 문제 생성 요청 여부
+    generation_details: Optional[str]  # 선택적 4단계: 어떤 문제 원하는지 자유 양식
+    is_corporate_test: bool  # 대기업 코테 관련 여부 (programmers RAG 포함)
 
 
 class ProblemInfo(TypedDict, total=False):

@@ -640,14 +640,8 @@ class UserTools:
 
             user_data = user_result.data[0]
 
-            # user_preferences 테이블에서 선호도 조회
-            pref_result = self.supabase.table("user_preferences") \
-                .select("preferred_language, preferred_difficulty") \
-                .eq("user_id", user_id) \
-                .limit(1) \
-                .execute()
-
-            pref_data = pref_result.data[0] if pref_result.data else {}
+            # user_preferences 테이블은 사용하지 않음 (테이블 없음)
+            pref_data = {}
 
             # user_stats 테이블에서 통계 조회
             stats_result = self.supabase.table("user_stats") \

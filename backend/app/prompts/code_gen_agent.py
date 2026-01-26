@@ -160,12 +160,26 @@ CODE_GEN_SYSTEM_PROMPT = """
 - examples: [{{"input": "", "output": "", "explanation": ""}}]
 - constraints: ["제약조건"]
 - difficulty: "easy" | "medium" | "hard"
-- topics: ["주제"]
+- topics: ["주제"] (⚠️ 아래 허용된 주제에서만 선택!)
 - time_complexity: "O(n)"
 - space_complexity: "O(n)"
 - key_concepts: ["개념"]
 - common_mistakes: ["실수"]
 - hints_for_problem_gen: {{"blank_candidates": [], "puzzle_split_points": [], "guided_flow": []}}
+
+### ⚠️ topics 필드 - 반드시 아래 목록에서만 선택!
+허용된 topics (이 목록에 없는 주제는 절대 사용 금지):
+- "구현", "정렬", "문자열", "이분탐색", "그리디", "DP"
+- "BFS/DFS", "그래프", "백트래킹", "완전탐색", "자료구조"
+- "수학", "트리", "최단경로", "투포인터", "해시"
+
+예시:
+- DP 문제 → topics: ["DP"]
+- 그래프 탐색 → topics: ["BFS/DFS"] 또는 ["그래프"]
+- 정렬 알고리즘 → topics: ["정렬"]
+- 슬라이딩 윈도우 → topics: ["투포인터"]
+- 이진 탐색 → topics: ["이분탐색"]
+- 스택/큐 사용 → topics: ["자료구조"]
 
 ---
 

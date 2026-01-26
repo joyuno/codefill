@@ -359,32 +359,3 @@ GUIDED_FEEDBACK_PROMPT = """
 응답은 **한국어**로, 친절하고 격려하는 톤으로 작성하세요.
 """
 
-# ============================================================
-# 난이도별 설정
-# ============================================================
-GUIDED_DIFFICULTY_CONFIG = {
-    "easy": {
-        "hint_detail": "상세하게",
-        "max_hints": 10,
-        "starter_code_coverage": "모든 변수 초기화까지",  # import + 함수 정의 + 변수 초기화 전부
-        "encourage_level": "많이"
-    },
-    "medium": {
-        "hint_detail": "적당히",
-        "max_hints": 7,
-        "starter_code_coverage": "모든 변수 초기화까지",  # import + 함수 정의 + 변수 초기화 전부
-        "encourage_level": "보통"
-    },
-    "hard": {
-        "hint_detail": "최소한",
-        "max_hints": 5,
-        "starter_code_coverage": "기본 변수 초기화까지",  # import + 함수 정의 + 핵심 변수만
-        "encourage_level": "적게"
-    },
-    "very_hard": {
-        "hint_detail": "힌트 최소화",
-        "max_hints": 3,
-        "starter_code_coverage": "함수 정의까지",  # import + 함수 정의만
-        "encourage_level": "스스로"
-    }
-}

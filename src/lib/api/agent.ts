@@ -874,4 +874,22 @@ export const agentApi = {
       callbacks.onDone?.();
     }
   },
+
+  /**
+   * Get Personalized Topic Chips
+   * 채팅 시작 시 개인화된 주제 칩을 가져옴
+   */
+  async getPersonalizedChips(): Promise<{
+    chips: Array<{ label: string; value: string; category: string }>;
+    is_personalized: boolean;
+    debug_info?: Record<string, unknown>;
+  }> {
+    const response = await api.get<{
+      chips: Array<{ label: string; value: string; category: string }>;
+      is_personalized: boolean;
+      debug_info?: Record<string, unknown>;
+    }>('/agent/personalized-chips');
+    if (response.error) throw new Error(response.error.message);
+    return response.data!;
+  },
 };

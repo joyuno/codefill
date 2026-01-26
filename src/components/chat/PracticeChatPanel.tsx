@@ -72,6 +72,20 @@ interface PracticeChatPanelProps {
    * 빈칸 문제에서 사용자가 현재 입력한 답변 (채팅에서 현재 상황 파악용)
    */
   blankAnswers?: Record<string, string>;
+  /**
+   * 문제 미리보기 콜백 (chat 페이지에서 왼쪽에 문제 표시용)
+   * 문제 칩 클릭 시 호출되어 왼쪽 패널에 미리보기 표시
+   */
+  onBaseProblemPreview?: (problem: BaseProblemInfo | null) => void;
+  /**
+   * 외부에서 문제 시작 요청 시 전달 (chat 페이지에서 "이 문제 풀기" 버튼 클릭 시)
+   * 이 prop이 설정되면 해당 문제의 유형 선택 메시지를 표시
+   */
+  startProblemRequest?: BaseProblemInfo | null;
+  /**
+   * startProblemRequest 처리 완료 시 호출 (상태 리셋용)
+   */
+  onStartProblemHandled?: () => void;
 }
 
 // Session state interface for LangGraph
@@ -216,18 +230,13 @@ function convertGeneratedDataToProblem(
   }
 }
 
-// Initial welcome message
+// Initial welcome message (칩은 개인화 API에서 로드)
 const initialWelcomeMessage: Message = {
   id: 'welcome',
   role: 'assistant',
   content: '안녕하세요! 코딩 연습을 도와드릴게요.\n\n어떤 알고리즘을 연습하고 싶으신가요? 원하는 주제나 난이도를 말씀해주세요!',
   timestamp: new Date().toISOString(),
-  chips: [
-    { label: '기초', value: '기초', category: 'topic' },
-    { label: 'DP', value: 'DP', category: 'topic' },
-    { label: '그래프', value: '그래프', category: 'topic' },
-    { label: '정렬', value: '정렬', category: 'topic' },
-  ],
+  chips: [], // 개인화 칩은 useEffect에서 로드
 };
 
 export function PracticeChatPanel({
@@ -243,6 +252,9 @@ export function PracticeChatPanel({
   usedBlankHintIndices = [],
   puzzleUserOrder = [],
   blankAnswers = {},
+  onBaseProblemPreview,
+  startProblemRequest,
+  onStartProblemHandled,
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile, refreshProfile } = useAuth();
@@ -331,6 +343,7 @@ export function PracticeChatPanel({
   const [guidedFlowStep, setGuidedFlowStep] = useState(0);
   const [guidedCheckpointIndex, setGuidedCheckpointIndex] = useState(0);
   const [guidedProblem, setGuidedProblem] = useState<ConvertedProblem | null>(null);
+
 
   // Guided 튜터 대화 기록 (문제 풀이 세션 동안 유지)
   const [guidedTutorHistory, setGuidedTutorHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
@@ -479,6 +492,77 @@ export function PracticeChatPanel({
   useEffect(() => { recommendedProblemsRef.current = recommendedProblems; }, [recommendedProblems]);
   useEffect(() => { selectedBaseProblemRef.current = selectedBaseProblem; }, [selectedBaseProblem]);
   useEffect(() => { problemRef.current = problem; }, [problem]);
+
+  // 채팅 시작 시 개인화 칩 가져오기 (welcome 메시지가 있을 때만)
+  useEffect(() => {
+    // initialBaseProblem이 있으면 스킵 (바로 유형 선택으로 시작)
+    if (initialBaseProblem) return;
+
+    // welcome 메시지가 있는지 확인
+    const hasWelcomeMessage = messages.some(m => m.id === 'welcome');
+    if (!hasWelcomeMessage) return;
+
+    // 이미 개인화된 칩이 있는지 확인 (중복 호출 방지)
+    const welcomeMsg = messages.find(m => m.id === 'welcome');
+    if (welcomeMsg?.chips && welcomeMsg.chips.length > 0) return; // 이미 칩이 있으면 건너뜀
+
+    const fetchPersonalizedChips = async () => {
+      try {
+        const response = await agentApi.getPersonalizedChips();
+
+        if (response.chips && response.chips.length > 0) {
+          // 초기 메시지의 칩 업데이트
+          setMessages(prev => prev.map(msg =>
+            msg.id === 'welcome'
+              ? {
+                  ...msg,
+                  chips: response.chips.map(c => ({
+                    label: c.label,
+                    value: c.value,
+                    category: c.category as 'topic' | 'difficulty' | 'action',
+                  })),
+                }
+              : msg
+          ));
+        }
+      } catch (error) {
+        console.error('[PracticeChatPanel] Failed to fetch personalized chips:', error);
+        // 에러 시 기본 칩 유지
+      }
+    };
+
+    fetchPersonalizedChips();
+  }, [initialBaseProblem]); // 컴포넌트 마운트 시 1회만 실행
+
+  // "이 문제 풀기" 버튼 클릭 시 외부에서 문제 시작 요청
+  useEffect(() => {
+    if (!startProblemRequest) return;
+
+    console.log('[PracticeChatPanel] startProblemRequest received:', startProblemRequest.name);
+
+    // 1. 선택된 문제 설정
+    setSelectedBaseProblem(startProblemRequest);
+    setFlowState('type_selection');
+
+    // 2. 유형 선택 메시지 표시
+    const typeSelectionMsg: Message = {
+      id: `type-selection-${Date.now()}`,
+      role: 'assistant',
+      content: `"${startProblemRequest.title || startProblemRequest.name}" 문제를 선택하셨네요!\n\n어떤 형식으로 문제를 풀어볼까요?`,
+      timestamp: new Date().toISOString(),
+      chips: [
+        { label: '빈칸 채우기', value: 'type-blank', category: 'action' },
+        { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' },
+        { label: '1대1 대화형', value: 'type-guided', category: 'action' },
+        { label: '구현', value: 'type-implementation', category: 'action' },
+        { label: '← 다른 문제 보기', value: 'back-to-problems', category: 'action' },
+      ],
+    };
+    setMessages(prev => [...prev, typeSelectionMsg]);
+
+    // 3. 처리 완료 알림 (상태 리셋)
+    onStartProblemHandled?.();
+  }, [startProblemRequest, onStartProblemHandled]);
 
   // Get user context from localStorage (onboarding data) + current search results + auth user
   const getUserContext = useCallback(() => {
@@ -771,7 +855,7 @@ export function PracticeChatPanel({
           content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})\n\n${generatedProblem.description || generatedProblem.question || ''}`,
           timestamp: new Date().toISOString(),
           chips: [{
-            label: `${generatedProblem.title || generatedProblem.name} (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})`,
+            label: generatedProblem.title || generatedProblem.name,
             value: 'problem-0',
             category: 'action' as const,
           }],
@@ -904,14 +988,29 @@ export function PracticeChatPanel({
     } else if (chip.value === 'generate-new') {
       // 새 문제 생성: SSE 스트리밍으로 실시간 진행 상태 표시
       handleGenerateNewProblem();
+    } else if (chip.value === 'corporate-test') {
+      // 대기업 코테 칩: generation_details 단계로 이동
+      handleSendMessage('대기업 코테 준비할래');
     } else if (chip.value.startsWith('problem-')) {
-      // Problem selection
+      // Problem preview (왼쪽 패널에 문제 표시만, 메시지는 "이 문제 풀기" 버튼 클릭 시)
       const problemIndex = parseInt(chip.value.replace('problem-', ''), 10);
       const selected = recommendedProblems[problemIndex];
       if (selected) {
-        setSelectedBaseProblem(selected);
-        showProblemTypeSelection(selected);
+        // 왼쪽 패널에 문제 미리보기 표시 (chat 페이지에서 처리)
+        // 유형 선택 메시지는 "이 문제 풀기" 버튼 클릭 시에만 표시
+        onBaseProblemPreview?.(selected);
       }
+    } else if (chip.value === 'back-to-problems') {
+      // 다른 문제 선택 (뒤로가기)
+      setSelectedBaseProblem(null);
+      setFlowState('recommending');
+      // 왼쪽 패널 미리보기 해제
+      onBaseProblemPreview?.(null);
+    } else if (chip.value === 'cancel-problem') {
+      // 문제 미리보기 취소 ("이 문제 풀기" 전에 다른 문제 선택)
+      setSelectedBaseProblem(null);
+      setFlowState('recommending');
+      onBaseProblemPreview?.(null);
     } else if (chip.value.startsWith('type-')) {
       // Problem type selection
       const type = chip.value.replace('type-', '') as 'blank' | 'puzzle' | 'guided' | 'implementation';
@@ -919,9 +1018,10 @@ export function PracticeChatPanel({
         handleProblemTypeSelect(type);
       }
     } else {
-      // Send as regular message
-      handleSendMessage(chip.label);
+      // Send as regular message (use value for API, not label which may have suffixes like "(자주풂)")
+      handleSendMessage(chip.value);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recommendedProblems, selectedBaseProblem, handleGuidedProgress, showGuidedFinalCode, resetToNewProblem, showProblemTypeSelection, handleGenerateNewProblem]);
 
   // Handle problem type selection and generate problem (Streaming version)
@@ -1811,7 +1911,7 @@ export function PracticeChatPanel({
           content: `${fallbackNotice}${responseMessage}`,
           timestamp: new Date().toISOString(),
           chips: [{
-            label: `${actionData.generated_problem.title || actionData.generated_problem.name} (${DIFFICULTY_TO_TIER[actionData.generated_problem.difficulty] || actionData.generated_problem.difficulty})`,
+            label: actionData.generated_problem.title || actionData.generated_problem.name,
             value: 'problem-0',
             category: 'action' as const,
           }],
@@ -1837,9 +1937,9 @@ export function PracticeChatPanel({
           search_offset: currentOffset,
         }));
 
-        // 문제 칩 5개 + 추가 옵션 칩
+        // 문제 칩 5개 + 추가 옵션 칩 (난이도는 채팅 메시지에 이미 있으므로 칩에서 제외)
         const problemChips = actionData.problems.slice(0, 5).map((p, i) => ({
-          label: `${p.name || p.title} (${DIFFICULTY_TO_TIER[p.difficulty] || p.difficulty})`,
+          label: p.name || p.title,
           value: `problem-${i}`,
           category: 'action' as const,
         }));
@@ -1850,6 +1950,7 @@ export function PracticeChatPanel({
           additionalChips.push({ label: '🔍 더 찾아보기', value: 'more-search', category: 'action' as const });
         }
         additionalChips.push({ label: '✨ 새 문제 생성', value: 'generate-new', category: 'action' as const });
+        additionalChips.push({ label: '🏢 대기업 코테', value: 'corporate-test', category: 'action' as const });
 
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
@@ -1876,7 +1977,7 @@ export function PracticeChatPanel({
           content: `${fallbackNotice}${responseMessage}`,
           timestamp: new Date().toISOString(),
           chips: [{
-            label: `${actionData.generated_problem.title} (${DIFFICULTY_TO_TIER[actionData.generated_problem.difficulty] || actionData.generated_problem.difficulty})`,
+            label: actionData.generated_problem.title || actionData.generated_problem.name,
             value: 'problem-0',
             category: 'action' as const,
           }],
@@ -2062,7 +2163,7 @@ export function PracticeChatPanel({
           content: `요청하신 조건에 맞는 문제들을 찾았어요! 아래에서 선택해주세요:`,
           timestamp: new Date().toISOString(),
           chips: problems.slice(0, 4).map((p, i) => ({
-            label: `${p.title} (${DIFFICULTY_TO_TIER[p.difficulty] || p.difficulty})`,
+            label: p.title || p.name,
             value: `problem-${i}`,
             category: 'action' as const,
           })),
@@ -2219,6 +2320,7 @@ export function PracticeChatPanel({
                   size="sm"
                   className="gap-1.5 text-xs"
                   onClick={showKeyConcepts}
+                  data-tutorial="key-concepts-btn"
                 >
                   <BookOpen className="h-3.5 w-3.5" />
                   핵심 개념

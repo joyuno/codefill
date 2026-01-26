@@ -11,17 +11,14 @@ from .chat_agent import (
 
 from .blank_problem_agent import (
     BLANK_PROBLEM_SYSTEM_PROMPT,
-    BLANK_DIFFICULTY_CONFIG
 )
 
 from .puzzle_problem_agent import (
     PUZZLE_PROBLEM_SYSTEM_PROMPT,
-    PUZZLE_DIFFICULTY_CONFIG
 )
 
 from .guided_problem_agent import (
     GUIDED_PROBLEM_SYSTEM_PROMPT,
-    GUIDED_DIFFICULTY_CONFIG,
     GUIDED_TUTOR_CHAT_PROMPT,
     GUIDED_FEEDBACK_PROMPT
 )
@@ -73,13 +70,10 @@ __all__ = [
     "LEVEL_RECOMMENDATIONS",
     # Blank Problem Agent
     "BLANK_PROBLEM_SYSTEM_PROMPT",
-    "BLANK_DIFFICULTY_CONFIG",
     # Puzzle Problem Agent
     "PUZZLE_PROBLEM_SYSTEM_PROMPT",
-    "PUZZLE_DIFFICULTY_CONFIG",
     # Guided Problem Agent
     "GUIDED_PROBLEM_SYSTEM_PROMPT",
-    "GUIDED_DIFFICULTY_CONFIG",
     "GUIDED_TUTOR_CHAT_PROMPT",
     "GUIDED_FEEDBACK_PROMPT",
     # Code Generation Agent

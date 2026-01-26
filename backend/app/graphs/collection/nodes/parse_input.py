@@ -43,7 +43,146 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
     }
 
     # ============================================================
-    # 1. 확인 대기 상태: 긍정/부정 분석
+    # 0. Ultra Fast-Path: 칩 클릭 / 단순 키워드 (LLM 호출 전, 최우선)
+    # ============================================================
+    message_lower = message.lower().strip()
+
+    # 주제 키워드 매핑 (정확한 매칭)
+    TOPIC_KEYWORDS_EXACT = {
+        "구현": "구현", "정렬": "정렬", "dp": "DP", "DP": "DP",
+        "그리디": "그리디", "이분탐색": "이분탐색", "문자열": "문자열",
+        "그래프": "그래프", "bfs/dfs": "BFS/DFS", "BFS/DFS": "BFS/DFS",
+        "트리": "트리", "수학": "수학", "자료구조": "자료구조",
+        "완전탐색": "완전탐색", "백트래킹": "백트래킹", "분할정복": "분할정복",
+        "시뮬레이션": "시뮬레이션", "기초": "기초",
+        "implementation": "구현", "sorting": "정렬", "greedy": "그리디",
+        "graph": "그래프", "tree": "트리", "string": "문자열",
+        "bfs": "BFS/DFS", "dfs": "BFS/DFS", "math": "수학",
+    }
+
+    # 난이도 키워드 매핑 (정확한 매칭)
+    DIFFICULTY_KEYWORDS_EXACT = {
+        "실버": "easy", "silver": "easy", "easy": "easy", "쉬움": "easy",
+        "골드": "medium", "gold": "medium", "medium": "medium", "보통": "medium",
+        "플래티넘": "medium_hard", "platinum": "medium_hard",
+        "다이아": "hard", "diamond": "hard", "hard": "hard",
+        "마스터": "very_hard", "master": "very_hard",
+    }
+
+    # 언어 키워드 매핑 (정확한 매칭)
+    LANGUAGE_KEYWORDS_EXACT = {
+        "파이썬": "python", "python": "python", "Python": "python",
+        "자바": "java", "java": "java", "Java": "java",
+        "c++": "cpp", "cpp": "cpp", "C++": "cpp",
+    }
+
+    # 정확한 키워드 매칭 시도 (칩 클릭 = 정확한 값)
+    # 단, "?"가 포함되면 질문이므로 LLM 호출 필요
+    fast_matched_value = None
+    fast_matched_step = None
+    is_question_mark = "?" in message
+
+    # "?"가 없을 때만 키워드 매칭 시도 (질문이면 LLM 필요)
+    if not is_question_mark:
+        # 현재 단계 기준 매칭
+        if current_step == "topic":
+            fast_matched_value = TOPIC_KEYWORDS_EXACT.get(message) or TOPIC_KEYWORDS_EXACT.get(message_lower)
+            if fast_matched_value:
+                fast_matched_step = "topic"
+        elif current_step == "difficulty":
+            fast_matched_value = DIFFICULTY_KEYWORDS_EXACT.get(message) or DIFFICULTY_KEYWORDS_EXACT.get(message_lower)
+            if fast_matched_value:
+                fast_matched_step = "difficulty"
+        elif current_step == "language":
+            fast_matched_value = LANGUAGE_KEYWORDS_EXACT.get(message) or LANGUAGE_KEYWORDS_EXACT.get(message_lower)
+            if fast_matched_value:
+                fast_matched_step = "language"
+
+        # 현재 단계에서 못 찾으면 다른 단계도 시도
+        if not fast_matched_value:
+            if not existing_values.get("topic"):
+                fast_matched_value = TOPIC_KEYWORDS_EXACT.get(message) or TOPIC_KEYWORDS_EXACT.get(message_lower)
+                if fast_matched_value:
+                    fast_matched_step = "topic"
+            if not fast_matched_value and not existing_values.get("difficulty"):
+                fast_matched_value = DIFFICULTY_KEYWORDS_EXACT.get(message) or DIFFICULTY_KEYWORDS_EXACT.get(message_lower)
+                if fast_matched_value:
+                    fast_matched_step = "difficulty"
+            if not fast_matched_value and not existing_values.get("language"):
+                fast_matched_value = LANGUAGE_KEYWORDS_EXACT.get(message) or LANGUAGE_KEYWORDS_EXACT.get(message_lower)
+                if fast_matched_value:
+                    fast_matched_step = "language"
+
+    # ============================================================
+    # 0-1. Orchestrator Fast-Path 후 중복 처리 방지
+    # - 메시지가 이미 설정된 값(topic/difficulty/language)과 일치하면
+    # - Orchestrator에서 이미 처리했으므로 LLM 호출 없이 다음 단계로
+    # ============================================================
+    existing_topic = existing_values.get("topic")
+    existing_difficulty = existing_values.get("difficulty")
+    existing_language = existing_values.get("language")
+
+    if not is_question_mark:
+        # 메시지가 이미 설정된 topic과 일치
+        if existing_topic and (message == existing_topic or message_lower == existing_topic.lower()):
+            updates["current_step"] = _determine_next_step(
+                topic=existing_topic,
+                difficulty=existing_difficulty,
+                language=existing_language,
+                wants_generation=state.get("wants_generation", False),
+                generation_details=state.get("generation_details"),
+            )
+            updates["hybrid_fast_path"] = True
+            return updates
+
+        # 메시지가 이미 설정된 difficulty와 일치
+        if existing_difficulty:
+            difficulty_display = {"easy": "실버", "medium": "골드", "medium_hard": "플래티넘", "hard": "다이아", "very_hard": "마스터"}
+            if message_lower == existing_difficulty or message_lower == difficulty_display.get(existing_difficulty, "").lower():
+                updates["current_step"] = _determine_next_step(
+                    topic=existing_topic,
+                    difficulty=existing_difficulty,
+                    language=existing_language,
+                    wants_generation=state.get("wants_generation", False),
+                    generation_details=state.get("generation_details"),
+                )
+                updates["hybrid_fast_path"] = True
+                return updates
+
+        # 메시지가 이미 설정된 language와 일치
+        if existing_language and message_lower in [existing_language, "파이썬", "자바", "python", "java", "c++", "cpp"]:
+            lang_display = {"python": ["python", "파이썬"], "java": ["java", "자바"], "cpp": ["c++", "cpp", "씨플플"]}
+            for lang, aliases in lang_display.items():
+                if existing_language == lang and message_lower in aliases:
+                    updates["current_step"] = _determine_next_step(
+                        topic=existing_topic,
+                        difficulty=existing_difficulty,
+                        language=existing_language,
+                        wants_generation=state.get("wants_generation", False),
+                        generation_details=state.get("generation_details"),
+                    )
+                    updates["hybrid_fast_path"] = True
+                    return updates
+
+    # 키워드 매칭 성공 → LLM 호출 없이 바로 반환
+    if fast_matched_value and fast_matched_step:
+        updates[fast_matched_step] = fast_matched_value
+        updates["extracted_value"] = fast_matched_value
+        updates["hybrid_fast_path"] = True
+        updates["awaiting_confirmation"] = False  # 확인 대기 상태 해제
+
+        # 다음 단계 결정
+        updates["current_step"] = _determine_next_step(
+            topic=updates.get("topic") or existing_values["topic"],
+            difficulty=updates.get("difficulty") or existing_values["difficulty"],
+            language=updates.get("language") or existing_values["language"],
+            wants_generation=state.get("wants_generation", False),
+            generation_details=state.get("generation_details"),
+        )
+        return updates
+
+    # ============================================================
+    # 1. 확인 대기 상태: 긍정/부정 분석 (키워드 매칭 실패 시에만)
     # ============================================================
     if awaiting_confirmation:
         suggested = state.get("suggested_value")
@@ -87,6 +226,8 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
                 topic=updates.get("topic") or existing_values["topic"],
                 difficulty=updates.get("difficulty") or existing_values["difficulty"],
                 language=updates.get("language") or existing_values["language"],
+                wants_generation=state.get("wants_generation", False),
+                generation_details=state.get("generation_details"),
             )
             print(f"[parse_input] Positive confirmed: {final_value}, next={updates['current_step']}")
             return updates
@@ -124,6 +265,8 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
                     topic=updates.get("topic") or existing_values["topic"],
                     difficulty=updates.get("difficulty") or existing_values["difficulty"],
                     language=updates.get("language") or existing_values["language"],
+                    wants_generation=state.get("wants_generation", False),
+                    generation_details=state.get("generation_details"),
                 )
                 print(f"[parse_input] Alternative selected: {rejection.alternative}")
                 return updates
@@ -146,7 +289,18 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         return updates
 
     # ============================================================
-    # 2-1. LLM 기반 의도 분석 (Agentic)
+    # 2-0. generation_details 단계 → 사용자 메시지를 그대로 저장
+    # ============================================================
+    if current_step == "generation_details":
+        # 자유 양식 입력 - 메시지 전체를 generation_details로 저장
+        updates["generation_details"] = message
+        updates["current_step"] = "complete"
+        updates["is_complete"] = True
+        print(f"[parse_input] generation_details set: {message[:50]}...")
+        return updates
+
+    # ============================================================
+    # 2-1. LLM 기반 의도 분석 (키워드 매칭 실패 시에만 호출)
     # ============================================================
     # 먼저 통합 분석으로 의도 파악
     context = f"현재 단계: {current_step}, 기존 값: topic={existing_values.get('topic')}, difficulty={existing_values.get('difficulty')}, language={existing_values.get('language')}"
@@ -217,6 +371,8 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
                 topic=updates.get("topic") or (existing_values["topic"] if alt_step != "topic" else None),
                 difficulty=updates.get("difficulty") or (existing_values["difficulty"] if alt_step != "difficulty" else None),
                 language=updates.get("language") or (existing_values["language"] if alt_step != "language" else None),
+                wants_generation=state.get("wants_generation", False),
+                generation_details=state.get("generation_details"),
             )
             print(f"[parse_input] Alternative selected: {alt_step}={alt_value}")
         else:
@@ -235,23 +391,140 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
                     topic=updates.get("topic") or (existing_values["topic"] if change_step != "topic" else rejection.alternative),
                     difficulty=updates.get("difficulty") or (existing_values["difficulty"] if change_step != "difficulty" else rejection.alternative),
                     language=updates.get("language") or (existing_values["language"] if change_step != "language" else rejection.alternative),
+                    wants_generation=state.get("wants_generation", False),
+                    generation_details=state.get("generation_details"),
                 )
                 print(f"[parse_input] Rejection alternative: {change_step}={rejection.alternative}")
 
         return updates
 
     # ============================================================
-    # 3. 값 추출 (질문 or 선택) - 분석 결과 재사용
+    # 2-3. Hybrid Fast-Path: 단순 키워드 매칭 (LLM 추가 호출 없이 처리)
     # ============================================================
-    # 이미 analyze() 호출했으므로 extract_values 대신 분석 결과 사용
+    # LLM이 is_simple_keyword=True로 판단한 경우, 키워드 매칭으로 빠르게 처리
+    if analysis.is_simple_keyword and analysis.intent in ["positive", "negative", "value_input"]:
+        print(f"[parse_input] Hybrid fast-path: is_simple_keyword=True, attempting keyword matching...")
+
+        message_lower = message.lower()
+        matched_value = None
+        matched_step = None
+
+        # 주제 키워드 매핑
+        TOPIC_KEYWORDS = {
+            "구현": "구현", "implementation": "구현",
+            "정렬": "정렬", "sorting": "정렬", "소팅": "정렬",
+            "dp": "DP", "다이나믹": "DP", "동적계획": "DP", "동적 프로그래밍": "DP",
+            "그리디": "그리디", "greedy": "그리디", "탐욕": "그리디",
+            "이분탐색": "이분탐색", "이진탐색": "이분탐색", "binary search": "이분탐색",
+            "문자열": "문자열", "string": "문자열",
+            "그래프": "그래프", "graph": "그래프",
+            "bfs": "BFS/DFS", "dfs": "BFS/DFS", "탐색": "BFS/DFS",
+            "트리": "트리", "tree": "트리",
+            "수학": "수학", "math": "수학",
+            "자료구조": "자료구조", "data structure": "자료구조",
+            "완전탐색": "완전탐색", "브루트포스": "완전탐색", "brute force": "완전탐색",
+            "백트래킹": "백트래킹", "backtracking": "백트래킹",
+            "분할정복": "분할정복", "divide and conquer": "분할정복",
+            "시뮬레이션": "시뮬레이션", "simulation": "시뮬레이션",
+        }
+
+        # 난이도 키워드 매핑
+        DIFFICULTY_KEYWORDS = {
+            "실버": "easy", "silver": "easy", "쉬움": "easy", "쉬운": "easy", "쉬운거": "easy", "easy": "easy", "쉬운 거": "easy",
+            "골드": "medium", "gold": "medium", "중간": "medium", "보통": "medium", "medium": "medium",
+            "플래티넘": "medium_hard", "플레티넘": "medium_hard", "platinum": "medium_hard",
+            "다이아": "hard", "다이아몬드": "hard", "diamond": "hard", "어려움": "hard", "어려운": "hard", "hard": "hard", "어려운거": "hard", "어려운 거": "hard",
+            "마스터": "very_hard", "master": "very_hard",
+        }
+
+        # 언어 키워드 매핑
+        LANGUAGE_KEYWORDS = {
+            "파이썬": "python", "python": "python", "py": "python",
+            "자바": "java", "java": "java",
+            "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
+        }
+
+        # 현재 단계 기준으로 매칭 시도
+        if current_step == "topic":
+            for keyword, value in TOPIC_KEYWORDS.items():
+                if keyword in message_lower:
+                    matched_value = value
+                    matched_step = "topic"
+                    break
+        elif current_step == "difficulty":
+            for keyword, value in DIFFICULTY_KEYWORDS.items():
+                if keyword in message_lower:
+                    matched_value = value
+                    matched_step = "difficulty"
+                    break
+        elif current_step == "language":
+            for keyword, value in LANGUAGE_KEYWORDS.items():
+                if keyword in message_lower:
+                    matched_value = value
+                    matched_step = "language"
+                    break
+
+        # 현재 단계에서 못 찾으면 다른 단계도 시도 (원샷 입력 지원)
+        if not matched_value:
+            for keyword, value in TOPIC_KEYWORDS.items():
+                if keyword in message_lower and not existing_values.get("topic"):
+                    matched_value = value
+                    matched_step = "topic"
+                    break
+            if not matched_value:
+                for keyword, value in DIFFICULTY_KEYWORDS.items():
+                    if keyword in message_lower and not existing_values.get("difficulty"):
+                        matched_value = value
+                        matched_step = "difficulty"
+                        break
+            if not matched_value:
+                for keyword, value in LANGUAGE_KEYWORDS.items():
+                    if keyword in message_lower and not existing_values.get("language"):
+                        matched_value = value
+                        matched_step = "language"
+                        break
+
+        # 단순 긍정 응답 처리 (analyze에서 이미 값을 추출한 경우)
+        if not matched_value and analysis.intent == "positive":
+            # analyze 결과의 values 사용
+            for step in ["topic", "difficulty", "language"]:
+                if analysis.values.get(step):
+                    matched_value = analysis.values[step]
+                    matched_step = step
+                    break
+
+        # 키워드 매칭 성공 → 바로 값 설정 (extract_values 스킵)
+        if matched_value and matched_step:
+            print(f"[parse_input] Hybrid fast-path SUCCESS: {matched_step}={matched_value}")
+            updates[matched_step] = matched_value
+            updates["extracted_value"] = matched_value
+            updates["hybrid_fast_path"] = True  # fast-path 사용 표시
+
+            # 다음 단계 결정
+            updates["current_step"] = _determine_next_step(
+                topic=updates.get("topic") or existing_values["topic"],
+                difficulty=updates.get("difficulty") or existing_values["difficulty"],
+                language=updates.get("language") or existing_values["language"],
+                wants_generation=state.get("wants_generation", False),
+                generation_details=state.get("generation_details"),
+            )
+            return updates
+        else:
+            print(f"[parse_input] Hybrid fast-path FAILED: no keyword match, falling back to extract_values")
+
+    # ============================================================
+    # 3. 값 추출 (질문 or 선택) - 분석 결과 재사용 (LLM Fallback)
+    # ============================================================
+    # 위에서 이미 analyze() 호출했으므로 existing_analysis로 전달하여 중복 LLM 호출 방지
     extraction = await collection_tool.extract_values(
         message=message,
         current_step=current_step,
         existing_values=existing_values,
         use_llm_fallback=True,
+        existing_analysis=analysis,  # 기존 분석 결과 재사용 (LLM 중복 호출 방지)
     )
 
-    print(f"[parse_input] Extraction: {extraction.values} (conf={extraction.confidence:.2f}, type={extraction.extraction_type})")
+    print(f"[parse_input] Extraction (LLM fallback): {extraction.values} (conf={extraction.confidence:.2f}, type={extraction.extraction_type})")
 
     # ============================================================
     # 3-0. 확장 의도 처리 (코딩 학습 관련이지만 정보 수집과 무관)
@@ -369,6 +642,8 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
                 topic=updates.get("topic") or existing_values["topic"],
                 difficulty=updates.get("difficulty") or existing_values["difficulty"],
                 language=updates.get("language") or existing_values["language"],
+                wants_generation=state.get("wants_generation", False),
+                generation_details=state.get("generation_details"),
             )
             print(f"[parse_input] Auto-recommend applied: {current_step}={auto_value}, next_step={updates['current_step']}")
             return updates
@@ -399,6 +674,8 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
             topic=updates.get("topic") or existing_values["topic"],
             difficulty=updates.get("difficulty") or existing_values["difficulty"],
             language=updates.get("language") or existing_values["language"],
+            wants_generation=state.get("wants_generation", False),
+            generation_details=state.get("generation_details"),
         )
         return updates
 
@@ -543,6 +820,8 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         topic=updates.get("topic") or existing_values["topic"],
         difficulty=updates.get("difficulty") or existing_values["difficulty"],
         language=updates.get("language") or existing_values["language"],
+        wants_generation=state.get("wants_generation", False),
+        generation_details=state.get("generation_details"),
     )
 
     return updates
@@ -552,6 +831,8 @@ def _determine_next_step(
     topic: Optional[str],
     difficulty: Optional[str],
     language: Optional[str],
+    wants_generation: bool = False,
+    generation_details: Optional[str] = None,
 ) -> str:
     """다음 수집 단계 결정"""
     if not topic:
@@ -560,6 +841,9 @@ def _determine_next_step(
         return "difficulty"
     if not language:
         return "language"
+    # 새 문제 생성 요청 시 선택적 4단계
+    if wants_generation and not generation_details:
+        return "generation_details"
     return "complete"
 
 

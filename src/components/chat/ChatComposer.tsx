@@ -47,7 +47,7 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps) {
   }, [message]);
 
   return (
-    <div className="border-t border-border bg-card p-4">
+    <div className="border-t border-border bg-card p-4" data-tutorial="chat-input-area">
       <div className="flex gap-2 items-end">
         <Textarea
           ref={textareaRef}

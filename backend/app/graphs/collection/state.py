@@ -7,7 +7,8 @@ from typing import TypedDict, Optional, List, Dict, Any, Literal
 
 
 # 수집 단계 정의
-CollectionStep = Literal["topic", "difficulty", "language", "complete"]
+# generation_details: 선택적 4단계 (새 문제 생성 요청 시 어떤 문제 원하는지 수집)
+CollectionStep = Literal["topic", "difficulty", "language", "generation_details", "complete"]
 
 
 class CollectionState(TypedDict, total=False):
@@ -31,6 +32,14 @@ class CollectionState(TypedDict, total=False):
     topic: Optional[str]                  # 선택된 주제 (기초, DP, 그래프 등)
     difficulty: Optional[str]             # 선택된 난이도 (easy, medium, hard)
     language: Optional[str]               # 선택된 언어 (python, java, cpp)
+
+    # ============================================================
+    # 출처 및 생성 관련 (턴 간 유지)
+    # ============================================================
+    source: Optional[str]                 # 문제 출처 (baekjoon, leetcode) - 검색 필터용
+    wants_generation: bool                # 새 문제 생성 요청 여부
+    generation_details: Optional[str]     # 선택적 4단계: 어떤 문제 원하는지 자유 양식
+    is_corporate_test: bool               # 대기업 코테 관련 여부 (programmers RAG 포함)
 
     # ============================================================
     # 현재 턴 분석 결과
@@ -66,6 +75,16 @@ class CollectionState(TypedDict, total=False):
     route_to: Optional[str]               # 다음 그래프 (discovery, solving, respond)
     chips: Optional[List[Dict[str, str]]] # 빠른 선택용 칩 리스트
     needs_reconfirmation: bool            # 애매한 응답 → 재확인 필요
+
+    # ============================================================
+    # 개인화 칩 (graph.py에서 생성)
+    # ============================================================
+    personalized_topic_chips: Optional[List[Dict[str, str]]]  # 사용자 맞춤 주제 칩
+
+    # ============================================================
+    # Fast-Path 플래그 (LLM 호출 스킵)
+    # ============================================================
+    hybrid_fast_path: bool                # Orchestrator에서 키워드 매칭 성공 시 True
 
     # ============================================================
     # 에러 처리
@@ -175,6 +194,10 @@ def get_initial_state(
     existing_topic: str = None,
     existing_difficulty: str = None,
     existing_language: str = None,
+    existing_source: str = None,
+    existing_wants_generation: bool = False,
+    existing_generation_details: str = None,
+    existing_is_corporate_test: bool = False,
 ) -> CollectionState:
     """초기 상태 생성"""
 
@@ -185,6 +208,9 @@ def get_initial_state(
         current_step = "difficulty"
     elif not existing_language:
         current_step = "language"
+    elif existing_wants_generation and not existing_generation_details:
+        # 새 문제 생성 요청 시 선택적 4단계
+        current_step = "generation_details"
     else:
         current_step = "complete"
 
@@ -195,6 +221,12 @@ def get_initial_state(
         topic=existing_topic,
         difficulty=existing_difficulty,
         language=existing_language,
+        # 출처 및 생성 관련
+        source=existing_source,
+        wants_generation=existing_wants_generation,
+        generation_details=existing_generation_details,
+        is_corporate_test=existing_is_corporate_test,
+        # 현재 단계
         current_step=current_step,
         is_question=False,
         extracted_value=None,
@@ -213,4 +245,6 @@ def get_initial_state(
         is_complete=False,
         route_to=None,
         error=None,
+        # Fast-path
+        hybrid_fast_path=False,
     )

@@ -1053,11 +1053,15 @@ export function UnifiedPractice({
     setOutput('');
   };
 
+  // 번역 에러 상태
+  const [translateError, setTranslateError] = useState<string | null>(null);
+
   // 번역 핸들러
   const handleTranslate = async () => {
     if (!problem.description || isTranslating) return;
 
     setIsTranslating(true);
+    setTranslateError(null);
     try {
       const result = await translateText(problem.description, targetLanguage);
       if (result.success && result.translated_text) {
@@ -1065,9 +1069,11 @@ export function UnifiedPractice({
         setShowOriginal(false);
       } else {
         console.error('Translation failed:', result.error);
+        setTranslateError(result.error || '번역에 실패했습니다.');
       }
     } catch (error) {
       console.error('Translation error:', error);
+      setTranslateError('네트워크 오류가 발생했습니다.');
     } finally {
       setIsTranslating(false);
     }
@@ -1137,6 +1143,7 @@ export function UnifiedPractice({
           parts.push(
             <span key={`blank-${blank.id}`} className="inline-flex items-center gap-1 mx-1">
               <Input
+                data-tutorial={blankIndex === 0 ? 'blank-input-0' : undefined}
                 value={blankAnswers[blank.id] || ''}
                 onChange={(e) =>
                   setBlankAnswers((prev) => ({ ...prev, [blank.id]: e.target.value }))
@@ -1157,6 +1164,7 @@ export function UnifiedPractice({
                 <Popover>
                   <PopoverTrigger asChild>
                     <button
+                      data-tutorial={blankIndex === 0 ? 'blank-hint-btn' : undefined}
                       className={`relative text-muted-foreground hover:text-primary transition-colors ${
                         blankHints[blankIndex] ? 'text-blue-400' : ''
                       }`}
@@ -1275,6 +1283,7 @@ export function UnifiedPractice({
         onOpenChange={() => toggleTestExpand(idx)}
       >
         <div
+          data-tutorial={idx === 0 ? 'test-card' : undefined}
           className={`rounded-lg border transition-all ${
             result
               ? result.passed === null
@@ -1477,6 +1486,7 @@ export function UnifiedPractice({
             {/* Tabs */}
             <div className="flex border-b border-border">
               <button
+                data-tutorial="sidebar-problem-tab"
                 onClick={() => setActiveTab('problem')}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
                   activeTab === 'problem'
@@ -1488,6 +1498,7 @@ export function UnifiedPractice({
                 문제
               </button>
               <button
+                data-tutorial="sidebar-test-tab"
                 onClick={() => setActiveTab('testcases')}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
                   activeTab === 'testcases'
@@ -1545,6 +1556,7 @@ export function UnifiedPractice({
                             onClick={handleTranslate}
                             disabled={isTranslating}
                             className="h-7 px-2 text-xs gap-1"
+                            data-tutorial="translate-btn"
                           >
                             {isTranslating ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1555,6 +1567,12 @@ export function UnifiedPractice({
                           </Button>
                         </div>
                       </div>
+                      {/* 번역 에러 메시지 */}
+                      {translateError && (
+                        <div className="mb-2 text-xs text-red-400 bg-red-500/10 rounded px-2 py-1">
+                          {translateError}
+                        </div>
+                      )}
                       {/* 원문/번역문 토글 */}
                       {translatedDescription && (
                         <div className="flex gap-1 mb-2">
@@ -1665,6 +1683,7 @@ export function UnifiedPractice({
                         )}
                       </div>
                       <Button
+                        data-tutorial="add-test-btn"
                         variant="outline"
                         size="sm"
                         className="h-7 text-xs gap-1.5"
@@ -1728,7 +1747,7 @@ export function UnifiedPractice({
       <div className="flex-1 flex flex-col min-w-0">
         {/* Puzzle 모드: 블록 드래그 영역 */}
         {problemType === 'puzzle' && (
-          <div className="shrink-0 border-b border-border bg-secondary/30 p-4 max-h-[50%] overflow-auto">
+          <div data-tutorial="puzzle-blocks-area" className="shrink-0 border-b border-border bg-secondary/30 p-4 max-h-[50%] overflow-auto">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs text-muted-foreground">블록을 드래그하여 올바른 순서로 정렬하세요</p>
               <Badge variant="secondary" className="text-xs">
@@ -1766,7 +1785,7 @@ export function UnifiedPractice({
                     {isLocked ? (
                       <Lock className="h-4 w-4 shrink-0 text-green-500" />
                     ) : (
-                      <GripVertical className={`h-4 w-4 shrink-0 ${
+                      <GripVertical data-tutorial={blocks.indexOf(block) === 0 ? 'puzzle-grip' : undefined} className={`h-4 w-4 shrink-0 ${
                         hasResult
                           ? isCorrect
                             ? 'text-green-500'
@@ -1816,7 +1835,7 @@ export function UnifiedPractice({
           <div className="flex-1 min-h-0 overflow-auto bg-[#1e1e1e] p-4">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-xs text-[#808080]">빈칸을 채워 코드를 완성하세요</p>
-              <Badge variant="secondary" className="text-xs">
+              <Badge data-tutorial="blank-progress" variant="secondary" className="text-xs">
                 {filledCount} / {totalBlanks} 채움
               </Badge>
             </div>
@@ -1828,7 +1847,7 @@ export function UnifiedPractice({
 
         {/* Implementation 모드: 코드 에디터만 */}
         {problemType === 'implementation' && (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div data-tutorial="code-editor" className="flex-1 min-h-0 overflow-hidden">
             <CodeEditor
               initialCode={code}
               language="python"
@@ -1840,7 +1859,7 @@ export function UnifiedPractice({
 
         {/* Guided 모드: 코드 에디터만 (가이드 채팅은 오른쪽 AI 코딩 튜터에서 처리) */}
         {problemType === 'guided' && (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div data-tutorial="code-editor" className="flex-1 min-h-0 overflow-hidden">
             <CodeEditor
               initialCode={code}
               language="python"
@@ -1852,7 +1871,7 @@ export function UnifiedPractice({
 
         {/* Puzzle 모드: 조립된 코드 미리보기 */}
         {problemType === 'puzzle' && (
-          <div className="flex-1 min-h-0 overflow-auto bg-[#1e1e1e] p-4">
+          <div data-tutorial="puzzle-preview" className="flex-1 min-h-0 overflow-auto bg-[#1e1e1e] p-4">
             <div className="flex items-center gap-4 mb-3">
               <p className="text-xs text-[#808080]">조립된 코드:</p>
               <div className="flex items-center gap-3 text-[10px]">
@@ -1868,11 +1887,15 @@ export function UnifiedPractice({
             </div>
             <div className="font-mono text-sm">
               {/* fixed_start - 녹색 (고정) */}
-              {problem.fixedStart && problem.fixedStart.split('\n').map((line, idx) => (
-                <div key={`fixed-start-${idx}`} className="text-[#6A9955]" style={{ whiteSpace: 'pre' }}>
-                  {line || '\u00A0'}
+              {problem.fixedStart && (
+                <div data-tutorial="puzzle-fixed-area">
+                  {problem.fixedStart.split('\n').map((line, idx) => (
+                    <div key={`fixed-start-${idx}`} className="text-[#6A9955]" style={{ whiteSpace: 'pre' }}>
+                      {line || '\u00A0'}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
               {/* 퍼즐 블록 - 하늘색 (변경 가능) - 블록에 저장된 원래 들여쓰기 사용 */}
               {blocks.map((b, blockIdx) => {
                 // 블록에 저장된 원래 들여쓰기 값 사용
@@ -2066,11 +2089,12 @@ export function UnifiedPractice({
         )}
 
         {/* Actions Bar */}
-        <div className="shrink-0 flex items-center justify-between px-4 py-3 border-t border-border bg-card">
+        <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t border-border bg-card z-10">
           {/* 힌트 버튼 (Puzzle 모드) */}
           <div>
             {problemType === 'puzzle' && !isSubmitted && Object.keys(puzzleResults).length > 0 && (
               <Button
+                data-tutorial="hint-btn"
                 variant="outline"
                 size="sm"
                 onClick={handlePuzzleHint}
@@ -2103,6 +2127,7 @@ export function UnifiedPractice({
             {/* 테스트 실행 버튼 - implementation/guided에서 표시 */}
             {(problemType === 'implementation' || problemType === 'guided') && (
               <Button
+                data-tutorial="run-tests-btn"
                 variant="outline"
                 size="sm"
                 onClick={() => runAllTestCases()}
@@ -2113,6 +2138,7 @@ export function UnifiedPractice({
               </Button>
             )}
             <Button
+              data-tutorial="submit-btn"
               size="sm"
               onClick={() => runTests(true)}
               disabled={isRunning || isSubmitted || (problemType === 'blank' && filledCount < totalBlanks)}

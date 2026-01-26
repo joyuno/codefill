@@ -30,6 +30,7 @@ from .nodes import (
     confirm_value,  # 통합된 노드
     complete_collection,
 )
+from .nodes.confirm_value import get_personalized_topic_chips, DEFAULT_TOPIC_CHIPS
 
 
 def _route_after_parse(state: CollectionState) -> str:
@@ -148,6 +149,11 @@ class InfoCollectionGraph:
         existing_awaiting_confirmation: bool = False,
         existing_suggested_value: str = None,
         existing_rejected_values: List[str] = None,
+        # 새로운 파라미터: 출처, 생성, 대기업 코테
+        existing_source: str = None,
+        existing_wants_generation: bool = False,
+        existing_generation_details: str = None,
+        existing_is_corporate_test: bool = False,
     ) -> Dict[str, Any]:
         """
         그래프 실행
@@ -186,7 +192,32 @@ class InfoCollectionGraph:
             existing_topic=existing_topic,
             existing_difficulty=existing_difficulty,
             existing_language=existing_language,
+            # 새로운 파라미터들
+            existing_source=existing_source,
+            existing_wants_generation=existing_wants_generation,
+            existing_generation_details=existing_generation_details,
+            existing_is_corporate_test=existing_is_corporate_test,
         )
+
+        # 개인화 주제 칩 생성 (user_id가 있으면)
+        user_id = user_context.get("user_id") if user_context else None
+        learning_goal = user_context.get("learning_goal") if user_context else None
+        experience_level = user_context.get("experience_level") if user_context else None
+
+        if user_id:
+            try:
+                personalized_chips = await get_personalized_topic_chips(
+                    user_id=user_id,
+                    learning_goal=learning_goal,
+                    experience_level=experience_level,
+                )
+                initial_state["personalized_topic_chips"] = personalized_chips
+            except Exception as e:
+                # 에러 시 기본 칩 사용
+                pass
+                initial_state["personalized_topic_chips"] = DEFAULT_TOPIC_CHIPS
+        else:
+            initial_state["personalized_topic_chips"] = DEFAULT_TOPIC_CHIPS
 
         # 기존 상태 병합 (awaiting_confirmation, suggested_value, rejected_values)
         if existing_awaiting_confirmation:
@@ -195,7 +226,6 @@ class InfoCollectionGraph:
             initial_state["suggested_value"] = existing_suggested_value
         if existing_rejected_values:
             initial_state["rejected_values"] = existing_rejected_values
-            print(f"[InfoCollectionGraph] Restoring rejected_values: {existing_rejected_values}")
 
         # 그래프 실행
         result = await self.graph.ainvoke(initial_state)
@@ -237,6 +267,11 @@ class InfoCollectionGraph:
         final_topic = result.get("topic") or existing_topic
         final_difficulty = result.get("difficulty") or existing_difficulty
         final_language = result.get("language") or existing_language
+        # 새 필드들
+        final_source = result.get("source") or existing_source
+        final_wants_generation = result.get("wants_generation", False) or existing_wants_generation
+        final_generation_details = result.get("generation_details") or existing_generation_details
+        final_is_corporate_test = result.get("is_corporate_test", False) or existing_is_corporate_test
 
         # 디버깅 로그
         print(f"[InfoCollectionGraph] Result: topic={result.get('topic')}, difficulty={result.get('difficulty')}, language={result.get('language')}")
@@ -253,6 +288,11 @@ class InfoCollectionGraph:
                 "topic": final_topic,
                 "difficulty": final_difficulty,
                 "language": final_language,
+                # 새 필드들: 출처, 생성 요청, 대기업 코테
+                "source": final_source,
+                "wants_generation": final_wants_generation,
+                "generation_details": final_generation_details,
+                "is_corporate_test": final_is_corporate_test,
             },
             "is_complete": result.get("is_complete", False),
             "action_trigger": "search_problems" if result.get("is_complete") else None,

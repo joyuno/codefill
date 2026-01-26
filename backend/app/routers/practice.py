@@ -531,7 +531,6 @@ def record_attempt_detail(
 def record_hint_log(
     db,
     user_id: str,
-    problem_id: str,
     attempt_id: str,
     hint_level: int,
     hint_content: str,
@@ -544,7 +543,6 @@ def record_hint_log(
     Args:
         db: Supabase client
         user_id: 사용자 UUID
-        problem_id: 문제 ID (레거시)
         attempt_id: 시도 ID
         hint_level: 힌트 레벨 (1, 2, 3 등)
         hint_content: 힌트 내용
@@ -560,7 +558,7 @@ def record_hint_log(
             "xp_cost": xp_cost,
         }
 
-        # base_problem_id 추가 (새로운 FK)
+        # base_problem_id 추가 (FK)
         if base_problem_id:
             hint_data["base_problem_id"] = base_problem_id
 
@@ -1831,7 +1829,6 @@ async def get_blank_hint(
                         record_hint_log(
                             db=db,
                             user_id=str(user_id),
-                            problem_id=request.problem_id,
                             attempt_id=request.attempt_id,
                             hint_level=hint_level,
                             hint_content=hint_content,
@@ -1936,7 +1933,6 @@ async def get_puzzle_hint(
                         record_hint_log(
                             db=db,
                             user_id=str(user_id),
-                            problem_id=request.problem_id,
                             attempt_id=request.attempt_id,
                             hint_level=hint_level,
                             hint_content=hint_content,
@@ -2037,7 +2033,6 @@ async def get_guided_hint(
                         record_hint_log(
                             db=db,
                             user_id=str(user_id),
-                            problem_id=request.problem_id,
                             attempt_id=request.attempt_id,
                             hint_level=hint_level,
                             hint_content=hint_content,
