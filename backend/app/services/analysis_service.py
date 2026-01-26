@@ -14,76 +14,133 @@ from ..services.metrics_calculator import MetricsCalculator, BKTParams
 logger = get_logger(__name__)
 settings = get_settings()
 
-# 토픽 정규화 맵 (중복 토픽명 → 표준 토픽명)
-# 같은 토픽이 다른 이름으로 저장되는 것을 방지
+# ============================================================
+# 허용된 태그 목록 (한국어 - 개인화 칩과 동일)
+# ============================================================
+ALLOWED_TAGS = {
+    "구현", "정렬", "문자열", "이분탐색", "그리디", "DP",
+    "BFS/DFS", "그래프", "백트래킹", "완전탐색", "자료구조",
+    "수학", "트리", "최단경로", "투포인터", "해시",
+}
+
+# 토픽 정규화 맵 (영어/기타 → 허용된 한국어 태그)
 TOPIC_NORMALIZE_MAP = {
-    # DP 관련
-    "dynamic programming": "DP",
-    "Dynamic Programming": "DP",
-    "Dynamic programming": "DP",
-    "동적 프로그래밍": "DP",
-    "Memoization": "DP",
-    # BFS 관련
-    "Breadth First Search": "BFS",
-    "Breadth-first search": "BFS",
-    "breadth first search": "BFS",
-    "너비 우선 탐색": "BFS",
-    # DFS 관련
-    "Depth First Search": "DFS",
-    "Depth-first search": "DFS",
-    "depth first search": "DFS",
-    "깊이 우선 탐색": "DFS",
-    # Binary Search 관련
-    "Binary Search": "Binary Search",
-    "binary search": "Binary Search",
-    "이진 탐색": "Binary Search",
-    # Two Pointers 관련
-    "Two Pointers": "Two Pointers",
-    "Two pointers": "Two Pointers",
-    "two pointers": "Two Pointers",
-    "투 포인터": "Two Pointers",
-    # Sliding Window 관련
-    "Sliding Window": "Sliding Window",
-    "Sliding window": "Sliding Window",
-    "sliding window": "Sliding Window",
-    "슬라이딩 윈도우": "Sliding Window",
-    # Graph 관련
-    "Graph algorithms": "Graph",
-    "Graph traversal": "Graph",
-    "graph algorithms": "Graph",
-    "그래프": "Graph",
-    # Data Structures 관련
-    "Data structures": "Data Structures",
-    "data structures": "Data Structures",
-    "자료구조": "Data Structures",
-    # Implementation 관련
-    "implementation": "Implementation",
-    "구현": "Implementation",
-    # String 관련
-    "String algorithms": "String",
-    "string algorithms": "String",
-    "문자열": "String",
-    # Sorting 관련
-    "sorting": "Sorting",
-    "정렬": "Sorting",
-    # Greedy 관련
-    "Greedy algorithms": "Greedy",
-    "greedy algorithms": "Greedy",
-    "그리디": "Greedy",
+    # 구현
+    "Array": "구현", "Implementation": "구현", "implementation": "구현",
+    "Ad-hoc": "구현", "ad_hoc": "구현", "case_work": "구현",
+    "케이스분류": "구현", "simulation": "구현", "Fundamentals": "구현",
+
+    # 정렬
+    "Sorting": "정렬", "sorting": "정렬", "merge_sort": "정렬", "quick_sort": "정렬",
+
+    # 문자열
+    "String": "문자열", "string": "문자열", "String algorithms": "문자열",
+    "string algorithms": "문자열", "문자열 처리": "문자열",
+    "kmp": "문자열", "trie": "문자열",
+
+    # 이분탐색
+    "Binary Search": "이분탐색", "binary_search": "이분탐색",
+    "Parametric Search": "이분탐색", "parametric_search": "이분탐색",
+    "이진 탐색": "이분탐색",
+
+    # 그리디
+    "Greedy": "그리디", "greedy": "그리디",
+    "Greedy algorithms": "그리디", "greedy_algorithms": "그리디",
+
+    # DP
+    "DP": "DP", "dp": "DP", "dynamic_programming": "DP",
+    "Dynamic programming": "DP", "Dynamic Programming": "DP",
+    "Dynamic\r\n  programming": "DP",
+    "점화식": "DP", "memoization": "DP", "Memoization": "DP",
+    "동적 프로그래밍": "DP", "Unbounded Knapsack": "DP",
+
+    # BFS/DFS
+    "BFS": "BFS/DFS", "DFS": "BFS/DFS", "bfs": "BFS/DFS", "dfs": "BFS/DFS",
+    "BFS/DFS": "BFS/DFS", "graph_traversal": "BFS/DFS",
+    "Graph traversal": "BFS/DFS", "그래프 탐색": "BFS/DFS",
+    "flood_fill": "BFS/DFS", "Breadth First Search": "BFS/DFS",
+    "Breadth-first search": "BFS/DFS", "breadth first search": "BFS/DFS",
+    "Depth First Search": "BFS/DFS", "Depth-first search": "BFS/DFS",
+    "depth first search": "BFS/DFS", "너비 우선 탐색": "BFS/DFS",
+    "깊이 우선 탐색": "BFS/DFS",
+
+    # 그래프
+    "Graph": "그래프", "graphs": "그래프", "Graph algorithms": "그래프",
+    "graph algorithms": "그래프", "topological_sort": "그래프",
+
+    # 백트래킹
+    "Backtracking": "백트래킹", "backtracking": "백트래킹",
+
+    # 완전탐색
+    "Brute Force": "완전탐색", "bruteforcing": "완전탐색",
+    "brute_force": "완전탐색", "Complete search": "완전탐색",
+    "complete_search": "완전탐색",
+
+    # 자료구조
+    "Data Structures": "자료구조", "Data structures": "자료구조",
+    "data_structures": "자료구조", "기본 자료구조": "자료구조",
+    "Stack": "자료구조", "Queue": "자료구조",
+    "stack": "자료구조", "queue": "자료구조", "deque": "자료구조",
+    "priority_queue": "자료구조", "heap": "자료구조", "segtree": "자료구조",
+
+    # 수학
+    "Math": "수학", "math": "수학", "Mathematics": "수학",
+    "Number theory": "수학", "number_theory": "수학",
+    "정수론": "수학", "조합론": "수학", "Combinatorics": "수학",
+    "primality_test": "수학", "arithmetic": "수학",
+    "Bit manipulation": "수학", "game_theory": "수학",
+    "Geometry": "수학", "geometry": "수학", "기하": "수학",
+
+    # 트리
+    "Tree": "트리", "trees": "트리", "tree_diameter": "트리",
+    "Tree algorithms": "트리",
+
+    # 최단경로
+    "Shortest Path": "최단경로", "Shortest paths": "최단경로",
+    "shortest_path": "최단경로", "Dijkstra": "최단경로", "dijkstra": "최단경로",
+    "bellman_ford": "최단경로", "floyd_warshall": "최단경로",
+
+    # 투포인터
+    "Two Pointers": "투포인터", "Two pointers": "투포인터",
+    "two_pointer": "투포인터", "two_pointers": "투포인터",
+    "Sliding Window": "투포인터", "Sliding window": "투포인터",
+    "sliding_window": "투포인터", "투 포인터": "투포인터",
+    "슬라이딩 윈도우": "투포인터",
+
+    # 해시
+    "Hash": "해시", "hashing": "해시", "hash_set": "해시",
+
+    # 삭제 대상 (None으로 매핑)
+    "prefix_sum": None, "Constructive algorithms": None,
 }
 
 
-def normalize_topic(topic: str) -> str:
-    """토픽명을 표준 형태로 정규화."""
-    return TOPIC_NORMALIZE_MAP.get(topic, topic)
+def normalize_topic(topic: str):
+    """
+    토픽명을 허용된 한국어 태그로 정규화.
+
+    Returns:
+        정규화된 토픽명 또는 None (삭제 대상)
+    """
+    if not topic:
+        return None
+    # 이미 허용된 태그면 그대로 반환
+    if topic in ALLOWED_TAGS:
+        return topic
+    # 매핑 테이블에서 찾기
+    return TOPIC_NORMALIZE_MAP.get(topic)
 
 
 def merge_topic_stats(stats: Dict[str, Any], is_bkt: bool = False) -> Dict[str, Any]:
-    """중복 토픽을 병합하여 정규화된 통계 반환."""
+    """중복 토픽을 병합하여 정규화된 통계 반환 (허용된 태그만)."""
     merged: Dict[str, Any] = {}
 
     for topic, value in stats.items():
         normalized = normalize_topic(topic)
+
+        # 매핑되지 않거나 삭제 대상이면 스킵
+        if not normalized:
+            continue
 
         if normalized not in merged:
             merged[normalized] = value
@@ -92,16 +149,68 @@ def merge_topic_stats(stats: Dict[str, Any], is_bkt: bool = False) -> Dict[str, 
             if is_bkt:
                 # BKT: attempt_count, correct_count 합산, mastery 재계산
                 existing = merged[normalized]
-                existing["attempt_count"] += value["attempt_count"]
-                existing["correct_count"] += value["correct_count"]
+                existing["attempt_count"] += value.get("attempt_count", 0)
+                existing["correct_count"] += value.get("correct_count", 0)
                 # mastery는 더 높은 값 사용 (또는 평균)
-                existing["mastery"] = max(existing["mastery"], value["mastery"])
+                existing["mastery"] = max(existing.get("mastery", 0), value.get("mastery", 0))
                 existing["is_mastered"] = existing["mastery"] >= 0.8
             else:
                 # skill_by_topic: 평균값 사용
                 merged[normalized] = (merged[normalized] + value) / 2
 
     return merged
+
+
+def normalize_topic_list(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    strengths/weaknesses 배열을 정규화 (허용된 태그만).
+    동일한 정규화 결과는 점수가 더 극단적인 것을 선택.
+    """
+    if not items:
+        return []
+
+    normalized_map = {}
+    for item in items:
+        topic = item.get("topic")
+        new_topic = normalize_topic(topic)
+
+        if not new_topic:
+            continue
+
+        score = item.get("score", 0)
+        insight = item.get("insight", "")
+
+        if new_topic not in normalized_map:
+            normalized_map[new_topic] = {
+                "topic": new_topic,
+                "score": score,
+                "insight": insight
+            }
+        else:
+            # 이미 있으면 점수가 더 극단적인 것 선택
+            existing = normalized_map[new_topic]
+            if abs(score - 0.5) > abs(existing["score"] - 0.5):
+                normalized_map[new_topic] = {
+                    "topic": new_topic,
+                    "score": score,
+                    "insight": insight
+                }
+
+    return list(normalized_map.values())
+
+
+def normalize_simple_topic_list(topics: List[str]) -> List[str]:
+    """단순 토픽 리스트 정규화 (weak_topics, strong_topics 등)."""
+    if not topics:
+        return []
+
+    normalized = set()
+    for topic in topics:
+        new_topic = normalize_topic(topic)
+        if new_topic:
+            normalized.add(new_topic)
+
+    return list(normalized)
 
 
 # 토픽 매핑 (한국어 → 영어 확장) - RAG 서비스와 동일
@@ -355,14 +464,22 @@ class AnalysisService:
         recent_analysis = await self._analyze_recent_attempts(recent_attempts)
 
         # 4. DB 저장 (upsert) - 새 필드들 포함 (문제 추천은 별도 API로 분리)
+        # ⭐ 토픽 데이터 정규화 (허용된 한국어 태그로 변환)
+        normalized_strengths = normalize_topic_list(analysis.get("strengths", []))
+        normalized_weaknesses = normalize_topic_list(analysis.get("weaknesses", []))
+        normalized_skill_snapshot = merge_topic_stats(user_data.get("skill_by_topic", {}))
+        normalized_bkt_mastery = merge_topic_stats(user_data.get("bkt_mastery", {}), is_bkt=True)
+        normalized_weak_topics = normalize_simple_topic_list(user_data.get("weak_topics", []))
+        normalized_strong_topics = normalize_simple_topic_list(user_data.get("strong_topics", []))
+
         report_data = {
             "user_id": str(user_id),
             "summary_text": analysis["summary"],
-            "strengths": analysis["strengths"],
-            "weaknesses": analysis["weaknesses"],
+            "strengths": normalized_strengths,
+            "weaknesses": normalized_weaknesses,
             "recommendations": analysis.get("recommendations", []),
             "study_plan": analysis.get("study_plan", ""),
-            "skill_snapshot": user_data.get("skill_by_topic", {}),
+            "skill_snapshot": normalized_skill_snapshot,
             "stats_snapshot": {
                 "level": user_data.get("level", 1),
                 "problemsSolved": user_data.get("problems_solved", 0),
@@ -382,11 +499,11 @@ class AnalysisService:
             # AI 코칭 피드백
             "detailed_feedback": analysis.get("detailed_feedback"),
             # 학습 분석 프레임워크 메트릭
-            "bkt_mastery": user_data.get("bkt_mastery", {}),
+            "bkt_mastery": normalized_bkt_mastery,
             "bloom_metrics": user_data.get("bloom_metrics", {}),
-            # BKT 기반 강점/약점 토픽
-            "weak_topics": user_data.get("weak_topics", []),
-            "strong_topics": user_data.get("strong_topics", []),
+            # BKT 기반 강점/약점 토픽 (정규화됨)
+            "weak_topics": normalized_weak_topics,
+            "strong_topics": normalized_strong_topics,
             # 최근 10문제 LLM 분석 결과
             "recent_10_analysis": recent_analysis,
         }

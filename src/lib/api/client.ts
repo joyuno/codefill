@@ -63,6 +63,15 @@ class ApiClient {
   }
 
   /**
+   * 세션 만료 이벤트 발생
+   */
+  private emitSessionExpired() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('session-expired'));
+    }
+  }
+
+  /**
    * Check if user is authenticated
    */
   isAuthenticated(): boolean {
@@ -136,35 +145,43 @@ class ApiClient {
       clearTimeout(timeoutId);
 
       // Handle 401 Unauthorized - try to refresh token
-      if (response.status === 401 && requireAuth && this.refreshToken) {
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          // Retry the request with new token (새로운 타임아웃 적용)
-          const retryController = new AbortController();
-          const retryTimeoutId = setTimeout(() => retryController.abort(), timeout);
+      if (response.status === 401 && requireAuth) {
+        if (this.refreshToken) {
+          const refreshed = await this.refreshAccessToken();
+          if (refreshed) {
+            // Retry the request with new token (새로운 타임아웃 적용)
+            const retryController = new AbortController();
+            const retryTimeoutId = setTimeout(() => retryController.abort(), timeout);
 
-          try {
-            requestHeaders['Authorization'] = `Bearer ${this.accessToken}`;
-            const retryResponse = await fetch(`${this.baseUrl}${endpoint}`, {
-              method,
-              headers: requestHeaders,
-              body: body ? JSON.stringify(body) : undefined,
-              signal: retryController.signal,
-            });
-            clearTimeout(retryTimeoutId);
-            return this.handleResponse<T>(retryResponse);
-          } catch (retryError) {
-            clearTimeout(retryTimeoutId);
-            if (retryError instanceof DOMException && retryError.name === 'AbortError') {
-              return {
-                error: {
-                  code: 'TIMEOUT_ERROR',
-                  message: `Request timeout after ${timeout}ms`,
-                },
-              };
+            try {
+              requestHeaders['Authorization'] = `Bearer ${this.accessToken}`;
+              const retryResponse = await fetch(`${this.baseUrl}${endpoint}`, {
+                method,
+                headers: requestHeaders,
+                body: body ? JSON.stringify(body) : undefined,
+                signal: retryController.signal,
+              });
+              clearTimeout(retryTimeoutId);
+              return this.handleResponse<T>(retryResponse);
+            } catch (retryError) {
+              clearTimeout(retryTimeoutId);
+              if (retryError instanceof DOMException && retryError.name === 'AbortError') {
+                return {
+                  error: {
+                    code: 'TIMEOUT_ERROR',
+                    message: `Request timeout after ${timeout}ms`,
+                  },
+                };
+              }
+              throw retryError;
             }
-            throw retryError;
+          } else {
+            // 토큰 갱신 실패 - 세션 만료 이벤트 발생
+            this.emitSessionExpired();
           }
+        } else {
+          // refresh token 없음 - 세션 만료 이벤트 발생
+          this.emitSessionExpired();
         }
       }
 

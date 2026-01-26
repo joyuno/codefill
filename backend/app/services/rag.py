@@ -36,17 +36,20 @@ class RAGService:
         "그리디": ["greedy", "greedy_algorithms"],
         "탐욕법": ["greedy", "greedy_algorithms"],
         "완전 탐색": ["bruteforcing", "brute_force", "complete_search", "exhaustive_search"],
+        "완전탐색": ["bruteforcing", "brute_force", "complete_search", "exhaustive_search"],  # 붙여쓰기 버전 (칩 매칭용)
         "브루트포스": ["bruteforcing", "brute_force", "complete_search"],
         "백트래킹": ["backtracking", "dfs", "recursion"],
         "분할 정복": ["divide_and_conquer", "divide_and_conquer_optimization", "recursion"],
 
         # ==================== 그래프 ====================
-        "그래프": ["graphs", "graph_traversal", "bfs", "dfs", "shortest_path"],
-        "BFS": ["bfs", "0_1_bfs", "graph_traversal", "breadth_first_search", "flood_fill"],
-        "DFS": ["dfs", "graph_traversal", "depth_first_search", "flood_fill"],
+        "그래프": ["graphs", "graph_traversal", "BFS", "DFS", "bfs", "dfs", "shortest_path"],
+        "BFS/DFS": ["BFS", "DFS", "BFS/DFS", "bfs", "dfs", "그래프", "graph_traversal"],
+        "BFS": ["BFS", "bfs", "0_1_bfs", "graph_traversal", "breadth_first_search", "flood_fill"],
+        "DFS": ["DFS", "dfs", "graph_traversal", "depth_first_search", "flood_fill"],
         "너비 우선 탐색": ["bfs", "0_1_bfs", "graph_traversal", "breadth_first_search"],
         "깊이 우선 탐색": ["dfs", "graph_traversal", "depth_first_search"],
         "최단 경로": ["shortest_path", "dijkstra", "bellman_ford", "floyd_warshall", "0_1_bfs"],
+        "최단경로": ["shortest_path", "dijkstra", "bellman_ford", "floyd_warshall", "0_1_bfs"],  # 붙여쓰기 버전 (칩 매칭용)
         "다익스트라": ["dijkstra", "shortest_path"],
         "벨만 포드": ["bellman_ford", "shortest_path"],
         "플로이드": ["floyd_warshall", "shortest_path"],
@@ -71,11 +74,15 @@ class RAGService:
         # ==================== 탐색/정렬 ====================
         "이진 탐색": ["binary_search", "parametric_search"],
         "이분 탐색": ["binary_search", "parametric_search"],
+        "이분탐색": ["binary_search", "parametric_search"],  # 붙여쓰기 버전 (칩 매칭용)
         "정렬": ["sorting", "merge_sort", "quick_sort"],
-        "투 포인터": ["two_pointers", "sliding_window"],
-        "슬라이딩 윈도우": ["sliding_window", "two_pointers", "deque_trick", "monotone_queue_optimization"],
+        "투 포인터": ["two_pointer", "two_pointers", "sliding_window"],
+        "투포인터": ["two_pointer", "two_pointers", "sliding_window", "슬라이딩윈도우"],
+        "슬라이딩 윈도우": ["sliding_window", "two_pointer", "two_pointers", "deque_trick", "monotone_queue_optimization"],
+        "슬라이딩윈도우": ["sliding_window", "two_pointer", "two_pointers", "슬라이딩윈도우"],
 
         # ==================== 자료구조 ====================
+        "자료구조": ["data_structures", "stack", "queue", "deque", "priority_queue", "heap", "hashing", "trees"],
         "스택": ["stack", "data_structures"],
         "큐": ["queue", "deque", "data_structures"],
         "덱": ["deque", "deque_trick", "data_structures"],
@@ -266,6 +273,7 @@ class RAGService:
         language: str = None,
         limit: int = 5,
         exclude_ids: List[str] = None,
+        source_filter: str = None,
     ) -> List[Dict[str, Any]]:
         """
         메타데이터만으로 문제 검색 (임베딩 비용 0)
@@ -279,15 +287,21 @@ class RAGService:
             language: 언어 필터
             limit: 최대 결과 수
             exclude_ids: 제외할 문제 ID
+            source_filter: 출처 필터 (baekjoon, leetcode) - programmers는 검색에서 항상 제외
 
         Returns:
             검색된 문제 목록
         """
         try:
-            print(f"[RAG:Metadata] Searching with metadata only: topics={topics}, diff={difficulty}, lang={language}")
+            print(f"[RAG:Metadata] Searching with metadata only: topics={topics}, diff={difficulty}, lang={language}, source={source_filter}")
 
-            # programmers 제외 (저작권)
+            # programmers는 검색 RAG에서 항상 제외 (저작권)
             db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
+
+            # 출처 필터 적용 (baekjoon, leetcode 등)
+            if source_filter and source_filter != "programmers":
+                db_query = db_query.eq("source", source_filter)
+                print(f"[RAG:Metadata] Applied source filter: {source_filter}")
 
             # 난이도 필터
             if difficulty:
@@ -340,6 +354,8 @@ class RAGService:
         limit: int = 5,
         exclude_ids: List[str] = None,
         user_context: Dict[str, Any] = None,
+        source_filter: str = None,
+        is_corporate_test: bool = False,
     ) -> Tuple[List[Dict[str, Any]], bool, str]:
         """
         Agentic RAG: 검색 필요성을 판단하여 최적의 방법 선택
@@ -355,6 +371,8 @@ class RAGService:
             limit: 최대 결과 수
             exclude_ids: 제외할 문제 ID
             user_context: 개인화 컨텍스트
+            source_filter: 출처 필터 (baekjoon, leetcode) - programmers는 검색에서 항상 제외
+            is_corporate_test: 대기업 코테 관련 여부 (True면 생성 시 programmers RAG도 참고)
 
         Returns:
             Tuple of (results, should_fallback, search_method)
@@ -386,6 +404,7 @@ class RAGService:
                 language=language,
                 limit=limit,
                 exclude_ids=exclude_ids,
+                source_filter=source_filter,
             )
 
             # 결과가 부족하면 시맨틱 검색으로 폴백 (타임아웃 5초)
@@ -401,6 +420,7 @@ class RAGService:
                             limit=limit,
                             exclude_ids=exclude_ids,
                             user_context=user_context,
+                            source_filter=source_filter,
                         ),
                         timeout=10.0,  # 10초 타임아웃
                     )
@@ -411,6 +431,7 @@ class RAGService:
                         difficulty=normalized_difficulty,
                         language=language,
                         limit=limit,
+                        source_filter=source_filter,
                     )
                     return results, len(results) == 0, "keyword_fallback"
                 return results, should_fallback, "hybrid"
@@ -431,6 +452,7 @@ class RAGService:
                         limit=limit,
                         exclude_ids=exclude_ids,
                         user_context=user_context,
+                        source_filter=source_filter,
                     ),
                     timeout=10.0,  # 10초 타임아웃
                 )
@@ -441,6 +463,7 @@ class RAGService:
                     difficulty=normalized_difficulty,
                     language=language,
                     limit=limit,
+                    source_filter=source_filter,
                 )
                 return results, len(results) == 0, "keyword_fallback"
             return results, should_fallback, "semantic"
@@ -458,6 +481,7 @@ class RAGService:
         limit: int = 5,
         exclude_ids: List[str] = None,
         user_context: Dict[str, Any] = None,
+        source_filter: str = None,
     ) -> Tuple[List[Dict[str, Any]], bool]:
         """
         Hybrid search: Filter by tags/difficulty FIRST, then rank by vector similarity.
@@ -470,6 +494,7 @@ class RAGService:
             limit: Maximum results to return
             exclude_ids: Problem IDs to exclude (e.g., already solved)
             user_context: Personalization context (weak_topics, skill_levels, etc.)
+            source_filter: 출처 필터 (baekjoon, leetcode) - programmers는 검색에서 항상 제외
 
         Returns:
             Tuple of (results, should_fallback_to_generation)
@@ -490,6 +515,11 @@ class RAGService:
             # ⚠️ programmers 문제는 저작권 문제로 검색 결과에서 제외
             # (programmers_embeddings는 code generation RAG 컨텍스트로만 사용)
             db_query = self.db.table("base_problems").select("*").neq("source", "programmers")
+
+            # 출처 필터 적용 (baekjoon, leetcode 등)
+            if source_filter and source_filter != "programmers":
+                db_query = db_query.eq("source", source_filter)
+                print(f"[RAG:Hybrid] Applied source filter: {source_filter}")
 
             # Apply difficulty filter
             if difficulty:
@@ -654,6 +684,7 @@ class RAGService:
         difficulty: str = None,
         language: str = None,
         limit: int = 5,
+        source_filter: str = None,
     ) -> List[Dict[str, Any]]:
         """
         Fallback keyword-based search.
@@ -661,6 +692,10 @@ class RAGService:
         try:
             # programmers 제외 (저작권)
             query = self.db.table("base_problems").select("*").neq("source", "programmers")
+
+            # 출처 필터 적용
+            if source_filter and source_filter != "programmers":
+                query = query.eq("source", source_filter)
 
             if difficulty:
                 query = query.eq("difficulty", difficulty)

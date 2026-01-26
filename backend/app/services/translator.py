@@ -58,7 +58,7 @@ async def translate_text(
     if not TRANSLATOR_KEY:
         return {
             "success": False,
-            "error": "Azure Translator API key not configured",
+            "error": "번역 서비스가 설정되지 않았습니다. 관리자에게 문의하세요.",
         }
 
     path = "/translate"
@@ -90,9 +90,15 @@ async def translate_text(
             )
 
             if response.status_code != 200:
+                # 401: 인증 실패 (API 키 만료/유효하지 않음)
+                if response.status_code == 401:
+                    return {
+                        "success": False,
+                        "error": "번역 서비스 인증에 실패했습니다. API 키를 확인해주세요.",
+                    }
                 return {
                     "success": False,
-                    "error": f"Translation API error: {response.status_code} - {response.text}",
+                    "error": f"번역 서비스 오류가 발생했습니다. (코드: {response.status_code})",
                 }
 
             result = response.json()
@@ -144,7 +150,7 @@ async def detect_language(text: str) -> dict:
     if not TRANSLATOR_KEY:
         return {
             "success": False,
-            "error": "Azure Translator API key not configured",
+            "error": "번역 서비스가 설정되지 않았습니다. 관리자에게 문의하세요.",
         }
 
     path = "/detect"

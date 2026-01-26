@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Resizer } from '@/components/ui/resizer';
-import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn, Globe } from 'lucide-react';
+import { ArrowLeft, PanelRightClose, PanelRight, Loader2, LogIn, Globe, HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { usePracticeSession } from '@/hooks/usePracticeSession';
@@ -33,6 +33,9 @@ import type { ConvertedProblem, ConvertedProblemType } from '@/lib/dataTypes';
 import type { HintAgentResponse, FeedbackResponse, BaseProblemInfo } from '@/lib/api/agent';
 import { ga4Events, clarityEvents } from '@/lib/analytics';
 import { translateText, type LanguageCode } from '@/lib/api/translate';
+import { TutorialProvider, useTutorialContext } from '@/components/tutorial';
+import { SessionExpiredModal } from '@/components/auth/SessionExpiredModal';
+import type { ProblemType } from '@/lib/tutorial/constants';
 
 const difficultyColors = {
   easy: 'bg-primary/20 text-primary border-primary/30',
@@ -48,7 +51,11 @@ export default function ChatPage() {
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     }>
-      <ChatPageContent />
+      <TutorialProvider>
+        <ChatPageContent />
+      </TutorialProvider>
+      {/* 세션 만료 팝업 */}
+      <SessionExpiredModal />
     </Suspense>
   );
 }
@@ -57,6 +64,9 @@ function ChatPageContent() {
   const { toast } = useToast();
   const router = useRouter();
   const { refreshProfile } = useAuth();
+
+  // 튜토리얼 시스템
+  const { startTutorial, shouldShowTutorial, resetTutorial, isRunning: isTutorialRunning, problemType: tutorialProblemType } = useTutorialContext();
 
   // 뱃지 획득 팝업 상태
   const [earnedBadges, setEarnedBadges] = useState<NewBadge[]>([]);
@@ -251,6 +261,16 @@ function ChatPageContent() {
   const [initialBaseProblem, setInitialBaseProblem] = useState<BaseProblemInfo | null>(null);
   const [isLoadingInitialProblem, setIsLoadingInitialProblem] = useState(false);
 
+  // Preview problem (from chat selection) - 채팅에서 선택한 문제 미리보기용
+  const [previewBaseProblem, setPreviewBaseProblem] = useState<BaseProblemInfo | null>(null);
+
+  // "이 문제 풀기" 버튼 클릭 시 채팅에 문제 시작 요청
+  const [startProblemRequest, setStartProblemRequest] = useState<BaseProblemInfo | null>(null);
+
+  // Preview 번역 상태 (채팅에서 선택한 문제용)
+  const [previewTranslatedQuestion, setPreviewTranslatedQuestion] = useState<string | null>(null);
+  const [isPreviewTranslating, setIsPreviewTranslating] = useState(false);
+
   // Translation state - 번역 상태 (localStorage로 유지)
   const [translatedQuestion, setTranslatedQuestion] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
@@ -305,6 +325,59 @@ function ChatPageContent() {
       setIsTranslating(false);
     }
   };
+
+  // 미리보기 번역 함수 (채팅에서 선택한 문제용)
+  const handlePreviewTranslate = async () => {
+    if (!previewBaseProblem?.question) return;
+
+    // 이미 번역됐으면 토글만
+    if (previewTranslatedQuestion) {
+      setShowTranslated(!showTranslated);
+      return;
+    }
+
+    // 캐시에서 번역 확인
+    const cacheKey = `translate_${previewBaseProblem.id}`;
+    const cached = typeof window !== 'undefined' ? localStorage.getItem(cacheKey) : null;
+    if (cached) {
+      setPreviewTranslatedQuestion(cached);
+      setShowTranslated(true);
+      return;
+    }
+
+    setIsPreviewTranslating(true);
+    try {
+      const result = await translateText(previewBaseProblem.question, 'ko' as LanguageCode);
+      if (result.success && result.translated_text) {
+        setPreviewTranslatedQuestion(result.translated_text);
+        setShowTranslated(true);
+        // 캐시에 저장
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(cacheKey, result.translated_text);
+        }
+      }
+    } catch (err) {
+      console.error('Preview translation failed:', err);
+    } finally {
+      setIsPreviewTranslating(false);
+    }
+  };
+
+  // previewBaseProblem 변경 시 번역 상태 리셋
+  useEffect(() => {
+    if (previewBaseProblem) {
+      // 캐시에서 번역 확인
+      const cacheKey = `translate_${previewBaseProblem.id}`;
+      const cached = typeof window !== 'undefined' ? localStorage.getItem(cacheKey) : null;
+      if (cached) {
+        setPreviewTranslatedQuestion(cached);
+      } else {
+        setPreviewTranslatedQuestion(null);
+      }
+    } else {
+      setPreviewTranslatedQuestion(null);
+    }
+  }, [previewBaseProblem]);
 
   // Practice results (reset on new problem)
   const [blankResults, setBlankResults] = useState<Record<string, boolean>>({});
@@ -438,7 +511,16 @@ function ChatPageContent() {
       setAttemptId(null);
       setSessionId(null);
     }
-  }, [setProblem, setBlankAnswers, setPreviousHints, setSolveStartTime, setAttemptCount, setAttemptId, sessionId]);
+
+    // 튜토리얼 자동 트리거 (해당 문제 유형 처음 풀 때만)
+    const problemType = (selectedProblem.problemType || 'blank') as ProblemType;
+    if (shouldShowTutorial(problemType)) {
+      // DOM 렌더링 후 튜토리얼 시작 (약간의 딜레이)
+      setTimeout(() => {
+        startTutorial(problemType);
+      }, 800);
+    }
+  }, [setProblem, setBlankAnswers, setPreviousHints, setSolveStartTime, setAttemptCount, setAttemptId, sessionId, shouldShowTutorial, startTutorial]);
 
   // Reset session (다음문제 풀기)
   const handleResetSession = useCallback(async () => {
@@ -1104,8 +1186,12 @@ function ChatPageContent() {
   // Render practice component based on problem type
   const renderPracticeComponent = () => {
     if (!problem) {
-      // 문제 정보가 있으면 (problems 페이지에서 넘어온 경우) 먼저 문제 내용 표시
-      if (initialBaseProblem) {
+      // 표시할 문제 정보 결정 (URL에서 온 것 또는 채팅에서 선택한 것)
+      const displayProblem = initialBaseProblem || previewBaseProblem;
+      const isFromChat = !initialBaseProblem && previewBaseProblem;
+
+      // 문제 정보가 있으면 먼저 문제 내용 표시
+      if (displayProblem) {
         return (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -1115,39 +1201,62 @@ function ChatPageContent() {
             {/* 문제 헤더 */}
             <div className="mb-6">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h1 className="text-xl font-bold mb-3">{initialBaseProblem.name}</h1>
+                <div className="flex-1">
+                  <h1 className="text-xl font-bold mb-3">{displayProblem.name}</h1>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge
                       variant="outline"
-                      className={cn('capitalize', difficultyColors[initialBaseProblem.difficulty])}
+                      className={cn('capitalize', difficultyColors[displayProblem.difficulty])}
                     >
-                      {initialBaseProblem.difficulty}
+                      {displayProblem.difficulty}
                     </Badge>
-                    {initialBaseProblem.tags?.slice(0, 4).map((tag) => (
+                    {displayProblem.tags?.slice(0, 4).map((tag) => (
                       <Badge key={tag} variant="secondary" className="text-xs">
                         {tag}
                       </Badge>
                     ))}
                   </div>
                 </div>
-                {/* 번역 버튼 */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleTranslate}
-                  disabled={isTranslating}
-                  className={cn('shrink-0', showTranslated && translatedQuestion && 'text-primary')}
-                >
-                  {isTranslating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Globe className="h-4 w-4" />
+                {/* 버튼 영역 */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* 채팅에서 선택한 경우 "이 문제 풀기" 버튼 */}
+                  {isFromChat && (
+                    <Button
+                      onClick={() => {
+                        if (!showChat) setShowChat(true);
+                        setStartProblemRequest(previewBaseProblem);
+                        setPreviewBaseProblem(null);
+                      }}
+                      size="sm"
+                    >
+                      이 문제 풀기
+                    </Button>
                   )}
-                  <span className="ml-1.5">
-                    {showTranslated && translatedQuestion ? '원본' : '번역'}
-                  </span>
-                </Button>
+                  {/* 번역 버튼 */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={isFromChat ? handlePreviewTranslate : handleTranslate}
+                    disabled={isFromChat ? isPreviewTranslating : isTranslating}
+                    className={cn(
+                      isFromChat
+                        ? (showTranslated && previewTranslatedQuestion && 'text-primary')
+                        : (showTranslated && translatedQuestion && 'text-primary')
+                    )}
+                  >
+                    {(isFromChat ? isPreviewTranslating : isTranslating) ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Globe className="h-4 w-4" />
+                    )}
+                    <span className="ml-1.5">
+                      {isFromChat
+                        ? (showTranslated && previewTranslatedQuestion ? '원본' : '번역')
+                        : (showTranslated && translatedQuestion ? '원본' : '번역')
+                      }
+                    </span>
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -1158,19 +1267,24 @@ function ChatPageContent() {
                   remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
                   rehypePlugins={[rehypeKatex]}
                 >
-                  {showTranslated && translatedQuestion
-                    ? translatedQuestion
-                    : (initialBaseProblem.question || initialBaseProblem.description || '')}
+                  {isFromChat
+                    ? (showTranslated && previewTranslatedQuestion
+                        ? previewTranslatedQuestion
+                        : (displayProblem.question || displayProblem.description || ''))
+                    : (showTranslated && translatedQuestion
+                        ? translatedQuestion
+                        : (displayProblem.question || displayProblem.description || ''))
+                  }
                 </ReactMarkdown>
               </div>
             </div>
 
             {/* 테스트케이스 (있으면) */}
-            {initialBaseProblem.input_output?.inputs && initialBaseProblem.input_output.inputs.length > 0 && (
+            {displayProblem.input_output?.inputs && displayProblem.input_output.inputs.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-sm font-medium mb-3 text-muted-foreground">테스트케이스</h3>
                 <div className="space-y-3">
-                  {initialBaseProblem.input_output.inputs.slice(0, 2).map((input, idx) => (
+                  {displayProblem.input_output.inputs.slice(0, 2).map((input, idx) => (
                     <div key={idx} className="grid grid-cols-2 gap-3">
                       <div className="rounded-lg border border-border overflow-hidden">
                         <div className="bg-muted/50 px-3 py-1.5 border-b border-border text-xs font-medium">
@@ -1185,7 +1299,7 @@ function ChatPageContent() {
                           Output
                         </div>
                         <pre className="p-3 text-xs font-mono overflow-auto max-h-24 text-red-600 dark:text-red-400">
-                          {initialBaseProblem.input_output?.outputs?.[idx] || ''}
+                          {displayProblem.input_output?.outputs?.[idx] || ''}
                         </pre>
                       </div>
                     </div>
@@ -1194,12 +1308,14 @@ function ChatPageContent() {
               </div>
             )}
 
-            {/* 유형 선택 안내 */}
-            <div className="mt-8 text-center py-4 bg-primary/5 rounded-lg border border-primary/20">
-              <p className="text-sm text-muted-foreground">
-                👉 오른쪽에서 <span className="text-primary font-medium">문제 유형을 선택</span>하면 풀이를 시작합니다
-              </p>
-            </div>
+            {/* 유형 선택 안내 (URL에서 온 경우만) */}
+            {!isFromChat && (
+              <div className="mt-8 text-center py-4 bg-primary/5 rounded-lg border border-primary/20">
+                <p className="text-sm text-muted-foreground">
+                  👉 오른쪽에서 <span className="text-primary font-medium">문제 유형을 선택</span>하면 풀이를 시작합니다
+                </p>
+              </div>
+            )}
           </motion.div>
         );
       }
@@ -1323,6 +1439,24 @@ function ChatPageContent() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Tutorial Restart Button */}
+            {problem && problem.problemType && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  const pt = (problem.problemType || 'blank') as ProblemType;
+                  resetTutorial(pt);
+                  setTimeout(() => startTutorial(pt), 100);
+                }}
+                disabled={isTutorialRunning}
+                title="튜토리얼 다시보기"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            )}
+
             {/* Chat Panel Toggle */}
             <Button
               variant="ghost"
@@ -1394,6 +1528,9 @@ function ChatPageContent() {
                       usedBlankHintIndices={usedBlankHintIndices}
                       puzzleUserOrder={puzzleUserOrder}
                       blankAnswers={blankAnswers}
+                      onBaseProblemPreview={setPreviewBaseProblem}
+                      startProblemRequest={startProblemRequest}
+                      onStartProblemHandled={() => setStartProblemRequest(null)}
                     />
                   )}
                 </div>

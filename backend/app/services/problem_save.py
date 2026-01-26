@@ -27,6 +27,120 @@ logger = logging.getLogger(__name__)
 # 유효한 난이도 목록
 VALID_DIFFICULTIES = {"easy", "medium", "medium_hard", "hard", "very_hard"}
 
+# 허용된 tags 목록 (정규화된 한국어)
+ALLOWED_TAGS = {
+    "구현", "정렬", "문자열", "이분탐색", "그리디", "DP",
+    "BFS/DFS", "그래프", "백트래킹", "완전탐색", "자료구조",
+    "수학", "트리", "최단경로", "투포인터", "해시",
+}
+
+# 영어/DB 토픽명 → 허용된 한국어 태그 매핑
+TAG_NORMALIZATION_MAP = {
+    # 구현
+    "Array": "구현", "Implementation": "구현", "implementation": "구현",
+    "ad_hoc": "구현", "case_work": "구현", "simulation": "구현",
+    "시뮬레이션": "구현", "배열": "구현", "반복문": "구현", "기초": "구현",
+    "케이스분류": "구현", "파싱": "구현", "구성적": "구현", "애드혹": "구현",
+    "전처리": "구현", "좌표압축": "구현",
+    # 정렬
+    "Sorting": "정렬", "sorting": "정렬", "merge_sort": "정렬", "quick_sort": "정렬",
+    "각도정렬": "정렬",
+    # 문자열
+    "String": "문자열", "string": "문자열", "문자열 처리": "문자열",
+    "kmp": "문자열", "KMP": "문자열", "trie": "문자열", "트라이": "문자열",
+    "라빈카프": "문자열", "아호코라식": "문자열", "접미사배열": "문자열",
+    "팰린드롬": "문자열", "Z알고리즘": "문자열",
+    # 이분탐색
+    "Binary Search": "이분탐색", "binary_search": "이분탐색",
+    "Parametric Search": "이분탐색", "parametric_search": "이분탐색",
+    "이진 탐색": "이분탐색", "매개 변수 탐색": "이분탐색", "삼분탐색": "이분탐색",
+    # 그리디
+    "Greedy": "그리디", "greedy": "그리디", "greedy_algorithms": "그리디",
+    # DP
+    "DP": "DP", "dp": "DP", "dynamic_programming": "DP",
+    "Dynamic Programming": "DP", "점화식": "DP", "memoization": "DP",
+    "동적계획법": "DP", "LIS": "DP", "LCS": "DP", "비트마스킹": "DP",
+    "분할정복": "DP", "CHT": "DP",
+    # BFS/DFS
+    "BFS": "BFS/DFS", "DFS": "BFS/DFS", "bfs": "BFS/DFS", "dfs": "BFS/DFS",
+    "BFS/DFS": "BFS/DFS", "graph_traversal": "BFS/DFS",
+    "그래프 탐색": "BFS/DFS", "flood_fill": "BFS/DFS",
+    # 그래프
+    "Graph": "그래프", "graphs": "그래프", "topological_sort": "그래프",
+    "topological_sorting": "그래프", "위상정렬": "그래프",
+    "SCC": "그래프", "MST": "그래프", "유니온파인드": "그래프",
+    "이분그래프": "그래프", "이분매칭": "그래프", "네트워크플로우": "그래프",
+    "오일러경로": "그래프", "단절점": "그래프",
+    # 백트래킹
+    "Backtracking": "백트래킹", "backtracking": "백트래킹",
+    # 완전탐색
+    "Brute Force": "완전탐색", "bruteforcing": "완전탐색",
+    "brute_force": "완전탐색", "complete_search": "완전탐색",
+    # 자료구조
+    "Data Structures": "자료구조", "data_structures": "자료구조",
+    "기본 자료구조": "자료구조", "Stack": "자료구조", "Queue": "자료구조",
+    "stack": "자료구조", "queue": "자료구조", "스택": "자료구조", "큐": "자료구조",
+    "덱": "자료구조", "deque": "자료구조", "priority_queue": "자료구조",
+    "우선순위큐": "자료구조", "heap": "자료구조", "세그먼트트리": "자료구조",
+    "연결리스트": "자료구조", "집합": "자료구조", "딕셔너리": "자료구조",
+    # 수학
+    "Math": "수학", "math": "수학", "Mathematics": "수학",
+    "number_theory": "수학", "정수론": "수학", "조합론": "수학",
+    "primality_test": "수학", "소수판별": "수학", "소수": "수학", "소인수분해": "수학",
+    "arithmetic": "수학", "게임이론": "수학", "기하": "수학", "기하학": "수학",
+    "FFT": "수학", "다항식": "수학", "행렬": "수학", "선형대수": "수학",
+    "확률": "수학", "기댓값": "수학",
+    # 트리
+    "Tree": "트리", "trees": "트리", "tree_diameter": "트리",
+    "LCA": "트리", "HLD": "트리", "센트로이드": "트리",
+    # 최단경로
+    "Shortest Path": "최단경로", "shortest_path": "최단경로",
+    "Dijkstra": "최단경로", "dijkstra": "최단경로", "다익스트라": "최단경로",
+    "bellman_ford": "최단경로", "벨만포드": "최단경로",
+    "floyd_warshall": "최단경로", "플로이드": "최단경로",
+    # 투포인터
+    "Two Pointers": "투포인터", "two_pointer": "투포인터",
+    "two_pointers": "투포인터", "Sliding Window": "투포인터",
+    "sliding_window": "투포인터", "슬라이딩윈도우": "투포인터",
+    "누적합": "투포인터", "누적 합": "투포인터",
+    # 해시
+    "Hash": "해시", "hashing": "해시", "hash_set": "해시", "해시테이블": "해시",
+}
+
+
+def normalize_tags(tags: list) -> list:
+    """
+    생성된 문제의 tags를 허용된 태그로 정규화
+
+    Args:
+        tags: 원본 태그 목록 (영어/한국어 혼합 가능)
+
+    Returns:
+        정규화된 태그 목록 (ALLOWED_TAGS에 있는 것만)
+    """
+    if not tags:
+        return []
+
+    normalized = set()
+    for tag in tags:
+        if not tag:
+            continue
+        # 이미 허용된 태그면 그대로 추가
+        if tag in ALLOWED_TAGS:
+            normalized.add(tag)
+            continue
+        # 매핑 테이블에서 찾기
+        mapped = TAG_NORMALIZATION_MAP.get(tag)
+        if mapped:
+            normalized.add(mapped)
+        else:
+            # 매핑되지 않은 태그는 로그만 남기고 무시
+            logger.debug(f"[TagNormalize] Unknown tag ignored: {tag}")
+
+    result = list(normalized)
+    logger.info(f"[TagNormalize] {tags} → {result}")
+    return result
+
 
 def _validate_blank_problem(data: Dict[str, Any]) -> bool:
     """
@@ -169,13 +283,21 @@ class ProblemSaveService:
                 if inputs and outputs:
                     input_output = {"inputs": inputs, "outputs": outputs}
 
+            # tags 정규화 (허용된 태그로만 변환)
+            raw_tags = generated_problem.get("topics") or collected_info.get("topics", [])
+            normalized_tags = normalize_tags(raw_tags)
+            # 정규화 후에도 태그가 없으면 collected_info의 topic 사용
+            if not normalized_tags and collected_info.get("topic"):
+                topic = collected_info.get("topic")
+                normalized_tags = normalize_tags([topic]) if isinstance(topic, str) else normalize_tags(topic)
+
             # base_problems 데이터 구성
             data = {
                 "original_id": original_id,
                 "name": generated_problem.get("title", "Generated Problem"),
                 "question": generated_problem.get("description", ""),
                 "difficulty": difficulty,  # 이미 검증됨
-                "tags": generated_problem.get("topics") or collected_info.get("topics", []),
+                "tags": normalized_tags,
                 "source": "codegen",
                 "solutions": solutions,
                 "input_output": input_output,

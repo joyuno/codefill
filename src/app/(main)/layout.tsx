@@ -6,6 +6,7 @@ import { Code2 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { TopNav } from '@/components/layout/TopNav';
 import { SidebarProfile } from '@/components/dashboard/SidebarProfile';
+import { SessionExpiredModal } from '@/components/auth/SessionExpiredModal';
 import { useAuth } from '@/hooks/useAuth';
 import { usersApi } from '@/lib/api/users';
 import type { Badge } from '@/lib/types';
@@ -118,6 +119,8 @@ export default function MainLayout({
           {children}
         </main>
       </div>
+      {/* 세션 만료 팝업 */}
+      <SessionExpiredModal />
     </div>
   );
 }

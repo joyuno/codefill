@@ -3246,3 +3246,79 @@ async def get_embedding_stats(db=Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Stats error: {str(e)}"
         )
+
+
+# ============================================================
+# Personalized Topic Chips API
+# ============================================================
+
+class PersonalizedChipsResponse(BaseModel):
+    """개인화된 주제 칩 응답"""
+    chips: List[Dict[str, str]] = Field(description="개인화된 주제 칩 목록")
+    is_personalized: bool = Field(description="개인화 적용 여부")
+    debug_info: Optional[Dict[str, Any]] = Field(default=None, description="디버깅 정보 (개발용)")
+
+
+@router.get("/personalized-chips", response_model=PersonalizedChipsResponse)
+async def get_personalized_chips(
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
+    """
+    채팅 초기화 시 개인화된 주제 칩 반환
+
+    로그인 사용자 + 약점분석 완료: 4개 개인화 칩 (자주 푸는/새로운 도전/약점 보완/랜덤)
+    로그인 사용자 + 약점분석 미완료: 기본 6개 칩
+    비로그인 사용자: 기본 6개 칩
+
+    데이터 소스: user_analysis_reports 테이블만 사용
+    """
+    from app.graphs.collection.nodes.confirm_value import (
+        get_personalized_topic_chips,
+        DEFAULT_TOPIC_CHIPS,
+    )
+
+    debug_info = {}
+
+    try:
+        if current_user_id:
+            debug_info["user_id"] = str(current_user_id)[:8] + "..."
+
+            # 개인화 칩 생성 (user_analysis_reports 테이블만 조회)
+            chips = await get_personalized_topic_chips(
+                user_id=str(current_user_id),
+            )
+
+            # 개인화 여부 확인 (칩에 라벨에 특수 표시가 있는지)
+            is_actually_personalized = any(
+                "자주" in chip.get("label", "") or
+                "새로운" in chip.get("label", "") or
+                "약점" in chip.get("label", "")
+                for chip in chips
+            )
+            debug_info["is_personalized"] = is_actually_personalized
+
+            return PersonalizedChipsResponse(
+                chips=chips,
+                is_personalized=is_actually_personalized,
+                debug_info=debug_info,
+            )
+        else:
+            # 비로그인: 기본 칩
+            debug_info["reason"] = "not_logged_in"
+            return PersonalizedChipsResponse(
+                chips=DEFAULT_TOPIC_CHIPS,
+                is_personalized=False,
+                debug_info=debug_info,
+            )
+
+    except Exception as e:
+        print(f"[get_personalized_chips] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        debug_info["error"] = str(e)
+        # 에러 시 기본 칩 반환
+        return PersonalizedChipsResponse(
+            chips=DEFAULT_TOPIC_CHIPS,
+            is_personalized=False,
+            debug_info=debug_info,
+        )

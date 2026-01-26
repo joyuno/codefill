@@ -227,6 +227,15 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
     difficulty = collected_info.get("difficulty")
     language = collected_info.get("language", "python")
 
+    # 출처 및 대기업 코테 관련 파라미터
+    source_filter = collected_info.get("source")  # baekjoon, leetcode 등
+    is_corporate_test = collected_info.get("is_corporate_test", False)  # 대기업 코테 여부
+
+    if source_filter:
+        print(f"[DiscoveryGraph:Search] Source filter: {source_filter}")
+    if is_corporate_test:
+        print(f"[DiscoveryGraph:Search] Corporate test mode enabled - will use programmers RAG for generation")
+
     # 디버그 로깅
     print(f"[DiscoveryGraph:Search] Params: topics={topics}, difficulty={difficulty}, language={language}, per_page={per_page}")
 
@@ -254,6 +263,8 @@ async def search_problems_node(state: DiscoveryState) -> Dict[str, Any]:
             language=lang,
             limit=fetch_limit,
             user_context=user_context,
+            source_filter=source_filter,
+            is_corporate_test=is_corporate_test,
         )
 
     try:
@@ -463,9 +474,16 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
 
     이렇게 하면 chatMain의 20초 타임아웃에 걸리지 않고,
     프론트엔드에서 스트리밍으로 실시간 진행 상황을 표시할 수 있습니다.
+
+    대기업 코테 관련 요청 시 programmers_embeddings도 포함하여 RAG 컨텍스트 구성.
     """
     collected_info = state.get("collected_info", {})
     search_results = state.get("search_results", [])  # RAG에서 찾은 유사 문제 (프론트엔드에서 참고용)
+
+    # 대기업 코테/생성 관련 정보
+    is_corporate_test = collected_info.get("is_corporate_test", False)
+    generation_details = collected_info.get("generation_details")
+    wants_generation = collected_info.get("wants_generation", False)
 
     # Fallback 알림 메시지
     topics_str = ", ".join(collected_info.get("topics", ["기초"]))
@@ -485,6 +503,10 @@ async def generate_problem_node(state: DiscoveryState) -> Dict[str, Any]:
         # 프론트엔드에서 스트리밍 호출 시 필요한 정보
         "collected_info": collected_info,
         "similar_problems": search_results,
+        # 대기업 코테 관련 정보 (programmers RAG 포함 여부 결정)
+        "is_corporate_test": is_corporate_test,
+        "generation_details": generation_details,
+        "wants_generation": wants_generation,
     }
 
     return {
