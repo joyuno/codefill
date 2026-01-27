@@ -177,6 +177,21 @@ class HarvestCropResponse(BaseModel):
 # Constants
 # =====================================================
 
-# 맵 크기 (타일 단위)
+# 맵 크기 (타일 단위) - 기본값 (레벨 1)
+# 동적 맵 확장을 위해 farm.py의 MAP_EXPANSION_COSTS 사용 권장
 MAP_WIDTH_TILES = 30
 MAP_HEIGHT_TILES = 20
+
+# 맵 확장 레벨별 크기 (farm.py와 동기화 필요)
+MAP_EXPANSION_TILES = {
+    1: {"cols": 30, "rows": 20},
+    2: {"cols": 38, "rows": 25},
+    3: {"cols": 45, "rows": 30},
+    4: {"cols": 52, "rows": 35},
+    5: {"cols": 60, "rows": 40},
+}
+
+
+def get_map_dimensions(map_level: int) -> dict:
+    """맵 레벨에 따른 맵 크기 반환"""
+    return MAP_EXPANSION_TILES.get(map_level, MAP_EXPANSION_TILES[1])

@@ -6,7 +6,6 @@
  */
 
 import { motion } from 'framer-motion';
-import { Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { InventoryItem } from '@/lib/api/farm';
 import { getSeedCount } from '@/hooks/useFarm';
@@ -128,8 +127,8 @@ export function Hotbar({ inventory, selectedSeed, onSelectSeed, gold }: HotbarPr
           <div className="w-px h-10 bg-amber-700 mx-2" />
 
           {/* 골드 표시 */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-yellow-400/20 rounded-lg border-2 border-yellow-600">
-            <Coins className="w-5 h-5 text-yellow-400" />
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-yellow-400/20 rounded-lg border-2 border-yellow-600">
+            <img src="/farm/icons/gold_coin.png" alt="gold" className="w-6 h-6" style={{ imageRendering: 'pixelated' }} />
             <span className="text-yellow-300 font-bold">{gold.toLocaleString()}</span>
           </div>
         </div>

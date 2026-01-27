@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Store, X, Coins, Check, Home, TreeDeciduous, Flower2, Fence, MapPin, Sparkles } from 'lucide-react';
+import { Store, X, Check, Home, TreeDeciduous, Flower2, Fence, MapPin, Sparkles } from 'lucide-react';
 import type { UnifiedShopItem } from '@/lib/api/farm';
 
 type CategoryType = 'building' | 'tree' | 'decoration' | 'fence';
@@ -188,15 +188,7 @@ export function UnifiedShopModal({
                     border: '2px solid #C9A227',
                   }}
                 >
-                  <div
-                    className="w-5 h-5 rounded-full flex items-center justify-center"
-                    style={{
-                      background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
-                      boxShadow: 'inset -1px -1px 2px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    <span className="text-[8px] font-black text-amber-900">G</span>
-                  </div>
+                  <img src="/farm/icons/gold_coin.png" alt="gold" className="w-5 h-5" style={{ imageRendering: 'pixelated' }} />
                   <span
                     className="font-black"
                     style={{
@@ -325,8 +317,8 @@ export function UnifiedShopModal({
                             <div className="flex items-center gap-2 text-xs">
                               <span style={{ color: rarity.color }}>{rarity.label}</span>
                               {!isFree && (
-                                <span style={{ color: '#C9A227' }}>
-                                  • {item.price.toLocaleString()}G
+                                <span className="inline-flex items-center gap-0.5" style={{ color: '#C9A227' }}>
+                                  • <img src="/farm/icons/gold_coin.png" alt="G" className="w-3.5 h-3.5 inline-block" style={{ imageRendering: 'pixelated' }} />{item.price.toLocaleString()}
                                 </span>
                               )}
                               {item.maxQuantity !== null && (

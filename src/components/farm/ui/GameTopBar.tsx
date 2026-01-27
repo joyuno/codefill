@@ -68,26 +68,11 @@ function GoldDisplay({ amount }: { amount: number }) {
         animate={isAnimating ? { rotate: [0, 360] } : {}}
         transition={{ duration: 0.5 }}
       >
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center"
-          style={{
-            background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%)',
-            boxShadow: `
-              inset -2px -2px 4px rgba(0,0,0,0.3),
-              inset 2px 2px 4px rgba(255,255,255,0.4),
-              0 2px 4px rgba(0,0,0,0.3)
-            `,
-            border: '2px solid #B8860B',
-          }}
-        >
-          <span className="text-[10px] font-black text-amber-900">G</span>
-        </div>
-        {/* 반짝임 */}
-        <div
-          className="absolute top-0.5 left-0.5 w-2 h-2 rounded-full"
-          style={{
-            background: 'radial-gradient(circle, rgba(255,255,255,0.8) 0%, transparent 70%)',
-          }}
+        <img
+          src="/farm/icons/gold_coin.png"
+          alt="gold"
+          className="w-7 h-7"
+          style={{ imageRendering: 'pixelated' }}
         />
       </motion.div>
 
