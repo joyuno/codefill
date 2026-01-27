@@ -359,7 +359,7 @@ export function UnifiedPractice({
       const uiBlocks: UIPuzzleBlock[] = (problem.puzzleBlocks || []).map(b => ({
         id: b.id,
         code: b.code,
-        indentation: b.indentation || 0, // 블록의 들여쓰기 레벨 사용
+        indentation: b.indentation ?? (b as any).indent ?? 0, // indent와 indentation 둘 다 체크
         correctOrder: b.correctOrder,
       }));
       // 랜덤 셔플
@@ -943,10 +943,15 @@ export function UnifiedPractice({
   const handlePuzzleHint = async () => {
     if (puzzleHintLoading) return;
 
-    // 틀린 블록들 찾기 (현재 위치 기준)
+    // 현재 블록 순서를 기반으로 틀린 블록 다시 계산 (stale puzzleResults 사용 X)
+    // 이렇게 해야 블록을 드래그한 후에도 정확한 힌트를 제공함
+    const currentUserOrder = blocks.map(b => b.id);
+    const { results: currentResults } = checkPuzzleOrder(problem, currentUserOrder);
+
+    // 틀린 블록들 찾기 (현재 위치 기준, 실시간 계산)
     const wrongBlockIndices: number[] = [];
-    blocks.forEach((block, idx) => {
-      if (!puzzleResults[block.id]) {
+    currentResults.forEach((isCorrect, idx) => {
+      if (!isCorrect) {
         wrongBlockIndices.push(idx);
       }
     });
@@ -1043,6 +1048,10 @@ export function UnifiedPractice({
     setBlocks(newBlocks);
     // 블록 순서 변경 시 콜백 호출 (채팅 힌트용)
     onBlockOrderChange?.(newBlocks.map(b => String(b.id)));
+
+    // 블록 순서 변경 시 힌트 메시지만 초기화 (stale 힌트 방지)
+    // puzzleResults는 유지하여 정답 블록 잠금 상태 유지
+    setPuzzleHintMessages([]);
   };
 
   const handleDragEnd = () => {
@@ -1891,58 +1900,126 @@ export function UnifiedPractice({
               {/* fixed_start - 녹색 (고정) */}
               {problem.fixedStart && (
                 <div data-tutorial="puzzle-fixed-area">
-                  {problem.fixedStart.split('\n').map((line, idx) => (
-                    <div key={`fixed-start-${idx}`} className="text-[#6A9955]" style={{ whiteSpace: 'pre' }}>
-                      {line || '\u00A0'}
-                    </div>
-                  ))}
+                  {problem.fixedStart.replace(/\\n/g, '\n').split('\n').map((line, idx) => {
+                    // 줄의 들여쓰기 레벨 계산 (4칸 = 1레벨)
+                    const spaces = line.match(/^(\s*)/)?.[1].length || 0;
+                    const indentLevel = Math.floor(spaces / 4);
+                    const content = line.trimStart();
+                    return (
+                      <div
+                        key={`fixed-start-${idx}`}
+                        className="text-[#6A9955]"
+                        style={{ paddingLeft: `${indentLevel * 2}em` }}
+                      >
+                        {content || '\u00A0'}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {/* 퍼즐 블록 - 하늘색 (변경 가능) - 블록에 저장된 원래 들여쓰기 사용 */}
-              {blocks.map((b, blockIdx) => {
-                // 블록에 저장된 원래 들여쓰기 값 사용
-                const dynamicIndent = calculateDynamicIndentation(
-                  problem.fixedStart || '',
-                  blocks,
-                  blockIdx,
-                  b.indentation  // 블록에 저장된 원래 들여쓰기 값 전달
-                );
-                // 멀티라인 블록: 각 줄에 들여쓰기 적용 (\\n → 실제 줄바꿈)
-                const rawCode = b.code.replace(/\\n/g, '\n');
-                const lines = rawCode.split('\n');
-                // 블록 내 최소 들여쓰기 계산 (dedent용)
-                const minBlockIndent = lines
-                  .filter(line => line.trim().length > 0)
-                  .reduce((min, line) => {
-                    const spaces = line.match(/^(\s*)/)?.[1].length || 0;
-                    return Math.min(min, spaces);
-                  }, Infinity);
-                const normalizedMinIndent = minBlockIndent === Infinity ? 0 : minBlockIndent;
+              {(() => {
+                // fixed_start 마지막 줄이 ':'로 끝나면 기본 들여쓰기 +1
+                let baseIndentFromFixedStart = 0;
+                if (problem.fixedStart) {
+                  const fixedLines = problem.fixedStart.split('\n');
+                  for (let i = fixedLines.length - 1; i >= 0; i--) {
+                    const trimmed = fixedLines[i].trim();
+                    if (trimmed && !trimmed.startsWith('#')) {
+                      // 마지막 유효 줄의 들여쓰기 레벨
+                      const lineIndent = Math.floor((fixedLines[i].match(/^(\s*)/)?.[1].length || 0) / 4);
+                      // 콜론으로 끝나면 +1
+                      if (/:\s*(#.*)?$/.test(trimmed)) {
+                        baseIndentFromFixedStart = lineIndent + 1;
+                      } else {
+                        baseIndentFromFixedStart = lineIndent;
+                      }
+                      break;
+                    }
+                  }
+                }
 
-                return lines.map((line, lineIdx) => {
-                  // 줄별 상대적 들여쓰기 계산
-                  const lineSpaces = line.match(/^(\s*)/)?.[1].length || 0;
-                  const relativeIndent = Math.floor((lineSpaces - normalizedMinIndent) / 4);
-                  const finalIndent = dynamicIndent + Math.max(0, relativeIndent);
-                  const content = line.trimStart();
+                // 이전 블록 패턴 기반 들여쓰기 추적 (fallback용)
+                let prevBlockEndsWithColon = false;
+                let prevBlockIndent = baseIndentFromFixedStart;
 
-                  return (
-                    <div
-                      key={`block-${blockIdx}-${lineIdx}`}
-                      className="text-[#9CDCFE]"
-                      style={{ paddingLeft: `${finalIndent * 2}em` }}
-                    >
-                      {content || '\u00A0'}
-                    </div>
-                  );
+                // DEBUG: 블록 indentation 값 확인 (펼쳐서 보기)
+                console.log('[Puzzle Preview] blocks:', JSON.stringify(blocks.map(b => ({ id: b.id, indent: b.indentation }))));
+
+                return blocks.map((b, blockIdx) => {
+                  // 1순위: 블록에 저장된 indentation 값 사용
+                  // 2순위: 이전 블록 패턴 기반 추론 (콜론으로 끝나면 +1)
+                  // 3순위: fixed_start 기반 기본값
+                  let blockBaseIndent: number;
+                  const storedIndent = b.indentation;  // UIPuzzleBlock에는 indentation만 있음
+                  if (typeof storedIndent === 'number' && storedIndent >= 0) {
+                    blockBaseIndent = storedIndent;
+                  } else if (blockIdx > 0 && prevBlockEndsWithColon) {
+                    blockBaseIndent = prevBlockIndent + 1;
+                  } else if (blockIdx > 0) {
+                    blockBaseIndent = prevBlockIndent;
+                  } else {
+                    blockBaseIndent = baseIndentFromFixedStart;
+                  }
+
+                  // 현재 블록 패턴 분석 (다음 블록 fallback용)
+                  const rawCodeForPattern = b.code.replace(/\\n/g, '\n');
+                  const lastLineOfBlock = rawCodeForPattern.split('\n').filter(l => l.trim()).pop() || '';
+                  prevBlockEndsWithColon = /:\s*(#.*)?$/.test(lastLineOfBlock.trim());
+                  prevBlockIndent = blockBaseIndent;
+
+                  // 멀티라인 블록: 각 줄에 들여쓰기 적용 (\\n → 실제 줄바꿈)
+                  const rawCode = b.code.replace(/\\n/g, '\n');
+                  const lines = rawCode.split('\n');
+                  // 블록 내 최소 들여쓰기 계산 (dedent용)
+                  const minBlockIndent = lines
+                    .filter(line => line.trim().length > 0)
+                    .reduce((min, line) => {
+                      const spaces = line.match(/^(\s*)/)?.[1].length || 0;
+                      return Math.min(min, spaces);
+                    }, Infinity);
+                  const normalizedMinIndent = minBlockIndent === Infinity ? 0 : minBlockIndent;
+
+                  return lines.map((line, lineIdx) => {
+                    // 줄별 상대적 들여쓰기 계산
+                    const lineSpaces = line.match(/^(\s*)/)?.[1].length || 0;
+                    const relativeIndent = Math.floor((lineSpaces - normalizedMinIndent) / 4);
+                    const finalIndent = blockBaseIndent + Math.max(0, relativeIndent);
+                    const content = line.trimStart();
+
+                    // DEBUG
+                    if (blockIdx === 0 && lineIdx === 0) {
+                      console.log('[Puzzle] finalIndent:', finalIndent, 'blockBaseIndent:', blockBaseIndent, 'paddingLeft:', `${finalIndent * 2}em`);
+                    }
+
+                    return (
+                      <div
+                        key={`block-${blockIdx}-${lineIdx}`}
+                        className="text-[#9CDCFE]"
+                        style={{ paddingLeft: `${finalIndent * 2}em` }}
+                      >
+                        {content || '\u00A0'}
+                      </div>
+                    );
+                  });
                 });
-              })}
+              })()}
               {/* fixed_end - 녹색 (고정) */}
-              {problem.fixedEnd && problem.fixedEnd.split('\n').map((line, idx) => (
-                <div key={`fixed-end-${idx}`} className="text-[#6A9955]" style={{ whiteSpace: 'pre' }}>
-                  {line || '\u00A0'}
-                </div>
-              ))}
+              {problem.fixedEnd && problem.fixedEnd.replace(/\\n/g, '\n').split('\n').map((line, idx) => {
+                // 줄의 들여쓰기 레벨 계산 (4칸 = 1레벨)
+                const spaces = line.match(/^(\s*)/)?.[1].length || 0;
+                const indentLevel = Math.floor(spaces / 4);
+                const content = line.trimStart();
+                return (
+                  <div
+                    key={`fixed-end-${idx}`}
+                    className="text-[#6A9955]"
+                    style={{ paddingLeft: `${indentLevel * 2}em` }}
+                  >
+                    {content || '\u00A0'}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -2074,44 +2151,9 @@ export function UnifiedPractice({
           )}
         </AnimatePresence>
 
-        {/* Puzzle 힌트 메시지 표시 */}
-        {problemType === 'puzzle' && puzzleHintMessages.length > 0 && (
-          <div className="shrink-0 px-4 py-2 bg-blue-500/10 border-t border-blue-500/30">
-            <div className="flex items-start gap-2">
-              <Lightbulb className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
-              <div className="flex-1 space-y-1">
-                {puzzleHintMessages.map((msg, idx) => (
-                  <p key={idx} className="text-sm text-blue-300">
-                    {idx + 1}. {msg}
-                  </p>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Actions Bar */}
-        <div className="sticky bottom-0 flex items-center justify-between px-4 py-3 border-t border-border bg-card z-10">
-          {/* 힌트 버튼 (Puzzle 모드) - 문제 완료 후 비활성화 */}
-          <div>
-            {problemType === 'puzzle' && !isSubmitted && !isProblemCompleted && Object.keys(puzzleResults).length > 0 && (
-              <Button
-                data-tutorial="hint-btn"
-                variant="outline"
-                size="sm"
-                onClick={handlePuzzleHint}
-                disabled={puzzleHintLoading}
-                className="gap-2"
-              >
-                {puzzleHintLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Lightbulb className="h-4 w-4" />
-                )}
-                힌트 {puzzleHintsUsedCount > 0 ? `(${puzzleHintsUsedCount}회 사용)` : ''}
-              </Button>
-            )}
-          </div>
+        <div className="sticky bottom-0 flex items-center justify-end px-4 py-3 border-t border-border bg-card z-10">
           <div className="flex gap-2">
             {/* 포기 버튼 - 제출 전에만 표시 */}
             {!isSubmitted && onGiveUp && (

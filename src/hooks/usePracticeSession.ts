@@ -27,6 +27,7 @@ interface PracticeSessionData {
   attemptCount: number;
   attemptId: string | null;
   chatSessionId: string | null;
+  isProblemCompleted: boolean; // 문제 완료 상태
   savedAt: number; // timestamp
 }
 
@@ -39,6 +40,7 @@ interface UsePracticeSessionReturn {
   attemptCount: number;
   attemptId: string | null;
   chatSessionId: string | null;
+  isProblemCompleted: boolean;
   isRestored: boolean;
 
   // Setters
@@ -49,6 +51,7 @@ interface UsePracticeSessionReturn {
   setAttemptCount: React.Dispatch<React.SetStateAction<number>>;
   setAttemptId: (id: string | null) => void;
   setChatSessionId: (id: string | null) => void;
+  setIsProblemCompleted: (completed: boolean) => void;
 
   // Actions
   resetSession: () => void;
@@ -63,6 +66,7 @@ export function usePracticeSession(): UsePracticeSessionReturn {
   const [attemptCount, setAttemptCount] = useState(0);
   const [attemptId, setAttemptIdState] = useState<string | null>(null);
   const [chatSessionId, setChatSessionIdState] = useState<string | null>(null);
+  const [isProblemCompleted, setIsProblemCompletedState] = useState(false);
   const [isRestored, setIsRestored] = useState(false);
 
   // localStorage에서 세션 복원
@@ -113,6 +117,9 @@ export function usePracticeSession(): UsePracticeSessionReturn {
       if (parsed.chatSessionId) {
         setChatSessionIdState(parsed.chatSessionId);
       }
+      if (typeof parsed.isProblemCompleted === 'boolean') {
+        setIsProblemCompletedState(parsed.isProblemCompleted);
+      }
 
       setIsRestored(true);
     } catch (error) {
@@ -135,6 +142,7 @@ export function usePracticeSession(): UsePracticeSessionReturn {
         attemptCount,
         attemptId,
         chatSessionId,
+        isProblemCompleted,
         savedAt: Date.now(),
       };
 
@@ -142,7 +150,7 @@ export function usePracticeSession(): UsePracticeSessionReturn {
     } catch (error) {
       console.error('[PracticeSession] Failed to save:', error);
     }
-  }, [problem, blankAnswers, previousHints, solveStartTime, attemptCount, attemptId, chatSessionId, isRestored]);
+  }, [problem, blankAnswers, previousHints, solveStartTime, attemptCount, attemptId, chatSessionId, isProblemCompleted, isRestored]);
 
   // 상태 변경 시 저장 (디바운스 적용)
   useEffect(() => {
@@ -169,6 +177,19 @@ export function usePracticeSession(): UsePracticeSessionReturn {
     setChatSessionIdState(id);
   }, []);
 
+  const setIsProblemCompleted = useCallback((completed: boolean) => {
+    setIsProblemCompletedState(completed);
+
+    // 완료 플래그 즉시 저장 (별도 키 - 디바운스 없이 즉시)
+    // 다음 방문 시 이 플래그가 있으면 세션 클리어
+    if (completed) {
+      localStorage.setItem('codefill_clear_session_on_next_visit', 'true');
+      console.log('[PracticeSession] Set clear flag for next visit');
+    } else {
+      localStorage.removeItem('codefill_clear_session_on_next_visit');
+    }
+  }, []);
+
   // 세션 초기화
   const resetSession = useCallback(() => {
     setProblemState(null);
@@ -178,12 +199,15 @@ export function usePracticeSession(): UsePracticeSessionReturn {
     setAttemptCount(0);
     setAttemptIdState(null);
     setChatSessionIdState(null);  // 채팅 세션도 초기화 (새 문제 = 새 대화)
+    setIsProblemCompletedState(false);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('codefill_clear_session_on_next_visit');  // 클리어 플래그도 제거
   }, []);
 
   // 저장된 세션 삭제 (로그아웃 시 등)
   const clearSavedSession = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('codefill_clear_session_on_next_visit');  // 클리어 플래그도 제거
     setProblemState(null);
     setBlankAnswers({});
     setPreviousHints([]);
@@ -191,6 +215,7 @@ export function usePracticeSession(): UsePracticeSessionReturn {
     setAttemptCount(0);
     setAttemptIdState(null);
     setChatSessionIdState(null);
+    setIsProblemCompletedState(false);
   }, []);
 
   return {
@@ -202,6 +227,7 @@ export function usePracticeSession(): UsePracticeSessionReturn {
     attemptCount,
     attemptId,
     chatSessionId,
+    isProblemCompleted,
     isRestored,
 
     // Setters
@@ -212,6 +238,7 @@ export function usePracticeSession(): UsePracticeSessionReturn {
     setAttemptCount,
     setAttemptId,
     setChatSessionId,
+    setIsProblemCompleted,
 
     // Actions
     resetSession,

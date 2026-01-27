@@ -69,11 +69,11 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         "마스터": "very_hard", "master": "very_hard",
     }
 
-    # 언어 키워드 매핑 (정확한 매칭)
+    # 언어 키워드 매핑 (정확한 매칭) - TODO: Java, C++ 데이터 확보 후 공개 예정
     LANGUAGE_KEYWORDS_EXACT = {
         "파이썬": "python", "python": "python", "Python": "python",
-        "자바": "java", "java": "java", "Java": "java",
-        "c++": "cpp", "cpp": "cpp", "C++": "cpp",
+        # "자바": "java", "java": "java", "Java": "java",
+        # "c++": "cpp", "cpp": "cpp", "C++": "cpp",
     }
 
     # 정확한 키워드 매칭 시도 (칩 클릭 = 정확한 값)
@@ -437,11 +437,11 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
             "마스터": "very_hard", "master": "very_hard",
         }
 
-        # 언어 키워드 매핑
+        # 언어 키워드 매핑 - TODO: Java, C++ 데이터 확보 후 공개 예정
         LANGUAGE_KEYWORDS = {
             "파이썬": "python", "python": "python", "py": "python",
-            "자바": "java", "java": "java",
-            "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
+            # "자바": "java", "java": "java",
+            # "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
         }
 
         # 현재 단계 기준으로 매칭 시도
@@ -696,11 +696,11 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         "마스터": "very_hard", "master": "very_hard",
     }
 
-    # 언어 직접 매핑
+    # 언어 직접 매핑 - TODO: Java, C++ 데이터 확보 후 공개 예정
     LANGUAGE_KEYWORDS = {
         "파이썬": "python", "python": "python", "py": "python",
-        "자바": "java", "java": "java",
-        "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
+        # "자바": "java", "java": "java",
+        # "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
     }
 
     # LLM 추출 실패 시 직접 매핑으로 보완

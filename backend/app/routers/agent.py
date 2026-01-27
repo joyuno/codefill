@@ -239,6 +239,12 @@ def _dedent_code(code: str) -> tuple[str, int]:
     """
     코드의 공통 들여쓰기를 제거하고 (dedent), 제거된 들여쓰기 레벨을 반환
 
+    블록 코드 정규화:
+    - 첫 줄 들여쓰기가 있으면 그것을 기준으로 제거
+    - 첫 줄이 ':'로 끝나고 들여쓰기가 0인 경우:
+      - except/else/elif/finally 등 동일 레벨 키워드의 들여쓰기를 기준으로 제거
+      - 또는 다음 줄의 들여쓰기에서 4를 뺀 값을 기준으로 제거
+
     Returns:
         (dedented_code, indent_level): 들여쓰기가 제거된 코드와 레벨 (4칸 = 1레벨)
     """
@@ -246,29 +252,86 @@ def _dedent_code(code: str) -> tuple[str, int]:
         return code, 0
 
     lines = code.split('\n')
+    if not lines:
+        return code, 0
 
-    # 비어있지 않은 줄들의 들여쓰기 수집
+    first_line = lines[0]
+    first_indent = len(first_line) - len(first_line.lstrip(' '))
+
+    # Case 1: 첫 줄에 들여쓰기가 있으면 그것을 기준으로 제거
+    if first_indent > 0:
+        dedented_lines = []
+        for line in lines:
+            if line.strip():
+                current_indent = len(line) - len(line.lstrip(' '))
+                new_indent = max(0, current_indent - first_indent)
+                dedented_lines.append(' ' * new_indent + line.lstrip(' '))
+            else:
+                dedented_lines.append(line)
+        return '\n'.join(dedented_lines), first_indent // 4
+
+    # Case 2: 첫 줄 들여쓰기가 0인 경우
+    # 동일 레벨 키워드(except, else, elif, finally, case)를 찾아 기준 계산
+    same_level_keywords = ('except', 'else:', 'elif ', 'finally:', 'case ')
+
+    for i, line in enumerate(lines[1:], 1):
+        stripped = line.strip().lower()
+        for kw in same_level_keywords:
+            if stripped.startswith(kw):
+                # 이 줄은 첫 줄과 같은 레벨이어야 함
+                line_indent = len(line) - len(line.lstrip(' '))
+                if line_indent > 0:
+                    # line_indent만큼 모든 줄(첫 줄 제외)에서 제거
+                    dedented_lines = [lines[0]]
+                    for l in lines[1:]:
+                        if l.strip():
+                            curr_indent = len(l) - len(l.lstrip(' '))
+                            new_indent = max(0, curr_indent - line_indent)
+                            dedented_lines.append(' ' * new_indent + l.lstrip(' '))
+                        else:
+                            dedented_lines.append(l)
+                    return '\n'.join(dedented_lines), line_indent // 4
+
+    # Case 3: 동일 레벨 키워드 없고 첫 줄이 ':'로 끝나면
+    # 다음 줄 들여쓰기에서 4를 뺀 값을 기준으로 제거
+    if first_line.strip().endswith(':'):
+        for line in lines[1:]:
+            if line.strip():
+                line_indent = len(line) - len(line.lstrip(' '))
+                if line_indent >= 4:
+                    base_indent = line_indent - 4
+                    if base_indent > 0:
+                        dedented_lines = [lines[0]]
+                        for l in lines[1:]:
+                            if l.strip():
+                                curr_indent = len(l) - len(l.lstrip(' '))
+                                new_indent = max(0, curr_indent - base_indent)
+                                dedented_lines.append(' ' * new_indent + l.lstrip(' '))
+                            else:
+                                dedented_lines.append(l)
+                        return '\n'.join(dedented_lines), base_indent // 4
+                break
+
+    # Case 4: 기존 로직 (모든 줄의 min_indent)
     indents = []
     for line in lines:
-        if line.strip():  # 빈 줄 제외
+        if line.strip():
             leading_spaces = len(line) - len(line.lstrip(' '))
             indents.append(leading_spaces)
 
     if not indents:
         return code, 0
 
-    # 최소 공통 들여쓰기
     min_indent = min(indents)
 
     if min_indent == 0:
         return code, 0
 
-    # 모든 줄에서 최소 들여쓰기 제거
     dedented_lines = []
     for line in lines:
-        if line.strip():  # 비어있지 않은 줄
+        if line.strip():
             dedented_lines.append(line[min_indent:])
-        else:  # 빈 줄은 그대로
+        else:
             dedented_lines.append(line)
 
     return '\n'.join(dedented_lines), min_indent // 4
@@ -698,6 +761,22 @@ def _remove_fixed_end_duplicates(blocks: list, fixed_end: str) -> tuple:
         return cleaned_blocks, None
 
     return cleaned_blocks, fixed_end
+
+
+def normalize_code_newlines(code: str) -> str:
+    """
+    DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환합니다.
+
+    - "\\n" (리터럴 백슬래시+n) → 실제 줄바꿈
+    - "\\t" (리터럴 백슬래시+t) → 실제 탭
+    """
+    if not code:
+        return code
+    # 리터럴 \n을 실제 줄바꿈으로 변환
+    code = code.replace('\\n', '\n')
+    # 리터럴 \t를 실제 탭으로 변환
+    code = code.replace('\\t', '\t')
+    return code
 
 
 router = APIRouter()
@@ -1581,7 +1660,6 @@ async def generate_blank_problem(
                 result["language"] = language
 
             # 빈칸 패턴 검증
-            code_template = result.get("code_template", "")
             answers = result.get("answers", [])
             blank_patterns = re.findall(r'_(\d+)_', code_template)
 
@@ -2221,6 +2299,9 @@ async def get_guided_starter_code(
                 code_from_solution = solutions[0].get("code", "")
                 print(f"[Guided Starter] No {language} solution, using first available")
 
+        # DB에서 가져온 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환
+        code_from_solution = normalize_code_newlines(code_from_solution)
+
         # 3. 코드 길이에 따라 적절한 줄 수 추출 (구간별 고정)
         if code_from_solution:
             lines = code_from_solution.split('\n')
@@ -2268,11 +2349,16 @@ async def get_guided_starter_code(
 # ============================================================
 
 @router.post("/generate/code", response_model=CodeGenerationResponse)
-async def generate_code(request: CodeGenerationRequest, db=Depends(get_db)):
+async def generate_code(
+    request: CodeGenerationRequest,
+    db=Depends(get_db),
+    current_user_id: Optional[UUID] = Depends(get_current_user_id_optional),
+):
     """
     Generate new educational code when RAG similarity is low.
 
     Uses Claude Sonnet via OpenRouter.
+    Generated problems are also saved to base_problems for future use.
     """
     try:
         system_prompt = CODE_GEN_SYSTEM_PROMPT.format(
@@ -2299,6 +2385,23 @@ async def generate_code(request: CodeGenerationRequest, db=Depends(get_db)):
 
         content = openrouter_service.get_content(response)
         result = openrouter_service.parse_json_response(content)
+
+        # base_problems에 저장 (examples → input_output 변환)
+        try:
+            problem_save_service = get_problem_save_service()
+            user_id = str(current_user_id) if current_user_id else None
+            saved_id = await problem_save_service.save_codegen_to_base_problems(
+                generated_problem=result,
+                collected_info=request.user_request,
+                user_id=user_id,
+            )
+            if saved_id:
+                print(f"[CodeGen] Saved to base_problems: {saved_id}")
+            else:
+                print(f"[CodeGen] Failed to save to base_problems (no ID returned)")
+        except Exception as save_error:
+            print(f"[CodeGen] Error saving to base_problems (non-blocking): {save_error}")
+            # 저장 실패해도 문제 생성 결과는 반환
 
         return CodeGenerationResponse(**result)
 
@@ -2441,6 +2544,9 @@ async def generate_problem_stream(
                         code = matching_sol.get("code", "")
                     elif solutions:
                         code = solutions[0].get("code", "")
+
+            # DB에서 가져온 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환
+            code = normalize_code_newlines(code)
 
             if not code:
                 yield f"data: {json.dumps({'type': 'error', 'status': 'error', 'message': '이 문제에는 솔루션 코드가 없습니다.'}, ensure_ascii=False)}\n\n"

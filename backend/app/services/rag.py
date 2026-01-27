@@ -16,6 +16,15 @@ from ..prompts import CODE_GEN_SYSTEM_PROMPT
 settings = get_settings()
 
 
+def normalize_code_newlines(code: str) -> str:
+    """DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환"""
+    if not code:
+        return code
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    return code
+
+
 class RAGService:
     """Service for RAG-based problem search and code generation."""
 
@@ -804,12 +813,12 @@ class RAGService:
             # 선호 언어 코드 먼저 찾기
             for sol in solutions:
                 if sol.get("language") == preferred_lang:
-                    solution_code = sol.get("code", "")[:2000]  # 2000자 제한
+                    solution_code = normalize_code_newlines(sol.get("code", ""))[:2000]  # 2000자 제한
                     break
 
             # 없으면 첫 번째 솔루션 사용
             if not solution_code and solutions:
-                solution_code = solutions[0].get("code", "")[:2000]
+                solution_code = normalize_code_newlines(solutions[0].get("code", ""))[:2000]
 
             # 🆕 코드 통계 수집 (생성 시 참고용)
             if solution_code:
@@ -1556,6 +1565,149 @@ class RAGService:
             print(f"[RAG:CodeGen] Combined results: {len(combined)} (general: {len(general_results)}, programmers: {len(programmers_results)})")
 
             return combined[:limit], False, "combined"
+
+    # ============================================================
+    # 문제 이름 검색 (inquire_problem 인텐트용)
+    # ============================================================
+
+    async def search_problems_by_name(
+        self,
+        problem_name: str,
+        similarity_threshold: float = 0.40,
+        limit: int = 5,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        """
+        문제 이름으로 임베딩 유사도 검색
+
+        Args:
+            problem_name: 검색할 문제 이름
+            similarity_threshold: 유사도 임계값 (기본 0.40, 프론트에서 0.92 threshold 적용)
+            limit: 최대 결과 수
+
+        Returns:
+            Tuple of (results, found_exact_match)
+            - results: 검색 결과 (유사도 순 정렬)
+            - found_exact_match: 정확한 매칭 여부 (similarity >= 0.92)
+        """
+        try:
+            print(f"[RAG:ByName] Searching for: '{problem_name}'")
+
+            # Step 1: 쿼리 임베딩 생성
+            query_embedding = await embedding_service.generate_embedding(problem_name)
+
+            # Step 2: 모든 문제의 임베딩과 비교 (pgvector 사용)
+            # base_problems + problem_embeddings 조인하여 유사도 계산
+            # 참고: problem_embeddings의 embedding은 문제 전체 내용이지만,
+            # 문제 이름으로 검색 시에도 유사도가 높게 나올 수 있음
+
+            # 먼저 ILIKE로 이름 직접 매칭 시도
+            direct_match = self.db.table("base_problems").select(
+                "id, original_id, name, difficulty, tags, source, question"
+            ).ilike("name", f"%{problem_name}%").neq("source", "programmers").limit(limit).execute()
+
+            direct_results = []
+            if direct_match.data:
+                for p in direct_match.data:
+                    direct_results.append({
+                        "id": p["id"],
+                        "original_id": p.get("original_id"),
+                        "name": p["name"],
+                        "title": p["name"],
+                        "difficulty": p.get("difficulty", "medium"),
+                        "tags": p.get("tags", []),
+                        "topics": p.get("tags", []),
+                        "source": p.get("source"),
+                        "description": (p.get("question") or "")[:200],
+                        "similarity": 1.0,  # 직접 매칭은 유사도 1.0
+                        "match_type": "direct",
+                    })
+                print(f"[RAG:ByName] Direct match found: {len(direct_results)} results")
+
+            # Step 3: 임베딩 유사도 검색 (직접 매칭 결과가 부족한 경우)
+            embedding_results = []
+            if len(direct_results) < limit:
+                # 문제 ID 목록 가져오기 (programmers 제외)
+                problems_response = self.db.table("base_problems").select(
+                    "id, original_id, name, difficulty, tags, source, question"
+                ).neq("source", "programmers").limit(200).execute()
+
+                problems = problems_response.data or []
+                problem_ids = [p["id"] for p in problems]
+                problem_map = {p["id"]: p for p in problems}
+
+                # 임베딩 가져오기
+                embeddings_response = self.db.table("problem_embeddings").select(
+                    "problem_id, embedding"
+                ).in_("problem_id", problem_ids).execute()
+
+                embeddings = embeddings_response.data or []
+
+                # 유사도 계산
+                import numpy as np
+                query_vec = np.array(query_embedding)
+                similarities = []
+
+                for emb_data in embeddings:
+                    prob_id = emb_data["problem_id"]
+                    if prob_id not in problem_map:
+                        continue
+
+                    emb_vec = np.array(emb_data["embedding"])
+
+                    # 코사인 유사도 계산
+                    dot_product = np.dot(query_vec, emb_vec)
+                    norm_product = np.linalg.norm(query_vec) * np.linalg.norm(emb_vec)
+                    similarity = dot_product / norm_product if norm_product > 0 else 0
+
+                    if similarity >= similarity_threshold:
+                        p = problem_map[prob_id]
+                        similarities.append({
+                            "id": p["id"],
+                            "original_id": p.get("original_id"),
+                            "name": p["name"],
+                            "title": p["name"],
+                            "difficulty": p.get("difficulty", "medium"),
+                            "tags": p.get("tags", []),
+                            "topics": p.get("tags", []),
+                            "source": p.get("source"),
+                            "description": (p.get("question") or "")[:200],
+                            "similarity": float(similarity),
+                            "match_type": "embedding",
+                        })
+
+                # 유사도 순 정렬
+                similarities.sort(key=lambda x: x["similarity"], reverse=True)
+                embedding_results = similarities[:limit]
+                print(f"[RAG:ByName] Embedding search found: {len(embedding_results)} results above threshold {similarity_threshold}")
+
+            # Step 4: 결과 합치기 (직접 매칭 우선, 중복 제거)
+            seen_ids = set()
+            combined = []
+
+            for r in direct_results:
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    combined.append(r)
+
+            for r in embedding_results:
+                if r["id"] not in seen_ids and len(combined) < limit:
+                    seen_ids.add(r["id"])
+                    combined.append(r)
+
+            # 유사도 순 정렬
+            combined.sort(key=lambda x: x["similarity"], reverse=True)
+
+            # 정확한 매칭 여부 (유사도 0.92 이상)
+            found_exact_match = any(r["similarity"] >= 0.92 for r in combined)
+
+            print(f"[RAG:ByName] Final results: {len(combined)}, exact_match: {found_exact_match}")
+            return combined[:limit], found_exact_match
+
+        except Exception as e:
+            print(f"[RAG:ByName] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return [], False
 
 
 # Singleton instance

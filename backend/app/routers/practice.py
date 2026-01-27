@@ -39,6 +39,16 @@ from ..models.problem import ProblemType
 from ..services.badge_service import get_badge_service
 from ..services.seed_reward_service import get_seed_reward_service
 
+
+def normalize_code_newlines(code: str) -> str:
+    """DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환"""
+    if not code:
+        return code
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    return code
+
+
 router = APIRouter()
 
 
@@ -2695,10 +2705,10 @@ async def guided_tutor_chat(
         solution_code = ""
         for sol in solutions:
             if sol.get("language") == language:
-                solution_code = sol.get("code", "")
+                solution_code = normalize_code_newlines(sol.get("code", ""))
                 break
         if not solution_code and solutions:
-            solution_code = solutions[0].get("code", "")
+            solution_code = normalize_code_newlines(solutions[0].get("code", ""))
 
         # 4. 문제 컨텍스트 구성
         problem_context = {

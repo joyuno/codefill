@@ -225,6 +225,7 @@ class ProblemSaveService:
         self,
         generated_problem: Dict[str, Any],
         collected_info: Dict[str, Any],
+        user_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         CodeGen으로 생성된 문제를 base_problems 테이블에 저장
@@ -232,11 +233,13 @@ class ProblemSaveService:
         Args:
             generated_problem: CodeGen이 생성한 문제 데이터
             collected_info: 사용자가 선택한 topic, difficulty, language
+            user_id: 생성 요청한 사용자 ID (optional, 추후 creator 추적용)
 
         Returns:
             저장된 문제의 id (UUID) 또는 None
         """
         import uuid
+        from datetime import datetime
 
         try:
             # difficulty 검증 (필수)
@@ -292,15 +295,21 @@ class ProblemSaveService:
                 normalized_tags = normalize_tags([topic]) if isinstance(topic, str) else normalize_tags(topic)
 
             # base_problems 데이터 구성
+            # 필수 컬럼: original_id, name, question, solutions
+            # 나머지는 DB default 값 사용 (created_at=now(), like_count=0, solve_count=0, elo_rating=1000)
             data = {
                 "original_id": original_id,
                 "name": generated_problem.get("title", "Generated Problem"),
                 "question": generated_problem.get("description", ""),
                 "difficulty": difficulty,  # 이미 검증됨
-                "tags": normalized_tags,
+                "tags": normalized_tags if normalized_tags else None,
                 "source": "codegen",
                 "solutions": solutions,
                 "input_output": input_output,
+                # 선택적 컬럼 (LLM이 제공하면 사용)
+                "time_limit": generated_problem.get("time_limit"),
+                "memory_limit": generated_problem.get("memory_limit"),
+                "explanation": generated_problem.get("explanation"),  # 해설이 있으면 저장
             }
 
             result = self.supabase.table("base_problems").insert(data).execute()

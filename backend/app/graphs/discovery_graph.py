@@ -132,8 +132,21 @@ async def route_discovery_intent_node(state: DiscoveryState) -> Dict[str, Any]:
     # 🔢 사용자 요청 개수 파싱 (예: "10개 보여줘", "20개 더 찾아줘")
     requested_limit = _parse_requested_count(message)
 
-    # 0. 문제 질문 의도 (inquire_problem)
+    # 0. 문제 질문/비교/개념 설명 의도
     inquiry_target = state.get("inquiry_target")
+
+    # 0-1. 문제 비교 의도 ("어떤 게 더 쉬워?", "뭐가 좋을까?")
+    if intent == "compare_problems" or inquiry_target == "general":
+        if search_results:
+            print(f"[DiscoveryGraph] Problem comparison detected")
+            return {"next_node": "compare_problems"}
+
+    # 0-2. 개념 설명 의도 ("정렬이 뭐야?", "시간복잡도 설명해줘")
+    if intent == "concept_explain":
+        print(f"[DiscoveryGraph] Concept explanation detected")
+        return {"next_node": "concept_explain"}
+
+    # 0-3. 문제 질문 의도 (inquire_problem)
     if intent == "inquire_problem" or inquiry_target:
         if search_results:
             print(f"[DiscoveryGraph] Problem inquiry detected: target={inquiry_target}")
@@ -734,6 +747,159 @@ async def inquire_problem_node(state: DiscoveryState) -> Dict[str, Any]:
     }
 
 
+@track_discovery_node("compare_problems", tags=["llm", "compare"])
+async def compare_problems_node(state: DiscoveryState) -> Dict[str, Any]:
+    """
+    검색 결과 문제들을 비교합니다.
+
+    사용자가 여러 문제를 비교하고 싶을 때:
+    - "어떤 게 더 쉬워?"
+    - "뭐가 좋을까?"
+    - "1번이랑 3번 비교해줘"
+    - "초보자한테 뭐가 나아?"
+    """
+    from ..services.openrouter import openrouter_service
+
+    message = state.get("message", "")
+    search_results = state.get("search_results", [])
+    user_context = state.get("user_context", {})
+
+    if not search_results:
+        return {
+            "response_message": "비교할 문제가 없어요. 먼저 문제를 검색해주세요!",
+            "next_node": "respond",
+        }
+
+    # 문제 정보 포맷팅
+    problems_info = []
+    for i, p in enumerate(search_results[:5], 1):
+        name = p.get("name") or p.get("title") or f"문제 {i}"
+        difficulty = p.get("difficulty") or "미정"
+        tags = p.get("tags", [])[:3]
+        tags_str = ", ".join(tags) if tags else "없음"
+        problems_info.append(f"{i}. {name} (난이도: {difficulty}, 태그: {tags_str})")
+
+    problems_text = "\n".join(problems_info)
+
+    # 사용자 레벨 정보
+    user_level = user_context.get("experience_level", "intermediate")
+    user_goal = user_context.get("learning_goal", "skill_up")
+
+    prompt = f"""당신은 코딩 학습 도우미입니다.
+사용자가 검색된 문제들을 비교해달라고 요청했습니다.
+
+## 검색된 문제 목록
+{problems_text}
+
+## 사용자 정보
+- 레벨: {user_level}
+- 학습 목표: {user_goal}
+
+## 사용자 질문
+"{message}"
+
+## 응답 지침
+1. 문제들의 난이도, 태그, 학습 효과를 비교하세요
+2. 사용자 레벨과 목표에 맞는 추천을 해주세요
+3. 각 문제의 장단점을 간결하게 설명하세요
+4. 최종 추천을 제시하세요
+5. 3-5문장으로 답변하세요
+6. 친근하고 격려하는 어조를 유지하세요
+
+답변:"""
+
+    try:
+        response = await openrouter_service.chat_completion(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "코딩 학습 도우미"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=300,
+        )
+        response_message = openrouter_service.get_content(response)
+        response_message += "\n\n원하는 문제가 있으면 번호로 선택해주세요!"
+    except Exception as e:
+        print(f"[DiscoveryGraph] Compare problems error: {e}")
+        response_message = "문제 비교 중 오류가 발생했어요. 번호로 직접 선택해주세요!"
+
+    return {
+        "response_message": response_message,
+        "awaiting_selection": True,
+        "next_node": "respond",
+    }
+
+
+@track_discovery_node("concept_explain", tags=["llm", "concept"])
+async def concept_explain_node(state: DiscoveryState) -> Dict[str, Any]:
+    """
+    검색 단계에서 일반 개념 질문을 처리합니다.
+
+    사용자가 알고리즘/자료구조 개념에 대해 질문할 때:
+    - "정렬이 뭐야?"
+    - "시간복잡도 설명해줘"
+    - "이분탐색 언제 써?"
+    - "그리디랑 DP 차이가 뭐야?"
+    """
+    from ..services.openrouter import openrouter_service
+
+    message = state.get("message", "")
+    search_results = state.get("search_results", [])
+    collected_info = state.get("collected_info", {})
+
+    # 현재 검색 컨텍스트
+    current_topic = collected_info.get("topics", [])
+    topic_str = ", ".join(current_topic) if current_topic else "없음"
+
+    prompt = f"""당신은 코딩 학습 도우미입니다.
+사용자가 알고리즘/자료구조 개념에 대해 질문했습니다.
+
+## 현재 검색 중인 주제
+{topic_str}
+
+## 사용자 질문
+"{message}"
+
+## 응답 지침
+1. 개념을 쉽고 간결하게 설명하세요
+2. 실제 코딩 문제에서 어떻게 활용되는지 예시를 들어주세요
+3. 현재 검색 주제와 관련이 있다면 연결해서 설명하세요
+4. 3-5문장으로 답변하세요
+5. 이해하기 쉬운 비유를 사용하세요
+6. 친근한 어조를 유지하세요
+
+답변:"""
+
+    try:
+        response = await openrouter_service.chat_completion(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "코딩 학습 도우미"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=400,
+        )
+        response_message = openrouter_service.get_content(response)
+
+        # 검색 결과가 있으면 문제 선택 안내 추가
+        if search_results:
+            response_message += f"\n\n현재 {len(search_results)}개의 문제가 검색되어 있어요. 계속해서 문제를 선택하거나 더 질문해주세요!"
+        else:
+            response_message += "\n\n이제 어떤 주제의 문제를 풀어볼까요?"
+
+    except Exception as e:
+        print(f"[DiscoveryGraph] Concept explain error: {e}")
+        response_message = "개념 설명 중 오류가 발생했어요. 다시 질문해주세요!"
+
+    return {
+        "response_message": response_message,
+        "awaiting_selection": bool(search_results),
+        "next_node": "respond",
+    }
+
+
 @track_discovery_node("fallback_clarify", tags=["fallback"])
 async def fallback_clarify_node(state: DiscoveryState) -> Dict[str, Any]:
     """
@@ -894,7 +1060,7 @@ def route_after_discovery_intent(state: DiscoveryState) -> str:
     if state.get("force_generate") and next_node == "generate_problem":
         return "confirm_generation"
 
-    valid_nodes = {"search_problems", "handle_selection", "filter_results", "generate_problem", "confirm_generation", "inquire_problem", "fallback_clarify"}
+    valid_nodes = {"search_problems", "handle_selection", "filter_results", "generate_problem", "confirm_generation", "inquire_problem", "compare_problems", "concept_explain", "fallback_clarify"}
     return next_node if next_node in valid_nodes else "search_problems"
 
 
@@ -941,6 +1107,8 @@ def create_discovery_graph(checkpointer=None) -> StateGraph:
     workflow.add_node("generate_problem", generate_problem_node)
     workflow.add_node("handle_selection", handle_selection_node)
     workflow.add_node("inquire_problem", inquire_problem_node)  # 문제 질문 노드
+    workflow.add_node("compare_problems", compare_problems_node)  # 문제 비교 노드
+    workflow.add_node("concept_explain", concept_explain_node)  # 개념 설명 노드
     workflow.add_node("fallback_clarify", fallback_clarify_node)  # 의도 파악 실패 시 clarification
     workflow.add_node("confirm_problem", confirm_problem_node)
     workflow.add_node("respond", respond_node)
@@ -959,6 +1127,8 @@ def create_discovery_graph(checkpointer=None) -> StateGraph:
             "confirm_generation": "confirm_generation",  # 확인 노드로 먼저 이동
             "generate_problem": "generate_problem",  # 확인 없이 직접 생성 (fallback)
             "inquire_problem": "inquire_problem",  # 문제 질문
+            "compare_problems": "compare_problems",  # 문제 비교
+            "concept_explain": "concept_explain",  # 개념 설명
             "fallback_clarify": "fallback_clarify",  # 의도 파악 실패 시 clarification
         }
     )
@@ -1005,6 +1175,12 @@ def create_discovery_graph(checkpointer=None) -> StateGraph:
 
     # inquire_problem → respond
     workflow.add_edge("inquire_problem", "respond")
+
+    # compare_problems → respond
+    workflow.add_edge("compare_problems", "respond")
+
+    # concept_explain → respond
+    workflow.add_edge("concept_explain", "respond")
 
     # fallback_clarify → respond
     workflow.add_edge("fallback_clarify", "respond")

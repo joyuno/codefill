@@ -99,6 +99,10 @@ interface PracticeChatPanelProps {
    * 문제 완료 후 채팅 시 호출 (횟수 증가)
    */
   onPostCompletionChat?: () => void;
+  /**
+   * localStorage 복원 완료 여부 (복원 전 잘못된 초기화 방지)
+   */
+  isRestored?: boolean;
 }
 
 // Session state interface for LangGraph
@@ -271,6 +275,7 @@ export function PracticeChatPanel({
   isProblemCompleted = false,
   postCompletionChatCount = 0,
   onPostCompletionChat,
+  isRestored = true,
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile, refreshProfile } = useAuth();
@@ -377,7 +382,11 @@ export function PracticeChatPanel({
 
   // Reset chat session when problem becomes null (다음 문제 풀기 클릭 시)
   // 단, initialBaseProblem이 있으면 초기화하지 않음 (Problems 페이지에서 직접 선택한 경우)
+  // isRestored가 false이면 복원 중이므로 초기화하지 않음 (타이밍 이슈 방지)
   useEffect(() => {
+    // 복원 완료 전에는 초기화하지 않음 (잘못된 타이밍에 초기화 방지)
+    if (!isRestored) return;
+
     if (problem === null && !initialBaseProblem) {
       // 채팅 세션 완전 초기화
       setMessages([initialWelcomeMessage]);
@@ -405,7 +414,7 @@ export function PracticeChatPanel({
       // ref도 초기화 (새 세션에서 다시 initialBaseProblem 처리 가능하도록)
       initialProblemHandledRef.current = false;
     }
-  }, [problem, initialBaseProblem]);
+  }, [problem, initialBaseProblem, isRestored]);
 
   // Guided 모드 세션 초기화 (problemType이 'guided'로 변경될 때)
   useEffect(() => {
@@ -848,6 +857,20 @@ export function PracticeChatPanel({
       });
 
       // CodeGenerationResponse를 BaseProblemInfo로 변환
+      // examples를 input_output 형식으로 변환
+      let inputOutput: BaseProblemInfo['input_output'] = undefined;
+      if (result.examples && result.examples.length > 0) {
+        const inputs: string[] = [];
+        const outputs: string[] = [];
+        for (const ex of result.examples) {
+          if (ex.input) inputs.push(ex.input);
+          if (ex.output) outputs.push(ex.output);
+        }
+        if (inputs.length > 0 && outputs.length > 0) {
+          inputOutput = { inputs, outputs };
+        }
+      }
+
       const generatedProblem: BaseProblemInfo = {
         title: result.title,
         description: result.description,
@@ -856,6 +879,7 @@ export function PracticeChatPanel({
         topics: result.topics,
         time_complexity: result.time_complexity,
         space_complexity: result.space_complexity,
+        input_output: inputOutput,
       };
 
       // 생성 완료 - 문제 선택 UI로 전환
@@ -2347,7 +2371,7 @@ export function PracticeChatPanel({
               </>
             ) : (
               <>
-                {/* 빈칸 유형에서는 힌트 버튼 숨김 (각 빈칸 옆 힌트로 대체) */}
+                {/* 빈칸 유형에서만 힌트 버튼 숨김 (각 빈칸 옆 힌트로 대체) */}
                 {problem?.problemType !== 'blank' && (
                   <Button
                     variant="outline"

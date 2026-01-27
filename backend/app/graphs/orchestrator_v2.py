@@ -67,6 +67,84 @@ from ..services.langsmith_tracker import track_orchestrator_method
 logger = logging.getLogger(__name__)
 
 
+def normalize_code_newlines(code: str) -> str:
+    """DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환"""
+    if not code:
+        return code
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    return code
+
+
+def extract_problem_name(inquiry_target: str) -> str:
+    """
+    inquiry_target에서 문제 이름만 추출
+
+    LLM이 파싱을 잘못했을 경우를 대비한 후처리
+    예: "시식코너는 나의 것이라는 문제 찾아줘" → "시식코너는 나의 것"
+
+    Note: 검색 결과에 없는 문제를 찾을 때만 적용됨
+    """
+    import re
+
+    if not inquiry_target:
+        return inquiry_target
+
+    # 이미 깨끗한 경우 (숫자만 또는 짧은 문자열)
+    if inquiry_target.isdigit() or len(inquiry_target) <= 3:
+        return inquiry_target
+
+    # 불필요한 접미사 패턴 제거
+    suffix_patterns = [
+        r'이?라는\s*문제.*$',  # "~이라는 문제 찾아줘"
+        r'\s*문제\s*(찾아줘|알려줘|설명해줘|풀어볼래|있어\??|어때\??).*$',
+        r'\s*(찾아줘|알려줘|설명해줘|풀어볼래|보여줘).*$',
+        r'\s*에\s*대해.*$',  # "~에 대해 알려줘"
+        r'\s*좀\s*(알려줘|찾아줘|설명해줘).*$',
+    ]
+
+    result = inquiry_target.strip()
+    for pattern in suffix_patterns:
+        result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+
+    # 앞뒤 공백 및 따옴표 제거
+    result = result.strip().strip('"\'""''')
+
+    return result if result else inquiry_target
+
+
+def is_target_in_search_results(inquiry_target: str, search_results: list) -> bool:
+    """
+    inquiry_target이 검색 결과 안에 있는지 확인
+
+    - 숫자/숫자+번 패턴이면 인덱스로 확인 (1-based)
+    - 문자열이면 name/title과 부분 매칭
+    """
+    import re
+
+    if not inquiry_target or not search_results:
+        return False
+
+    target = inquiry_target.strip()
+
+    # 숫자 또는 "N번" 패턴 (인덱스)
+    num_match = re.match(r'^(\d+)\s*번?$', target)
+    if num_match:
+        idx = int(num_match.group(1))
+        return 1 <= idx <= len(search_results)
+
+    # 문자열인 경우 (문제 이름)
+    target_lower = target.lower()
+    for result in search_results:
+        name = (result.get("name") or "").lower()
+        title = (result.get("title") or "").lower()
+        # 부분 매칭 허용
+        if target_lower in name or target_lower in title or name in target_lower or title in target_lower:
+            return True
+
+    return False
+
+
 class ChatOrchestratorV2:
     """
     Tool 기반 LangGraph 오케스트레이터
@@ -431,20 +509,96 @@ class ChatOrchestratorV2:
             )
 
         # ============================================================
-        # 4-1. 문제 질문 → Discovery Graph (inquire_problem)
-        # 검색 결과 중 특정 문제에 대한 질문 처리
+        # 4. INQUIRE_PROBLEM 처리
+        # - 파싱을 먼저 적용 (LLM이 전체 문장을 넣었을 수 있음)
+        # - 파싱된 결과로 검색 결과 매칭
+        # - 검색 결과에 있으면 → 내용 설명 (4-1)
+        # - 검색 결과에 없으면 → DB에서 검색 (4-2)
         # ============================================================
-        if intent_result.action == ActionType.INQUIRE_PROBLEM and search_results:
-            return await self._process_discovery(
-                message=message,
-                intent="inquire_problem",
-                collected_info=collected_info,
-                conversation_history=conversation_history,
-                user_context=user_context,
-                search_results=search_results,
-                inquiry_target=intent_result.inquiry_target,
-                inquiry_question=message,
-            )
+        if intent_result.action == ActionType.INQUIRE_PROBLEM and intent_result.inquiry_target:
+            # 먼저 파싱 적용 (항상)
+            raw_target = intent_result.inquiry_target
+            parsed_target = extract_problem_name(raw_target)
+            print(f"[Orchestrator] INQUIRE_PROBLEM: parsed='{parsed_target}' (raw='{raw_target}')")
+
+            # 파싱된 결과로 검색 결과 매칭
+            target_in_results = is_target_in_search_results(parsed_target, search_results)
+
+            if search_results and target_in_results:
+                # 4-1. 검색 결과 안에 있음 → 문제 내용 설명
+                print(f"[Orchestrator] Target '{parsed_target}' found in search results → explain content")
+                return await self._process_discovery(
+                    message=message,
+                    intent="inquire_problem",
+                    collected_info=collected_info,
+                    conversation_history=conversation_history,
+                    user_context=user_context,
+                    search_results=search_results,
+                    inquiry_target=parsed_target,  # 파싱된 값 전달
+                    inquiry_question=message,
+                )
+
+            # 4-2. 검색 결과에 없음 → DB에서 새로 검색
+            print(f"[Orchestrator] Target '{parsed_target}' NOT in search results → search DB")
+            from ..services.rag import rag_service
+
+            try:
+                results, found_exact = await rag_service.search_problems_by_name(
+                    problem_name=parsed_target,  # 이미 파싱된 값 사용
+                    similarity_threshold=0.40,
+                    limit=5,
+                )
+
+                if results:
+                    top_result = results[0]
+                    similarity = top_result.get("similarity", 0)
+
+                    if similarity >= 0.92:
+                        response_msg = f"**{top_result['name']}** 문제를 찾았어요!\n\n난이도: {top_result['difficulty']}\n태그: {', '.join(top_result.get('tags', [])[:3])}\n\n이 문제를 풀어볼까요?"
+                        action_trigger = "problem_found"
+                    else:
+                        response_msg = f"'{parsed_target}'과(와) 비슷한 문제를 찾았어요:\n\n"
+                        for i, r in enumerate(results[:3], 1):
+                            response_msg += f"{i}. **{r['name']}** ({r['difficulty']})\n"
+                        response_msg += "\n원하는 문제가 있으면 선택해주세요!"
+                        action_trigger = "problems_searched"
+
+                    return {
+                        "stage": "discovery",
+                        "intent": "inquire_problem",
+                        "collected_info": collected_info,
+                        "search_results": results,
+                        "response_message": response_msg,
+                        "action_trigger": action_trigger,
+                        "action_data": {
+                            "problems": results,
+                            "search_query": parsed_target,
+                            "found_exact_match": found_exact,
+                        },
+                        "next_stage": "respond",
+                        "is_complete": True,
+                    }
+                else:
+                    return {
+                        "stage": "discovery",
+                        "intent": "inquire_problem",
+                        "collected_info": collected_info,
+                        "response_message": f"'{parsed_target}' 문제를 찾지 못했어요. 다른 이름이나 주제로 검색해볼까요?",
+                        "action_trigger": "problem_not_found",
+                        "next_stage": "respond",
+                        "is_complete": True,
+                    }
+            except Exception as e:
+                print(f"[Orchestrator] Problem name search error: {e}")
+                return {
+                    "stage": "discovery",
+                    "intent": "inquire_problem",
+                    "collected_info": collected_info,
+                    "response_message": "문제 검색 중 오류가 발생했어요. 다시 시도해주세요.",
+                    "action_trigger": "error",
+                    "next_stage": "respond",
+                    "is_complete": True,
+                }
 
         # ============================================================
         # 5. 정보 수집 필요
@@ -486,6 +640,26 @@ class ChatOrchestratorV2:
                     collected_info=collected_info,
                     intent=intent_result.action.value,
                     session_state=session_state,
+                )
+
+        # ============================================================
+        # 6-1. 개념 질문 (검색 결과가 있을 때)
+        # 검색 단계에서 알고리즘/자료구조 개념 질문 처리
+        # ============================================================
+        if intent_result.action == ActionType.FREE_CHAT and search_results:
+            # 개념 질문 패턴 감지
+            concept_keywords = ["뭐야", "뭐지", "뭔가", "설명", "알려", "차이", "언제", "어떻게", "왜"]
+            is_concept_question = any(kw in message for kw in concept_keywords)
+
+            if is_concept_question:
+                print(f"[Orchestrator] Concept question detected during discovery: {message}")
+                return await self._process_discovery(
+                    message=message,
+                    intent="concept_explain",
+                    collected_info=collected_info,
+                    conversation_history=conversation_history,
+                    user_context=user_context,
+                    search_results=search_results,
                 )
 
         # ============================================================
@@ -1464,11 +1638,15 @@ class ChatOrchestratorV2:
                 # python 우선, 없으면 첫 번째
                 python_sol = next((s for s in solutions if s.get("language") == "python"), None)
                 if python_sol:
-                    code = python_sol.get("code", "")
+                    code = normalize_code_newlines(python_sol.get("code", ""))
                     language = "python"
                 elif solutions:
-                    code = solutions[0].get("code", "")
+                    code = normalize_code_newlines(solutions[0].get("code", ""))
                     language = solutions[0].get("language", "python")
+
+        # code 필드에서 직접 가져온 경우도 정규화
+        if code:
+            code = normalize_code_newlines(code)
 
         if not code:
             return {

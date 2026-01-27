@@ -195,6 +195,26 @@ async def generate_problem_codegen(state: ChatState) -> Dict[str, Any]:
 
         response_message = f"새로 만든 문제예요:\n  • {generated_problem['title']} ({generated_problem['difficulty']})\n\n이 문제를 풀어볼까요?"
 
+        # base_problems에 저장 (examples → input_output 변환)
+        try:
+            from ...services.problem_save import problem_save_service
+            user_context = state.get("user_context", {})
+            user_id = user_context.get("user_id") or user_context.get("id")
+
+            saved_id = await problem_save_service.save_codegen_to_base_problems(
+                generated_problem=result,  # LLM raw response
+                collected_info=collected_info,
+                user_id=user_id,
+            )
+            if saved_id:
+                generated_problem["base_problem_id"] = saved_id
+                print(f"[CodeGen] Saved to base_problems: {saved_id}")
+            else:
+                print(f"[CodeGen] Failed to save to base_problems (no ID returned)")
+        except Exception as save_error:
+            print(f"[CodeGen] Error saving to base_problems (non-blocking): {save_error}")
+            # 저장 실패해도 문제 생성은 계속 진행
+
         action_data = {
             "status": "generated",
             "generated_problem": generated_problem,

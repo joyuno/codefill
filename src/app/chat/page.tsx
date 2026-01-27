@@ -93,6 +93,7 @@ function ChatPageContent() {
     attemptCount,
     attemptId,
     chatSessionId,
+    isProblemCompleted,
     isRestored,
     setProblem,
     setBlankAnswers,
@@ -101,6 +102,7 @@ function ChatPageContent() {
     setAttemptCount,
     setAttemptId,
     setChatSessionId,
+    setIsProblemCompleted,
     resetSession,
   } = usePracticeSession();
 
@@ -137,6 +139,35 @@ function ChatPageContent() {
       });
     }
   }, [isRestored, problem, blankAnswers, previousHints, attemptId]);
+
+  // ============================================================
+  // 문제 완료 후 페이지 재진입 시 세션 클리어
+  // - 별도 플래그(codefill_clear_session_on_next_visit)로 확실하게 처리
+  // - 마운트 ID로 "이 마운트에서 이미 체크했는지" 추적 (SPA 라우팅 대응)
+  // ============================================================
+  const mountIdRef = useRef(crypto.randomUUID());
+
+  useEffect(() => {
+    if (!isRestored) return;  // 복원 완료 전에는 실행 안 함
+
+    // sessionStorage로 "이 마운트에서 이미 클리어 체크했는지" 추적
+    // (SPA 라우팅에서 컴포넌트가 리마운트되면 새 mountId가 생성됨)
+    const lastCheckedMountId = sessionStorage.getItem('codefill_last_clear_check_mount_id');
+    if (lastCheckedMountId === mountIdRef.current) return;  // 이 마운트에서 이미 체크함
+    sessionStorage.setItem('codefill_last_clear_check_mount_id', mountIdRef.current);
+
+    // 별도 플래그 확인 (setIsProblemCompleted(true) 호출 시 즉시 저장됨)
+    const shouldClear = localStorage.getItem('codefill_clear_session_on_next_visit') === 'true';
+
+    console.log('[ChatPage] Session check:', { shouldClear, mountId: mountIdRef.current, isProblemCompleted });
+
+    // 클리어 플래그가 있으면 세션 클리어
+    if (shouldClear) {
+      console.log('[ChatPage] Clearing session - completed problem flag detected');
+      localStorage.removeItem('codefill_clear_session_on_next_visit');
+      resetSession();
+    }
+  }, [isRestored, isProblemCompleted, resetSession]);
 
   // ============================================================
   // Session Tracking - Heartbeat & Beforeunload
@@ -391,9 +422,8 @@ function ChatPageContent() {
   const [feedbackData, setFeedbackData] = useState<FeedbackResponse | null>(null);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
 
-  // 문제 완료 상태 (정답 맞춘 후 돌아가기 시 true)
-  const [isProblemCompleted, setIsProblemCompleted] = useState(false);
-  const [postCompletionChatCount, setPostCompletionChatCount] = useState(0);  // 완료 후 채팅 횟수
+  // 문제 완료 후 채팅 횟수 (isProblemCompleted는 usePracticeSession 훅에서 관리)
+  const [postCompletionChatCount, setPostCompletionChatCount] = useState(0);
 
   // Layout state
   const [showChat, setShowChat] = useState(true);
@@ -521,12 +551,22 @@ function ChatPageContent() {
     // 튜토리얼 자동 트리거 (해당 문제 유형 처음 풀 때만)
     const problemType = (selectedProblem.problemType || 'blank') as ProblemType;
     if (shouldShowTutorial(problemType)) {
-      // DOM 렌더링 후 튜토리얼 시작 (약간의 딜레이)
-      setTimeout(() => {
-        startTutorial(problemType);
-      }, 800);
+      // DOM 렌더링 후 튜토리얼 시작 (충분한 딜레이 + 요소 존재 확인)
+      const checkAndStartTutorial = (attempts: number = 0) => {
+        // 튜토리얼의 첫 번째 타겟 요소가 존재하는지 확인
+        const firstTarget = document.querySelector('[data-tutorial="translate-btn"]');
+        if (firstTarget || attempts >= 5) {
+          // 요소가 있거나 5번 시도 후 시작
+          startTutorial(problemType);
+        } else {
+          // 요소가 없으면 500ms 후 재시도
+          setTimeout(() => checkAndStartTutorial(attempts + 1), 500);
+        }
+      };
+      // 초기 딜레이 후 시작
+      setTimeout(() => checkAndStartTutorial(), 1000);
     }
-  }, [setProblem, setBlankAnswers, setPreviousHints, setSolveStartTime, setAttemptCount, setAttemptId, sessionId, shouldShowTutorial, startTutorial]);
+  }, [setProblem, setBlankAnswers, setPreviousHints, setSolveStartTime, setAttemptCount, setAttemptId, setIsProblemCompleted, sessionId, shouldShowTutorial, startTutorial]);
 
   // Reset session (다음문제 풀기)
   const handleResetSession = useCallback(async () => {
@@ -567,7 +607,7 @@ function ChatPageContent() {
     if (urlProblemId) {
       router.push('/chat');
     }
-  }, [resetSession, sessionId, urlProblemId, router]);
+  }, [resetSession, sessionId, urlProblemId, router, setIsProblemCompleted]);
 
   // 포기하기 (Give up)
   const handleGiveUp = useCallback(async () => {
@@ -1553,6 +1593,7 @@ function ChatPageContent() {
                       isProblemCompleted={isProblemCompleted}
                       postCompletionChatCount={postCompletionChatCount}
                       onPostCompletionChat={() => setPostCompletionChatCount(prev => prev + 1)}
+                      isRestored={isRestored}
                     />
                   )}
                 </div>

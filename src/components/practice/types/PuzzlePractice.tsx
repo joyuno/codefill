@@ -3,11 +3,8 @@
 import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
   GripVertical,
-  ChevronRight,
-  ChevronLeft,
   CheckCircle,
   XCircle,
   RotateCcw,
@@ -118,16 +115,7 @@ export function PuzzlePractice({
     setDragSource(null);
   };
 
-  // Change indentation
-  const changeIndentation = (blockId: string, delta: number) => {
-    setArrangedBlocks((prev) =>
-      prev.map((block) =>
-        block.id === blockId
-          ? { ...block, indentation: Math.max(0, Math.min(4, block.indentation + delta)) }
-          : block
-      )
-    );
-  };
+  // 들여쓰기 조절 기능 제거됨 - 코드 내부에 이미 들여쓰기 포함
 
   // Reset puzzle
   const handleReset = () => {
@@ -270,29 +258,11 @@ export function PuzzlePractice({
                           : 'border-red-500/50 bg-red-500/10'
                         : 'cursor-grab border-border bg-card hover:border-primary/50'
                     )}
-                    style={{ marginLeft: `${block.indentation * 24}px` }}
+                    // 코드 내부에 이미 들여쓰기 포함되어 있으므로 CSS margin 제거
                   >
                     <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
 
-                    {/* Indentation controls */}
-                    {!isSubmitted && (
-                      <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
-                        <button
-                          onClick={() => changeIndentation(block.id, -1)}
-                          className="rounded p-0.5 hover:bg-muted"
-                          disabled={block.indentation === 0}
-                        >
-                          <ChevronLeft className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={() => changeIndentation(block.id, 1)}
-                          className="rounded p-0.5 hover:bg-muted"
-                          disabled={block.indentation >= 4}
-                        >
-                          <ChevronRight className="h-3 w-3" />
-                        </button>
-                      </div>
-                    )}
+                    {/* 들여쓰기 조절 컨트롤 제거 - 코드 내부에 이미 들여쓰기 포함됨 */}
 
                     <code className="flex-1 whitespace-pre">{block.code}</code>
 
@@ -351,9 +321,7 @@ export function PuzzlePractice({
             </PopoverContent>
           </Popover>
 
-          <Badge variant="secondary" className="text-xs">
-            들여쓰기: 화살표로 조절
-          </Badge>
+{/* 들여쓰기 조절 기능 제거됨 - 코드 내부에 이미 들여쓰기 포함 */}
         </div>
 
         {!isSubmitted && (

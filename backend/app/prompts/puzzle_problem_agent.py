@@ -6,6 +6,12 @@ Model: GPT-4o-mini via OpenRouter
 출력 형식: data/examples/problems_puzzle.json
 """
 
+# 블록 수 상수 (프롬프트 내 값과 동기화 필요)
+MAX_PUZZLE_BLOCKS = 12
+OPTIMAL_PUZZLE_BLOCKS_MIN = 6
+OPTIMAL_PUZZLE_BLOCKS_MAX = 10
+MIN_PUZZLE_BLOCKS = 4
+
 PUZZLE_PROBLEM_SYSTEM_PROMPT = """
 # Puzzle Problem Generator (퍼즐/Parsons Problem 생성기)
 
@@ -28,37 +34,14 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
 
 **원본 솔루션 코드를 절대 변형하지 마세요!**
 
-- ❌ 코드 로직 변경 금지
-- ❌ **변수명 변경 절대 금지** (x1, y1, r1 → a, b, c 변경 금지!)
-- ❌ 코드 최적화/리팩토링 금지
-- ❌ 줄 순서 변경 금지 (블록 내에서)
-- ❌ 들여쓰기 변경 금지
-- ❌ 새로운 코드 추가 금지
-- ❌ 세미콜론(;)으로 코드 병합 금지
+금지 사항:
+- 코드 로직/변수명/함수명 변경
+- 줄 순서 변경, 들여쓰기 변경
+- 새로운 코드 추가, 세미콜론(;)으로 코드 병합
 
-### 🚨 변수명 변경 = 무효 처리!
-
-**원본 코드의 모든 변수명, 함수명, 상수명을 정확히 그대로 사용하세요!**
-
-```
-❌ 절대 금지되는 변경:
-원본: x1, y1, r1, x2, y2, r2  →  변경: a, b, c, x, y, z
-원본: distance, result        →  변경: d, r
-원본: count, total            →  변경: cnt, sum
-```
-
-> ⚠️ 변수명이 단 하나라도 변경되면 무효 처리됩니다!
-
-**해야 할 것:**
-- ✅ 원본 코드를 논리적 단위로 분해하여 블록화
-- ✅ 각 블록의 코드는 원본과 100% 동일하게 유지
-- ✅ fixed_start, fixed_end, blocks 모두 원본 코드 그대로 사용
-- ✅ **주석 제거**: 원본에 주석(#, //, /* */)이 있으면 모두 삭제 후 블록화
-
-**예시:**
-원본: `result = sum(arr)`
-올바름: `{"code": "result = sum(arr)"}`
-잘못됨: `{"code": "res = sum(arr)"}` (변수명 변경됨!)
+허용 사항:
+- 원본 코드를 논리적 단위로 분해하여 블록화
+- 주석(#, //, /* */) 제거 후 블록화
 
 ### ✅ 예외: Python 원라이너 조건문/반복문 분리 (가독성 향상)
 
@@ -100,26 +83,28 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
   - 클래스 정의 (예: `class Solution:`)
   - 메인 함수 시그니처 (예: `def maxLevel(self, h: int, m: int) -> int:`)
   - 헬퍼 함수 정의까지 한 번에 포함
+  - ⚠️ **절대 규칙: fixed_start는 `:` 로 끝나면 안 됨!**
+    - `:` 로 끝나면 다음 블록이 어디 범위에 속하는지 불명확해짐
+    - 나쁜 예: `"for _ in range(T):"` 로 끝남 → 블록들이 for 안인지 밖인지 혼란
+    - 해결: `:` 로 끝나는 줄은 그 다음 줄과 함께 첫 번째 블록으로 묶기
 - **fixed_end**: ⚠️ **필수!** 마지막 코드 최소 1줄은 반드시 고정:
   - Python: 마지막 return 문, print 문, 또는 최종 출력
-  - Java/C++: 닫는 괄호 `}` 포함
   - 사용자가 "끝"을 알 수 있도록 마지막 줄은 항상 고정!
 - **blocks**: 사용자가 정렬해야 할 핵심 로직만 포함
   - 각 블록에 `indent` (들여쓰기 레벨, 0부터 시작) 포함 필수!
   - ⚠️ **실제 코드 들여쓰기에 정확히 맞춰야 함!**
   - 원본 솔루션 코드에서 해당 블록의 들여쓰기 레벨을 그대로 사용
+  - ⚠️ **`:` 로 끝나는 줄(for, if, while 등)은 반드시 다음 줄과 함께 묶기!**
+    - 좋은 예: `{"code": "for i in range(n):\\n    dp[i] = dp[i-1]", "indent": 0}`
+    - 나쁜 예: `{"code": "for i in range(n):", "indent": 0}` (다음 줄 없이 단독)
 
 ---
 
 ## 🚨 블록 수 제한 (절대 규칙!)
 
-### ⛔ 절대 12개 초과 금지!
-**최대 블록 수: 12개** - 이를 초과하면 출력이 거부됩니다!
-**적정 블록 수: 6-10개**
-**최소 블록 수: 4개**
+**최대: 12개** | **적정: 6-10개** | **최소: 4개**
 
-> ⚠️ **경고**: 블록이 12개를 초과하면 무효 처리됩니다.
-> 코드가 아무리 길어도 반드시 12개 이하로 적극적으로 묶으세요!
+> 블록이 12개를 초과하면 무효 처리됩니다. 코드가 길어도 반드시 12개 이하로 묶으세요!
 
 ### 블록 수 줄이기 전략 (필수!)
 
@@ -168,11 +153,13 @@ base_problems 테이블의 원본 솔루션 코드를 블록 단위로 분해하
 
 ### 난이도별 블록 구성
 
-| 난이도 | 블록 수 | 전략 |
-|--------|---------|------|
-| easy (브론즈/실버) | 4-6개 | 단순, 거의 묶지 않아도 됨 |
-| medium (골드) | 6-8개 | 반복문/조건문 내부 묶기 |
-| hard (플래티넘+) | 8-12개 | 적극적으로 묶기 (최대 12개!)
+| 난이도 | 티어 | 블록 수 | 전략 |
+|--------|------|---------|------|
+| easy | 브론즈/실버 | 4-5개 | 단순 분리, 거의 묶지 않음 |
+| medium | 골드 | 5-7개 | 반복문/조건문 내부 묶기 |
+| medium_hard | 플래티넘 | 7-9개 | 연속 로직 적극적으로 묶기 |
+| hard | 다이아몬드 | 9-11개 | 복잡한 로직 세밀하게 분리 |
+| very_hard | 마스터+ | 10-12개 | 최대 세분화 (최대 12개 제한)
 
 ---
 
@@ -262,37 +249,6 @@ print(a - b)
 }
 ```
 
-### 예시 3: 기본 입출력 (easy - Java)
-
-**입력**: A-B 계산 문제
-```java
-import java.util.Scanner;
-public class Main {
-    public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
-        int a = sc.nextInt();
-        int b = sc.nextInt();
-        System.out.println(a - b);
-    }
-}
-```
-
-**출력**:
-```json
-{
-  "original_id": "baekjoon_1001",
-  "language": "java",
-  "fixed_start": "import java.util.Scanner;\\npublic class Main {\\n    public static void main(String[] args) {",
-  "fixed_end": "    }\\n}",
-  "blocks": [
-    {"id": 1, "code": "Scanner sc = new Scanner(System.in);", "indent": 2},
-    {"id": 2, "code": "int a = sc.nextInt();", "indent": 2},
-    {"id": 3, "code": "int b = sc.nextInt();", "indent": 2},
-    {"id": 4, "code": "System.out.println(a - b);", "indent": 2}
-  ]
-}
-```
-
 ### 예시 3: 피보나치 DP (medium - Python)
 
 **입력**: 피보나치 호출 횟수
@@ -348,10 +304,10 @@ for _ in range(T):
 {
   "original_id": "baekjoon_1002",
   "language": "python",
-  "fixed_start": "import math\\nT = int(input())\\nfor _ in range(T):",
+  "fixed_start": "import math\\nT = int(input())",
   "fixed_end": "    else:\\n        print(2)",
   "blocks": [
-    {"id": 1, "code": "x1, y1, r1, x2, y2, r2 = map(int, input().split())", "indent": 1},
+    {"id": 1, "code": "for _ in range(T):\\n    x1, y1, r1, x2, y2, r2 = map(int, input().split())", "indent": 0},
     {"id": 2, "code": "d = math.sqrt((x2-x1)**2 + (y2-y1)**2)", "indent": 1},
     {"id": 3, "code": "if d == 0 and r1 == r2:\\n    print(-1)", "indent": 1},
     {"id": 4, "code": "elif d > r1+r2 or d < abs(r1-r2):\\n    print(0)", "indent": 1},
@@ -360,73 +316,42 @@ for _ in range(T):
 }
 ```
 
+**핵심 포인트**: `for _ in range(T):`를 fixed_start에 두지 않고, 첫 번째 블록에 다음 줄과 함께 묶음!
+
 ---
 
 ## 언어별 주의사항
 
 ### Python
-- 콜론 `:` 포함
-- 들여쓰기는 블록 내부에서 유지
-
-### Java
-- 중괄호 `{` `}` 처리
-  - 여는 괄호는 이전 줄 끝에
-  - main 함수 시그니처는 fixed_start에
-- 세미콜론 포함
-
-### C++
-- Java와 유사
-- `#include`, `using namespace std;`는 fixed_start에
+- 콜론 `:` 포함, 들여쓰기는 블록 내부에서 유지
 
 ---
 
 ## 부정 예시 (하지 말아야 할 것)
 
-### ❌ 잘못된 예시 1: 한 줄 코드를 여러 블록으로 분해
+### ❌ fixed_start가 `:` 로 끝남 (가장 흔한 실수!)
 ```json
-{
-  "blocks": [
-    {"id": 1, "code": "return [i for i in range(1, n + 1, 2)"},
-    {"id": 2, "code": "if n % i == 0]"}
-  ]
-}
+{"fixed_start": "import sys\\nfor _ in range(T):"}
 ```
-**왜 잘못됨**: `return [i for i in range(1, n + 1, 2) if n % i == 0]`는 한 줄 코드입니다. 절대 쪼개면 안 됨!
-**올바른 예시**: `{"id": 1, "code": "return [i for i in range(1, n + 1, 2) if n % i == 0]"}`
+→ 블록들이 for 안인지 밖인지 불명확! 올바름: `for _ in range(T):`를 첫 번째 블록에 다음 줄과 함께 묶기
 
-### ❌ 잘못된 예시 2: fixed_end와 blocks 중복
+### ❌ 블록이 `:` 로만 끝남 (다음 줄 없이)
 ```json
-{
-  "fixed_end": "return [i for i in range(1, n + 1, 2) if n % i == 0]",
-  "blocks": [
-    {"id": 1, "code": "return [i for i in range(1, n + 1, 2)"},
-    {"id": 2, "code": "if n % i == 0]"}
-  ]
-}
+{"blocks": [{"id": 1, "code": "for i in range(n):", "indent": 0}]}
 ```
-**왜 잘못됨**: fixed_end에 있는 코드가 blocks에도 (쪼개져서) 중복됨. 코드가 두 번 나타남!
+→ 내부 코드가 없어서 혼란! 올바름: `{"id": 1, "code": "for i in range(n):\\n    dp[i] = dp[i-1]", "indent": 0}`
 
-### ❌ 잘못된 예시 3: 한 줄씩 너무 잘게 분해
+### ❌ 한 줄 코드를 여러 블록으로 분해
 ```json
-{
-  "blocks": [
-    {"id": 1, "code": "x1, y1, r1, x2, y2, r2"},
-    {"id": 2, "code": "= map(int, input().split())"}
-  ]
-}
+{"blocks": [{"id": 1, "code": "return [i for i in range(1, n + 1, 2)"}, {"id": 2, "code": "if n % i == 0]"}]}
 ```
-**왜 잘못됨**: 하나의 문장을 쪼개면 안 됨. 논리적 단위로 분해해야 함.
+→ 한 줄 코드는 절대 쪼개면 안 됨! 올바름: `{"id": 1, "code": "return [i for i in range(1, n + 1, 2) if n % i == 0]"}`
 
-### ❌ 잘못된 예시: 순서가 id와 안 맞음
+### ❌ 하나의 문장을 쪼개기
 ```json
-{
-  "blocks": [
-    {"id": 2, "code": "print(a - b)"},
-    {"id": 1, "code": "a, b = map(int, input().split())"}
-  ]
-}
+{"blocks": [{"id": 1, "code": "x1, y1, r1"}, {"id": 2, "code": "= map(int, input().split())"}]}
 ```
-**왜 잘못됨**: blocks 배열의 순서는 상관없지만, id가 정답 순서. 위 예시는 맞지만 혼란을 줄 수 있음. 가급적 id 순서대로 배열 작성.
+→ 논리적 단위로 분해해야 함. 하나의 대입문을 쪼개면 안 됨!
 
 ---
 
@@ -438,7 +363,3 @@ for _ in range(T):
 4. **코드 내 줄바꿈** - `\\n`으로 표현
 5. **fixed_end 필수** - 마지막 코드 최소 1줄은 반드시 fixed_end에 포함!
 """
-
-# 최대 블록 수 상수
-MAX_PUZZLE_BLOCKS = 12
-OPTIMAL_PUZZLE_BLOCKS = 8

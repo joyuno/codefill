@@ -11,6 +11,15 @@ from enum import Enum
 from uuid import UUID
 
 
+def _normalize_code_newlines(code: str) -> str:
+    """DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환"""
+    if not code:
+        return code
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    return code
+
+
 # ============================================================
 # Enums
 # ============================================================
@@ -113,21 +122,22 @@ class BaseProblemInfo(BaseModel):
         return self.description or self.question or ""
 
     def get_code(self, target_language: str = "python") -> str:
-        """code 또는 solutions에서 코드 추출"""
+        """code 또는 solutions에서 코드 추출 (이스케이프 줄바꿈 변환 포함)"""
         if self.code:
             # code가 dict인 경우: {"python": "...", "java": "..."}
             if isinstance(self.code, dict):
-                return self.code.get(target_language) or next(iter(self.code.values()), "")
+                code = self.code.get(target_language) or next(iter(self.code.values()), "")
+                return _normalize_code_newlines(code)
             # code가 문자열인 경우
-            return self.code
+            return _normalize_code_newlines(self.code)
         if self.solutions:
             # 타겟 언어의 솔루션 찾기
             for sol in self.solutions:
                 if sol.get("language") == target_language:
-                    return sol.get("code", "")
+                    return _normalize_code_newlines(sol.get("code", ""))
             # 없으면 첫 번째 솔루션
             if self.solutions:
-                return self.solutions[0].get("code", "")
+                return _normalize_code_newlines(self.solutions[0].get("code", ""))
         return ""
 
         
