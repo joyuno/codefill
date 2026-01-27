@@ -788,10 +788,10 @@ export class FarmScene extends Phaser.Scene {
       minimapWidth = maxMinimapHeight * mapRatio;
     }
 
-    // 미니맵 위치 (좌하단, 여백 8px)
+    // 미니맵 위치 (좌상단, 여백 8px)
     const minimapMargin = 8;
     const minimapX = minimapMargin;
-    const minimapY = VIEWPORT_HEIGHT - minimapHeight - minimapMargin;
+    const minimapY = minimapMargin;
 
     // 미니맵 배경/테두리 (UI 레이어에 고정)
     this.minimapBorder = this.add.graphics();
