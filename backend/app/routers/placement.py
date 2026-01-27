@@ -137,7 +137,7 @@ def get_placed_item(db, item_id: str, user_id: UUID) -> dict:
 
 def get_user_map_level(db, user_id: UUID) -> int:
     """사용자의 맵 레벨 조회"""
-    result = db.table("user_farms").select("map_level").eq("user_id", str(user_id)).execute()
+    result = db.table("user_farm").select("map_level").eq("user_id", str(user_id)).execute()
     if result.data:
         return result.data[0].get("map_level", 1)
     return 1  # 기본값
