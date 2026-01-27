@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Map, X, Coins, Loader2, Check, Lock } from 'lucide-react';
+import { Map, X, Loader2, Check, Lock } from 'lucide-react';
 import { farmApi, type MapExpansionOption } from '@/lib/api/farm';
 import { cn } from '@/lib/utils';
 
@@ -126,15 +126,7 @@ export function MapExpandModal({ isOpen, onClose, gold, currentLevel, onExpand }
                     border: '2px solid #C9A227',
                   }}
                 >
-                  <div
-                    className="w-5 h-5 rounded-full flex items-center justify-center"
-                    style={{
-                      background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
-                      boxShadow: 'inset -1px -1px 2px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    <span className="text-[8px] font-black text-amber-900">G</span>
-                  </div>
+                  <img src="/farm/icons/gold_coin.png" alt="gold" className="w-5 h-5" style={{ imageRendering: 'pixelated' }} />
                   <span
                     className="font-black"
                     style={{
@@ -303,8 +295,8 @@ export function MapExpandModal({ isOpen, onClose, gold, currentLevel, onExpand }
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               <>
-                                <Coins className="w-4 h-4" />
-                                {option.cost.toLocaleString()}G
+                                <img src="/farm/icons/gold_coin.png" alt="G" className="w-4 h-4" style={{ imageRendering: 'pixelated' }} />
+                                {option.cost.toLocaleString()}
                               </>
                             )}
                           </motion.button>

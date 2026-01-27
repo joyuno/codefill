@@ -24,8 +24,7 @@ from ..models.placement import (
     PlantCropRequest,
     PlantCropResponse,
     HarvestCropResponse,
-    MAP_WIDTH_TILES,
-    MAP_HEIGHT_TILES,
+    get_map_dimensions,
 )
 from ..services.farm_service import FarmService
 
@@ -136,7 +135,15 @@ def get_placed_item(db, item_id: str, user_id: UUID) -> dict:
     return item
 
 
-def check_placement_valid(db, user_id: UUID, tile_x: int, tile_y: int, width: int, height: int, exclude_id: Optional[str] = None) -> bool:
+def get_user_map_level(db, user_id: UUID) -> int:
+    """사용자의 맵 레벨 조회"""
+    result = db.table("user_farm").select("map_level").eq("user_id", str(user_id)).execute()
+    if result.data:
+        return result.data[0].get("map_level", 1)
+    return 1  # 기본값
+
+
+def check_placement_valid(db, user_id: UUID, tile_x: int, tile_y: int, width: int, height: int, exclude_id: Optional[str] = None, map_level: Optional[int] = None) -> bool:
     """
     배치 위치가 유효한지 확인 (AABB 충돌 감지) - 최적화됨
 
@@ -146,12 +153,22 @@ def check_placement_valid(db, user_id: UUID, tile_x: int, tile_y: int, width: in
         tile_x, tile_y: 배치 시작 좌표 (좌상단)
         width, height: 아이템 크기 (타일 단위)
         exclude_id: 충돌 검사에서 제외할 아이템 ID (이동 시 사용)
+        map_level: 맵 레벨 (None이면 DB에서 조회)
 
     Returns:
         bool: 배치 가능 여부
     """
-    # 맵 범위 체크
-    if tile_x < 0 or tile_y < 0 or tile_x + width > MAP_WIDTH_TILES or tile_y + height > MAP_HEIGHT_TILES:
+    # 맵 레벨이 전달되지 않으면 DB에서 조회
+    if map_level is None:
+        map_level = get_user_map_level(db, user_id)
+
+    # 동적 맵 크기 가져오기
+    map_dims = get_map_dimensions(map_level)
+    map_width_tiles = map_dims["cols"]
+    map_height_tiles = map_dims["rows"]
+
+    # 맵 범위 체크 (동적 크기 사용)
+    if tile_x < 0 or tile_y < 0 or tile_x + width > map_width_tiles or tile_y + height > map_height_tiles:
         return False
 
     # 기존 배치된 아이템 조회

@@ -312,6 +312,9 @@ export class FarmScene extends Phaser.Scene {
     // 순서대로 매니저 생성 (depth 순서 고려)
     this.mapManager.create(this.mapWidth, this.mapHeight);
 
+    // 밭 그리드에 동적 맵 높이 설정 (깊이 계산용)
+    this.farmGridManager.setMapBounds(this.mapHeight);
+
     // 밭 그리드 렌더링
     this.farmGridManager.renderGrid(this.farmSize, this.farmSlots);
 
@@ -319,6 +322,7 @@ export class FarmScene extends Phaser.Scene {
     this.unifiedPlacementManager.create();
     // 동적 맵 크기 설정 (충돌 체크용)
     const mapDimensions = getMapDimensions(this.mapLevel);
+    console.log(`[FarmScene.create] mapLevel=${this.mapLevel}, mapDimensions=${mapDimensions.cols}x${mapDimensions.rows}`);
     this.unifiedPlacementManager.setMapBounds(mapDimensions.cols, mapDimensions.rows);
     if (this.farmData.placedItems) {
       this.unifiedPlacementManager.loadItems(this.farmData.placedItems);
@@ -784,10 +788,10 @@ export class FarmScene extends Phaser.Scene {
       minimapWidth = maxMinimapHeight * mapRatio;
     }
 
-    // 미니맵 위치 (좌하단, 여백 8px)
+    // 미니맵 위치 (좌상단, 여백 8px)
     const minimapMargin = 8;
     const minimapX = minimapMargin;
-    const minimapY = VIEWPORT_HEIGHT - minimapHeight - minimapMargin;
+    const minimapY = minimapMargin;
 
     // 미니맵 배경/테두리 (UI 레이어에 고정)
     this.minimapBorder = this.add.graphics();

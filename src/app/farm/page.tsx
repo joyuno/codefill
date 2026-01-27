@@ -39,13 +39,26 @@ import type { FarmGameHandle, InteractionState } from '@/components/farm/FarmGam
 const FarmGame = dynamic(() => import('@/components/farm/FarmGame'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-green-800">
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-      >
-        <Loader2 className="w-12 h-12 text-white" />
-      </motion.div>
+    <div
+      className="w-full h-full flex flex-col items-center justify-center"
+      style={{
+        backgroundImage: 'url(/farm/farm_loading_bg.png)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        imageRendering: 'pixelated',
+      }}
+    >
+      <div className="bg-black/50 backdrop-blur-sm rounded-xl px-10 py-6 flex flex-col items-center gap-4">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+        >
+          <Loader2 className="w-10 h-10 text-yellow-300" />
+        </motion.div>
+        <p className="text-white font-bold text-lg" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+          게임 로딩 중...
+        </p>
+      </div>
     </div>
   ),
 });
@@ -378,11 +391,23 @@ export default function FarmPage() {
   // 로딩 상태
   if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-green-800">
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
-          <Loader2 className="w-12 h-12 text-white" />
-        </motion.div>
-        <p className="text-white font-bold text-lg">농장 불러오는 중...</p>
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-4"
+        style={{
+          backgroundImage: 'url(/farm/farm_loading_bg.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          imageRendering: 'pixelated',
+        }}
+      >
+        <div className="bg-black/50 backdrop-blur-sm rounded-xl px-10 py-6 flex flex-col items-center gap-4">
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
+            <Loader2 className="w-10 h-10 text-yellow-300" />
+          </motion.div>
+          <p className="text-white font-bold text-lg" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+            농장 불러오는 중...
+          </p>
+        </div>
       </div>
     );
   }
@@ -390,12 +415,22 @@ export default function FarmPage() {
   // 에러 상태
   if (error) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-4 bg-green-800">
-        <AlertCircle className="w-12 h-12 text-red-400" />
-        <p className="text-white font-bold text-center">{error}</p>
-        <Button onClick={() => router.push('/')} variant="outline" className="bg-white">
-          홈으로 돌아가기
-        </Button>
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-4 p-4"
+        style={{
+          backgroundImage: 'url(/farm/farm_loading_bg.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          imageRendering: 'pixelated',
+        }}
+      >
+        <div className="bg-black/60 backdrop-blur-sm rounded-xl px-10 py-6 flex flex-col items-center gap-4">
+          <AlertCircle className="w-12 h-12 text-red-400" />
+          <p className="text-white font-bold text-center" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{error}</p>
+          <Button onClick={() => router.push('/')} variant="outline" className="bg-white">
+            홈으로 돌아가기
+          </Button>
+        </div>
       </div>
     );
   }
@@ -403,9 +438,19 @@ export default function FarmPage() {
   // 캐릭터 미생성
   if (!farm?.characterCreated) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-green-800">
-        <Sprout className="w-12 h-12 text-white animate-bounce" />
-        <p className="text-white font-bold">리다이렉트 중...</p>
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-4"
+        style={{
+          backgroundImage: 'url(/farm/farm_loading_bg.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          imageRendering: 'pixelated',
+        }}
+      >
+        <div className="bg-black/50 backdrop-blur-sm rounded-xl px-10 py-6 flex flex-col items-center gap-3">
+          <Sprout className="w-12 h-12 text-green-300 animate-bounce" />
+          <p className="text-white font-bold" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>리다이렉트 중...</p>
+        </div>
       </div>
     );
   }

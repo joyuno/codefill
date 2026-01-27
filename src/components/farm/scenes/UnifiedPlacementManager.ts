@@ -8,8 +8,6 @@
 import * as Phaser from 'phaser';
 import {
   TILE_SIZE,
-  MAP_WIDTH,
-  MAP_HEIGHT,
   MAP_COLS,
   MAP_ROWS,
 } from '../config/gameConfig';
@@ -136,6 +134,7 @@ export class UnifiedPlacementManager {
   // 동적 맵 크기 (기본값은 상수 사용)
   private mapCols: number = MAP_COLS;
   private mapRows: number = MAP_ROWS;
+  private mapHeight: number = MAP_ROWS * TILE_SIZE;  // 픽셀 단위 맵 높이
 
   // 드래그 모드 상태
   private isDragMode: boolean = false;
@@ -169,8 +168,10 @@ export class UnifiedPlacementManager {
    * 맵 크기 설정 (동적 맵 확장용)
    */
   setMapBounds(cols: number, rows: number): void {
+    console.log(`[UnifiedPlacementManager] setMapBounds: ${cols}x${rows}`);
     this.mapCols = cols;
     this.mapRows = rows;
+    this.mapHeight = rows * TILE_SIZE;  // 깊이 계산용 픽셀 높이 업데이트
   }
 
   /**
@@ -320,7 +321,7 @@ export class UnifiedPlacementManager {
     sprite.setOrigin(0.5, 1.0);  // 이미지 하단이 배치 영역 하단에 맞춤
 
     // 깊이 설정 (Y 좌표 기반)
-    const calculatedDepth = getBuildingDepth(worldY, MAP_HEIGHT);
+    const calculatedDepth = getBuildingDepth(worldY, this.mapHeight);
     sprite.setDepth(calculatedDepth);
 
     // 데이터 저장
@@ -399,7 +400,7 @@ export class UnifiedPlacementManager {
         gameObject.setPosition(finalWorldX, finalWorldY);
 
         // Y좌표 기반 depth 적용
-        const depth = getBuildingDepth(finalWorldY, MAP_HEIGHT);
+        const depth = getBuildingDepth(finalWorldY, this.mapHeight);
         gameObject.setDepth(depth);
 
         // 변경 추적 (API 호출하지 않음)
@@ -413,7 +414,7 @@ export class UnifiedPlacementManager {
         this.draggedItem.item.tileX = this.draggedItem.originalX;
         this.draggedItem.item.tileY = this.draggedItem.originalY;
 
-        const depth = getBuildingDepth(originalWorldY, MAP_HEIGHT);
+        const depth = getBuildingDepth(originalWorldY, this.mapHeight);
         gameObject.setDepth(depth);
       }
 
@@ -457,7 +458,9 @@ export class UnifiedPlacementManager {
     }
 
     // 맵 범위 체크 (동적 맵 크기 사용)
-    if (tileX < 0 || tileX + width > this.mapCols || tileY < 0 || tileY + height > this.mapRows) {
+    const outOfBounds = tileX < 0 || tileX + width > this.mapCols || tileY < 0 || tileY + height > this.mapRows;
+    if (outOfBounds) {
+      console.log(`[canPlaceAt] OUT OF BOUNDS: tile(${tileX},${tileY}) size(${width}x${height}) mapBounds(${this.mapCols}x${this.mapRows})`);
       return false;
     }
 
@@ -749,7 +752,7 @@ export class UnifiedPlacementManager {
         const worldX = snapshot.tileX * TILE_SIZE + (width * TILE_SIZE) / 2;
         const worldY = snapshot.tileY * TILE_SIZE + height * TILE_SIZE;
         placed.sprite.setPosition(worldX, worldY);
-        const depth = getBuildingDepth(worldY, MAP_HEIGHT);
+        const depth = getBuildingDepth(worldY, this.mapHeight);
         placed.sprite.setDepth(depth);
       }
     }
@@ -922,7 +925,7 @@ export class UnifiedPlacementManager {
     const worldY = tileY * TILE_SIZE + height * TILE_SIZE;
     placed.sprite.setPosition(worldX, worldY);
 
-    const depth = getBuildingDepth(worldY, MAP_HEIGHT);
+    const depth = getBuildingDepth(worldY, this.mapHeight);
     placed.sprite.setDepth(depth);
   }
 

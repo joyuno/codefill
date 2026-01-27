@@ -8,8 +8,7 @@
 import * as Phaser from 'phaser';
 import {
   TILE_SIZE,
-  MAP_WIDTH,
-  MAP_HEIGHT,
+  MAP_ROWS,
   FARM_TILESET,
   FARM_TILES,
   FARM_OFFSET_X,
@@ -47,12 +46,22 @@ export class FarmGridManager {
   // 현재 farm_size
   private currentFarmSize: number = 0;
 
+  // 동적 맵 높이 (깊이 계산용)
+  private mapHeight: number = MAP_ROWS * TILE_SIZE;
+
   // 타이머 업데이트 간격
   private lastTimerUpdate: number = 0;
   private readonly TIMER_UPDATE_INTERVAL = 1000;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
+  }
+
+  /**
+   * 맵 크기 설정 (동적 맵 확장용 - 깊이 계산에 사용)
+   */
+  setMapBounds(mapHeight: number): void {
+    this.mapHeight = mapHeight;
   }
 
   /**
@@ -195,7 +204,7 @@ export class FarmGridManager {
             getCropSpriteKey(slotData.cropCode),
             frame
           );
-          cropSprite.setDepth(getCropDepth(worldY, MAP_HEIGHT));
+          cropSprite.setDepth(getCropDepth(worldY, this.mapHeight));
 
           // 성장 중인 경우 타이머 표시 (보정된 stage 사용)
           if (stage < 6 && slotData.plantedAt && slotData.growTimeSeconds) {
@@ -389,7 +398,7 @@ export class FarmGridManager {
           spriteKey,
           frame
         );
-        const depth = getCropDepth(worldY, MAP_HEIGHT);
+        const depth = getCropDepth(worldY, this.mapHeight);
         sprites.crop.setDepth(depth);
 
         // 성장 중인 경우 타이머 표시
