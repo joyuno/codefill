@@ -2359,32 +2359,23 @@ async def generate_code(
 
     Uses Claude Sonnet via OpenRouter.
     Generated problems are also saved to base_problems for future use.
+
+    대기업 코테 모드 (is_corporate_test=True):
+    - Programmers 임베딩 테이블에서 추가 RAG 컨텍스트 조회
+    - 검색 결과 + Programmers 문제를 참고하여 새 문제 생성
     """
     try:
-        system_prompt = CODE_GEN_SYSTEM_PROMPT.format(
-            user_request=json.dumps(request.user_request, ensure_ascii=False),
-            similar_problems=json.dumps(request.similar_problems, ensure_ascii=False),
-            user_status=request.user_status or "unknown",
-            user_goal=request.user_goal or "unknown",
-            user_level=request.user_level.value,
-            strong_algorithms=", ".join(request.strong_algorithms) if request.strong_algorithms else "없음",
+        # RAG 서비스 사용하여 통합 코드 생성 (대기업 코테 모드 지원)
+        result = await rag_service.generate_problem_with_rag(
+            user_request=request.user_request,
+            similar_problems=request.similar_problems,
+            user_context={
+                "status": request.user_status or "unknown",
+                "goal": request.user_goal or "unknown",
+                "level": request.user_level.value,
+                "strong_algorithms": request.strong_algorithms or [],
+            },
         )
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "사용자 요청에 맞는 교육용 코드를 생성해주세요."},
-        ]
-
-        response = await openrouter_service.chat_completion(
-            model=settings.llm_model_code_gen,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=8192,
-            response_format={"type": "json_object"},
-        )
-
-        content = openrouter_service.get_content(response)
-        result = openrouter_service.parse_json_response(content)
 
         # base_problems에 저장 (examples → input_output 변환)
         try:

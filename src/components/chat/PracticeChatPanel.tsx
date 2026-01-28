@@ -857,9 +857,15 @@ export function PracticeChatPanel({
       });
 
       // CodeGenerationResponse를 BaseProblemInfo로 변환
-      // examples를 input_output 형식으로 변환
+      // input_output 형식 우선 사용, 레거시 examples fallback
       let inputOutput: BaseProblemInfo['input_output'] = undefined;
-      if (result.examples && result.examples.length > 0) {
+
+      // 새 형식: input_output 직접 사용
+      if (result.input_output?.inputs?.length && result.input_output?.outputs?.length) {
+        inputOutput = result.input_output;
+      }
+      // 레거시 fallback: examples에서 변환
+      else if (result.examples && result.examples.length > 0) {
         const inputs: string[] = [];
         const outputs: string[] = [];
         for (const ex of result.examples) {
@@ -882,23 +888,25 @@ export function PracticeChatPanel({
         input_output: inputOutput,
       };
 
-      // 생성 완료 - 문제 선택 UI로 전환
+      // 생성 완료 - 바로 문제 유형 선택으로 전환
       setRecommendedProblems([generatedProblem]);
+      setSelectedBaseProblem(generatedProblem);  // 유형 선택을 위해 설정
       setFlowState('type_selection');
 
-      // 로딩 메시지를 결과 메시지로 교체
+      // 로딩 메시지를 결과 메시지로 교체 - 바로 유형 선택 칩 표시
       setMessages(prev => {
         const filtered = prev.filter(m => m.id !== loadingMessageId);
         return [...filtered, {
           id: `generated-result-${Date.now()}`,
           role: 'assistant' as const,
-          content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})\n\n${generatedProblem.description || generatedProblem.question || ''}`,
+          content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})\n\n어떤 형식으로 풀어볼까요?`,
           timestamp: new Date().toISOString(),
-          chips: [{
-            label: generatedProblem.title || generatedProblem.name,
-            value: 'problem-0',
-            category: 'action' as const,
-          }],
+          chips: [
+            { label: '빈칸 채우기', value: 'type-blank', category: 'action' as const },
+            { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' as const },
+            { label: '1대1 대화형', value: 'type-guided', category: 'action' as const },
+            { label: '구현', value: 'type-implementation', category: 'action' as const },
+          ],
         }];
       });
     } catch (error) {
@@ -1950,6 +1958,40 @@ export function PracticeChatPanel({
       }
 
       // ============================================================
+      // 대기업 코테 문제 생성 (generate_corporate_problem)
+      // 정보 수집 완료 후 검색 없이 바로 문제 생성
+      // ============================================================
+      if (chatResponse.action_trigger === 'generate_corporate_problem') {
+        console.log('[Chat] generate_corporate_problem detected - triggering corporate test generation');
+
+        // 백엔드에서 전달한 정보 사용
+        const corporateCollectedInfo = responseCollectedInfo || chatResponse.collected_info as CollectedInfo;
+
+        // collectedInfo 업데이트
+        collectedInfoRef.current = {
+          ...corporateCollectedInfo,
+          is_corporate_test: true,
+        };
+
+        // 메시지 표시
+        const assistantMessage: Message = {
+          id: `assistant-corporate-${Date.now()}`,
+          role: 'assistant',
+          content: responseMessage || '대기업 코테 문제를 생성하고 있어요... 🏢',
+          timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsLoading(false);
+
+        // 문제 생성 시작 (handleGenerateNewProblem 재사용)
+        setTimeout(() => {
+          handleGenerateNewProblem();
+        }, 100);
+
+        return;
+      }
+
+      // ============================================================
       // 🔥 문제 유형 선택 (select_problem_type) - 최우선 처리!
       // 사용자가 문제를 선택한 후 유형 선택 단계
       // ============================================================
@@ -1999,9 +2041,11 @@ export function PracticeChatPanel({
 
       // "새 문제 생성" 버튼: generated_problem 우선 처리 (search_results보다 먼저!)
       if (actionData?.action_trigger === 'problem_generated' && actionData?.generated_problem) {
-        // CodeGen generated a new problem
+        // CodeGen generated a new problem - 바로 유형 선택으로 이동
+        const generatedProblem = actionData.generated_problem as BaseProblemInfo;
         setFlowState('type_selection');
-        setRecommendedProblems([actionData.generated_problem]);
+        setRecommendedProblems([generatedProblem]);
+        setSelectedBaseProblem(generatedProblem);  // 유형 선택을 위해 설정
 
         // Fallback 안내 메시지 (is_fallback이 true일 때)
         const isFallback = (actionData as any).is_fallback === true;
@@ -2012,13 +2056,14 @@ export function PracticeChatPanel({
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: `${fallbackNotice}${responseMessage}`,
+          content: `${fallbackNotice}${responseMessage}\n\n어떤 형식으로 풀어볼까요?`,
           timestamp: new Date().toISOString(),
-          chips: [{
-            label: actionData.generated_problem.title || actionData.generated_problem.name,
-            value: 'problem-0',
-            category: 'action' as const,
-          }],
+          chips: [
+            { label: '빈칸 채우기', value: 'type-blank', category: 'action' as const },
+            { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' as const },
+            { label: '1대1 대화형', value: 'type-guided', category: 'action' as const },
+            { label: '구현', value: 'type-implementation', category: 'action' as const },
+          ],
         };
         setMessages(prev => [...prev, assistantMessage]);
       } else if (actionData?.status === 'found' && actionData?.problems?.length) {

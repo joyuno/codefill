@@ -271,20 +271,28 @@ class ProblemSaveService:
                 logger.warning(f"[ProblemSave] No solutions in generated problem")
                 return None
 
-            # input_output 구성 (examples에서 추출)
-            examples = generated_problem.get("examples", [])
-            input_output = None
-            if examples:
-                inputs = []
-                outputs = []
-                for ex in examples:
-                    if isinstance(ex, dict):
-                        if ex.get("input"):
-                            inputs.append(ex["input"])
-                        if ex.get("output"):
-                            outputs.append(ex["output"])
-                if inputs and outputs:
-                    input_output = {"inputs": inputs, "outputs": outputs}
+            # input_output 구성 (새 형식 우선, 레거시 examples fallback)
+            input_output = generated_problem.get("input_output")
+
+            # 새 형식 검증: {"inputs": [...], "outputs": [...]}
+            if input_output and isinstance(input_output, dict):
+                if not (input_output.get("inputs") and input_output.get("outputs")):
+                    input_output = None  # 잘못된 형식이면 무시
+
+            # Fallback: 레거시 examples 형식에서 변환
+            if not input_output:
+                examples = generated_problem.get("examples", [])
+                if examples:
+                    inputs = []
+                    outputs = []
+                    for ex in examples:
+                        if isinstance(ex, dict):
+                            if ex.get("input"):
+                                inputs.append(str(ex["input"]))
+                            if ex.get("output"):
+                                outputs.append(str(ex["output"]))
+                    if inputs and outputs:
+                        input_output = {"inputs": inputs, "outputs": outputs}
 
             # tags 정규화 (허용된 태그로만 변환)
             raw_tags = generated_problem.get("topics") or collected_info.get("topics", [])

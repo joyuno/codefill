@@ -269,20 +269,22 @@ class CodeGenerationRequest(BaseModel):
 class CodeGenerationResponse(BaseModel):
     """Generated educational code."""
     title: str
-    title_en: str
+    title_en: Optional[str] = None
     description: str
     code: Dict[str, str]  # language -> code
-    input_format: str
-    output_format: str
-    examples: List[Dict[str, str]]
-    constraints: List[str]
+    input_format: Optional[str] = None
+    output_format: Optional[str] = None
+    # 테스트케이스 - input_output 형식 우선 (base_problems 테이블 호환)
+    input_output: Optional[Dict[str, List[str]]] = None  # {"inputs": [...], "outputs": [...]}
+    examples: Optional[List[Dict[str, str]]] = None  # 레거시 호환용
+    constraints: Optional[List[str]] = None
     difficulty: str
     topics: List[str]
-    time_complexity: str
-    space_complexity: str
-    key_concepts: List[str]
-    common_mistakes: List[str]
-    hints_for_problem_gen: Dict[str, List[str]]
+    time_complexity: Optional[str] = None
+    space_complexity: Optional[str] = None
+    key_concepts: Optional[List[str]] = None
+    common_mistakes: Optional[List[str]] = None
+    hints_for_problem_gen: Optional[Dict[str, List[str]]] = None
 
 
 # ============================================================

@@ -190,6 +190,16 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 AI 코딩 학습 도우미 챗봇의 메�
 - **topic**: 다양한 알고리즘 주제 (구현, 수학, 자료구조, 그리디, DP, 정렬, 문자열, 완전탐색, 그래프, BFS/DFS, 트리, 이분탐색 등)
 - **difficulty**: easy(실버/쉬운), medium(골드/보통), medium_hard(플래티넘), hard(다이아/어려운), very_hard(마스터)
 - **language**: python(파이썬), java(자바), cpp(씨플플/C++)
+- **is_corporate_test**: true/false - 대기업 코테/코딩테스트 준비 요청인지
+
+## 2-1. 대기업 코테 감지 (is_corporate_test)
+다음 키워드가 포함되면 **is_corporate_test = true**:
+- "대기업 코테", "대기업 코딩테스트", "대기업 준비"
+- "카카오", "네이버", "라인", "삼성", "쿠팡", "배민", "토스", "당근" 등 기업명
+- "프로그래머스 스타일", "프로그래머스 문제"
+- "실전 코테", "기업 코테", "기업 코딩테스트"
+
+is_corporate_test가 true이면 **추가 정보 수집이 필요**함을 나타냄
 
 ## 3. 거부 분석 (intent=negative일 때)
 **거부 이유** (rejection_reason):
@@ -232,6 +242,7 @@ UNIFIED_ANALYSIS_PROMPT = """당신은 AI 코딩 학습 도우미 챗봇의 메�
 {
   "is_collection_related": true | false,
   "is_simple_keyword": true | false,
+  "is_corporate_test": true | false,
   "intent": "positive" | "negative" | "value_input" | "question" | "unclear" | "off_topic" | "coding_concept" | "syntax_help" | "error_debug" | "learning_advice" | "code_review" | "hint_request" | "progress_inquiry" | "service_help" | "account_inquiry" | "greeting" | "chitchat",
   "confidence": 0.0-1.0,
   "values": {
@@ -278,6 +289,7 @@ class UnifiedAnalysisResult:
     alternative: Optional[Dict[str, str]] # {"value": "DP", "step": "topic"}
     is_collection_related: bool = True    # 정보 수집과 관련 있는 메시지인지
     is_simple_keyword: bool = False       # 단순 키워드 매칭으로 처리 가능한지 (Hybrid fast-path용)
+    is_corporate_test: bool = False       # 대기업 코테 준비 요청인지
     question_info: Optional[QuestionInfo] = None  # 질문 분석 정보 (intent=question일 때)
     extended_info: Optional[ExtendedInfo] = None  # 확장 의도 정보 (코딩 학습 관련)
 
@@ -392,6 +404,11 @@ class CollectionTool:
             # is_simple_keyword 파싱 (Hybrid fast-path용)
             is_simple_keyword = result.get("is_simple_keyword", False)
 
+            # is_corporate_test 파싱 (대기업 코테 준비 요청)
+            is_corporate_test = result.get("is_corporate_test", False)
+            if is_corporate_test:
+                print(f"[CollectionTool] Corporate test mode detected!")
+
             analysis = UnifiedAnalysisResult(
                 intent=intent,
                 confidence=result.get("confidence", 0.5),
@@ -401,6 +418,7 @@ class CollectionTool:
                 alternative=alternative if alternative.get("value") else None,
                 is_collection_related=is_related,
                 is_simple_keyword=is_simple_keyword,
+                is_corporate_test=is_corporate_test,
                 question_info=question_info,
                 extended_info=extended_info,
             )
@@ -424,6 +442,7 @@ class CollectionTool:
                 alternative=None,
                 is_collection_related=True,  # 에러 시 기본값은 관련 있음으로
                 is_simple_keyword=False,     # 에러 시 안전하게 full analysis
+                is_corporate_test=False,     # 에러 시 기본값 False
                 question_info=None,
                 extended_info=None,
             )

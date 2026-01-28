@@ -1901,15 +1901,17 @@ export function UnifiedPractice({
               {problem.fixedStart && (
                 <div data-tutorial="puzzle-fixed-area">
                   {problem.fixedStart.replace(/\\n/g, '\n').split('\n').map((line, idx) => {
-                    // 줄의 들여쓰기 레벨 계산 (4칸 = 1레벨)
-                    const spaces = line.match(/^(\s*)/)?.[1].length || 0;
-                    const indentLevel = Math.floor(spaces / 4);
+                    // 탭/스페이스 기반 들여쓰기 레벨 계산
+                    const leadingWhitespace = line.match(/^(\s*)/)?.[1] || '';
+                    const tabCount = (leadingWhitespace.match(/\t/g) || []).length;
+                    const spaceCount = (leadingWhitespace.match(/ /g) || []).length;
+                    const indentLevel = tabCount + Math.floor(spaceCount / 4);
                     const content = line.trimStart();
                     return (
                       <div
                         key={`fixed-start-${idx}`}
                         className="text-[#6A9955]"
-                        style={{ paddingLeft: `${indentLevel * 2}em` }}
+                        style={{ marginLeft: `${indentLevel * 24}px`, whiteSpace: 'pre' }}
                       >
                         {content || '\u00A0'}
                       </div>
@@ -1919,6 +1921,14 @@ export function UnifiedPractice({
               )}
               {/* 퍼즐 블록 - 하늘색 (변경 가능) - 블록에 저장된 원래 들여쓰기 사용 */}
               {(() => {
+                // 탭/스페이스 기반 들여쓰기 레벨 계산 함수
+                const calcIndentLevel = (lineStr: string): number => {
+                  const leadingWhitespace = lineStr.match(/^(\s*)/)?.[1] || '';
+                  const tabCount = (leadingWhitespace.match(/\t/g) || []).length;
+                  const spaceCount = (leadingWhitespace.match(/ /g) || []).length;
+                  return tabCount + Math.floor(spaceCount / 4);
+                };
+
                 // fixed_start 마지막 줄이 ':'로 끝나면 기본 들여쓰기 +1
                 let baseIndentFromFixedStart = 0;
                 if (problem.fixedStart) {
@@ -1926,8 +1936,8 @@ export function UnifiedPractice({
                   for (let i = fixedLines.length - 1; i >= 0; i--) {
                     const trimmed = fixedLines[i].trim();
                     if (trimmed && !trimmed.startsWith('#')) {
-                      // 마지막 유효 줄의 들여쓰기 레벨
-                      const lineIndent = Math.floor((fixedLines[i].match(/^(\s*)/)?.[1].length || 0) / 4);
+                      // 마지막 유효 줄의 들여쓰기 레벨 (탭/스페이스 모두 처리)
+                      const lineIndent = calcIndentLevel(fixedLines[i]);
                       // 콜론으로 끝나면 +1
                       if (/:\s*(#.*)?$/.test(trimmed)) {
                         baseIndentFromFixedStart = lineIndent + 1;
@@ -1943,8 +1953,6 @@ export function UnifiedPractice({
                 let prevBlockEndsWithColon = false;
                 let prevBlockIndent = baseIndentFromFixedStart;
 
-                // DEBUG: 블록 indentation 값 확인 (펼쳐서 보기)
-                console.log('[Puzzle Preview] blocks:', JSON.stringify(blocks.map(b => ({ id: b.id, indent: b.indentation }))));
 
                 return blocks.map((b, blockIdx) => {
                   // 1순위: 블록에 저장된 indentation 값 사용
@@ -1971,32 +1979,36 @@ export function UnifiedPractice({
                   // 멀티라인 블록: 각 줄에 들여쓰기 적용 (\\n → 실제 줄바꿈)
                   const rawCode = b.code.replace(/\\n/g, '\n');
                   const lines = rawCode.split('\n');
-                  // 블록 내 최소 들여쓰기 계산 (dedent용)
-                  const minBlockIndent = lines
+
+                  // 탭/스페이스 기반 들여쓰기 레벨 계산 함수
+                  const getIndentLevel = (lineStr: string): number => {
+                    const leadingWhitespace = lineStr.match(/^(\s*)/)?.[1] || '';
+                    const tabCount = (leadingWhitespace.match(/\t/g) || []).length;
+                    const spaceCount = (leadingWhitespace.match(/ /g) || []).length;
+                    // 탭은 1레벨, 스페이스 4개는 1레벨
+                    return tabCount + Math.floor(spaceCount / 4);
+                  };
+
+                  // 블록 내 최소 들여쓰기 레벨 계산 (dedent용)
+                  const minBlockIndentLevel = lines
                     .filter(line => line.trim().length > 0)
                     .reduce((min, line) => {
-                      const spaces = line.match(/^(\s*)/)?.[1].length || 0;
-                      return Math.min(min, spaces);
+                      return Math.min(min, getIndentLevel(line));
                     }, Infinity);
-                  const normalizedMinIndent = minBlockIndent === Infinity ? 0 : minBlockIndent;
+                  const normalizedMinIndent = minBlockIndentLevel === Infinity ? 0 : minBlockIndentLevel;
 
                   return lines.map((line, lineIdx) => {
-                    // 줄별 상대적 들여쓰기 계산
-                    const lineSpaces = line.match(/^(\s*)/)?.[1].length || 0;
-                    const relativeIndent = Math.floor((lineSpaces - normalizedMinIndent) / 4);
+                    // 줄별 상대적 들여쓰기 계산 (탭/스페이스 모두 처리)
+                    const lineIndentLevel = getIndentLevel(line);
+                    const relativeIndent = lineIndentLevel - normalizedMinIndent;
                     const finalIndent = blockBaseIndent + Math.max(0, relativeIndent);
                     const content = line.trimStart();
-
-                    // DEBUG
-                    if (blockIdx === 0 && lineIdx === 0) {
-                      console.log('[Puzzle] finalIndent:', finalIndent, 'blockBaseIndent:', blockBaseIndent, 'paddingLeft:', `${finalIndent * 2}em`);
-                    }
 
                     return (
                       <div
                         key={`block-${blockIdx}-${lineIdx}`}
                         className="text-[#9CDCFE]"
-                        style={{ paddingLeft: `${finalIndent * 2}em` }}
+                        style={{ marginLeft: `${finalIndent * 24}px`, whiteSpace: 'pre' }}
                       >
                         {content || '\u00A0'}
                       </div>
@@ -2006,15 +2018,17 @@ export function UnifiedPractice({
               })()}
               {/* fixed_end - 녹색 (고정) */}
               {problem.fixedEnd && problem.fixedEnd.replace(/\\n/g, '\n').split('\n').map((line, idx) => {
-                // 줄의 들여쓰기 레벨 계산 (4칸 = 1레벨)
-                const spaces = line.match(/^(\s*)/)?.[1].length || 0;
-                const indentLevel = Math.floor(spaces / 4);
+                // 탭/스페이스 기반 들여쓰기 레벨 계산
+                const leadingWhitespace = line.match(/^(\s*)/)?.[1] || '';
+                const tabCount = (leadingWhitespace.match(/\t/g) || []).length;
+                const spaceCount = (leadingWhitespace.match(/ /g) || []).length;
+                const indentLevel = tabCount + Math.floor(spaceCount / 4);
                 const content = line.trimStart();
                 return (
                   <div
                     key={`fixed-end-${idx}`}
                     className="text-[#6A9955]"
-                    style={{ paddingLeft: `${indentLevel * 2}em` }}
+                    style={{ marginLeft: `${indentLevel * 24}px`, whiteSpace: 'pre' }}
                   >
                     {content || '\u00A0'}
                   </div>

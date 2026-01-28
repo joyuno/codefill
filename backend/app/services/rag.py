@@ -800,6 +800,41 @@ class RAGService:
 
         user_context = user_context or {}
 
+        # ============================================================
+        # 대기업 코테 모드: Programmers RAG 추가 조회
+        # ============================================================
+        is_corporate_test = user_request.get("is_corporate_test", False)
+        generation_details = user_request.get("generation_details", "")
+
+        if is_corporate_test:
+            print(f"[CodeGen] Corporate test mode - fetching Programmers RAG context")
+            print(f"[CodeGen] Generation details: {generation_details}")
+
+            # generation_details에서 회사명 추출
+            company_filter = self._extract_company_filter(generation_details) if generation_details else None
+
+            # Programmers 문제 검색 (RAG 컨텍스트용)
+            topics = user_request.get("topics", [])
+            difficulty = user_request.get("difficulty")
+
+            programmers_context = await self.search_programmers_for_codegen(
+                query=generation_details or " ".join(topics) if topics else "대기업 코딩테스트",
+                topics=topics,
+                difficulty=difficulty,
+                limit=3,
+                company_filter=company_filter,
+            )
+
+            print(f"[CodeGen] Found {len(programmers_context)} Programmers problems for RAG context")
+
+            # Programmers 문제를 similar_problems에 추가 (중복 제거)
+            existing_ids = {p.get("id") for p in similar_problems}
+            for prog_problem in programmers_context:
+                if prog_problem.get("id") not in existing_ids:
+                    prog_problem["source_note"] = "programmers_reference"  # 출처 표시
+                    similar_problems.append(prog_problem)
+                    existing_ids.add(prog_problem.get("id"))
+
         # Format similar problems for context (question + solutions 포함)
         similar_context = []
         code_stats = {"total_lines": 0, "total_chars": 0, "count": 0}  # 코드 통계

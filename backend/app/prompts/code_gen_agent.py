@@ -148,24 +148,44 @@ CODE_GEN_SYSTEM_PROMPT = """
 
 ---
 
-## 출력 형식
+## 출력 형식 (base_problems 테이블 컬럼에 맞춤)
 
 필수 필드:
-- title: 문제 제목 (한국어)
-- title_en: Problem Title (English)
-- description: 문제 설명
-- code: {{"python": "코드"}} (최소 python 필수)
-- input_format: 입력 형식
-- output_format: 출력 형식
-- examples: [{{"input": "", "output": "", "explanation": ""}}]
-- constraints: ["제약조건"]
+- title: 문제 제목 (한국어) → name 컬럼
+- description: 문제 설명 → question 컬럼
+- code: {{"python": "코드"}} → solutions 컬럼 [{{"language": "python", "code": "..."}}]
+- **input_output**: 테스트케이스 (⚠️ 필수!)
 - difficulty: "easy" | "medium" | "hard"
-- topics: ["주제"] (⚠️ 아래 허용된 주제에서만 선택!)
+- topics: ["주제"] → tags 컬럼 (⚠️ 아래 허용된 주제에서만!)
 - time_complexity: "O(n)"
 - space_complexity: "O(n)"
+
+선택 필드:
+- title_en: Problem Title (English)
+- input_format: 입력 형식 설명
+- output_format: 출력 형식 설명
+- constraints: ["제약조건"]
+- time_limit: "1초"
+- memory_limit: "256MB"
 - key_concepts: ["개념"]
 - common_mistakes: ["실수"]
 - hints_for_problem_gen: {{"blank_candidates": [], "puzzle_split_points": [], "guided_flow": []}}
+
+### ⚠️ input_output 필드 - 테스트케이스 필수 생성!
+**반드시 2-3개 이상의 테스트케이스**를 포함해야 합니다:
+```json
+"input_output": {{
+  "inputs": ["5", "3", "1"],
+  "outputs": ["15", "6", "1"]
+}}
+```
+- `inputs`: 입력값 배열 (각각 하나의 테스트케이스)
+- `outputs`: 출력값 배열 (inputs와 1:1 대응)
+- 인덱스가 같은 input과 output이 하나의 테스트케이스
+
+예시:
+- inputs[0]="5" → outputs[0]="15" (첫 번째 테스트)
+- inputs[1]="3" → outputs[1]="6" (두 번째 테스트)
 
 ### ⚠️ topics 필드 - 반드시 아래 목록에서만 선택!
 허용된 topics (이 목록에 없는 주제는 절대 사용 금지):

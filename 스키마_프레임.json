@@ -1,0 +1,18 @@
+{
+  "original_id": "",
+  "name": "",
+  "question": "",
+  "solutions": [
+    {
+      "language": "python",
+      "code": ""
+    }
+  ],
+  "input_output": {
+    "inputs": [],
+    "outputs": []
+  },
+  "difficulty": "medium",
+  "tags": [],
+  "source": "codegen"
+}
