@@ -31,9 +31,9 @@ export interface FarmGameHandle {
   placeItemLocally: (itemCode: string, tileX: number, tileY: number, metadata: ItemMetadata) => Promise<string | null>;
 }
 
-// 게임 크기 상수 (config와 동일)
-const GAME_WIDTH = 960;
-const GAME_HEIGHT = 640;
+// 게임 크기: 브라우저 전체 화면 사용
+const getGameWidth = () => typeof window !== 'undefined' ? window.innerWidth : 960;
+const getGameHeight = () => typeof window !== 'undefined' ? window.innerHeight : 640;
 
 interface FarmGameProps {
   farmSize: number;
@@ -97,13 +97,13 @@ export function FarmGame({
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
       parent: container,
-      width: GAME_WIDTH,
-      height: GAME_HEIGHT,
+      width: getGameWidth(),
+      height: getGameHeight(),
       backgroundColor: '#3d8b3d',
       pixelArt: true,
       scene: FarmScene,
       scale: {
-        mode: Phaser.Scale.FIT,
+        mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
       input: {

@@ -456,7 +456,7 @@ export default function FarmPage() {
   }
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden bg-green-800">
+    <div className="min-h-screen w-full relative overflow-hidden bg-[#3d8b3d]">
       {/* Phaser 게임 캔버스 */}
       <div className="absolute inset-0">
         <FarmGame

@@ -618,9 +618,11 @@ export class PlayerController {
     let newY = this.container.y + velocityY * deltaTime;
 
     // 경계 제한 (맵 내부만)
+    // 스프라이트 origin이 발(아래쪽)이므로 위쪽은 머리가 울타리에 닿고,
+    // 아래쪽도 발이 울타리에 붙도록 마진 조정
     const margin = TILE_SIZE / 2;
     newX = Phaser.Math.Clamp(newX, margin, this.mapWidth - margin);
-    newY = Phaser.Math.Clamp(newY, margin, this.mapHeight - margin);
+    newY = Phaser.Math.Clamp(newY, margin, this.mapHeight);
 
     // 충돌 체크 (충돌 박스 기반)
     if (this.collisionChecker) {

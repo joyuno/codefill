@@ -68,6 +68,7 @@ export const WATER_FRAME_RATE = 10;
 
 // 카메라 설정
 export const CAMERA_LERP = 0.1;  // 부드러운 카메라 추적
+export const CAMERA_BOUND_PADDING = TILE_SIZE * 4;  // 카메라 바운드 패딩 (울타리 밖 여유 공간)
 
 // 타일셋 정보
 export const TILESET = {

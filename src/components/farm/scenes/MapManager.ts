@@ -16,10 +16,16 @@ import {
 } from '../config/gameConfig';
 import { DEPTH } from '../config/depthConfig';
 
+// 잔디 확장 패딩 (화면 전체 커버용)
+const GRASS_PADDING = 2000;
+
 export class MapManager {
   private scene: Phaser.Scene;
   private groundTileSprite: Phaser.GameObjects.TileSprite | null = null;
   private decorationSprites: Phaser.GameObjects.Image[] = [];
+
+  // 울타리 스프라이트
+  private fenceSprites: Phaser.GameObjects.Image[] = [];
 
   // 동적 맵 크기
   private mapWidth: number = VIEWPORT_WIDTH;
@@ -52,9 +58,20 @@ export class MapManager {
       this.scene.load.image('grass_floor', '/farm/terrains/grass_floor.png');
     }
 
-    // 장식 에셋은 더 이상 여기서 로드하지 않음
-    // - 잔디, 나무, 과일나무, 건초, 꽃 등은 UnifiedPlacementManager에서 배치 시 로드
-    console.log('[MapManager] Loading essential assets only (2 assets)');
+    // 울타리 에셋 (4종만 로드, 나머지는 flip으로 처리)
+    const fenceAssets = [
+      { key: 'fence_border_tl',     path: '/farm/terrains/fence_border_tl.png' },
+      { key: 'fence_border_top',    path: '/farm/terrains/fence_border_top.png' },
+      { key: 'fence_border_tr',     path: '/farm/terrains/fence_border_tr.png' },
+      { key: 'fence_border_left',   path: '/farm/terrains/fence_border_left.png' },
+    ];
+    for (const asset of fenceAssets) {
+      if (!this.scene.textures.exists(asset.key)) {
+        this.scene.load.image(asset.key, asset.path);
+      }
+    }
+
+    console.log('[MapManager] Loading essential assets (2 tiles + 4 fence)');
   }
 
   /**
@@ -68,22 +85,90 @@ export class MapManager {
     if (mapHeight) this.mapHeight = mapHeight;
 
     this.createGrassFloor();
+    this.createFenceBorder();
     // 나무와 건초는 소유 시스템으로 전환됨 (PlacementSystem에서 처리)
   }
 
   /**
    * 잔디 바닥 생성 - TileSprite로 효율적으로 렌더링
+   * 맵 크기 + 패딩으로 화면 전체를 커버
    */
   private createGrassFloor(): void {
-    // TileSprite: 하나의 이미지를 전체 맵에 반복 (600개 스프라이트 대신 1개)
+    const extendedWidth = this.mapWidth + GRASS_PADDING * 2;
+    const extendedHeight = this.mapHeight + GRASS_PADDING * 2;
+
     this.groundTileSprite = this.scene.add.tileSprite(
-      this.mapWidth / 2,   // 중앙 x
-      this.mapHeight / 2,  // 중앙 y
-      this.mapWidth,       // 전체 너비
-      this.mapHeight,      // 전체 높이
+      this.mapWidth / 2,    // 중앙 x (맵 기준)
+      this.mapHeight / 2,   // 중앙 y (맵 기준)
+      extendedWidth,        // 확장 너비
+      extendedHeight,       // 확장 높이
       'grass_floor'
     );
     this.groundTileSprite.setDepth(DEPTH.GROUND_GRASS);
+  }
+
+  /**
+   * 잔디 크기 조정 (브라우저 리사이즈 시)
+   */
+  resizeGrass(viewportWidth: number, viewportHeight: number): void {
+    if (!this.groundTileSprite) return;
+
+    const extendedWidth = Math.max(this.mapWidth, viewportWidth) + GRASS_PADDING * 2;
+    const extendedHeight = Math.max(this.mapHeight, viewportHeight) + GRASS_PADDING * 2;
+
+    this.groundTileSprite.setSize(extendedWidth, extendedHeight);
+  }
+
+  /**
+   * 울타리 경계 생성 - 맵 경계 바로 바깥에 나무 울타리 배치
+   * 4종 에셋(tl, top, tr, left)만 사용, 나머지는 flip으로 처리
+   */
+  private createFenceBorder(): void {
+    // 기존 울타리 정리
+    this.fenceSprites.forEach(s => s.destroy());
+    this.fenceSprites = [];
+
+    const cols = Math.floor(this.mapWidth / TILE_SIZE);
+    const rows = Math.floor(this.mapHeight / TILE_SIZE);
+
+    // 울타리 depth (잔디 위, 농장 아래)
+    const fenceDepth = DEPTH.GROUND_DECORATIONS + 1;  // 3
+
+    const addFence = (x: number, y: number, key: string, flipX = false, flipY = false) => {
+      const sprite = this.scene.add.image(x, y, key);
+      sprite.setDepth(fenceDepth);
+      if (flipX) sprite.setFlipX(true);
+      if (flipY) sprite.setFlipY(true);
+      this.fenceSprites.push(sprite);
+    };
+
+    // 상단 울타리 (원본)
+    for (let c = 0; c < cols; c++) {
+      addFence(c * TILE_SIZE + TILE_SIZE / 2, -TILE_SIZE / 2, 'fence_border_top');
+    }
+
+    // 하단 울타리 (top과 동일 이미지)
+    for (let c = 0; c < cols; c++) {
+      addFence(c * TILE_SIZE + TILE_SIZE / 2, rows * TILE_SIZE + TILE_SIZE / 2, 'fence_border_top');
+    }
+
+    // 좌측 울타리 (원본)
+    for (let r = 0; r < rows; r++) {
+      addFence(-TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, 'fence_border_left');
+    }
+
+    // 우측 울타리 (left를 flipX)
+    for (let r = 0; r < rows; r++) {
+      addFence(cols * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2, 'fence_border_left', true);
+    }
+
+    // 4개 코너
+    addFence(-TILE_SIZE / 2, -TILE_SIZE / 2, 'fence_border_tl');                                           // TL (원본)
+    addFence(cols * TILE_SIZE + TILE_SIZE / 2, -TILE_SIZE / 2, 'fence_border_tr');                          // TR (원본)
+    addFence(-TILE_SIZE / 2, rows * TILE_SIZE + TILE_SIZE / 2, 'fence_border_tl');                            // BL (tl 동일)
+    addFence(cols * TILE_SIZE + TILE_SIZE / 2, rows * TILE_SIZE + TILE_SIZE / 2, 'fence_border_tr');             // BR (tr 동일)
+
+    console.log(`[MapManager] Fence border created: ${cols}x${rows} map, ${this.fenceSprites.length} sprites`);
   }
 
   /**
@@ -270,5 +355,8 @@ export class MapManager {
       .forEach(child => child.destroy());
     this.decorationSprites.forEach(sprite => sprite.destroy());
     this.decorationSprites = [];
+    // 울타리 정리
+    this.fenceSprites.forEach(sprite => sprite.destroy());
+    this.fenceSprites = [];
   }
 }
