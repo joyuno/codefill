@@ -163,7 +163,7 @@ async def lookup_solved_ac_profile(handle: str, db=Depends(get_db)):
         .eq("handle", actual_handle)\
         .execute()
 
-    is_linked = existing_link.data and len(existing_link.data) > 0
+    is_linked = bool(existing_link.data and len(existing_link.data) > 0)
 
     return SolvedAcProfile(
         handle=actual_handle,
