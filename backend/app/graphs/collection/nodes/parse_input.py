@@ -69,11 +69,11 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         "마스터": "very_hard", "master": "very_hard",
     }
 
-    # 언어 키워드 매핑 (정확한 매칭)
+    # 언어 키워드 매핑 (정확한 매칭) - TODO: Java, C++ 데이터 확보 후 공개 예정
     LANGUAGE_KEYWORDS_EXACT = {
         "파이썬": "python", "python": "python", "Python": "python",
-        "자바": "java", "java": "java", "Java": "java",
-        "c++": "cpp", "cpp": "cpp", "C++": "cpp",
+        # "자바": "java", "java": "java", "Java": "java",
+        # "c++": "cpp", "cpp": "cpp", "C++": "cpp",
     }
 
     # 정확한 키워드 매칭 시도 (칩 클릭 = 정확한 값)
@@ -296,7 +296,42 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         updates["generation_details"] = message
         updates["current_step"] = "complete"
         updates["is_complete"] = True
-        print(f"[parse_input] generation_details set: {message[:50]}...")
+
+        # 대기업 코테 모드일 때 기본값 설정 (topic/difficulty/language가 없으면)
+        if state.get("is_corporate_test"):
+            # 사용자 입력에서 주제 추출 시도
+            message_lower = message.lower()
+            topic_keywords = {
+                "dp": "DP", "동적": "DP", "다이나믹": "DP",
+                "그래프": "그래프", "bfs": "그래프", "dfs": "그래프",
+                "구현": "구현", "시뮬레이션": "구현",
+                "문자열": "문자열", "정렬": "정렬",
+                "이분탐색": "이분탐색", "이진탐색": "이분탐색",
+                "그리디": "그리디", "탐욕": "그리디",
+                "백트래킹": "백트래킹", "완전탐색": "완전탐색",
+            }
+
+            extracted_topic = None
+            for keyword, topic in topic_keywords.items():
+                if keyword in message_lower:
+                    extracted_topic = topic
+                    break
+
+            # 기본값 설정 (기존 값이 없을 때만)
+            if not existing_values.get("topic"):
+                updates["topic"] = extracted_topic or "구현"  # 대기업 코테 기본 주제
+            if not existing_values.get("difficulty"):
+                updates["difficulty"] = "medium"  # 대기업 코테 기본 난이도 (골드)
+            if not existing_values.get("language"):
+                updates["language"] = "python"  # 기본 언어
+
+            print(f"[parse_input] Corporate test generation_details set: {message[:50]}...")
+            print(f"[parse_input] Defaults applied: topic={updates.get('topic', existing_values.get('topic'))}, "
+                  f"difficulty={updates.get('difficulty', existing_values.get('difficulty'))}, "
+                  f"language={updates.get('language', existing_values.get('language'))}")
+        else:
+            print(f"[parse_input] generation_details set: {message[:50]}...")
+
         return updates
 
     # ============================================================
@@ -305,6 +340,22 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
     # 먼저 통합 분석으로 의도 파악
     context = f"현재 단계: {current_step}, 기존 값: topic={existing_values.get('topic')}, difficulty={existing_values.get('difficulty')}, language={existing_values.get('language')}"
     analysis = await collection_tool.analyze(message, context)
+
+    # ============================================================
+    # 2-1-1. 대기업 코테 감지 시 특별 처리
+    # - is_corporate_test = True 설정
+    # - wants_generation = True 설정 (추가 정보 수집 필요)
+    # - generation_details 단계로 이동하여 추가 정보 요청
+    # ============================================================
+    if analysis.is_corporate_test and not state.get("is_corporate_test"):
+        print(f"[parse_input] Corporate test mode detected! Requesting additional info...")
+        updates["is_corporate_test"] = True
+        updates["wants_generation"] = True
+        updates["current_step"] = "generation_details"
+        # is_question 플래그 설정하여 handle_question에서 응답 생성
+        updates["is_question"] = True
+        updates["question_type"] = "corporate_test_info_request"
+        return updates
 
     print(f"[parse_input] LLM Analysis: intent={analysis.intent}, rejected={analysis.rejected}, "
           f"rejection_reason={analysis.rejection_reason}, alternative={analysis.alternative}")
@@ -437,11 +488,11 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
             "마스터": "very_hard", "master": "very_hard",
         }
 
-        # 언어 키워드 매핑
+        # 언어 키워드 매핑 - TODO: Java, C++ 데이터 확보 후 공개 예정
         LANGUAGE_KEYWORDS = {
             "파이썬": "python", "python": "python", "py": "python",
-            "자바": "java", "java": "java",
-            "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
+            # "자바": "java", "java": "java",
+            # "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
         }
 
         # 현재 단계 기준으로 매칭 시도
@@ -696,11 +747,11 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         "마스터": "very_hard", "master": "very_hard",
     }
 
-    # 언어 직접 매핑
+    # 언어 직접 매핑 - TODO: Java, C++ 데이터 확보 후 공개 예정
     LANGUAGE_KEYWORDS = {
         "파이썬": "python", "python": "python", "py": "python",
-        "자바": "java", "java": "java",
-        "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
+        # "자바": "java", "java": "java",
+        # "씨플플": "cpp", "c++": "cpp", "cpp": "cpp", "씨쁠쁠": "cpp",
     }
 
     # LLM 추출 실패 시 직접 매핑으로 보완

@@ -453,6 +453,12 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
     if question_type in extended_intents:
         return await _handle_extended_intent(state, question_type, message)
 
+    # ============================================================
+    # 대기업 코테 추가 정보 요청 처리
+    # ============================================================
+    if question_type == "corporate_test_info_request":
+        return await _handle_corporate_test_info_request(state, current_step)
+
     # 🔧 FIX: 질문과 함께 추출된 값 확인 (동시 처리용)
     extracted_with_question = state.get("extracted_with_question", {})
 
@@ -1510,3 +1516,60 @@ async def _handle_extended_intent(
             "is_question": False,
             "chips": step_chips,
         }
+
+
+# ============================================================
+# Corporate Test Info Request Handler (대기업 코테 추가 정보 요청)
+# ============================================================
+
+async def _handle_corporate_test_info_request(
+    state: CollectionState,
+    current_step: str,
+) -> Dict[str, Any]:
+    """
+    대기업 코테 추가 정보 요청 처리
+
+    사용자가 "대기업 코테 풀래" 같은 요청을 했을 때
+    원하는 기업이나 필요한 주제 정보를 요청하는 응답 생성
+
+    수집된 정보는 이후 Discovery 그래프에서
+    Programmers 임베딩 테이블 + 일반 문제 임베딩 테이블 RAG에 활용
+
+    Args:
+        state: 현재 Collection 상태
+        current_step: 현재 정보 수집 단계
+
+    Returns:
+        응답 메시지, 칩, 상태 업데이트
+    """
+    response_message = """대기업 코딩테스트 준비시군요! 🎯
+
+원하는 **기업 스타일**이나 **필요한 주제**를 알려주세요.
+
+예시:
+• "카카오 스타일" - 카카오 기출 유형
+• "삼성 기출" - 삼성 SW 역량테스트 스타일
+• "DP 위주" - 특정 알고리즘 집중
+• "네이버 + 그래프" - 기업 + 주제 조합"""
+
+    # 자주 요청되는 기업 및 주제 칩 제공
+    chips = [
+        {"label": "카카오 스타일", "value": "카카오", "category": "company"},
+        {"label": "네이버 스타일", "value": "네이버", "category": "company"},
+        {"label": "삼성 기출", "value": "삼성", "category": "company"},
+        {"label": "라인 스타일", "value": "라인", "category": "company"},
+        {"label": "DP 위주", "value": "DP", "category": "topic"},
+        {"label": "그래프 위주", "value": "그래프", "category": "topic"},
+    ]
+
+    return {
+        "response_message": response_message,
+        "awaiting_confirmation": False,
+        "suggested_value": None,
+        "is_question": False,
+        "chips": chips,
+        # 대기업 코테 모드 상태 유지
+        "is_corporate_test": True,
+        "wants_generation": True,
+        "current_step": "generation_details",
+    }

@@ -11,6 +11,15 @@ from enum import Enum
 from uuid import UUID
 
 
+def _normalize_code_newlines(code: str) -> str:
+    """DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환"""
+    if not code:
+        return code
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    return code
+
+
 # ============================================================
 # Enums
 # ============================================================
@@ -113,21 +122,22 @@ class BaseProblemInfo(BaseModel):
         return self.description or self.question or ""
 
     def get_code(self, target_language: str = "python") -> str:
-        """code 또는 solutions에서 코드 추출"""
+        """code 또는 solutions에서 코드 추출 (이스케이프 줄바꿈 변환 포함)"""
         if self.code:
             # code가 dict인 경우: {"python": "...", "java": "..."}
             if isinstance(self.code, dict):
-                return self.code.get(target_language) or next(iter(self.code.values()), "")
+                code = self.code.get(target_language) or next(iter(self.code.values()), "")
+                return _normalize_code_newlines(code)
             # code가 문자열인 경우
-            return self.code
+            return _normalize_code_newlines(self.code)
         if self.solutions:
             # 타겟 언어의 솔루션 찾기
             for sol in self.solutions:
                 if sol.get("language") == target_language:
-                    return sol.get("code", "")
+                    return _normalize_code_newlines(sol.get("code", ""))
             # 없으면 첫 번째 솔루션
             if self.solutions:
-                return self.solutions[0].get("code", "")
+                return _normalize_code_newlines(self.solutions[0].get("code", ""))
         return ""
 
         
@@ -259,20 +269,22 @@ class CodeGenerationRequest(BaseModel):
 class CodeGenerationResponse(BaseModel):
     """Generated educational code."""
     title: str
-    title_en: str
+    title_en: Optional[str] = None
     description: str
     code: Dict[str, str]  # language -> code
-    input_format: str
-    output_format: str
-    examples: List[Dict[str, str]]
-    constraints: List[str]
+    input_format: Optional[str] = None
+    output_format: Optional[str] = None
+    # 테스트케이스 - input_output 형식 우선 (base_problems 테이블 호환)
+    input_output: Optional[Dict[str, List[str]]] = None  # {"inputs": [...], "outputs": [...]}
+    examples: Optional[List[Dict[str, str]]] = None  # 레거시 호환용
+    constraints: Optional[List[str]] = None
     difficulty: str
     topics: List[str]
-    time_complexity: str
-    space_complexity: str
-    key_concepts: List[str]
-    common_mistakes: List[str]
-    hints_for_problem_gen: Dict[str, List[str]]
+    time_complexity: Optional[str] = None
+    space_complexity: Optional[str] = None
+    key_concepts: Optional[List[str]] = None
+    common_mistakes: Optional[List[str]] = None
+    hints_for_problem_gen: Optional[Dict[str, List[str]]] = None
 
 
 # ============================================================

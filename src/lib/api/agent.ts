@@ -31,10 +31,14 @@ export interface ChatAgentMessage {
 
 export interface CollectedInfo {
   topics: string[];
+  topic?: string;  // 단일 주제 (백엔드 호환)
   difficulty: string | null;
   language: string | null;
   specific_needs: string | null;
   time_available: number | null;
+  // 대기업 코테 관련
+  is_corporate_test?: boolean;
+  generation_details?: string;
 }
 
 export interface ChatAgentRequest {
@@ -189,20 +193,22 @@ export interface CodeGenerationStreamRequest {
 
 export interface CodeGenerationResponse {
   title: string;
-  title_en: string;
+  title_en?: string;
   description: string;
   code: Record<string, string>;
-  input_format: string;
-  output_format: string;
-  examples: Array<{ input: string; output: string; explanation?: string }>;
-  constraints: string[];
+  input_format?: string;
+  output_format?: string;
+  // 테스트케이스 - input_output 형식 우선 (base_problems 테이블 호환)
+  input_output?: { inputs: string[]; outputs: string[] };
+  examples?: Array<{ input: string; output: string; explanation?: string }>;  // 레거시 호환
+  constraints?: string[];
   difficulty: string;
   topics: string[];
-  time_complexity: string;
-  space_complexity: string;
-  key_concepts: string[];
-  common_mistakes: string[];
-  hints_for_problem_gen: Record<string, string[]>;
+  time_complexity?: string;
+  space_complexity?: string;
+  key_concepts?: string[];
+  common_mistakes?: string[];
+  hints_for_problem_gen?: Record<string, string[]>;
 }
 
 // Hint Agent

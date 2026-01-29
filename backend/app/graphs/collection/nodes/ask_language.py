@@ -39,12 +39,10 @@ def ask_language(state: CollectionState) -> Dict[str, Any]:
         "hard": "어려운",
     }.get(difficulty, difficulty)
 
+    # TODO: Java, C++ 데이터 확보 후 공개 예정
     message = (
         f"**{topic}** 주제의 **{difficulty_korean}** 문제로 할게요!\n\n"
-        f"어떤 프로그래밍 언어로 풀어볼까요?\n"
-        f"- **Python** (파이썬)\n"
-        f"- **Java** (자바)\n"
-        f"- **C++** (씨플플)"
+        f"현재는 **Python**으로 진행할게요! 🐍"
     )
 
     return {

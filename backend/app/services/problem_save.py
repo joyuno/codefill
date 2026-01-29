@@ -225,6 +225,7 @@ class ProblemSaveService:
         self,
         generated_problem: Dict[str, Any],
         collected_info: Dict[str, Any],
+        user_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         CodeGen으로 생성된 문제를 base_problems 테이블에 저장
@@ -232,11 +233,13 @@ class ProblemSaveService:
         Args:
             generated_problem: CodeGen이 생성한 문제 데이터
             collected_info: 사용자가 선택한 topic, difficulty, language
+            user_id: 생성 요청한 사용자 ID (optional, 추후 creator 추적용)
 
         Returns:
             저장된 문제의 id (UUID) 또는 None
         """
         import uuid
+        from datetime import datetime
 
         try:
             # difficulty 검증 (필수)
@@ -268,20 +271,28 @@ class ProblemSaveService:
                 logger.warning(f"[ProblemSave] No solutions in generated problem")
                 return None
 
-            # input_output 구성 (examples에서 추출)
-            examples = generated_problem.get("examples", [])
-            input_output = None
-            if examples:
-                inputs = []
-                outputs = []
-                for ex in examples:
-                    if isinstance(ex, dict):
-                        if ex.get("input"):
-                            inputs.append(ex["input"])
-                        if ex.get("output"):
-                            outputs.append(ex["output"])
-                if inputs and outputs:
-                    input_output = {"inputs": inputs, "outputs": outputs}
+            # input_output 구성 (새 형식 우선, 레거시 examples fallback)
+            input_output = generated_problem.get("input_output")
+
+            # 새 형식 검증: {"inputs": [...], "outputs": [...]}
+            if input_output and isinstance(input_output, dict):
+                if not (input_output.get("inputs") and input_output.get("outputs")):
+                    input_output = None  # 잘못된 형식이면 무시
+
+            # Fallback: 레거시 examples 형식에서 변환
+            if not input_output:
+                examples = generated_problem.get("examples", [])
+                if examples:
+                    inputs = []
+                    outputs = []
+                    for ex in examples:
+                        if isinstance(ex, dict):
+                            if ex.get("input"):
+                                inputs.append(str(ex["input"]))
+                            if ex.get("output"):
+                                outputs.append(str(ex["output"]))
+                    if inputs and outputs:
+                        input_output = {"inputs": inputs, "outputs": outputs}
 
             # tags 정규화 (허용된 태그로만 변환)
             raw_tags = generated_problem.get("topics") or collected_info.get("topics", [])
@@ -292,15 +303,21 @@ class ProblemSaveService:
                 normalized_tags = normalize_tags([topic]) if isinstance(topic, str) else normalize_tags(topic)
 
             # base_problems 데이터 구성
+            # 필수 컬럼: original_id, name, question, solutions
+            # 나머지는 DB default 값 사용 (created_at=now(), like_count=0, solve_count=0, elo_rating=1000)
             data = {
                 "original_id": original_id,
                 "name": generated_problem.get("title", "Generated Problem"),
                 "question": generated_problem.get("description", ""),
                 "difficulty": difficulty,  # 이미 검증됨
-                "tags": normalized_tags,
+                "tags": normalized_tags if normalized_tags else None,
                 "source": "codegen",
                 "solutions": solutions,
                 "input_output": input_output,
+                # 선택적 컬럼 (LLM이 제공하면 사용)
+                "time_limit": generated_problem.get("time_limit"),
+                "memory_limit": generated_problem.get("memory_limit"),
+                "explanation": generated_problem.get("explanation"),  # 해설이 있으면 저장
             }
 
             result = self.supabase.table("base_problems").insert(data).execute()

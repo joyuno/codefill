@@ -213,17 +213,18 @@ DIFFICULTY_CHIPS: List[Dict[str, str]] = [
     {"label": "마스터", "value": "마스터", "category": "difficulty"},
 ]
 
+# TODO: Java, C++ 데이터 확보 후 공개 예정
 LANGUAGE_CHIPS: List[Dict[str, str]] = [
     {"label": "Python", "value": "python", "category": "language"},
-    {"label": "Java", "value": "java", "category": "language"},
-    {"label": "C++", "value": "cpp", "category": "language"},
+    # {"label": "Java", "value": "java", "category": "language"},
+    # {"label": "C++", "value": "cpp", "category": "language"},
 ]
 
 # Display mappings
 LANGUAGE_DISPLAY = {
     "python": "Python",
-    "java": "Java",
-    "cpp": "C++",
+    # "java": "Java",
+    # "cpp": "C++",
 }
 
 

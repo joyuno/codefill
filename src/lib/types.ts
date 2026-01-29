@@ -65,7 +65,8 @@ export interface BlankProblem {
 export interface PuzzleBlock {
   id: number;
   code: string;
-  indentation?: number;
+  indent?: number;       // 들여쓰기 레벨 (레거시, DB 저장 형식)
+  indentation?: number;  // 들여쓰기 레벨 (새 형식)
 }
 
 export interface PuzzleProblem {

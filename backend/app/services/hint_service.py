@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def normalize_code_newlines(code: str) -> str:
+    """
+    DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환합니다.
+    """
+    if not code:
+        return code
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    return code
+
+
 class HintService:
     """문제 유형별 힌트 생성 서비스"""
 
@@ -907,9 +918,9 @@ class HintService:
                     # 언어에 맞는 솔루션 찾기
                     matching_sol = next((s for s in solutions if s.get("language") == language), None)
                     if matching_sol:
-                        solution_code = matching_sol.get("code", "(정답 코드 없음)")
+                        solution_code = normalize_code_newlines(matching_sol.get("code", "(정답 코드 없음)"))
                     elif solutions[0]:
-                        solution_code = solutions[0].get("code", "(정답 코드 없음)")
+                        solution_code = normalize_code_newlines(solutions[0].get("code", "(정답 코드 없음)"))
         elif additional_info:
             title = additional_info.get("title", "문제")
             description = additional_info.get("description", "")[:500]
@@ -1387,15 +1398,15 @@ class HintService:
                 if solutions:
                     matching_sol = next((s for s in solutions if s.get("language") == language), None)
                     if matching_sol:
-                        solution_code = matching_sol.get("code", "(정답 코드 없음)")
+                        solution_code = normalize_code_newlines(matching_sol.get("code", "(정답 코드 없음)"))
                     elif solutions[0]:
-                        solution_code = solutions[0].get("code", "(정답 코드 없음)")
+                        solution_code = normalize_code_newlines(solutions[0].get("code", "(정답 코드 없음)"))
         elif additional_info:
             title = additional_info.get("title", "문제")
             description = additional_info.get("description", "")[:500]
             difficulty = additional_info.get("difficulty", "medium")
             topics = additional_info.get("topics", [])
-            solution_code = additional_info.get("solution_code", "(정답 코드 없음)")
+            solution_code = normalize_code_newlines(additional_info.get("solution_code", "(정답 코드 없음)"))
 
         # 3. 블록 정보 구성 (간결하게)
         total_blocks = len(blocks)
@@ -1595,13 +1606,13 @@ class HintService:
                 if solutions:
                     matching_sol = next((s for s in solutions if s.get("language") == language), None)
                     if matching_sol:
-                        solution_code = matching_sol.get("code", "")
+                        solution_code = normalize_code_newlines(matching_sol.get("code", ""))
                     elif solutions[0]:
-                        solution_code = solutions[0].get("code", "")
+                        solution_code = normalize_code_newlines(solutions[0].get("code", ""))
 
         # additional_info에서 정답 코드 폴백
         if not solution_code and additional_info:
-            solution_code = additional_info.get("solution_code") or additional_info.get("final_code", "")
+            solution_code = normalize_code_newlines(additional_info.get("solution_code") or additional_info.get("final_code", ""))
             title = additional_info.get("title", title)
             description = additional_info.get("description", description)
 

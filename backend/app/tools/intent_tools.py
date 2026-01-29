@@ -286,12 +286,29 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
    - action=generate_new, extracted_values: is_corporate_test=true, wants_generation=true
    - **핵심**: 대기업 + 생성 = generate_new with is_corporate_test
 
-6. **inquire_problem**: 검색 결과 문제에 대한 **질문**
-   - 특정 문제 질문: "1번 요약해줘", "Two Sum 어떤 내용?", "3번 풀만해?"
-   - 비교/추천: "어떤 게 더 쉬워?", "뭐가 좋을까?", "추천해줘"
-   - 설명 요청: "이거 뭐에 도움돼?", "난이도 어때?"
-   - inquiry_target에 문제 번호/이름 설정, inquiry_question에 질문 내용
-   - **핵심**: 질문/설명/비교 = inquire_problem
+6. **inquire_problem**: 두 가지 케이스가 있음 (컨텍스트에 따라 구분!)
+
+   **(A) 검색 결과가 있을 때 - 문제 내용 질문:**
+   - 검색 결과 중 특정 문제에 대한 설명/질문 요청
+   - "1번 요약해줘", "Two Sum 어떤 내용?", "3번 풀만해?"
+   - "어떤 게 더 쉬워?", "뭐가 좋을까?" (비교)
+   - inquiry_target: 번호 또는 검색 결과에 있는 문제 이름 **그대로**
+   - 예: "1번 알려줘" → inquiry_target="1"
+   - 예: "Two Sum 설명해줘" → inquiry_target="Two Sum"
+
+   **(B) 검색 결과가 없을 때 - 새로운 문제 검색:**
+   - DB에서 특정 문제를 이름으로 찾아달라는 요청
+   - "시식코너는 나의 것이라는 문제 찾아줘", "피보나치 수열 문제 알려줘"
+   - inquiry_target: **문제 이름만 파싱**해서 설정 (동사/접미사 제거!)
+   - **파싱 규칙:**
+     - "시식코너는 나의 것이라는 문제 찾아줘" → inquiry_target="시식코너는 나의 것"
+     - "Two Sum 문제 알려줘" → inquiry_target="Two Sum"
+     - "피보나치 수열 문제 설명해줘" → inquiry_target="피보나치 수열"
+   - **절대로 "문제", "찾아줘", "알려줘", "이라는" 등을 포함하지 말 것!**
+
+   **핵심 구분법:**
+   - 컨텍스트에 "검색 결과 N개 존재"가 있으면 → (A) 문제 내용 질문
+   - 컨텍스트에 검색 결과가 없으면 → (B) 새로운 문제 검색
 
 7. **free_chat (general)**: 검색 결과와 무관한 일반 질문
    - "정렬 알고리즘이 뭐야?", "시간복잡도 설명해줘"
@@ -387,12 +404,17 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - "그거", "그걸로", "이거 풀래" → selection_index=1
 - **필수**: selection_index 설정!
 
-**inquire_problem (문제 질문):**
+**inquire_problem (두 가지 케이스):**
+**(A) 검색 결과 있을 때 - 내용 질문:**
 - "1번 요약해줘" → inquiry_target="1", inquiry_question="요약해줘"
 - "Two Sum 어떤 내용?" → inquiry_target="Two Sum"
 - "3번 풀만해?" → inquiry_target="3"
 - "어떤 게 더 쉬워?" → inquiry_target="general" (비교 질문)
-- **필수**: inquiry_target 설정!
+
+**(B) 검색 결과 없을 때 - 문제 이름 검색 (파싱 필수!):**
+- "시식코너는 나의 것이라는 문제 찾아줘" → inquiry_target="시식코너는 나의 것"
+- "피보나치 수열 문제 알려줘" → inquiry_target="피보나치 수열"
+- **필수**: 검색 결과 없으면 문제 이름만 파싱! ("문제", "찾아줘" 등 제외)
 
 **show_more (더 보기):**
 - "다른 문제", "더 찾아줘", "이거 말고" → action=show_more
@@ -416,13 +438,14 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 - "1번 풀래", "이거", "그거로 할게", "시작", "선택"
 - 질문 키워드 없음 → select_problem
 
-**inquire_problem (질문):**
-- "요약해줘", "설명해줘", "어때?", "풀만해?", "뭐야?", "어떤 내용?"
+**inquire_problem (질문/검색):**
+- (A) 검색 결과 있음: "요약해줘", "설명해줘", "어때?", "풀만해?", "어떤 내용?"
+- (B) 검색 결과 없음: "~라는 문제 찾아줘", "~ 문제 알려줘" (새 검색)
 - 비교: "어떤 게 좋아?", "추천해줘"
-- 질문 키워드 있음 → inquire_problem
 
 **핵심 규칙:**
-- 질문/설명 요청 → inquire_problem
+- 검색 결과 있고 질문 키워드 → inquire_problem (내용 설명)
+- 검색 결과 없고 문제 이름 언급 → inquire_problem (새 검색, 이름 파싱!)
 - 풀기/선택 의도 → select_problem
 - 둘 다 없으면 문맥으로 판단 (단순 문제명만 → select_problem)
 

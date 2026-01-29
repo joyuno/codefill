@@ -86,6 +86,23 @@ interface PracticeChatPanelProps {
    * startProblemRequest 처리 완료 시 호출 (상태 리셋용)
    */
   onStartProblemHandled?: () => void;
+  /**
+   * 문제 완료 상태 (정답 맞춘 후 "문제풀이로 돌아가기" 클릭 시 true)
+   * true일 때 채팅 횟수 제한 (3회)
+   */
+  isProblemCompleted?: boolean;
+  /**
+   * 문제 완료 후 채팅 횟수
+   */
+  postCompletionChatCount?: number;
+  /**
+   * 문제 완료 후 채팅 시 호출 (횟수 증가)
+   */
+  onPostCompletionChat?: () => void;
+  /**
+   * localStorage 복원 완료 여부 (복원 전 잘못된 초기화 방지)
+   */
+  isRestored?: boolean;
 }
 
 // Session state interface for LangGraph
@@ -255,6 +272,10 @@ export function PracticeChatPanel({
   onBaseProblemPreview,
   startProblemRequest,
   onStartProblemHandled,
+  isProblemCompleted = false,
+  postCompletionChatCount = 0,
+  onPostCompletionChat,
+  isRestored = true,
 }: PracticeChatPanelProps) {
   // 사용자 인증 정보 가져오기 (user_id 포함)
   const { user, profile, refreshProfile } = useAuth();
@@ -361,7 +382,11 @@ export function PracticeChatPanel({
 
   // Reset chat session when problem becomes null (다음 문제 풀기 클릭 시)
   // 단, initialBaseProblem이 있으면 초기화하지 않음 (Problems 페이지에서 직접 선택한 경우)
+  // isRestored가 false이면 복원 중이므로 초기화하지 않음 (타이밍 이슈 방지)
   useEffect(() => {
+    // 복원 완료 전에는 초기화하지 않음 (잘못된 타이밍에 초기화 방지)
+    if (!isRestored) return;
+
     if (problem === null && !initialBaseProblem) {
       // 채팅 세션 완전 초기화
       setMessages([initialWelcomeMessage]);
@@ -389,7 +414,7 @@ export function PracticeChatPanel({
       // ref도 초기화 (새 세션에서 다시 initialBaseProblem 처리 가능하도록)
       initialProblemHandledRef.current = false;
     }
-  }, [problem, initialBaseProblem]);
+  }, [problem, initialBaseProblem, isRestored]);
 
   // Guided 모드 세션 초기화 (problemType이 'guided'로 변경될 때)
   useEffect(() => {
@@ -403,11 +428,11 @@ export function PracticeChatPanel({
 
       if (problem.conceptExplanation) {
         // 새 스키마: concept_explanation, variables_guide, approach_guide
-        welcomeContent += `[핵심 개념]\n\n${problem.conceptExplanation}\n\n`;
+        welcomeContent += `**[핵심 개념]**\n\n${problem.conceptExplanation}\n\n`;
 
         // 변수 가이드 표시
         if (problem.variablesGuide?.variables?.length) {
-          welcomeContent += `---\n\n[필요한 변수들] (총 ${problem.variablesGuide.total_count}개)\n\n`;
+          welcomeContent += `---\n\n**[필요한 변수들]** (총 ${problem.variablesGuide.total_count}개)\n\n`;
           problem.variablesGuide.variables.forEach((v, idx) => {
             welcomeContent += `${idx + 1}. \`${v.name}\` (${v.type})\n`;
             welcomeContent += `   - 역할: ${v.role}\n`;
@@ -418,12 +443,12 @@ export function PracticeChatPanel({
 
         // 접근법 가이드 표시
         if (problem.approachGuide) {
-          welcomeContent += `---\n\n[접근법]\n\n${problem.approachGuide}\n\n`;
+          welcomeContent += `---\n\n**[접근법]**\n\n${problem.approachGuide}\n\n`;
         }
 
         // 시작 코드 안내
         if (problem.starterCode) {
-          welcomeContent += `---\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
+          welcomeContent += `---\n\n**[시작 코드]**\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
         }
       } else {
         // 레거시 또는 새 스키마 없이 진입한 경우
@@ -832,6 +857,26 @@ export function PracticeChatPanel({
       });
 
       // CodeGenerationResponse를 BaseProblemInfo로 변환
+      // input_output 형식 우선 사용, 레거시 examples fallback
+      let inputOutput: BaseProblemInfo['input_output'] = undefined;
+
+      // 새 형식: input_output 직접 사용
+      if (result.input_output?.inputs?.length && result.input_output?.outputs?.length) {
+        inputOutput = result.input_output;
+      }
+      // 레거시 fallback: examples에서 변환
+      else if (result.examples && result.examples.length > 0) {
+        const inputs: string[] = [];
+        const outputs: string[] = [];
+        for (const ex of result.examples) {
+          if (ex.input) inputs.push(ex.input);
+          if (ex.output) outputs.push(ex.output);
+        }
+        if (inputs.length > 0 && outputs.length > 0) {
+          inputOutput = { inputs, outputs };
+        }
+      }
+
       const generatedProblem: BaseProblemInfo = {
         title: result.title,
         description: result.description,
@@ -840,25 +885,28 @@ export function PracticeChatPanel({
         topics: result.topics,
         time_complexity: result.time_complexity,
         space_complexity: result.space_complexity,
+        input_output: inputOutput,
       };
 
-      // 생성 완료 - 문제 선택 UI로 전환
+      // 생성 완료 - 바로 문제 유형 선택으로 전환
       setRecommendedProblems([generatedProblem]);
+      setSelectedBaseProblem(generatedProblem);  // 유형 선택을 위해 설정
       setFlowState('type_selection');
 
-      // 로딩 메시지를 결과 메시지로 교체
+      // 로딩 메시지를 결과 메시지로 교체 - 바로 유형 선택 칩 표시
       setMessages(prev => {
         const filtered = prev.filter(m => m.id !== loadingMessageId);
         return [...filtered, {
           id: `generated-result-${Date.now()}`,
           role: 'assistant' as const,
-          content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})\n\n${generatedProblem.description || generatedProblem.question || ''}`,
+          content: `✅ 새로운 문제가 생성되었어요!\n\n**${generatedProblem.title || generatedProblem.name}** (${DIFFICULTY_TO_TIER[generatedProblem.difficulty] || generatedProblem.difficulty})\n\n어떤 형식으로 풀어볼까요?`,
           timestamp: new Date().toISOString(),
-          chips: [{
-            label: generatedProblem.title || generatedProblem.name,
-            value: 'problem-0',
-            category: 'action' as const,
-          }],
+          chips: [
+            { label: '빈칸 채우기', value: 'type-blank', category: 'action' as const },
+            { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' as const },
+            { label: '1대1 대화형', value: 'type-guided', category: 'action' as const },
+            { label: '구현', value: 'type-implementation', category: 'action' as const },
+          ],
         }];
       });
     } catch (error) {
@@ -1281,11 +1329,11 @@ export function PracticeChatPanel({
 
         if (generatedProblem.conceptExplanation) {
           // 새 스키마: concept_explanation, variables_guide, approach_guide
-          welcomeContent += `[핵심 개념]\n\n${generatedProblem.conceptExplanation}\n\n`;
+          welcomeContent += `**[핵심 개념]**\n\n${generatedProblem.conceptExplanation}\n\n`;
 
           // 변수 가이드 표시
           if (generatedProblem.variablesGuide?.variables?.length) {
-            welcomeContent += `---\n\n[필요한 변수들] (총 ${generatedProblem.variablesGuide.total_count}개)\n\n`;
+            welcomeContent += `---\n\n**[필요한 변수들]** (총 ${generatedProblem.variablesGuide.total_count}개)\n\n`;
             generatedProblem.variablesGuide.variables.forEach((v, idx) => {
               welcomeContent += `${idx + 1}. \`${v.name}\` (${v.type})\n`;
               welcomeContent += `   - 역할: ${v.role}\n`;
@@ -1296,12 +1344,12 @@ export function PracticeChatPanel({
 
           // 접근법 가이드 표시
           if (generatedProblem.approachGuide) {
-            welcomeContent += `---\n\n[접근법]\n\n${generatedProblem.approachGuide}\n\n`;
+            welcomeContent += `---\n\n**[접근법]**\n\n${generatedProblem.approachGuide}\n\n`;
           }
 
           // 시작 코드 안내
           if (generatedProblem.starterCode) {
-            welcomeContent += `---\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
+            welcomeContent += `---\n\n**[시작 코드]**\n\n왼쪽 에디터에 시작 코드가 준비되어 있어요! 이어서 작성해보세요.`;
           }
         } else if (generatedProblem.concepts?.length || generatedProblem.flow?.length) {
           // 레거시 스키마 지원 (concepts[], flow[], checkpoints[])
@@ -1675,6 +1723,22 @@ export function PracticeChatPanel({
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoading) return;
 
+    // 문제 완료 후 채팅 제한 (3회)
+    const POST_COMPLETION_CHAT_LIMIT = 3;
+    if (isProblemCompleted && postCompletionChatCount >= POST_COMPLETION_CHAT_LIMIT) {
+      toast({
+        title: '채팅 제한',
+        description: '이미 완료한 문제입니다. 추가 질문은 제한됩니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // 문제 완료 후 채팅 횟수 증가
+    if (isProblemCompleted && onPostCompletionChat) {
+      onPostCompletionChat();
+    }
+
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -1894,6 +1958,40 @@ export function PracticeChatPanel({
       }
 
       // ============================================================
+      // 대기업 코테 문제 생성 (generate_corporate_problem)
+      // 정보 수집 완료 후 검색 없이 바로 문제 생성
+      // ============================================================
+      if (chatResponse.action_trigger === 'generate_corporate_problem') {
+        console.log('[Chat] generate_corporate_problem detected - triggering corporate test generation');
+
+        // 백엔드에서 전달한 정보 사용
+        const corporateCollectedInfo = responseCollectedInfo || chatResponse.collected_info as CollectedInfo;
+
+        // collectedInfo 업데이트
+        collectedInfoRef.current = {
+          ...corporateCollectedInfo,
+          is_corporate_test: true,
+        };
+
+        // 메시지 표시
+        const assistantMessage: Message = {
+          id: `assistant-corporate-${Date.now()}`,
+          role: 'assistant',
+          content: responseMessage || '대기업 코테 문제를 생성하고 있어요... 🏢',
+          timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setIsLoading(false);
+
+        // 문제 생성 시작 (handleGenerateNewProblem 재사용)
+        setTimeout(() => {
+          handleGenerateNewProblem();
+        }, 100);
+
+        return;
+      }
+
+      // ============================================================
       // 🔥 문제 유형 선택 (select_problem_type) - 최우선 처리!
       // 사용자가 문제를 선택한 후 유형 선택 단계
       // ============================================================
@@ -1943,9 +2041,11 @@ export function PracticeChatPanel({
 
       // "새 문제 생성" 버튼: generated_problem 우선 처리 (search_results보다 먼저!)
       if (actionData?.action_trigger === 'problem_generated' && actionData?.generated_problem) {
-        // CodeGen generated a new problem
+        // CodeGen generated a new problem - 바로 유형 선택으로 이동
+        const generatedProblem = actionData.generated_problem as BaseProblemInfo;
         setFlowState('type_selection');
-        setRecommendedProblems([actionData.generated_problem]);
+        setRecommendedProblems([generatedProblem]);
+        setSelectedBaseProblem(generatedProblem);  // 유형 선택을 위해 설정
 
         // Fallback 안내 메시지 (is_fallback이 true일 때)
         const isFallback = (actionData as any).is_fallback === true;
@@ -1956,13 +2056,14 @@ export function PracticeChatPanel({
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: `${fallbackNotice}${responseMessage}`,
+          content: `${fallbackNotice}${responseMessage}\n\n어떤 형식으로 풀어볼까요?`,
           timestamp: new Date().toISOString(),
-          chips: [{
-            label: actionData.generated_problem.title || actionData.generated_problem.name,
-            value: 'problem-0',
-            category: 'action' as const,
-          }],
+          chips: [
+            { label: '빈칸 채우기', value: 'type-blank', category: 'action' as const },
+            { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' as const },
+            { label: '1대1 대화형', value: 'type-guided', category: 'action' as const },
+            { label: '구현', value: 'type-implementation', category: 'action' as const },
+          ],
         };
         setMessages(prev => [...prev, assistantMessage]);
       } else if (actionData?.status === 'found' && actionData?.problems?.length) {
@@ -2315,7 +2416,7 @@ export function PracticeChatPanel({
               </>
             ) : (
               <>
-                {/* 빈칸 유형에서는 힌트 버튼 숨김 (각 빈칸 옆 힌트로 대체) */}
+                {/* 빈칸 유형에서만 힌트 버튼 숨김 (각 빈칸 옆 힌트로 대체) */}
                 {problem?.problemType !== 'blank' && (
                   <Button
                     variant="outline"

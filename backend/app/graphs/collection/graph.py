@@ -295,7 +295,12 @@ class InfoCollectionGraph:
                 "is_corporate_test": final_is_corporate_test,
             },
             "is_complete": result.get("is_complete", False),
-            "action_trigger": "search_problems" if result.get("is_complete") else None,
+            # 대기업 코테는 검색 없이 바로 문제 생성으로 이동
+            "action_trigger": (
+                "generate_corporate_problem" if result.get("is_complete") and final_is_corporate_test
+                else "search_problems" if result.get("is_complete")
+                else None
+            ),
             "awaiting_confirmation": awaiting_confirmation,
             "suggested_value": suggested_value,
             "action_data": action_data,
