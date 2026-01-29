@@ -480,11 +480,14 @@ async def create_character(
         "farm_slots": json.dumps(initial_slots),
     }).eq("user_id", str(user_id)).execute()
 
-    # 초기 씨앗 지급 (모든 작물 종류별 10개씩)
+    # 초기 씨앗 지급 (모든 작물 종류별 10개씩) - 배치 INSERT
     crops = db.table("farm_items").select("code").eq("type", "crop").execute()
     if crops.data:
-        for crop in crops.data:
-            update_inventory(db, user_id, f"seed_{crop['code']}", INITIAL_SEEDS_QUANTITY)
+        seed_rows = [
+            {"user_id": str(user_id), "item_code": f"seed_{crop['code']}", "quantity": INITIAL_SEEDS_QUANTITY}
+            for crop in crops.data
+        ]
+        db.table("user_inventory").insert(seed_rows).execute()
 
     # 업데이트된 농장 반환
     return await get_farm(user_id, db)

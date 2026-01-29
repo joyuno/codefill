@@ -26,6 +26,44 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+// Input/Select components (컴포넌트 외부 선언 - 리렌더링 시 재생성 방지)
+const AdminInput = ({ label, required, ...props }: { label?: string; required?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) => (
+  <div className="space-y-1">
+    {label && <label className="text-xs text-muted-foreground">{label}{required && ' *'}</label>}
+    <input
+      {...props}
+      className={`w-full h-9 px-3 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 transition-colors ${props.className || ''}`}
+    />
+  </div>
+);
+
+const AdminTextArea = ({ label, required, rows = 4, ...props }: { label?: string; required?: boolean; rows?: number } & React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
+  <div className="space-y-1">
+    {label && <label className="text-xs text-muted-foreground">{label}{required && ' *'}</label>}
+    <textarea
+      rows={rows}
+      {...props}
+      className={`w-full px-3 py-2 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 transition-colors resize-none ${props.className || ''}`}
+    />
+  </div>
+);
+
+const AdminSelect = ({ label, value, onChange, options }: { label?: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
+  <div className="space-y-1">
+    {label && <label className="text-xs text-muted-foreground">{label}</label>}
+    <SelectUI value={value} onValueChange={onChange}>
+      <SelectTrigger className="w-full h-9 bg-white/5 border-white/10 rounded-lg">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </SelectUI>
+  </div>
+);
+
 type ProblemType = 'base' | 'blank' | 'puzzle' | 'guided';
 
 interface BlankItem {
@@ -608,57 +646,19 @@ export default function AdminProblemCreatePage() {
     setBaseForm({ ...baseForm, tags: baseForm.tags.filter((t) => t !== tag) });
   };
 
-  // Input/Select components
-  const Input = ({ label, required, ...props }: { label?: string; required?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) => (
-    <div className="space-y-1">
-      {label && <label className="text-xs text-muted-foreground">{label}{required && ' *'}</label>}
-      <input
-        {...props}
-        className={`w-full h-9 px-3 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 transition-colors ${props.className || ''}`}
-      />
-    </div>
-  );
-
-  const TextArea = ({ label, required, rows = 4, ...props }: { label?: string; required?: boolean; rows?: number } & React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
-    <div className="space-y-1">
-      {label && <label className="text-xs text-muted-foreground">{label}{required && ' *'}</label>}
-      <textarea
-        rows={rows}
-        {...props}
-        className={`w-full px-3 py-2 text-sm bg-white/5 border border-white/10 rounded-lg placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 transition-colors resize-none ${props.className || ''}`}
-      />
-    </div>
-  );
-
-  const Select = ({ label, value, onChange, options }: { label?: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) => (
-    <div className="space-y-1">
-      {label && <label className="text-xs text-muted-foreground">{label}</label>}
-      <SelectUI value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full h-9 bg-white/5 border-white/10 rounded-lg">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </SelectUI>
-    </div>
-  );
-
   // Render forms
   const renderBaseForm = () => (
     <div className="space-y-6">
       {/* Row 1: ID, Title */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
+        <AdminInput
           label="문제 ID"
           required
           value={baseForm.original_id}
           onChange={(e) => setBaseForm({ ...baseForm, original_id: e.target.value })}
           placeholder="two-sum"
         />
-        <Input
+        <AdminInput
           label="제목"
           required
           value={baseForm.name}
@@ -669,19 +669,19 @@ export default function AdminProblemCreatePage() {
 
       {/* Row 2: Difficulty, Source, URL */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Select
+        <AdminSelect
           label="난이도"
           value={baseForm.difficulty}
           onChange={(v) => setBaseForm({ ...baseForm, difficulty: v })}
           options={DIFFICULTY_OPTIONS}
         />
-        <Input
+        <AdminInput
           label="출처"
           value={baseForm.source}
           onChange={(e) => setBaseForm({ ...baseForm, source: e.target.value })}
           placeholder="LeetCode"
         />
-        <Input
+        <AdminInput
           label="원본 URL"
           value={baseForm.url}
           onChange={(e) => setBaseForm({ ...baseForm, url: e.target.value })}
@@ -718,7 +718,7 @@ export default function AdminProblemCreatePage() {
       </div>
 
       {/* Question */}
-      <TextArea
+      <AdminTextArea
         label="문제 설명"
         required
         value={baseForm.question}
@@ -786,13 +786,13 @@ export default function AdminProblemCreatePage() {
 
       {/* Time/Memory limits */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
+        <AdminInput
           label="시간 제한"
           value={baseForm.time_limit}
           onChange={(e) => setBaseForm({ ...baseForm, time_limit: e.target.value })}
           placeholder="1초"
         />
-        <Input
+        <AdminInput
           label="메모리 제한"
           value={baseForm.memory_limit}
           onChange={(e) => setBaseForm({ ...baseForm, memory_limit: e.target.value })}
@@ -984,14 +984,14 @@ export default function AdminProblemCreatePage() {
 
   const renderPuzzleForm = () => (
     <div className="space-y-5">
-      <Select
+      <AdminSelect
         label="언어"
         value={puzzleForm.language}
         onChange={(v) => setPuzzleForm({ ...puzzleForm, language: v })}
         options={LANGUAGE_OPTIONS}
       />
 
-      <TextArea
+      <AdminTextArea
         label="고정 시작 코드 (선택)"
         value={puzzleForm.fixed_start}
         onChange={(e) => setPuzzleForm({ ...puzzleForm, fixed_start: e.target.value })}
@@ -1037,7 +1037,7 @@ export default function AdminProblemCreatePage() {
         )}
       </div>
 
-      <TextArea
+      <AdminTextArea
         label="고정 종료 코드 (선택)"
         value={puzzleForm.fixed_end}
         onChange={(e) => setPuzzleForm({ ...puzzleForm, fixed_end: e.target.value })}
@@ -1050,14 +1050,14 @@ export default function AdminProblemCreatePage() {
 
   const renderGuidedForm = () => (
     <div className="space-y-5">
-      <Select
+      <AdminSelect
         label="언어"
         value={guidedForm.language}
         onChange={(v) => setGuidedForm({ ...guidedForm, language: v })}
         options={LANGUAGE_OPTIONS}
       />
 
-      <TextArea
+      <AdminTextArea
         label="개념 설명"
         required
         value={guidedForm.concept_explanation}
@@ -1124,7 +1124,7 @@ export default function AdminProblemCreatePage() {
         )}
       </div>
 
-      <TextArea
+      <AdminTextArea
         label="접근법"
         required
         value={guidedForm.approach_guide}
@@ -1133,7 +1133,7 @@ export default function AdminProblemCreatePage() {
         rows={5}
       />
 
-      <TextArea
+      <AdminTextArea
         label="시작 코드"
         required
         value={guidedForm.starter_code}
