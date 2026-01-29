@@ -257,9 +257,10 @@ class Judge0Service:
             if func_info:
                 func_name, params = func_info
                 has_call = has_function_call(source_code, func_name)
-                print(f"[Judge0] Has function call: {has_call}")
-                # 이미 함수 호출이 있으면 래핑 불필요
-                if has_call:
+                stdin_used = uses_stdin(source_code)
+                print(f"[Judge0] Has function call: {has_call}, Uses stdin: {stdin_used}")
+                # 이미 함수 호출이 있거나 stdin을 사용하면 래핑 불필요
+                if has_call or stdin_used:
                     func_info = None
 
         for i, tc in enumerate(test_cases):
@@ -388,23 +389,44 @@ def has_function_call(source_code: str, func_name: str) -> bool:
     코드에 해당 함수 호출이 있는지 확인합니다.
     (함수 정의 내부가 아닌 최상위 레벨에서 호출되는지 확인)
     """
-    # 함수 호출 패턴: func_name(...)
-    # 단, def func_name( 패턴은 제외
     lines = source_code.split('\n')
+    in_main_block = False
 
     for line in lines:
         stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
         # 함수 정의가 아닌 라인에서 함수 호출 확인
         if not stripped.startswith('def '):
-            # 최상위 레벨 (들여쓰기 없음) 또는 print 내부 호출 확인
+            # 최상위 레벨 (들여쓰기 없음)
             if not line.startswith(' ') and not line.startswith('\t'):
                 if re.search(rf'\b{func_name}\s*\(', stripped):
                     return True
+                # if __name__ == '__main__': 블록 감지
+                if re.search(r'if\s+__name__\s*==\s*["\']__main__["\']', stripped):
+                    in_main_block = True
+                    continue
+                else:
+                    in_main_block = False
+
+            # if __name__ 블록 내부의 호출 감지
+            if in_main_block and (line.startswith(' ') or line.startswith('\t')):
+                if re.search(rf'\b{func_name}\s*\(', stripped):
+                    return True
+
             # print(func_name(...)) 패턴
             if re.search(rf'print\s*\(\s*{func_name}\s*\(', stripped):
                 return True
 
     return False
+
+
+def uses_stdin(source_code: str) -> bool:
+    """코드가 stdin을 사용하는지 확인 (input() 또는 sys.stdin)"""
+    return bool(
+        re.search(r'\binput\s*\(', source_code) or
+        re.search(r'sys\.stdin', source_code)
+    )
 
 
 def parse_variable_assignment_string(input_str: str) -> Optional[Dict[str, Any]]:
