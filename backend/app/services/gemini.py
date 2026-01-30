@@ -203,6 +203,11 @@ class GeminiService:
 
                         result = response.json()
 
+                        # 디버그 로깅: Gemini 응답 확인
+                        logger.debug(f"[GeminiService] Raw response candidates: {len(result.get('candidates', []))}")
+                        if not result.get('candidates'):
+                            logger.warning(f"[GeminiService] Empty candidates in response: {result}")
+
                         # OpenAI 호환 형식으로 변환
                         return self._convert_to_openai_format(result, model_id)
 

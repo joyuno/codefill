@@ -743,6 +743,8 @@ class IntentTool:
 
         except Exception as e:
             print(f"[IntentTool] LLM classification error: {e}")
+            import traceback
+            traceback.print_exc()
             # 🔥 Fallback: 메시지 패턴으로 기본 분류 (fast-path와 동일한 결과)
             msg_lower = message.lower()
             msg_stripped = message.strip()
@@ -819,8 +821,20 @@ class IntentTool:
                     suggested_route="collection",
                 )
 
+            # 2순위: 추천 요청 감지 (ask_recommendation)
+            recommendation_keywords = ["추천", "아무거나", "아무 문제", "뭐 풀", "뭘 풀", "모르겠", "도와줘", "골라줘"]
+            if any(kw in msg_lower for kw in recommendation_keywords):
+                print(f"[IntentTool] Fallback: recommendation keyword detected → ask_recommendation")
+                return IntentResult(
+                    category=IntentCategory.INFO_COLLECTION,
+                    action=ActionType.ASK_RECOMMENDATION,
+                    confidence=0.8,
+                    extracted_values={},
+                    suggested_route="collection",
+                )
+
             # 2순위: 부분 매칭 (문장 내에 키워드 포함)
-            practice_keywords = ["풀래", "풀고", "연습", "추천", "할래", "공부", "가져와", "줘", "문제", "해볼래", "시작"]
+            practice_keywords = ["풀래", "풀고", "연습", "할래", "공부", "가져와", "줘", "문제", "해볼래", "시작"]
             has_practice_intent = any(kw in msg_lower for kw in practice_keywords)
 
             # 주제 부분 매칭
