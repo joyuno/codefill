@@ -141,6 +141,7 @@ class GeminiService:
             raise ValueError("No Gemini API keys configured")
 
         model_id = self.MODELS.get(model, "gemini-2.0-flash")
+        logger.info(f"[GeminiService] Using model: {model} -> {model_id}, max_tokens: {max_tokens}")
 
         # 메시지 변환
         gemini_payload = self._convert_messages_to_gemini_format(messages)
@@ -206,13 +207,16 @@ class GeminiService:
                         # 디버그 로깅: Gemini 응답 확인
                         candidates = result.get('candidates', [])
                         logger.debug(f"[GeminiService] Raw response candidates: {len(candidates)}")
+                        logger.info(f"[GeminiService] Request maxOutputTokens: {max_tokens}")
                         if not candidates:
                             logger.warning(f"[GeminiService] Empty candidates in response: {result}")
                         else:
                             # 응답 잘림 확인
                             finish_reason = candidates[0].get("finishReason", "")
+                            usage = result.get("usageMetadata", {})
+                            logger.info(f"[GeminiService] finishReason: {finish_reason}, usage: {usage}")
                             if finish_reason == "MAX_TOKENS":
-                                logger.warning(f"[GeminiService] Response truncated due to MAX_TOKENS!")
+                                logger.warning(f"[GeminiService] Response truncated due to MAX_TOKENS! Requested: {max_tokens}")
 
                         # OpenAI 호환 형식으로 변환
                         return self._convert_to_openai_format(result, model_id)

@@ -438,7 +438,7 @@ class HintService:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=100,  # 간결한 응답
+                max_tokens=4096,
             )
 
             hint = openrouter_service.get_content(response)
@@ -499,7 +499,7 @@ class HintService:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=100,
+                max_tokens=4096,
             )
 
             explanation = openrouter_service.get_content(response)
@@ -699,7 +699,7 @@ class HintService:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=100,  # 간결한 응답
+                max_tokens=4096,
             )
 
             hint = openrouter_service.get_content(response)
@@ -834,7 +834,7 @@ class HintService:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=100,  # 간결한 응답
+                max_tokens=4096,
             )
 
             hint = openrouter_service.get_content(response)
@@ -966,7 +966,7 @@ class HintService:
                 model=settings.llm_model_hint,
                 messages=messages,
                 temperature=0.5,  # 힌트는 일관성 있게
-                max_tokens=450,   # 힌트는 간결하게
+                max_tokens=4096,
                 response_format={"type": "json_object"},
                 frequency_penalty=0.3,  # 반복 방지
             )
@@ -1435,7 +1435,7 @@ class HintService:
                 model=settings.llm_model_hint,
                 messages=messages,
                 temperature=0.5,
-                max_tokens=100,   # 첫 번째 틀린 위치 + 간단한 이유
+                max_tokens=4096,
                 response_format={"type": "json_object"},
             )
 
@@ -1649,7 +1649,7 @@ class HintService:
                 model=settings.llm_model_hint,
                 messages=messages,
                 temperature=0.3,
-                max_tokens=150,   # 다음 줄 코드 + 간단한 설명
+                max_tokens=4096,
                 response_format={"type": "json_object"},
             )
 
