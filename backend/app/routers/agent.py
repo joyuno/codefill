@@ -2915,19 +2915,24 @@ async def generate_problem_stream(
             # 2. LLM 생성 상태
             yield f"data: {json.dumps({'type': 'status', 'status': 'generating', 'message': '문제를 생성하고 있어요...'}, ensure_ascii=False)}\n\n"
 
-            # 코드 추출
+            # 코드 추출 (solutions가 배열 또는 객체 형식 모두 지원)
             title = bp.get("title") or bp.get("name", "")
             description = bp.get("description") or bp.get("question", "")
             code = bp.get("code") or ""
             if not code:
-                solutions = bp.get("solutions", [])
+                solutions = bp.get("solutions")
                 if solutions:
-                    # 언어에 맞는 솔루션 찾기
-                    matching_sol = next((s for s in solutions if s.get("language") == language), None)
-                    if matching_sol:
-                        code = matching_sol.get("code", "")
-                    elif solutions:
-                        code = solutions[0].get("code", "")
+                    # 객체 형식: {code: "...", language: "python"} (LLM 생성 시)
+                    if isinstance(solutions, dict) and "code" in solutions:
+                        code = solutions.get("code", "")
+                    # 배열 형식: [{code: "...", language: "python"}] (DB 조회 시)
+                    elif isinstance(solutions, list) and solutions:
+                        # 언어에 맞는 솔루션 찾기
+                        matching_sol = next((s for s in solutions if s.get("language") == language), None)
+                        if matching_sol:
+                            code = matching_sol.get("code", "")
+                        else:
+                            code = solutions[0].get("code", "")
 
             # DB에서 가져온 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환
             code = normalize_code_newlines(code)

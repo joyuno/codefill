@@ -1116,12 +1116,25 @@ export function PracticeChatPanel({
     };
 
     try {
-      // Extract code from solutions array if not directly available
+      // Extract code from solutions - handle both array and object formats
+      // LLM returns object {code, language}, DB returns array [{code, language}]
+      let extractedCode = selectedBaseProblem.code || '';
 
-      const extractedCode = selectedBaseProblem.code ||
-        selectedBaseProblem.solutions?.find(s => s.language === targetLanguage)?.code ||
-        selectedBaseProblem.solutions?.find(s => s.language === 'python')?.code ||  // Python fallback
-        selectedBaseProblem.solutions?.[0]?.code || '';
+      if (!extractedCode && selectedBaseProblem.solutions) {
+        const solutions = selectedBaseProblem.solutions;
+
+        // Handle object format: {code: "...", language: "python"}
+        if (!Array.isArray(solutions) && typeof solutions === 'object') {
+          extractedCode = (solutions as { code?: string; language?: string }).code || '';
+        }
+        // Handle array format: [{code: "...", language: "python"}]
+        else if (Array.isArray(solutions)) {
+          extractedCode =
+            solutions.find(s => s.language === targetLanguage)?.code ||
+            solutions.find(s => s.language === 'python')?.code ||
+            solutions[0]?.code || '';
+        }
+      }
 
       // Validate that we have code to work with
       if (!extractedCode) {

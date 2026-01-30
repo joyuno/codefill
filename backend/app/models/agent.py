@@ -109,7 +109,7 @@ class BaseProblemInfo(BaseModel):
     description: Optional[str] = None  # 문제 설명
     question: Optional[str] = None  # DB에서 오는 문제 설명 (description 대체)
     code: Optional[Union[str, dict]] = None  # str 또는 {"python": "...", "java": "..."}
-    solutions: Optional[List[dict]] = None  # DB 문제의 솔루션 배열
+    solutions: Optional[Union[List[dict], dict]] = None  # 배열 [{code, language}] 또는 객체 {code, language}
     language: LanguageEnum = LanguageEnum.PYTHON
     difficulty: DifficultyEnum = DifficultyEnum.MEDIUM
     topics: List[str] = []
@@ -135,13 +135,18 @@ class BaseProblemInfo(BaseModel):
             # code가 문자열인 경우
             return _normalize_code_newlines(self.code)
         if self.solutions:
-            # 타겟 언어의 솔루션 찾기
-            for sol in self.solutions:
-                if sol.get("language") == target_language:
-                    return _normalize_code_newlines(sol.get("code", ""))
-            # 없으면 첫 번째 솔루션
-            if self.solutions:
-                return _normalize_code_newlines(self.solutions[0].get("code", ""))
+            # 객체 형식: {code: "...", language: "python"} (LLM 생성 시)
+            if isinstance(self.solutions, dict) and "code" in self.solutions:
+                return _normalize_code_newlines(self.solutions.get("code", ""))
+            # 배열 형식: [{code: "...", language: "python"}] (DB 조회 시)
+            elif isinstance(self.solutions, list):
+                # 타겟 언어의 솔루션 찾기
+                for sol in self.solutions:
+                    if sol.get("language") == target_language:
+                        return _normalize_code_newlines(sol.get("code", ""))
+                # 없으면 첫 번째 솔루션
+                if self.solutions:
+                    return _normalize_code_newlines(self.solutions[0].get("code", ""))
         return ""
 
         

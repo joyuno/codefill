@@ -1689,20 +1689,26 @@ class ChatOrchestratorV2:
             except (json.JSONDecodeError, TypeError):
                 topics = []
 
-        # 코드 추출
+        # 코드 추출 (solutions가 배열 또는 객체 형식 모두 지원)
         language = "python"
         code = selected_problem.get("code")
         if not code:
-            solutions = selected_problem.get("solutions", [])
+            solutions = selected_problem.get("solutions")
             if solutions:
-                # python 우선, 없으면 첫 번째
-                python_sol = next((s for s in solutions if s.get("language") == "python"), None)
-                if python_sol:
-                    code = normalize_code_newlines(python_sol.get("code", ""))
-                    language = "python"
-                elif solutions:
-                    code = normalize_code_newlines(solutions[0].get("code", ""))
-                    language = solutions[0].get("language", "python")
+                # 객체 형식: {code: "...", language: "python"} (LLM 생성 시)
+                if isinstance(solutions, dict) and "code" in solutions:
+                    code = normalize_code_newlines(solutions.get("code", ""))
+                    language = solutions.get("language", "python")
+                # 배열 형식: [{code: "...", language: "python"}] (DB 조회 시)
+                elif isinstance(solutions, list) and solutions:
+                    # python 우선, 없으면 첫 번째
+                    python_sol = next((s for s in solutions if s.get("language") == "python"), None)
+                    if python_sol:
+                        code = normalize_code_newlines(python_sol.get("code", ""))
+                        language = "python"
+                    else:
+                        code = normalize_code_newlines(solutions[0].get("code", ""))
+                        language = solutions[0].get("language", "python")
 
         # code 필드에서 직접 가져온 경우도 정규화
         if code:
