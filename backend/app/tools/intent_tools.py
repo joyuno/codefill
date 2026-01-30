@@ -217,7 +217,8 @@ UNIFIED_INTENT_PROMPT = """당신은 코딩 학습 챗봇의 의도 분류기입
 
 ### 2. 액션 (action)
 **info_collection:**
-- set_topic: 주제 선택 (정렬, 구현, 이분탐색 등)
+- set_topic: 주제 선택 - "트리문제 풀래", "DP 연습할래", "그래프문제 추천", "정렬 공부하고 싶어", "구현 문제 풀고 싶어"
+  - 핵심: 주제명이 포함된 모든 문제 풀기/추천/연습 요청
 - set_difficulty: 난이도 선택 (실버~마스터, 쉬움~어려움)
 - set_language: 언어 선택 (python, java, cpp)
 - ask_recommendation: 추천 요청, 학습 목표/레벨 언급 ("추천해줘", "대기업 코테", "초보인데", "모르겠어", "아무거나 추천해줘")
@@ -742,6 +743,122 @@ class IntentTool:
 
         except Exception as e:
             print(f"[IntentTool] LLM classification error: {e}")
+            # 🔥 Fallback: 메시지 패턴으로 기본 분류 (fast-path와 동일한 결과)
+            msg_lower = message.lower()
+            msg_stripped = message.strip()
+
+            # ============================================================
+            # 1. 주제 키워드 (fast-path CHIP_TOPIC_KEYWORDS와 동일)
+            # ============================================================
+            topic_keywords = {
+                "구현": "구현", "정렬": "정렬", "dp": "DP", "DP": "DP",
+                "그리디": "그리디", "이분탐색": "이분탐색", "문자열": "문자열",
+                "그래프": "그래프", "bfs/dfs": "BFS/DFS", "BFS/DFS": "BFS/DFS",
+                "트리": "트리", "수학": "수학", "자료구조": "자료구조",
+                "완전탐색": "완전탐색", "백트래킹": "백트래킹", "분할정복": "분할정복",
+                "시뮬레이션": "시뮬레이션", "기초": "기초", "최단경로": "최단경로",
+                "투포인터": "투포인터", "스택": "스택", "큐": "큐", "힙": "힙",
+                "해시": "해시", "hash": "해시", "bfs": "BFS/DFS", "dfs": "BFS/DFS",
+            }
+
+            # ============================================================
+            # 2. 난이도 키워드 (fast-path CHIP_DIFFICULTY_KEYWORDS와 동일)
+            # ============================================================
+            difficulty_keywords = {
+                "실버": "easy", "silver": "easy", "easy": "easy", "쉬움": "easy",
+                "골드": "medium", "gold": "medium", "medium": "medium", "보통": "medium",
+                "플래티넘": "medium_hard", "platinum": "medium_hard",
+                "다이아": "hard", "diamond": "hard", "hard": "hard",
+                "마스터": "very_hard", "master": "very_hard",
+            }
+
+            # ============================================================
+            # 3. 언어 키워드 (fast-path CHIP_LANGUAGE_KEYWORDS와 동일)
+            # ============================================================
+            language_keywords = {
+                "파이썬": "python", "python": "python", "Python": "python",
+                "자바": "java", "java": "java", "Java": "java",
+                "c++": "cpp", "cpp": "cpp", "C++": "cpp",
+            }
+
+            # ============================================================
+            # 키워드 매칭 (fast-path와 동일한 우선순위: topic → difficulty → language)
+            # ============================================================
+
+            # 1순위: 정확한 키워드 매칭 (칩 클릭과 동일)
+            if msg_stripped in topic_keywords or msg_lower in topic_keywords:
+                detected_topic = topic_keywords.get(msg_stripped) or topic_keywords.get(msg_lower)
+                print(f"[IntentTool] Fallback: exact topic match → {detected_topic}")
+                return IntentResult(
+                    category=IntentCategory.INFO_COLLECTION,
+                    action=ActionType.SET_TOPIC,
+                    confidence=0.9,
+                    extracted_values={"topic": detected_topic},
+                    suggested_route="collection",
+                )
+
+            if msg_stripped in difficulty_keywords or msg_lower in difficulty_keywords:
+                detected_difficulty = difficulty_keywords.get(msg_stripped) or difficulty_keywords.get(msg_lower)
+                print(f"[IntentTool] Fallback: exact difficulty match → {detected_difficulty}")
+                return IntentResult(
+                    category=IntentCategory.INFO_COLLECTION,
+                    action=ActionType.SET_DIFFICULTY,
+                    confidence=0.9,
+                    extracted_values={"difficulty": detected_difficulty},
+                    suggested_route="collection",
+                )
+
+            if msg_stripped in language_keywords or msg_lower in language_keywords:
+                detected_language = language_keywords.get(msg_stripped) or language_keywords.get(msg_lower)
+                print(f"[IntentTool] Fallback: exact language match → {detected_language}")
+                return IntentResult(
+                    category=IntentCategory.INFO_COLLECTION,
+                    action=ActionType.SET_LANGUAGE,
+                    confidence=0.9,
+                    extracted_values={"language": detected_language},
+                    suggested_route="collection",
+                )
+
+            # 2순위: 부분 매칭 (문장 내에 키워드 포함)
+            practice_keywords = ["풀래", "풀고", "연습", "추천", "할래", "공부", "가져와", "줘", "문제", "해볼래", "시작"]
+            has_practice_intent = any(kw in msg_lower for kw in practice_keywords)
+
+            # 주제 부분 매칭
+            for kw, value in topic_keywords.items():
+                if kw in msg_lower:
+                    print(f"[IntentTool] Fallback: partial topic match '{kw}' → {value}")
+                    return IntentResult(
+                        category=IntentCategory.INFO_COLLECTION,
+                        action=ActionType.SET_TOPIC,
+                        confidence=0.7,
+                        extracted_values={"topic": value},
+                        suggested_route="collection",
+                    )
+
+            # 난이도 부분 매칭
+            for kw, value in difficulty_keywords.items():
+                if kw in msg_lower:
+                    print(f"[IntentTool] Fallback: partial difficulty match '{kw}' → {value}")
+                    return IntentResult(
+                        category=IntentCategory.INFO_COLLECTION,
+                        action=ActionType.SET_DIFFICULTY,
+                        confidence=0.7,
+                        extracted_values={"difficulty": value},
+                        suggested_route="collection",
+                    )
+
+            # 언어 부분 매칭
+            for kw, value in language_keywords.items():
+                if kw in msg_lower:
+                    print(f"[IntentTool] Fallback: partial language match '{kw}' → {value}")
+                    return IntentResult(
+                        category=IntentCategory.INFO_COLLECTION,
+                        action=ActionType.SET_LANGUAGE,
+                        confidence=0.7,
+                        extracted_values={"language": value},
+                        suggested_route="collection",
+                    )
+
             return IntentResult(
                 category=IntentCategory.GENERAL,
                 action=ActionType.FREE_CHAT,
