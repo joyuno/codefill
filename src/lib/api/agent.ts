@@ -81,7 +81,7 @@ export interface BaseProblemInfo {
   description?: string;
   question?: string;  // DB에서 오는 문제 설명
   code?: string;
-  solutions?: { language: string; code: string }[];  // DB 문제의 솔루션
+  solutions?: { language: string; code: string } | { language: string; code: string }[];  // DB 배열 또는 LLM 객체
   language?: 'python' | 'java' | 'cpp';
   difficulty: 'easy' | 'medium' | 'medium_hard' | 'hard' | 'very_hard';
   topics?: string[];
@@ -197,6 +197,7 @@ export interface CodeGenerationResponse {
   title_en?: string;
   description: string;
   code: Record<string, string>;
+  solutions?: { code: string; language: string } | Array<{ code: string; language: string }>;  // LLM 형식
   input_format?: string;
   output_format?: string;
   // 테스트케이스 - input_output 형식 우선 (base_problems 테이블 호환)

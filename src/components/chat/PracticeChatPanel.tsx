@@ -877,10 +877,36 @@ export function PracticeChatPanel({
         }
       }
 
+      // 코드 추출: solutions.code (LLM 형식) 또는 code.python (레거시 형식)
+      let extractedCode = '';
+      if (result.solutions) {
+        // LLM 형식: solutions: {code: "...", language: "python"}
+        if (typeof result.solutions === 'object' && 'code' in result.solutions) {
+          extractedCode = (result.solutions as { code?: string }).code || '';
+        }
+        // 배열 형식: solutions: [{code: "...", language: "python"}]
+        else if (Array.isArray(result.solutions) && result.solutions.length > 0) {
+          extractedCode = result.solutions[0]?.code || '';
+        }
+      }
+      // 레거시 형식: code: {python: "...", java: "..."}
+      if (!extractedCode && result.code) {
+        if (typeof result.code === 'object') {
+          extractedCode = result.code?.python || result.code?.java || result.code?.cpp || '';
+        } else if (typeof result.code === 'string') {
+          extractedCode = result.code;
+        }
+      }
+
+      console.log('[handleGenerateNewProblem] result.solutions:', result.solutions);
+      console.log('[handleGenerateNewProblem] result.code:', result.code);
+      console.log('[handleGenerateNewProblem] extractedCode:', extractedCode?.substring(0, 100));
+
       const generatedProblem: BaseProblemInfo = {
         title: result.title,
         description: result.description,
-        code: result.code?.python || result.code?.java || result.code?.cpp || '',
+        code: extractedCode,  // 추출된 코드
+        solutions: result.solutions,  // solutions 원본 보존
         difficulty: result.difficulty as BaseProblemInfo['difficulty'],
         topics: result.topics,
         time_complexity: result.time_complexity,
@@ -1118,14 +1144,20 @@ export function PracticeChatPanel({
     try {
       // Extract code from solutions - handle both array and object formats
       // LLM returns object {code, language}, DB returns array [{code, language}]
+      console.log('[handleProblemTypeSelect] selectedBaseProblem:', JSON.stringify(selectedBaseProblem, null, 2));
+      console.log('[handleProblemTypeSelect] code field:', selectedBaseProblem.code);
+      console.log('[handleProblemTypeSelect] solutions field:', selectedBaseProblem.solutions);
+
       let extractedCode = selectedBaseProblem.code || '';
 
       if (!extractedCode && selectedBaseProblem.solutions) {
         const solutions = selectedBaseProblem.solutions;
+        console.log('[handleProblemTypeSelect] solutions type:', typeof solutions, Array.isArray(solutions));
 
         // Handle object format: {code: "...", language: "python"}
         if (!Array.isArray(solutions) && typeof solutions === 'object') {
           extractedCode = (solutions as { code?: string; language?: string }).code || '';
+          console.log('[handleProblemTypeSelect] Extracted from object format:', extractedCode?.substring(0, 100));
         }
         // Handle array format: [{code: "...", language: "python"}]
         else if (Array.isArray(solutions)) {
@@ -1133,11 +1165,15 @@ export function PracticeChatPanel({
             solutions.find(s => s.language === targetLanguage)?.code ||
             solutions.find(s => s.language === 'python')?.code ||
             solutions[0]?.code || '';
+          console.log('[handleProblemTypeSelect] Extracted from array format:', extractedCode?.substring(0, 100));
         }
       }
 
+      console.log('[handleProblemTypeSelect] Final extractedCode:', extractedCode ? `${extractedCode.substring(0, 100)}...` : 'EMPTY');
+
       // Validate that we have code to work with
       if (!extractedCode) {
+        console.error('[handleProblemTypeSelect] No code found! Problem data:', selectedBaseProblem);
         throw new Error('이 문제에는 솔루션 코드가 없어요. 다른 문제를 선택해주세요!');
       }
 
