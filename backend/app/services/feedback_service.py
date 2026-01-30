@@ -679,15 +679,37 @@ class FeedbackService:
             user_level = user_stats.get("level", 1)
             total_solved = user_stats.get("total_solved", 0)
 
-        # 이전 시도 수 (제공되지 않은 경우)
-        if attempt_count is None:
-            previous_attempts = self.get_previous_attempts(user_id, problem_id)
-            attempt_count = len(previous_attempts)
+        # ============================================================
+        # DB에서 정확한 시도 횟수 및 힌트 사용 횟수 조회
+        # (프론트엔드 값이 0이거나 없으면 DB에서 조회)
+        # ============================================================
 
-        # 힌트 사용 내역
+        # 이전 시도 수 (제공되지 않거나 0인 경우 DB에서 조회)
+        previous_attempts = self.get_previous_attempts(user_id, problem_id)
+        db_attempt_count = len(previous_attempts) + 1  # 현재 시도 포함
+
+        if attempt_count is None or attempt_count <= 0:
+            attempt_count = db_attempt_count
+            print(f"[FeedbackService] attempt_count from DB: {attempt_count}")
+        else:
+            # 프론트엔드 값과 DB 값 중 더 큰 값 사용 (누락 방지)
+            attempt_count = max(attempt_count, db_attempt_count)
+            print(f"[FeedbackService] attempt_count (max of FE:{attempt_count} and DB:{db_attempt_count}): {attempt_count}")
+
+        # 힌트 사용 내역 (DB에서 조회)
         hint_logs = self.get_hint_logs(user_id, problem_id)
+        db_hints_used = len(hint_logs)
         hint_history = self._format_hint_history(hint_logs)
         hint_xp_cost = sum(h.get("xp_cost", 10) for h in hint_logs)
+
+        # 힌트 사용 횟수 (제공되지 않거나 0인 경우 DB에서 조회)
+        if hints_used is None or hints_used <= 0:
+            hints_used = db_hints_used
+            print(f"[FeedbackService] hints_used from DB: {hints_used}")
+        else:
+            # 프론트엔드 값과 DB 값 중 더 큰 값 사용 (누락 방지)
+            hints_used = max(hints_used, db_hints_used)
+            print(f"[FeedbackService] hints_used (max of FE:{hints_used} and DB:{db_hints_used}): {hints_used}")
 
         # 틀린 시도 분석
         wrong_attempts = self._analyze_wrong_attempts(user_id, problem_id)

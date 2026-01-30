@@ -605,11 +605,26 @@ class OpenRouterService:
         original_content = content
         content = content.strip()
 
-        def try_parse(s: str):
+        def sanitize_json_string(s: str) -> str:
+            """JSON 파싱 전 문제가 될 수 있는 문자 정리"""
+            # 제어 문자 제거 (탭, 줄바꿈은 유지)
+            s = ''.join(char if char >= ' ' or char in '\t\n\r' else '' for char in s)
+            return s
+
+        def try_parse(s: str, log_error: bool = False):
             """Try to parse JSON, return None on failure."""
             try:
                 return json.loads(s)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                if log_error:
+                    # 에러 위치 주변 컨텍스트 출력
+                    pos = e.pos if hasattr(e, 'pos') else 0
+                    start = max(0, pos - 50)
+                    end = min(len(s), pos + 50)
+                    context = s[start:end]
+                    logger.error(f"JSON parse error at position {pos}: {e.msg}")
+                    logger.error(f"Context around error: ...{context}...")
+                    logger.error(f"Full content length: {len(s)}, ends with: {repr(s[-100:]) if len(s) > 100 else repr(s)}")
                 return None
 
         def fix_truncated_json(s: str) -> str:
@@ -663,6 +678,9 @@ class OpenRouterService:
             # If we reach here, JSON is incomplete - return what we have
             return s[start:]
 
+        # 0. Sanitize content first
+        content = sanitize_json_string(content)
+
         # 1. Try direct JSON parse first
         result = try_parse(content)
         if result:
@@ -703,13 +721,14 @@ class OpenRouterService:
 
         # 6. Last resort: try to fix and parse
         fixed = fix_truncated_json(content)
-        result = try_parse(fixed)
+        result = try_parse(fixed, log_error=True)
         if result:
             logger.debug("Fixed truncated JSON on final attempt")
             return result
 
         # Log the problematic content for debugging
-        logger.error(f"All JSON parse attempts failed. Content preview: {original_content[:300]}...")
+        logger.error(f"All JSON parse attempts failed. Content preview: {original_content[:500]}...")
+        logger.error(f"Content ends with: {repr(original_content[-200:]) if len(original_content) > 200 else repr(original_content)}")
         raise ValueError(f"Failed to parse JSON from LLM response")
 
 

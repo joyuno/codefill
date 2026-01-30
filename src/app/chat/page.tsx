@@ -726,8 +726,21 @@ function ChatPageContent() {
   }, [problem, isSubmitted]);
 
   // Fetch feedback from API
-  const fetchFeedback = useCallback(async (isCorrect: boolean, earnedXp: number) => {
+  // fetchFeedback: 힌트/시도 횟수를 파라미터로 받아 정확한 값 전달
+  // (React setState는 비동기이므로, 호출 시점의 상태가 아닌 계산된 값을 전달)
+  const fetchFeedback = useCallback(async (
+    isCorrect: boolean,
+    earnedXp: number,
+    overrideHintsUsed?: number,
+    overrideAttemptCount?: number
+  ) => {
     if (!problem) return;
+
+    // 파라미터로 전달된 값 우선 사용, 없으면 현재 상태 사용
+    const hintsUsed = overrideHintsUsed ?? previousHints.length;
+    const attempts = overrideAttemptCount ?? attemptCount;
+
+    console.log('[Feedback] Requesting with:', { hintsUsed, attempts, previousHintsLength: previousHints.length, attemptCount });
 
     setIsFeedbackLoading(true);
     setShowFeedbackPopup(true);
@@ -743,9 +756,9 @@ function ChatPageContent() {
         problem_type: (problem.problemType || 'blank') as 'blank' | 'puzzle' | 'guided',
         is_correct: isCorrect,
         solve_time_seconds: solveTimeSeconds,
-        hints_used: previousHints.length,
+        hints_used: hintsUsed,
         xp_earned: earnedXp,
-        attempt_count: attemptCount,
+        attempt_count: attempts,
         problem_info: {
           title: problem.title,
           difficulty: problem.difficulty,
@@ -764,8 +777,8 @@ function ChatPageContent() {
         summary: { title: '문제 풀이 완료!', highlight: `+${earnedXp} XP 획득!` },
         performance_analysis: {
           time_feedback: '풀이 완료',
-          hint_feedback: previousHints.length > 0 ? `힌트 ${previousHints.length}회 사용` : '힌트 없이 해결!',
-          attempt_feedback: attemptCount > 1 ? `${attemptCount}회 시도` : '한 번에 성공!',
+          hint_feedback: hintsUsed > 0 ? `힌트 ${hintsUsed}회 사용` : '힌트 없이 해결!',
+          attempt_feedback: attempts > 1 ? `${attempts}회 시도` : '한 번에 성공!',
         },
         learning_points: ['문제를 끝까지 풀어냈습니다.'],
         improvements: ['비슷한 유형의 문제를 더 풀어보세요.'],
@@ -896,7 +909,8 @@ function ChatPageContent() {
   const handleBlankSubmit = useCallback(
     async (answers: Record<string, string>) => {
       if (!problem) return;
-      setAttemptCount(prev => prev + 1);
+      const newAttemptCount = attemptCount + 1;  // 업데이트될 값 미리 계산
+      setAttemptCount(newAttemptCount);
 
       try {
         const result = await practiceApi.submitBlank({
@@ -957,12 +971,12 @@ function ChatPageContent() {
                 setEarnedSeed(recordResult.seedAwarded);
               }
               refreshProfile();  // 프로필 캐시 갱신
-              fetchFeedback(true, recordResult.xpEarned);
+              fetchFeedback(true, recordResult.xpEarned, previousHints.length, newAttemptCount);
               return;
             }
           } catch (e) { console.error('Record failed:', e); }
           // Show feedback popup for correct answer
-          fetchFeedback(true, result.xpEarned);
+          fetchFeedback(true, result.xpEarned, previousHints.length, newAttemptCount);
         } else {
           toast({
             title: '일부 오답이 있습니다',
@@ -1020,22 +1034,23 @@ function ChatPageContent() {
               setEarnedSeed(recordResult.seedAwarded);
             }
             refreshProfile();  // 프로필 캐시 갱신
-            fetchFeedback(true, recordResult.xpEarned);
+            fetchFeedback(true, recordResult.xpEarned, previousHints.length, newAttemptCount);
             return;
           }
         } catch (e) { console.error('Record failed:', e); }
         setXpEarned(40); // fallback
-        fetchFeedback(true, 40);
+        fetchFeedback(true, 40, previousHints.length, newAttemptCount);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints, attemptCount]
   );
 
   // Puzzle submit handler
   const handlePuzzleSubmit = useCallback(
     async (blockOrder: Array<{ id: string; indentation: number }>) => {
       if (!problem) return;
-      setAttemptCount(prev => prev + 1);
+      const newAttemptCount = attemptCount + 1;  // 업데이트될 값 미리 계산
+      setAttemptCount(newAttemptCount);
 
       try {
         const result = await practiceApi.submitPuzzle({
@@ -1101,12 +1116,12 @@ function ChatPageContent() {
                 setEarnedSeed(recordResult.seedAwarded);
               }
               refreshProfile();  // 프로필 캐시 갱신
-              fetchFeedback(true, recordResult.xpEarned);
+              fetchFeedback(true, recordResult.xpEarned, previousHints.length, newAttemptCount);
               return;
             }
           } catch (e) { console.error('Record failed:', e); }
           // Show feedback popup for correct answer
-          fetchFeedback(true, result.xpEarned);
+          fetchFeedback(true, result.xpEarned, previousHints.length, newAttemptCount);
         } else {
           toast({
             title: '일부 오답이 있습니다',
@@ -1157,21 +1172,22 @@ function ChatPageContent() {
               setEarnedSeed(recordResult.seedAwarded);
             }
             refreshProfile();  // 프로필 캐시 갱신
-            fetchFeedback(true, recordResult.xpEarned);
+            fetchFeedback(true, recordResult.xpEarned, previousHints.length, newAttemptCount);
             return;
           }
         } catch (e) { console.error('Record failed:', e); }
         setXpEarned(40); // fallback
-        fetchFeedback(true, 40);
+        fetchFeedback(true, 40, previousHints.length, newAttemptCount);
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints, attemptCount]
   );
 
   // Implementation submit handler (blank, puzzle, implementation 공통)
   const handleImplementationSubmit = useCallback(
     async (code: string, results: any[], hintsUsed?: number) => {
-      setAttemptCount(prev => prev + 1);
+      const newAttemptCount = attemptCount + 1;  // 업데이트될 값 미리 계산
+      setAttemptCount(newAttemptCount);
 
       const passedCount = results.filter((r) => r.passed).length;
       const allPassed = passedCount === results.length;
@@ -1212,7 +1228,7 @@ function ChatPageContent() {
               setEarnedSeed(recordResult.seedAwarded);
             }
             refreshProfile();  // 프로필 캐시 갱신
-            fetchFeedback(true, recordResult.xpEarned);
+            fetchFeedback(true, recordResult.xpEarned, hintsUsed ?? previousHints.length, newAttemptCount);
             return;
           } else if (recordResult.message.includes('로그인')) {
             toast({
@@ -1227,7 +1243,7 @@ function ChatPageContent() {
         // Fallback XP based on difficulty
         const fallbackXp = 40;
         setXpEarned(fallbackXp);
-        fetchFeedback(true, fallbackXp);
+        fetchFeedback(true, fallbackXp, hintsUsed ?? previousHints.length, newAttemptCount);
       } else {
         setXpEarned(0);
         toast({
@@ -1236,7 +1252,7 @@ function ChatPageContent() {
         });
       }
     },
-    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints]
+    [problem, toast, fetchFeedback, attemptId, showBadgePopup, refreshProfile, solveStartTime, sessionId, previousHints, attemptCount]
   );
 
   // 온보딩 핸들러 제거됨 (소셜 회원가입에서 처리)

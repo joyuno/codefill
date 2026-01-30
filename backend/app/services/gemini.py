@@ -21,12 +21,12 @@ class GeminiService:
 
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
-    # 모델 매핑
+    # 모델 매핑 - gemini-3-flash-preview 사용
     MODELS = {
-        "gemini-flash": "gemini-2.0-flash",
-        "gemini-3-flash-preview": "gemini-2.0-flash",
-        "gemini-3-pro-preview": "gemini-2.0-flash",  # pro도 flash로 fallback
-        "gemini-3-pro": "gemini-2.0-flash",
+        "gemini-flash": "gemini-3-flash-preview",
+        "gemini-3-flash-preview": "gemini-3-flash-preview",
+        "gemini-3-pro-preview": "gemini-3-pro-preview",
+        "gemini-3-pro": "gemini-3-pro-preview",
     }
 
     MAX_RETRIES = 2
@@ -204,9 +204,15 @@ class GeminiService:
                         result = response.json()
 
                         # 디버그 로깅: Gemini 응답 확인
-                        logger.debug(f"[GeminiService] Raw response candidates: {len(result.get('candidates', []))}")
-                        if not result.get('candidates'):
+                        candidates = result.get('candidates', [])
+                        logger.debug(f"[GeminiService] Raw response candidates: {len(candidates)}")
+                        if not candidates:
                             logger.warning(f"[GeminiService] Empty candidates in response: {result}")
+                        else:
+                            # 응답 잘림 확인
+                            finish_reason = candidates[0].get("finishReason", "")
+                            if finish_reason == "MAX_TOKENS":
+                                logger.warning(f"[GeminiService] Response truncated due to MAX_TOKENS!")
 
                         # OpenAI 호환 형식으로 변환
                         return self._convert_to_openai_format(result, model_id)

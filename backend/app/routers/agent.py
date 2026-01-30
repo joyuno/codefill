@@ -3078,10 +3078,14 @@ async def _generate_problem_by_type(
     # 문제 유형별 temperature (코드 정확성 vs 설명 다양성)
     temp = 0.5 if problem_type == "guided" else 0.3
 
+    # 퍼즐 문제는 코드 블록이 많아 더 많은 토큰 필요
+    max_tokens = 8192 if problem_type == "puzzle" else 4096
+
     response = await openrouter_service.chat_completion(
         model=model,
         messages=messages,
         temperature=temp,
+        max_tokens=max_tokens,
         response_format={"type": "json_object"},
     )
 
