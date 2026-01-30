@@ -716,7 +716,7 @@ class IntentTool:
         prompt = UNIFIED_INTENT_PROMPT.format(context=context, message=message)
 
         try:
-            # gemini-2.5-lite로 의도 분류
+            # gemini-3-flash로 의도 분류
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_lite,
                 messages=[
@@ -1020,7 +1020,7 @@ class IntentTool:
         prompt = MULTI_INTENT_PROMPT.format(context=context, message=message)
 
         try:
-            # gemini-2.5-lite로 다중 의도 분류
+            # gemini-3-flash로 다중 의도 분류
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_lite,
                 messages=[
