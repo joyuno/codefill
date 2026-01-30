@@ -2672,32 +2672,77 @@ async def guided_tutor_chat(
     from ..graphs.guided_tutor import GuidedTutorGraph
 
     try:
-        # 1. problems_guided에서 학습 구조 가져오기 (base_problem_id 사용)
-        guided_result = db.table("problems_guided")\
-            .select("id, base_problem_id, language, concept_explanation, approach_guide, check_points, starter_code, variables_guide")\
-            .eq("id", request.problem_id)\
-            .limit(1)\
-            .execute()
+        from uuid import UUID as UUIDType
 
-        # UUID로 못 찾으면 base_problem_id로 시도
-        if not guided_result.data:
+        # problem_id가 UUID인지 확인
+        is_uuid = False
+        try:
+            UUIDType(request.problem_id)
+            is_uuid = True
+        except (ValueError, AttributeError):
+            pass
+
+        # 1. problems_guided에서 학습 구조 가져오기
+        guided_data = {}
+
+        if is_uuid:
+            # UUID면 id 또는 base_problem_id로 검색
             guided_result = db.table("problems_guided")\
                 .select("id, base_problem_id, language, concept_explanation, approach_guide, check_points, starter_code, variables_guide")\
-                .eq("base_problem_id", request.problem_id)\
+                .eq("id", request.problem_id)\
                 .limit(1)\
                 .execute()
 
-        guided_data = guided_result.data[0] if guided_result.data else {}
+            if not guided_result.data:
+                guided_result = db.table("problems_guided")\
+                    .select("id, base_problem_id, language, concept_explanation, approach_guide, check_points, starter_code, variables_guide")\
+                    .eq("base_problem_id", request.problem_id)\
+                    .limit(1)\
+                    .execute()
 
-        # 2. base_problems에서 문제 정보 가져오기 (base_problem_id로 직접 조회)
-        base_problem_id = guided_data.get("base_problem_id", request.problem_id)
-        bp_result = db.table("base_problems")\
-            .select("id, original_id, name, question, difficulty, tags, solutions")\
-            .eq("id", base_problem_id)\
-            .limit(1)\
-            .execute()
+            guided_data = guided_result.data[0] if guided_result.data else {}
+        else:
+            # 숫자형 ID면 base_problems.original_id로 먼저 검색
+            bp_by_original = db.table("base_problems")\
+                .select("id")\
+                .eq("original_id", request.problem_id)\
+                .limit(1)\
+                .execute()
 
-        base_problem = bp_result.data[0] if bp_result.data else {}
+            if bp_by_original.data:
+                base_id = bp_by_original.data[0]["id"]
+                guided_result = db.table("problems_guided")\
+                    .select("id, base_problem_id, language, concept_explanation, approach_guide, check_points, starter_code, variables_guide")\
+                    .eq("base_problem_id", base_id)\
+                    .limit(1)\
+                    .execute()
+                guided_data = guided_result.data[0] if guided_result.data else {}
+
+        # 2. base_problems에서 문제 정보 가져오기
+        base_problem = {}
+
+        if guided_data.get("base_problem_id"):
+            bp_result = db.table("base_problems")\
+                .select("id, original_id, name, question, difficulty, tags, solutions")\
+                .eq("id", guided_data["base_problem_id"])\
+                .limit(1)\
+                .execute()
+            base_problem = bp_result.data[0] if bp_result.data else {}
+        elif is_uuid:
+            bp_result = db.table("base_problems")\
+                .select("id, original_id, name, question, difficulty, tags, solutions")\
+                .eq("id", request.problem_id)\
+                .limit(1)\
+                .execute()
+            base_problem = bp_result.data[0] if bp_result.data else {}
+        else:
+            # original_id로 검색
+            bp_result = db.table("base_problems")\
+                .select("id, original_id, name, question, difficulty, tags, solutions")\
+                .eq("original_id", request.problem_id)\
+                .limit(1)\
+                .execute()
+            base_problem = bp_result.data[0] if bp_result.data else {}
 
         # 3. 정답 코드 추출
         solutions = base_problem.get("solutions", [])

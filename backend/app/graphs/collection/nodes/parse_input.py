@@ -85,32 +85,65 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
 
     # "?"가 없을 때만 키워드 매칭 시도 (질문이면 LLM 필요)
     if not is_question_mark:
-        # 현재 단계 기준 매칭
+        # 현재 단계 기준 매칭 (정확 매칭 → 부분 매칭 순서)
         if current_step == "topic":
             fast_matched_value = TOPIC_KEYWORDS_EXACT.get(message) or TOPIC_KEYWORDS_EXACT.get(message_lower)
+            # 부분 매칭 fallback (예: "DP로 할게", "구현 문제")
+            if not fast_matched_value:
+                for keyword, value in TOPIC_KEYWORDS_EXACT.items():
+                    if keyword in message_lower:
+                        fast_matched_value = value
+                        break
             if fast_matched_value:
                 fast_matched_step = "topic"
         elif current_step == "difficulty":
             fast_matched_value = DIFFICULTY_KEYWORDS_EXACT.get(message) or DIFFICULTY_KEYWORDS_EXACT.get(message_lower)
+            # 부분 매칭 fallback (예: "실버로 할게", "골드로")
+            if not fast_matched_value:
+                for keyword, value in DIFFICULTY_KEYWORDS_EXACT.items():
+                    if keyword in message_lower:
+                        fast_matched_value = value
+                        break
             if fast_matched_value:
                 fast_matched_step = "difficulty"
         elif current_step == "language":
             fast_matched_value = LANGUAGE_KEYWORDS_EXACT.get(message) or LANGUAGE_KEYWORDS_EXACT.get(message_lower)
+            # 부분 매칭 fallback (예: "파이썬으로", "Python으로 할게")
+            if not fast_matched_value:
+                for keyword, value in LANGUAGE_KEYWORDS_EXACT.items():
+                    if keyword in message_lower:
+                        fast_matched_value = value
+                        break
             if fast_matched_value:
                 fast_matched_step = "language"
 
-        # 현재 단계에서 못 찾으면 다른 단계도 시도
+        # 현재 단계에서 못 찾으면 다른 단계도 시도 (부분 매칭 포함)
         if not fast_matched_value:
             if not existing_values.get("topic"):
                 fast_matched_value = TOPIC_KEYWORDS_EXACT.get(message) or TOPIC_KEYWORDS_EXACT.get(message_lower)
+                if not fast_matched_value:
+                    for keyword, value in TOPIC_KEYWORDS_EXACT.items():
+                        if keyword in message_lower:
+                            fast_matched_value = value
+                            break
                 if fast_matched_value:
                     fast_matched_step = "topic"
             if not fast_matched_value and not existing_values.get("difficulty"):
                 fast_matched_value = DIFFICULTY_KEYWORDS_EXACT.get(message) or DIFFICULTY_KEYWORDS_EXACT.get(message_lower)
+                if not fast_matched_value:
+                    for keyword, value in DIFFICULTY_KEYWORDS_EXACT.items():
+                        if keyword in message_lower:
+                            fast_matched_value = value
+                            break
                 if fast_matched_value:
                     fast_matched_step = "difficulty"
             if not fast_matched_value and not existing_values.get("language"):
                 fast_matched_value = LANGUAGE_KEYWORDS_EXACT.get(message) or LANGUAGE_KEYWORDS_EXACT.get(message_lower)
+                if not fast_matched_value:
+                    for keyword, value in LANGUAGE_KEYWORDS_EXACT.items():
+                        if keyword in message_lower:
+                            fast_matched_value = value
+                            break
                 if fast_matched_value:
                     fast_matched_step = "language"
 
