@@ -2387,25 +2387,112 @@ async def generate_code(
         # 대기업 코테는 programmers_embeddings에서 별도 조회
         is_corporate_test = request.user_request.get("is_corporate_test", False)
 
-        # 🏢 대기업 코테: programmers_embeddings에서 직접 가져오기 (별도 로직)
+        # 🏢 대기업 코테: programmers_embeddings에서 RAG 검색 (별도 로직)
         if is_corporate_test:
             import random
+            import json
             from ..database import get_supabase_client
+            from ..services.embedding import embedding_service
             supabase = get_supabase_client()
 
             print(f"[CodeGen] 🏢 CORPORATE TEST MODE: Fetching from programmers_embeddings...")
 
-            rag_contexts = []
-            try:
-                # programmers_embeddings에서 text_content 조회
-                prog_data = supabase.table("programmers_embeddings") \
-                    .select("id, text_content") \
-                    .limit(10) \
-                    .execute()
+            # 정보 수집에서 topic, difficulty 추출
+            topics = request.user_request.get("topics", [])
+            difficulty = request.user_request.get("difficulty", "")
 
-                if prog_data.data:
-                    import json
-                    for p in prog_data.data[:5]:
+            rag_contexts = []
+            use_vector_search = bool(topics or difficulty)
+
+            # 1️⃣ topic/difficulty가 있으면 → 벡터 유사도 검색
+            if use_vector_search:
+                print(f"[CodeGen] 🏢 Vector search mode: topics={topics}, difficulty={difficulty}")
+
+                try:
+                    # user_analysis_reports에서 유저 분석 정보 가져오기
+                    user_analysis = None
+                    if user_id:
+                        analysis_data = supabase.table("user_analysis_reports") \
+                            .select("weak_topics, strong_topics, skill_by_topic, elo_by_topic") \
+                            .eq("user_id", user_id) \
+                            .limit(1) \
+                            .execute()
+                        if analysis_data.data:
+                            user_analysis = analysis_data.data[0]
+                            print(f"[CodeGen] 🏢 User analysis loaded: weak={user_analysis.get('weak_topics', [])}")
+
+                    # 검색 쿼리 생성: topic + difficulty + 유저 약점
+                    search_parts = []
+                    if topics:
+                        search_parts.append(f"알고리즘: {', '.join(topics)}")
+                    if difficulty:
+                        search_parts.append(f"난이도: {difficulty}")
+                    if user_analysis:
+                        weak = user_analysis.get("weak_topics", [])
+                        if weak:
+                            search_parts.append(f"보완 필요: {', '.join(weak[:3])}")
+
+                    search_query = " ".join(search_parts) if search_parts else "프로그래머스 코딩테스트"
+                    print(f"[CodeGen] 🏢 Search query: {search_query}")
+
+                    # 임베딩 생성
+                    query_embedding = await embedding_service.get_embedding(search_query)
+
+                    # programmers_embeddings에서 유사도 검색 (RPC 함수 사용)
+                    search_result = supabase.rpc(
+                        "search_programmers_by_embedding",
+                        {
+                            "query_embedding": query_embedding,
+                            "match_threshold": 0.2,
+                            "match_count": 10,
+                        }
+                    ).execute()
+
+                    if search_result.data:
+                        for p in search_result.data[:5]:
+                            text_content = p.get("text_content", "")
+                            if text_content:
+                                try:
+                                    content_data = json.loads(text_content)
+                                    name = content_data.get("title", f"Programmers_{p['id'][:8]}")
+                                except:
+                                    name = f"Programmers_{p['id'][:8]}"
+                                rag_contexts.append({
+                                    "problem_id": p["id"],
+                                    "name": name,
+                                    "text_content": text_content,
+                                    "similarity": p.get("similarity", 0),
+                                })
+                        print(f"[CodeGen] 🏢 Vector search found {len(rag_contexts)} problems")
+                except Exception as e:
+                    print(f"[CodeGen] ⚠️ Vector search failed: {e}, falling back to random")
+                    use_vector_search = False
+
+            # 2️⃣ 정보 없거나 검색 실패 → 랜덤 10개
+            if not rag_contexts:
+                print(f"[CodeGen] 🏢 Random mode: fetching random 10 problems")
+                try:
+                    # PostgreSQL의 RANDOM() 사용하여 랜덤 조회
+                    random_result = supabase.rpc(
+                        "get_random_programmers_problems",
+                        {"limit_count": 10}
+                    ).execute()
+
+                    # RPC 없으면 일반 쿼리로 fallback (order by random은 Supabase에서 직접 안됨)
+                    if not random_result.data:
+                        prog_data = supabase.table("programmers_embeddings") \
+                            .select("id, text_content") \
+                            .limit(50) \
+                            .execute()
+                        if prog_data.data:
+                            random.shuffle(prog_data.data)
+                            random_result_data = prog_data.data[:10]
+                        else:
+                            random_result_data = []
+                    else:
+                        random_result_data = random_result.data
+
+                    for p in random_result_data[:5]:
                         text_content = p.get("text_content", "")
                         if text_content:
                             try:
@@ -2418,9 +2505,9 @@ async def generate_code(
                                 "name": name,
                                 "text_content": text_content,
                             })
-                    print(f"[CodeGen] 🏢 Loaded {len(rag_contexts)} problems from programmers_embeddings")
-            except Exception as e:
-                print(f"[CodeGen] ⚠️ Failed to load from programmers_embeddings: {e}")
+                    print(f"[CodeGen] 🏢 Random loaded {len(rag_contexts)} problems")
+                except Exception as e:
+                    print(f"[CodeGen] ⚠️ Random fetch failed: {e}")
 
             if not rag_contexts:
                 raise HTTPException(

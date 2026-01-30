@@ -644,6 +644,14 @@ class FeedbackService:
         Returns:
             피드백 응답 딕셔너리
         """
+        # 🔍 디버깅 로그 시작
+        print(f"[FeedbackService] ========== FEEDBACK REQUEST ==========")
+        print(f"[FeedbackService] user_id={user_id}, problem_id={problem_id}")
+        print(f"[FeedbackService] is_correct={is_correct}, solve_time={solve_time_seconds}s")
+        print(f"[FeedbackService] hints_used={hints_used}, xp_earned={xp_earned}")
+        print(f"[FeedbackService] problem_type={problem_type}, attempt_count={attempt_count}")
+        print(f"[FeedbackService] problem_info={problem_info}")
+
         # 1. DB에서 정보 수집
         # 문제 정보
         db_problem = self.get_problem_info(problem_id)
@@ -697,11 +705,19 @@ class FeedbackService:
             difficulty=difficulty,  # 난이도 전달
         )
 
+        # 🔍 점수 계산 결과 로그
+        print(f"[FeedbackService] SCORES: efficiency={scores['efficiency_score']}, speed={scores['speed_score']}, understanding={scores['understanding_score']}")
+        print(f"[FeedbackService] grade={grade}, time_ratio={time_ratio:.2f}, avg_solve_time={avg_solve_time}")
+
         # 4. 시스템 프롬프트 구성
+        # 문제 유형별 통계 생성
+        problem_type_stats = f"문제 유형: {problem_type}"
+
         system_prompt = FEEDBACK_SYSTEM_PROMPT.format(
             problem_title=problem_title,
             difficulty=difficulty,
             problem_type=problem_type,
+            problem_type_stats=problem_type_stats,
             topics=", ".join(topics) if topics else "알고리즘",
             is_correct="정답" if is_correct else "오답",
             score=100 if is_correct else 0,
@@ -724,6 +740,7 @@ class FeedbackService:
         ]
 
         try:
+            print(f"[FeedbackService] 🔄 Calling LLM ({settings.llm_model_hint})...")
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_hint,  # gemini-flash
                 messages=messages,
@@ -732,7 +749,9 @@ class FeedbackService:
             )
 
             content = openrouter_service.get_content(response)
+            print(f"[FeedbackService] ✅ LLM response received, length={len(content) if content else 0}")
             result = openrouter_service.parse_json_response(content)
+            print(f"[FeedbackService] ✅ JSON parsed successfully")
 
             # 계산된 값들 추가/오버라이드
             result["visualization"] = result.get("visualization", {})
