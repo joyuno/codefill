@@ -910,7 +910,7 @@ class AnalysisService:
 
             # hint_logs 조회 (추가)
             hint_logs_result = self.db.table("hint_logs").select(
-                "hint_level, xp_cost, problem_id"
+                "hint_level, xp_cost, base_problem_id"
             ).eq("user_id", str(user_id)).order(
                 "created_at", desc=True
             ).limit(100).execute()
@@ -954,7 +954,7 @@ class AnalysisService:
                         by_level[level_key] = by_level.get(level_key, 0) + 1
                         total_from_logs += 1
 
-                    problem_id = log.get("problem_id")
+                    problem_id = log.get("base_problem_id")
                     if problem_id:
                         problems_with_hints.add(str(problem_id))
 

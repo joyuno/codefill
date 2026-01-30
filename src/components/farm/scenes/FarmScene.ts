@@ -18,6 +18,7 @@ import {
   VIEWPORT_WIDTH,
   VIEWPORT_HEIGHT,
   CAMERA_LERP,
+  CAMERA_BOUND_PADDING,
   getMapDimensions,
 } from '../config/gameConfig';
 import { MapManager } from './MapManager';
@@ -83,7 +84,8 @@ export class FarmScene extends Phaser.Scene {
 
   // 미니맵 카메라
   private minimapCamera: Phaser.Cameras.Scene2D.Camera | null = null;
-  private minimapBorder: Phaser.GameObjects.Graphics | null = null;
+  private minimapBorderCamera: Phaser.Cameras.Scene2D.Camera | null = null;
+  private minimapBorder: Phaser.GameObjects.Graphics | null = null;  // legacy (unused)
   private minimapPlayerDot: Phaser.GameObjects.Graphics | null = null;
 
   // 배치 시스템 상태
@@ -304,9 +306,28 @@ export class FarmScene extends Phaser.Scene {
    * 씬 생성
    */
   create(): void {
-    // 메인 카메라 설정 (동적 맵 크기)
+    // 현재 뷰포트 크기
+    const vw = this.scale.gameSize.width;
+    const vh = this.scale.gameSize.height;
+
+    // 카메라 줌: 기존 960x640 기준과 동일한 체감 크기 유지
+    // Scale.FIT에서는 960x640을 브라우저에 맞춰 확대했으므로 동일한 비율 적용
+    const zoom = Math.min(vw / VIEWPORT_WIDTH, vh / VIEWPORT_HEIGHT);
+
+    // 줌 적용 시 월드 좌표 기준 뷰포트 크기
+    const worldViewW = vw / zoom;
+    const worldViewH = vh / zoom;
+
+    // 카메라 바운드: 맵 + 울타리(1타일) + 패딩, 뷰포트(월드좌표)보다 작으면 뷰포트 크기 사용
+    const fenceBorder = TILE_SIZE;  // 울타리 1타일
+    const boundsWidth = Math.max(this.mapWidth + fenceBorder * 2 + CAMERA_BOUND_PADDING * 2, worldViewW);
+    const boundsHeight = Math.max(this.mapHeight + fenceBorder * 2 + CAMERA_BOUND_PADDING * 2, worldViewH);
+    const boundsX = -(boundsWidth - this.mapWidth) / 2;
+    const boundsY = -(boundsHeight - this.mapHeight) / 2;
+
     const mainCamera = this.cameras.main;
-    mainCamera.setBounds(0, 0, this.mapWidth, this.mapHeight);
+    mainCamera.setZoom(zoom);
+    mainCamera.setBounds(boundsX, boundsY, boundsWidth, boundsHeight);
     mainCamera.setBackgroundColor('#3d8b3d');
 
     // 순서대로 매니저 생성 (depth 순서 고려)
@@ -343,14 +364,15 @@ export class FarmScene extends Phaser.Scene {
     const playerSprite = this.playerController.getSprite();
     if (playerSprite) {
       this.cameras.main.startFollow(playerSprite, true, CAMERA_LERP, CAMERA_LERP);
-      // 맵이 뷰포트보다 클 때만 데드존 설정 (화면 중앙에서 약간 움직여도 카메라 안 움직임)
-      if (this.mapWidth > VIEWPORT_WIDTH || this.mapHeight > VIEWPORT_HEIGHT) {
-        this.cameras.main.setDeadzone(100, 100);
-      }
+      // 데드존 설정 (화면 중앙에서 약간 움직여도 카메라 안 움직임)
+      this.cameras.main.setDeadzone(100, 100);
     }
 
     // 미니맵 설정 (맵이 뷰포트보다 클 때만)
     this.setupMinimap();
+
+    // 리사이즈 이벤트 등록
+    this.scale.on('resize', this.handleResize, this);
 
     // 상호작용 시스템 초기화
     this.interactionSystem = new InteractionSystem(
@@ -762,64 +784,116 @@ export class FarmScene extends Phaser.Scene {
     this.unifiedPlacementManager.clearChanges();
   }
 
+  // ====== 리사이즈 핸들러 ======
+
+  /**
+   * 브라우저 리사이즈 핸들러
+   */
+  private handleResize(gameSize: Phaser.Structs.Size): void {
+    const width = gameSize.width;
+    const height = gameSize.height;
+
+    // 줌 재계산
+    const zoom = Math.min(width / VIEWPORT_WIDTH, height / VIEWPORT_HEIGHT);
+    const worldViewW = width / zoom;
+    const worldViewH = height / zoom;
+
+    // 카메라 줌 + 바운드 재설정
+    const fenceBorder = TILE_SIZE;
+    const boundsWidth = Math.max(this.mapWidth + fenceBorder * 2 + CAMERA_BOUND_PADDING * 2, worldViewW);
+    const boundsHeight = Math.max(this.mapHeight + fenceBorder * 2 + CAMERA_BOUND_PADDING * 2, worldViewH);
+    const boundsX = -(boundsWidth - this.mapWidth) / 2;
+    const boundsY = -(boundsHeight - this.mapHeight) / 2;
+
+    this.cameras.main.setZoom(zoom);
+    this.cameras.main.setBounds(boundsX, boundsY, boundsWidth, boundsHeight);
+
+    // 잔디 리사이즈 (월드 좌표 기준)
+    this.mapManager.resizeGrass(worldViewW, worldViewH);
+
+    // 미니맵 재생성
+    this.cleanupMinimap();
+    this.setupMinimap();
+  }
+
   // ====== 미니맵 시스템 ======
 
   /**
-   * 미니맵 설정
+   * 미니맵 정리
+   */
+  private cleanupMinimap(): void {
+    if (this.minimapBorderCamera) {
+      this.cameras.remove(this.minimapBorderCamera);
+      this.minimapBorderCamera = null;
+    }
+    if (this.minimapCamera) {
+      this.cameras.remove(this.minimapCamera);
+      this.minimapCamera = null;
+    }
+    if (this.minimapBorder) {
+      this.minimapBorder.destroy();
+      this.minimapBorder = null;
+    }
+    if (this.minimapPlayerDot) {
+      this.minimapPlayerDot.destroy();
+      this.minimapPlayerDot = null;
+    }
+  }
+
+  /**
+   * 미니맵 설정 (좌하단, 항상 표시)
+   * 테두리는 별도 카메라(흰색 배경, 약간 더 큰 사각형)로 구현하여
+   * 줌 좌표 변환 문제를 근본적으로 회피
    */
   private setupMinimap(): void {
-    // 맵이 뷰포트보다 크지 않으면 미니맵 불필요
-    if (this.mapWidth <= VIEWPORT_WIDTH && this.mapHeight <= VIEWPORT_HEIGHT) {
-      return;
-    }
+    const screenH = this.scale.gameSize.height;
 
-    // 미니맵 크기 계산 (맵 비율 유지, 최대 180x120)
-    const maxMinimapWidth = 180;
-    const maxMinimapHeight = 120;
+    // 미니맵 크기 계산 (맵 비율 유지, 최대 260x180 화면 픽셀)
+    const maxMinimapWidth = 220;
+    const maxMinimapHeight = 150;
     const mapRatio = this.mapWidth / this.mapHeight;
     let minimapWidth: number;
     let minimapHeight: number;
 
     if (mapRatio > maxMinimapWidth / maxMinimapHeight) {
       minimapWidth = maxMinimapWidth;
-      minimapHeight = maxMinimapWidth / mapRatio;
+      minimapHeight = Math.round(maxMinimapWidth / mapRatio);
     } else {
       minimapHeight = maxMinimapHeight;
-      minimapWidth = maxMinimapHeight * mapRatio;
+      minimapWidth = Math.round(maxMinimapHeight * mapRatio);
     }
 
-    // 미니맵 위치 (좌상단, 여백 8px)
-    const minimapMargin = 8;
-    const minimapX = minimapMargin;
-    const minimapY = minimapMargin;
+    // 미니맵 위치 - 좌하단 (화면 픽셀 기준)
+    const minimapMargin = 12;
+    const borderSize = 3;  // 테두리 두께 (화면 픽셀)
+    const screenX = minimapMargin;
+    const screenY = screenH - minimapMargin - minimapHeight;
 
-    // 미니맵 배경/테두리 (UI 레이어에 고정)
-    this.minimapBorder = this.add.graphics();
-    this.minimapBorder.setScrollFactor(0);
-    this.minimapBorder.setDepth(700);
-    // 배경
-    this.minimapBorder.fillStyle(0x000000, 0.5);
-    this.minimapBorder.fillRoundedRect(minimapX, minimapY, minimapWidth, minimapHeight, 0);
-    // 테두리 (오른쪽, 위쪽만)
-    this.minimapBorder.lineStyle(2, 0xffffff, 0.8);
-    this.minimapBorder.strokeRect(minimapX, minimapY, minimapWidth, minimapHeight);
+    // 1) 테두리 카메라: 흰색 배경, 미니맵보다 borderSize만큼 큰 사각형
+    //    zoom을 극단적으로 낮춰서 게임 오브젝트가 보이지 않게 함
+    this.minimapBorderCamera = this.cameras.add(
+      screenX - borderSize,
+      screenY - borderSize,
+      minimapWidth + borderSize * 2,
+      minimapHeight + borderSize * 2
+    );
+    this.minimapBorderCamera.setBackgroundColor('#ffffff');
+    this.minimapBorderCamera.setZoom(0.001);
+    this.minimapBorderCamera.centerOn(0, 0);
+    this.minimapBorderCamera.setAlpha(0.9);
 
-    // 미니맵 카메라 생성
-    this.minimapCamera = this.cameras.add(minimapX, minimapY, minimapWidth, minimapHeight);
+    // 2) 미니맵 카메라: 실제 맵 렌더링
+    this.minimapCamera = this.cameras.add(screenX, screenY, minimapWidth, minimapHeight);
 
-    // 전체 맵이 미니맵에 들어오도록 줌 계산 (가로/세로 중 더 작은 비율 사용)
     const zoomX = minimapWidth / this.mapWidth;
     const zoomY = minimapHeight / this.mapHeight;
     const minimapZoom = Math.min(zoomX, zoomY);
 
     this.minimapCamera.setZoom(minimapZoom);
-    // 맵 전체를 보여주기 위해 카메라 중심을 맵 중심으로 설정
     this.minimapCamera.centerOn(this.mapWidth / 2, this.mapHeight / 2);
     this.minimapCamera.setBackgroundColor('#3d8b3d');
+
     // UI 요소는 미니맵에서 제외
-    if (this.minimapBorder) {
-      this.minimapCamera.ignore(this.minimapBorder);
-    }
     if (this.playerDebugGraphics) {
       this.minimapCamera.ignore(this.playerDebugGraphics);
     }
@@ -827,46 +901,34 @@ export class FarmScene extends Phaser.Scene {
       this.minimapCamera.ignore(this.playerDebugText);
     }
 
-    // 플레이어 위치 표시용 점 (미니맵 위에 그려짐, 화면 고정)
+    // 3) 플레이어 위치 표시 - 월드 좌표에 직접 배치하여 미니맵 카메라가 렌더링
     this.minimapPlayerDot = this.add.graphics();
-    this.minimapPlayerDot.setScrollFactor(0);
     this.minimapPlayerDot.setDepth(750);
-    // 미니맵 카메라에서 제외 (메인 카메라에서만 보임)
-    this.minimapCamera.ignore(this.minimapPlayerDot);
+    // 메인 카메라에서 숨김 (미니맵 카메라에서만 보임)
+    this.cameras.main.ignore(this.minimapPlayerDot);
+    // 테두리 카메라에서도 숨김
+    this.minimapBorderCamera.ignore(this.minimapPlayerDot);
   }
 
   /**
    * 미니맵 플레이어 위치 업데이트
+   * 플레이어 점을 월드 좌표에 직접 배치 → 미니맵 카메라가 렌더링
    */
   private updateMinimapPlayerDot(): void {
     if (!this.minimapPlayerDot || !this.minimapCamera) return;
 
     const playerPos = this.playerController.getPosition();
+    const dotSize = TILE_SIZE * 0.8;  // 월드 좌표 기준 크기
 
-    // 미니맵 정보
-    const minimapX = this.minimapCamera.x;
-    const minimapY = this.minimapCamera.y;
-    const minimapWidth = this.minimapCamera.width;
-    const minimapHeight = this.minimapCamera.height;
-
-    // 플레이어 위치를 맵 비율로 변환 (0~1)
-    const playerRatioX = playerPos.x / this.mapWidth;
-    const playerRatioY = playerPos.y / this.mapHeight;
-
-    // 미니맵 좌표로 변환
-    const dotX = minimapX + (playerRatioX * minimapWidth);
-    const dotY = minimapY + (playerRatioY * minimapHeight);
-
-    // 점 그리기
     this.minimapPlayerDot.clear();
     // 외곽선 (검정)
     this.minimapPlayerDot.fillStyle(0x000000, 1);
-    this.minimapPlayerDot.fillCircle(dotX, dotY, 5);
+    this.minimapPlayerDot.fillCircle(playerPos.x, playerPos.y, dotSize);
     // 내부 (빨강)
     this.minimapPlayerDot.fillStyle(0xff0000, 1);
-    this.minimapPlayerDot.fillCircle(dotX, dotY, 3);
+    this.minimapPlayerDot.fillCircle(playerPos.x, playerPos.y, dotSize * 0.6);
 
-    // React에 플레이어 위치 알림 (필요시)
+    // React에 플레이어 위치 알림
     if (this.farmData.onPlayerPositionUpdate) {
       this.farmData.onPlayerPositionUpdate(playerPos.x, playerPos.y);
     }
@@ -876,6 +938,9 @@ export class FarmScene extends Phaser.Scene {
    * 씬 정리
    */
   shutdown(): void {
+    // 리사이즈 이벤트 해제
+    this.scale.off('resize', this.handleResize, this);
+
     this.mapManager?.destroy();
     this.playerController?.destroy();
     this.interactionSystem?.destroy();
@@ -893,17 +958,6 @@ export class FarmScene extends Phaser.Scene {
     }
 
     // 미니맵 정리
-    if (this.minimapCamera) {
-      this.cameras.remove(this.minimapCamera);
-      this.minimapCamera = null;
-    }
-    if (this.minimapBorder) {
-      this.minimapBorder.destroy();
-      this.minimapBorder = null;
-    }
-    if (this.minimapPlayerDot) {
-      this.minimapPlayerDot.destroy();
-      this.minimapPlayerDot = null;
-    }
+    this.cleanupMinimap();
   }
 }

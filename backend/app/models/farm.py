@@ -363,7 +363,7 @@ MAP_EXPANSION_ORDER = [1, 2, 3, 4, 5]
 
 # 기본 건물 위치 (집만 기본 제공)
 DEFAULT_BUILDING_POSITIONS = {
-    "house": {"x": 23, "y": 2, "skin": "default"},
+    "house": {"x": 22, "y": 2, "skin": "default"},
     "chickenCoop": {"x": 2, "y": 7, "skin": "default"},
     "scarecrow": {"x": 9, "y": 6, "skin": "default"},
     "well": {"x": 26, "y": 8, "skin": "default"},
