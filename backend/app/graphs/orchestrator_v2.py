@@ -293,6 +293,7 @@ class ChatOrchestratorV2:
             "완전탐색": "완전탐색", "백트래킹": "백트래킹", "분할정복": "분할정복",
             "시뮬레이션": "시뮬레이션", "기초": "기초", "최단경로": "최단경로",
             "투포인터": "투포인터", "스택": "스택", "큐": "큐", "힙": "힙",
+            "해시": "해시", "hash": "해시",  # 해시 테이블
         }
         CHIP_DIFFICULTY_KEYWORDS = {
             "실버": "easy", "silver": "easy", "easy": "easy", "쉬움": "easy",
@@ -315,6 +316,33 @@ class ChatOrchestratorV2:
 
         chip_matched_value = None
         chip_matched_step = None
+
+        # ============================================================
+        # 🏢 대기업 코테 키워드 탐지 (Intent Classifier 전)
+        # ============================================================
+        CORPORATE_TEST_KEYWORDS = [
+            "대기업 코테", "대기업코테", "대기업 코딩테스트", "대기업코딩테스트",
+            "삼성 코테", "카카오 코테", "네이버 코테", "라인 코테", "쿠팡 코테",
+            "삼성코테", "카카오코테", "네이버코테", "라인코테", "쿠팡코테",
+            "기업 코테", "기업코테", "취업 코테", "취업코테",
+        ]
+
+        is_corporate_test_chip = any(keyword in message_lower or keyword in message_stripped for keyword in CORPORATE_TEST_KEYWORDS)
+
+        if is_corporate_test_chip and not is_question_mark:
+            logger.info(f"[Orchestrator] ⚡ ULTRA FAST-PATH: 대기업 코테 키워드 감지 - 정보 수집으로 라우팅")
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info={},  # 새로 시작
+                intent="corporate_test",
+                session_state=session_state,
+                extracted_values={
+                    "is_corporate_test": True,
+                    "wants_generation": True,
+                },
+            )
 
         # "?"가 없을 때만 키워드 매칭 시도
         if not is_question_mark:
@@ -435,6 +463,26 @@ class ChatOrchestratorV2:
                 message=message,
                 user_context=user_context,
                 conversation_history=conversation_history,
+            )
+
+        # ============================================================
+        # 0-0. CORPORATE_TEST 처리 - 검색 결과가 있어도 정보 수집으로
+        # "대기업 코테 준비할래" 같은 메시지는 항상 정보 수집 단계로
+        # ============================================================
+        if intent_result.action == ActionType.CORPORATE_TEST:
+            logger.info("[Orchestrator] CORPORATE_TEST detected - routing to info collection")
+            # extracted_values에 is_corporate_test 설정
+            extracted = intent_result.extracted_values or {}
+            extracted["is_corporate_test"] = True
+            extracted["wants_generation"] = True
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info={},  # 새로 시작
+                intent="corporate_test",
+                session_state=session_state,
+                extracted_values=extracted,
             )
 
         # ============================================================
@@ -893,8 +941,20 @@ class ChatOrchestratorV2:
         }
         logger.debug(f"Info merge: new={new_collected}, original={collected_info}, merged={merged_info}")
 
-        # 정보 수집 완료 시 Discovery로
+        # 정보 수집 완료 시
         if result.get("is_complete"):
+            # 대기업 코테 모드: Discovery 스킵하고 문제 생성으로 직행
+            if merged_info.get("is_corporate_test"):
+                logger.info(f"[InfoCollection] Corporate test complete! Triggering problem generation...")
+                return {
+                    "stage": "collection",
+                    "intent": intent,
+                    "collected_info": merged_info,
+                    "response_message": result.get("message", "") or "대기업 코테 문제를 생성할게요!",
+                    "is_complete": True,
+                    "action_trigger": "generate_corporate_problem",
+                }
+            # 일반 모드: Discovery로
             return await self._process_discovery(
                 message=message,
                 intent=intent,

@@ -13,6 +13,9 @@ AI 코딩 학습 도우미에서 발생하는 다양한 의도를 처리하는 �
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
+from ..config import get_settings
+settings = get_settings()
+
 
 @dataclass
 class ExtendedIntentResponse:
@@ -662,7 +665,7 @@ class ExtendedIntentService:
             )
 
             response = await self.openrouter.chat_completion(
-                model="gpt-4o-mini",
+                model=settings.llm_model_lite,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message}

@@ -67,9 +67,8 @@ from .collection import (
 )
 
 # ============================================================
-# Legacy (호환성 유지)
+# State (공용)
 # ============================================================
-from .chat_graph import create_chat_graph, ChatGraph
 from .state import ChatState, CONTEXT_REQUIRED_INTENTS, INTENT_TO_NODE
 
 __all__ = [
@@ -103,9 +102,7 @@ __all__ = [
     "CollectionState",
     "create_info_collection_graph",
 
-    # === Legacy ===
-    "create_chat_graph",
-    "ChatGraph",
+    # State
     "ChatState",
     "CONTEXT_REQUIRED_INTENTS",
     "INTENT_TO_NODE",

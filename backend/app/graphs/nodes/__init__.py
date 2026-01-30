@@ -6,7 +6,7 @@ LangGraph Node Functions
 # Chat Graph 노드 (문제 선택)
 from .intent import classify_intent
 from .collect import collect_info, free_chat
-from .search import search_problems, generate_problem_codegen
+from .search import search_problems
 from .problem import handle_problem_selection, generate_problem_type
 from .hint import provide_hint
 from .general import (
@@ -33,7 +33,6 @@ __all__ = [
     "collect_info",
     "free_chat",
     "search_problems",
-    "generate_problem_codegen",
     "handle_problem_selection",
     "generate_problem_type",
     "provide_hint",

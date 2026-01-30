@@ -55,6 +55,7 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
         "트리": "트리", "수학": "수학", "자료구조": "자료구조",
         "완전탐색": "완전탐색", "백트래킹": "백트래킹", "분할정복": "분할정복",
         "시뮬레이션": "시뮬레이션", "기초": "기초",
+        "해시": "해시", "hash": "해시",  # 해시 테이블
         "implementation": "구현", "sorting": "정렬", "greedy": "그리디",
         "graph": "그래프", "tree": "트리", "string": "문자열",
         "bfs": "BFS/DFS", "dfs": "BFS/DFS", "math": "수학",
@@ -347,7 +348,8 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
     # - wants_generation = True 설정 (추가 정보 수집 필요)
     # - generation_details 단계로 이동하여 추가 정보 요청
     # ============================================================
-    if analysis.is_corporate_test and not state.get("is_corporate_test"):
+    # 조건: 대기업 코테 감지 + 아직 generation_details가 없으면 추가 정보 요청
+    if analysis.is_corporate_test and not state.get("generation_details"):
         print(f"[parse_input] Corporate test mode detected! Requesting additional info...")
         updates["is_corporate_test"] = True
         updates["wants_generation"] = True
@@ -473,6 +475,7 @@ async def parse_input(state: CollectionState) -> Dict[str, Any]:
             "트리": "트리", "tree": "트리",
             "수학": "수학", "math": "수학",
             "자료구조": "자료구조", "data structure": "자료구조",
+            "해시": "해시", "hash": "해시", "해시테이블": "해시", "hash table": "해시",
             "완전탐색": "완전탐색", "브루트포스": "완전탐색", "brute force": "완전탐색",
             "백트래킹": "백트래킹", "backtracking": "백트래킹",
             "분할정복": "분할정복", "divide and conquer": "분할정복",

@@ -26,7 +26,9 @@ from .guided_problem_agent import (
 from .code_gen_agent import (
     CODE_GEN_SYSTEM_PROMPT,
     LEVEL_TOPIC_RECOMMENDATIONS,
-    TOPIC_REQUIRED_CONCEPTS
+    TOPIC_REQUIRED_CONCEPTS,
+    PROBLEM_THEMES,
+    get_random_theme,
 )
 
 
@@ -80,6 +82,8 @@ __all__ = [
     "CODE_GEN_SYSTEM_PROMPT",
     "LEVEL_TOPIC_RECOMMENDATIONS",
     "TOPIC_REQUIRED_CONCEPTS",
+    "PROBLEM_THEMES",
+    "get_random_theme",
     # Free Chat Agent
     "FREE_CHAT_SYSTEM_PROMPT",
     "INTENT_ACTION_MAP",

@@ -226,20 +226,23 @@ class ProblemSaveService:
         generated_problem: Dict[str, Any],
         collected_info: Dict[str, Any],
         user_id: Optional[str] = None,
+        skip_validation: bool = False,
     ) -> Optional[str]:
         """
         CodeGen으로 생성된 문제를 base_problems 테이블에 저장
+        ⚠️ 저장 전 테스트 케이스 검증 필수 - 통과한 경우만 저장
+        ⚠️ 중복 이름 체크 - 같은 이름의 문제가 있으면 저장 안 함
 
         Args:
             generated_problem: CodeGen이 생성한 문제 데이터
             collected_info: 사용자가 선택한 topic, difficulty, language
             user_id: 생성 요청한 사용자 ID (optional, 추후 creator 추적용)
+            skip_validation: True면 검증 스킵 (이미 검증된 경우)
 
         Returns:
             저장된 문제의 id (UUID) 또는 None
         """
         import uuid
-        from datetime import datetime
 
         try:
             # difficulty 검증 (필수)
@@ -248,23 +251,70 @@ class ProblemSaveService:
                 logger.error(f"[ProblemSave] Invalid difficulty: {difficulty}")
                 return None
 
+            # ============================================================
+            # 🆕 중복/유사 이름 체크 - 같거나 비슷한 이름의 문제가 있으면 저장 안 함
+            # ============================================================
+            problem_name = generated_problem.get("title", "Generated Problem")
+            if problem_name:
+                # 1. 정확히 같은 이름 체크
+                existing_exact = self.supabase.table("base_problems") \
+                    .select("id, name") \
+                    .eq("name", problem_name) \
+                    .limit(1) \
+                    .execute()
+
+                if existing_exact.data and len(existing_exact.data) > 0:
+                    logger.warning(
+                        f"[ProblemSave] ❌ Exact duplicate name - not saving: '{problem_name}'"
+                    )
+                    return None
+
+                # 2. 비슷한 이름 체크 (앞 10글자가 같으면 유사로 판단)
+                name_prefix = problem_name[:10] if len(problem_name) >= 10 else problem_name
+                existing_similar = self.supabase.table("base_problems") \
+                    .select("id, name") \
+                    .ilike("name", f"{name_prefix}%") \
+                    .limit(1) \
+                    .execute()
+
+                if existing_similar.data and len(existing_similar.data) > 0:
+                    existing_name = existing_similar.data[0].get("name", "")
+                    logger.warning(
+                        f"[ProblemSave] ❌ Similar name detected - not saving: '{problem_name}' (similar to '{existing_name}')"
+                    )
+                    return None
+
             # original_id 생성 (codegen_UUID 형식)
             original_id = f"codegen_{uuid.uuid4().hex[:12]}"
 
-            # solutions 형식으로 변환 (code 필드가 dict인 경우)
-            code_data = generated_problem.get("code", {})
+            # solutions 추출 (여러 형식 지원)
             solutions = []
 
-            if isinstance(code_data, dict):
-                for lang, code in code_data.items():
-                    if code:
-                        solutions.append({"language": lang, "code": code})
-            elif isinstance(code_data, str):
-                # code가 문자열인 경우
-                solutions.append({
-                    "language": collected_info.get("language", "python"),
-                    "code": code_data
-                })
+            # 형식 1: solutions 필드가 직접 있는 경우 (새 프롬프트)
+            sol_data = generated_problem.get("solutions")
+            if sol_data:
+                if isinstance(sol_data, dict) and sol_data.get("code"):
+                    # {"code": "...", "language": "python"}
+                    solutions.append({
+                        "language": sol_data.get("language", "python"),
+                        "code": sol_data["code"]
+                    })
+                elif isinstance(sol_data, list):
+                    # [{"code": "...", "language": "python"}]
+                    solutions = sol_data
+
+            # 형식 2: code 필드에서 변환 (기존 형식)
+            if not solutions:
+                code_data = generated_problem.get("code", {})
+                if isinstance(code_data, dict):
+                    for lang, code in code_data.items():
+                        if code:
+                            solutions.append({"language": lang, "code": code})
+                elif isinstance(code_data, str):
+                    solutions.append({
+                        "language": collected_info.get("language", "python"),
+                        "code": code_data
+                    })
 
             # 솔루션이 없으면 저장 불가
             if not solutions:
@@ -294,8 +344,62 @@ class ProblemSaveService:
                     if inputs and outputs:
                         input_output = {"inputs": inputs, "outputs": outputs}
 
-            # tags 정규화 (허용된 태그로만 변환)
-            raw_tags = generated_problem.get("topics") or collected_info.get("topics", [])
+            # ============================================================
+            # 🔒 테스트 케이스 검증 (통과해야만 저장) - skip_validation=True면 스킵
+            # ============================================================
+            if not skip_validation:
+                if not input_output:
+                    logger.warning(f"[ProblemSave] No test cases (input_output) - cannot validate")
+                    return None
+
+                # code_validator로 검증
+                from .code_validator import get_code_validator
+                validator = get_code_validator()
+
+                # solutions를 code dict로 변환
+                code_dict = {}
+                for sol in solutions:
+                    code_dict[sol["language"]] = sol["code"]
+
+                # input_output을 examples 형식으로 변환
+                test_examples = []
+                inputs = input_output.get("inputs", [])
+                outputs = input_output.get("outputs", [])
+                for i in range(min(len(inputs), len(outputs))):
+                    test_examples.append({
+                        "input": inputs[i],
+                        "output": outputs[i],
+                    })
+
+                if not test_examples:
+                    logger.warning(f"[ProblemSave] No valid test examples - cannot validate")
+                    return None
+
+                # 검증 실행
+                validation_result = await validator.validate_generated_code(
+                    code=code_dict,
+                    examples=test_examples,
+                    language=collected_info.get("language", "python"),
+                    min_pass_rate=0.8,  # 80% 이상 통과해야 저장
+                )
+
+                if not validation_result.valid:
+                    logger.warning(
+                        f"[ProblemSave] ❌ Validation FAILED - not saving to base_problems. "
+                        f"Pass rate: {validation_result.pass_rate:.1%} ({validation_result.passed_count}/{validation_result.total_count}). "
+                        f"Errors: {validation_result.errors}"
+                    )
+                    return None
+
+                logger.info(
+                    f"[ProblemSave] ✓ Validation PASSED - saving to base_problems. "
+                    f"Pass rate: {validation_result.pass_rate:.1%} ({validation_result.passed_count}/{validation_result.total_count})"
+                )
+            else:
+                logger.info(f"[ProblemSave] Skipping validation (already validated)")
+
+            # tags 정규화 (허용된 태그로만 변환) - tags 우선, topics fallback
+            raw_tags = generated_problem.get("tags") or generated_problem.get("topics") or collected_info.get("topics", [])
             normalized_tags = normalize_tags(raw_tags)
             # 정규화 후에도 태그가 없으면 collected_info의 topic 사용
             if not normalized_tags and collected_info.get("topic"):

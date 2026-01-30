@@ -38,6 +38,7 @@ export interface CollectedInfo {
   time_available: number | null;
   // 대기업 코테 관련
   is_corporate_test?: boolean;
+  wants_generation?: boolean;
   generation_details?: string;
 }
 

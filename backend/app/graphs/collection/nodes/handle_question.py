@@ -435,6 +435,8 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
     """
     # Import inside function to avoid circular imports
     from app.services.openrouter import openrouter_service
+    from app.config import get_settings
+    settings = get_settings()
     import re
 
     question_type = state.get("question_type", "general")
@@ -745,7 +747,7 @@ async def handle_question(state: CollectionState) -> Dict[str, Any]:
 - 2-3문장으로 간결하게 응답하세요"""
 
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model=settings.llm_model_lite,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
@@ -1160,6 +1162,8 @@ async def _handle_off_topic(
     3. 선택 칩 제공 (추천값 없이)
     """
     from app.services.openrouter import openrouter_service
+    from app.config import get_settings
+    settings = get_settings()
 
     user_context = user_context or {}
 
@@ -1182,7 +1186,7 @@ async def _handle_off_topic(
         )
 
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model=settings.llm_model_lite,
             messages=[
                 {"role": "system", "content": "당신은 친근한 코딩 학습 도우미입니다. 짧고 자연스럽게 응답하세요."},
                 {"role": "user", "content": prompt},

@@ -249,49 +249,26 @@ class Judge0Service:
         results = []
         passed_count = 0
 
-        # 함수형 코드 감지 (한 번만 수행)
-        func_info = None
-        if auto_wrap_function:
-            func_info = detect_function_definition(source_code, language)
-            print(f"[Judge0] Function detection: {func_info}")
-            if func_info:
-                func_name, params = func_info
-                has_call = has_function_call(source_code, func_name)
-                print(f"[Judge0] Has function call: {has_call}")
-                # 이미 함수 호출이 있으면 래핑 불필요
-                if has_call:
-                    func_info = None
-
+        # stdin 방식으로 통일 (함수 래핑 제거)
         for i, tc in enumerate(test_cases):
             test_input = tc.get("input", "")
-            print(f"[Judge0] Test case {i}: input type={type(test_input)}, value={test_input}")
-            stdin = ""
 
-            # 함수형 코드 래핑
-            code_to_run = source_code
-            if func_info:
-                func_name, params = func_info
-                code_to_run = wrap_function_code(
-                    source_code, language, test_input, func_name, params
-                )
-                print(f"[Judge0] Wrapped code:\n{code_to_run[-200:]}")
-                # 래핑된 코드는 stdin 불필요 (인자가 코드에 직접 삽입됨)
-                stdin = ""
+            # stdin 준비 (백준 스타일)
+            if isinstance(test_input, list):
+                stdin = "\n".join(str(x) for x in test_input)
+            elif isinstance(test_input, dict):
+                stdin = json.dumps(test_input)
             else:
-                # 일반 코드는 stdin 사용
-                if isinstance(test_input, list):
-                    stdin = "\n".join(str(x) for x in test_input)
-                elif isinstance(test_input, dict):
-                    stdin = json.dumps(test_input)
-                else:
-                    stdin = str(test_input) if test_input else ""
+                stdin = str(test_input) if test_input else ""
+
+            print(f"[Judge0] TC{i}: stdin={stdin[:100]}...")
 
             expected = tc.get("expected")
             if expected is not None:
                 expected = str(expected)
 
             result = await self.submit_code(
-                source_code=code_to_run,
+                source_code=source_code,
                 language=language,
                 stdin=stdin,
                 expected_output=expected,
@@ -503,41 +480,50 @@ def wrap_function_code(
             else:
                 args.append("None")
     elif isinstance(test_input, list):
-        # 리스트 형태: [5, [[0,1], [1,2]]]
-        for i, param in enumerate(params):
-            if i < len(test_input):
+        # 리스트 형태 처리
+        # 케이스 1: 파라미터 개수와 리스트 길이가 같으면 각 요소를 각 파라미터에 매핑
+        # 케이스 2: 파라미터가 1개면 리스트 전체를 첫 번째 인자로 전달
+        # 케이스 3: 그 외에는 리스트 전체를 첫 번째 인자로 전달 (안전한 기본값)
+        if len(params) == len(test_input) and len(params) > 1:
+            # 파라미터 개수 == 리스트 길이 (2개 이상): [5, [[0,1]]] -> solution(5, [[0,1]])
+            for i, param in enumerate(params):
                 args.append(repr(test_input[i]))
-            else:
-                args.append("None")
+        else:
+            # 파라미터 1개 또는 개수 불일치: [1, 2, 3] -> solution([1, 2, 3])
+            args.append(repr(test_input))
     elif isinstance(test_input, str):
         # 문자열 형태: JSON 파싱 시도
         try:
             parsed = json.loads(test_input)
             return wrap_function_code(source_code, language, parsed, func_name, params)
         except json.JSONDecodeError:
-            # JSON 파싱 실패 시 stdin 기반 래퍼 생성
-            wrapper = f"""
-# Auto-generated test wrapper
-import sys
-import json
+            # JSON 파싱 실패 시, 공백/줄바꿈으로 분리된 값들로 처리
+            # 예: "1 2" 또는 "1\n2" -> [1, 2]
+            parts = test_input.replace('\n', ' ').split()
 
-# 원본 함수 실행 및 결과 출력
-if __name__ == "__main__":
-    try:
-        input_data = sys.stdin.read().strip()
-        if input_data:
-            args = json.loads(input_data)
-            if isinstance(args, list):
-                result = {func_name}(*args)
-            elif isinstance(args, dict):
-                result = {func_name}(**args)
+            if len(parts) == len(params) and len(params) > 1:
+                # 파라미터 개수와 값 개수가 같으면 각각 매핑
+                for part in parts:
+                    try:
+                        # 숫자로 변환 시도
+                        if '.' in part:
+                            args.append(repr(float(part)))
+                        else:
+                            args.append(repr(int(part)))
+                    except ValueError:
+                        args.append(repr(part))
+            elif len(params) == 1 and len(parts) == 1:
+                # 파라미터 1개, 값 1개
+                try:
+                    if '.' in parts[0]:
+                        args.append(repr(float(parts[0])))
+                    else:
+                        args.append(repr(int(parts[0])))
+                except ValueError:
+                    args.append(repr(parts[0]))
             else:
-                result = {func_name}(args)
-            print(result)
-    except Exception as e:
-        print(f"Error: {{e}}", file=sys.stderr)
-"""
-            return source_code + wrapper
+                # 그 외의 경우 문자열 그대로 전달
+                args.append(repr(test_input))
     else:
         # 단일 값
         args = [repr(test_input)]

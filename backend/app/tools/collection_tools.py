@@ -13,6 +13,8 @@ import os
 
 from ..services.openrouter import openrouter_service
 from ..services.collection_embeddings import get_collection_embeddings_service
+from ..config import get_settings
+settings = get_settings()
 
 
 # ============================================================
@@ -335,7 +337,7 @@ class CollectionTool:
                 user_content = f"컨텍스트: {context}\n{user_content}"
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",
+                model=settings.llm_model_lite,
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": user_content}

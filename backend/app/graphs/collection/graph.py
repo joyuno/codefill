@@ -275,6 +275,9 @@ class InfoCollectionGraph:
 
         # 디버깅 로그
         print(f"[InfoCollectionGraph] Result: topic={result.get('topic')}, difficulty={result.get('difficulty')}, language={result.get('language')}")
+        print(f"[InfoCollectionGraph] Corporate: is_corporate={result.get('is_corporate_test')}, wants_gen={result.get('wants_generation')}, gen_details={result.get('generation_details')}")
+        print(f"[InfoCollectionGraph] Final Corporate: is_corporate={final_is_corporate_test}, wants_gen={final_wants_generation}, gen_details={final_generation_details}")
+        print(f"[InfoCollectionGraph] Current Step: {current_step}, is_complete={result.get('is_complete')}")
         print(f"[InfoCollectionGraph] Final: topic={final_topic}, difficulty={final_difficulty}, language={final_language}")
 
         # rejected_values 상태 보존 (중요: 다음 턴에서 참조 필요)

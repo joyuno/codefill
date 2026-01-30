@@ -74,6 +74,10 @@ class CollectedInfo(BaseModel):
     time_available: Optional[int] = None
     selected_problem: Optional[str] = None  # 선택된 문제 이름
     selected_problem_index: Optional[int] = None  # 선택된 문제 번호 (1-based)
+    # 대기업 코테 관련
+    is_corporate_test: Optional[bool] = None
+    wants_generation: Optional[bool] = None
+    generation_details: Optional[str] = None
 
 
 class ChatAgentRequest(BaseModel):
@@ -267,24 +271,21 @@ class CodeGenerationRequest(BaseModel):
 
 
 class CodeGenerationResponse(BaseModel):
-    """Generated educational code."""
+    """Generated educational code. (base_problems 테이블 컬럼명과 통일)"""
     title: str
     title_en: Optional[str] = None
     description: str
-    code: Dict[str, str]  # language -> code
+    solutions: Dict[str, str]  # {"code": "...", "language": "python"} 또는 {"python": "..."}
     input_format: Optional[str] = None
     output_format: Optional[str] = None
-    # 테스트케이스 - input_output 형식 우선 (base_problems 테이블 호환)
     input_output: Optional[Dict[str, List[str]]] = None  # {"inputs": [...], "outputs": [...]}
-    examples: Optional[List[Dict[str, str]]] = None  # 레거시 호환용
     constraints: Optional[List[str]] = None
     difficulty: str
-    topics: List[str]
+    tags: List[str]  # base_problems.tags
     time_complexity: Optional[str] = None
     space_complexity: Optional[str] = None
-    key_concepts: Optional[List[str]] = None
-    common_mistakes: Optional[List[str]] = None
-    hints_for_problem_gen: Optional[Dict[str, List[str]]] = None
+    original_id: Optional[str] = None
+    images: Optional[List[str]] = None
 
 
 # ============================================================

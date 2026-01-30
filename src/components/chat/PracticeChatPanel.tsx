@@ -892,6 +892,7 @@ export function PracticeChatPanel({
       setRecommendedProblems([generatedProblem]);
       setSelectedBaseProblem(generatedProblem);  // 유형 선택을 위해 설정
       setFlowState('type_selection');
+      onBaseProblemPreview?.(generatedProblem);  // 왼쪽 패널에 문제 미리보기 표시
 
       // 로딩 메시지를 결과 메시지로 교체 - 바로 유형 선택 칩 표시
       setMessages(prev => {
@@ -926,7 +927,7 @@ export function PracticeChatPanel({
     } finally {
       setIsLoading(false);
     }
-  }, [getUserContext]);
+  }, [getUserContext, onBaseProblemPreview]);
 
   // Handle chip click
   const handleChipClick = useCallback((chip: QuickChip) => {
@@ -1871,6 +1872,10 @@ export function PracticeChatPanel({
         language: null,
         specific_needs: null,
         time_available: null,
+        // 대기업 코테 관련 (기본값)
+        is_corporate_test: false,
+        wants_generation: false,
+        generation_details: undefined,
       };
 
       // 세션 상태 업데이트 (awaiting_confirmation, suggested_value 포함)
@@ -2046,6 +2051,7 @@ export function PracticeChatPanel({
         setFlowState('type_selection');
         setRecommendedProblems([generatedProblem]);
         setSelectedBaseProblem(generatedProblem);  // 유형 선택을 위해 설정
+        onBaseProblemPreview?.(generatedProblem);  // 왼쪽 패널에 문제 미리보기 표시
 
         // Fallback 안내 메시지 (is_fallback이 true일 때)
         const isFallback = (actionData as any).is_fallback === true;
@@ -2111,8 +2117,11 @@ export function PracticeChatPanel({
         setMessages(prev => [...prev, assistantMessage]);
       } else if (actionData?.generated_problem) {
         // CodeGen generated a new problem (fallback from RAG search)
+        const generatedProblem = actionData.generated_problem as BaseProblemInfo;
         setFlowState('type_selection');
-        setRecommendedProblems([actionData.generated_problem]);
+        setRecommendedProblems([generatedProblem]);
+        setSelectedBaseProblem(generatedProblem);  // 유형 선택을 위해 설정
+        onBaseProblemPreview?.(generatedProblem);  // 왼쪽 패널에 문제 미리보기 표시
 
         // Fallback 안내 메시지 (is_fallback이 true일 때)
         const isFallback = actionData.is_fallback === true;
@@ -2123,13 +2132,14 @@ export function PracticeChatPanel({
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: `${fallbackNotice}${responseMessage}`,
+          content: `${fallbackNotice}${responseMessage}\n\n어떤 형식으로 풀어볼까요?`,
           timestamp: new Date().toISOString(),
-          chips: [{
-            label: actionData.generated_problem.title || actionData.generated_problem.name,
-            value: 'problem-0',
-            category: 'action' as const,
-          }],
+          chips: [
+            { label: '빈칸 채우기', value: 'type-blank', category: 'action' as const },
+            { label: '퍼즐 (코드 정렬)', value: 'type-puzzle', category: 'action' as const },
+            { label: '1대1 대화형', value: 'type-guided', category: 'action' as const },
+            { label: '구현', value: 'type-implementation', category: 'action' as const },
+          ],
         };
         setMessages(prev => [...prev, assistantMessage]);
       } else if (chatResponse?.action_trigger === 'problem_generated' && chatResponse?.generated_problem_data) {

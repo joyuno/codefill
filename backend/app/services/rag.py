@@ -10,7 +10,7 @@ from ..database import get_supabase_client
 from ..config import get_settings
 from .embedding import embedding_service
 from .openrouter import openrouter_codegen as openrouter_service
-from ..prompts import CODE_GEN_SYSTEM_PROMPT
+from ..prompts import CODE_GEN_SYSTEM_PROMPT, get_random_theme
 
 # LLM 모델 설정
 settings = get_settings()
@@ -558,18 +558,23 @@ class RAGService:
             query_embedding = await embedding_service.generate_embedding(query)
 
             # Step 3: Get embeddings for filtered problems and calculate similarity
+            # 각 문제는 여러 청크를 가질 수 있음 (question, code 등)
             problem_ids = [p["id"] for p in filtered_problems]
             embeddings_response = self.db.table("problem_embeddings").select("problem_id, embedding").in_("problem_id", problem_ids).execute()
 
-            # Parse embeddings (returned as strings from pgvector)
+            # Parse embeddings and group by problem_id (multiple chunks per problem)
+            # embeddings_map: {problem_id: [emb1, emb2, ...]}
             embeddings_map = {}
             for e in (embeddings_response.data or []):
                 emb = e["embedding"]
                 if isinstance(emb, str):
                     emb = json.loads(emb)
-                embeddings_map[e["problem_id"]] = emb
+                pid = e["problem_id"]
+                if pid not in embeddings_map:
+                    embeddings_map[pid] = []
+                embeddings_map[pid].append(emb)
 
-            # Calculate similarity and rank
+            # Calculate MAX similarity across all chunks for each problem
             import numpy as np
             query_vec = np.array(query_embedding)
 
@@ -577,9 +582,13 @@ class RAGService:
             for problem in filtered_problems:
                 pid = problem["id"]
                 if pid in embeddings_map:
-                    prob_vec = np.array(embeddings_map[pid])
-                    similarity = float(np.dot(query_vec, prob_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(prob_vec)))
-                    problem["similarity"] = similarity
+                    # 해당 문제의 모든 청크 중 최대 유사도 계산
+                    max_similarity = 0.0
+                    for emb in embeddings_map[pid]:
+                        prob_vec = np.array(emb)
+                        similarity = float(np.dot(query_vec, prob_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(prob_vec)))
+                        max_similarity = max(max_similarity, similarity)
+                    problem["similarity"] = max_similarity
                     results.append(problem)
 
             # Sort by similarity
@@ -660,13 +669,16 @@ class RAGService:
             problem_ids = [p["id"] for p in problems]
             embeddings_response = self.db.table("problem_embeddings").select("problem_id, embedding").in_("problem_id", problem_ids).execute()
 
-            # Parse embeddings (returned as strings from pgvector)
+            # Parse embeddings and group by problem_id (multiple chunks per problem)
             embeddings_map = {}
             for e in (embeddings_response.data or []):
                 emb = e["embedding"]
                 if isinstance(emb, str):
                     emb = json.loads(emb)
-                embeddings_map[e["problem_id"]] = emb
+                pid = e["problem_id"]
+                if pid not in embeddings_map:
+                    embeddings_map[pid] = []
+                embeddings_map[pid].append(emb)
 
             import numpy as np
             query_vec = np.array(query_embedding)
@@ -675,9 +687,13 @@ class RAGService:
             for problem in problems:
                 pid = problem["id"]
                 if pid in embeddings_map:
-                    prob_vec = np.array(embeddings_map[pid])
-                    similarity = float(np.dot(query_vec, prob_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(prob_vec)))
-                    problem["similarity"] = similarity
+                    # 해당 문제의 모든 청크 중 최대 유사도 계산
+                    max_similarity = 0.0
+                    for emb in embeddings_map[pid]:
+                        prob_vec = np.array(emb)
+                        similarity = float(np.dot(query_vec, prob_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(prob_vec)))
+                        max_similarity = max(max_similarity, similarity)
+                    problem["similarity"] = max_similarity
                     results.append(problem)
 
             results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
@@ -835,77 +851,127 @@ class RAGService:
                     similar_problems.append(prog_problem)
                     existing_ids.add(prog_problem.get("id"))
 
-        # Format similar problems for context (question + solutions 포함)
+        # ============================================================
+        # RAG 컨텍스트 준비: _rag_contexts 우선 사용 (problem_embeddings.text_content)
+        # ============================================================
+        rag_contexts = user_request.get("_rag_contexts", [])
         similar_context = []
-        code_stats = {"total_lines": 0, "total_chars": 0, "count": 0}  # 코드 통계
+        code_stats = {"total_lines": 0, "total_chars": 0, "count": 0}  # 미리 정의
 
-        for p in similar_problems[:3]:  # Top 3 as context
-            # solutions 코드 추출 (사용자가 선택한 언어 우선)
-            solutions = p.get("solutions", [])
-            solution_code = None
-            preferred_lang = user_request.get("language", "python")
+        if rag_contexts:
+            # 🔥 problem_embeddings.text_content 직접 사용 (가장 정확!)
+            print(f"[CodeGen] Using _rag_contexts from problem_embeddings: {len(rag_contexts)} items")
+            for idx, ctx in enumerate(rag_contexts[:5]):
+                text_content = ctx.get("text_content", "")
+                print(f"[CodeGen] RAG {idx+1}: '{ctx.get('name', 'unknown')}' - text_content length: {len(text_content)} chars")
 
-            # 선호 언어 코드 먼저 찾기
-            for sol in solutions:
-                if sol.get("language") == preferred_lang:
-                    solution_code = normalize_code_newlines(sol.get("code", ""))[:2000]  # 2000자 제한
-                    break
+                # 🔥 text_content가 JSON 형식이면 파싱해서 구조화
+                question_text = ""
+                solution_code = ""
+                try:
+                    content_data = json.loads(text_content)
+                    question_text = content_data.get("question", "")[:1500]
+                    solutions = content_data.get("solutions", [])
+                    if solutions:
+                        # 첫 번째 솔루션 코드 추출
+                        first_sol = solutions[0]
+                        sol_lang = first_sol.get("language", "python")
+                        sol_code = first_sol.get("code", "")
+                        # 이스케이프된 줄바꿈 복원
+                        sol_code = sol_code.replace("\\n", "\n").replace("\\t", "\t")
+                        solution_code = f"[{sol_lang}]\n{sol_code[:1500]}"
+                    print(f"[CodeGen] RAG {idx+1} PARSED: question={len(question_text)} chars, code={len(solution_code)} chars")
+                except (json.JSONDecodeError, TypeError):
+                    # JSON이 아니면 그대로 사용
+                    question_text = text_content[:2000]
+                    print(f"[CodeGen] RAG {idx+1} RAW TEXT: {len(question_text)} chars")
 
-            # 없으면 첫 번째 솔루션 사용
-            if not solution_code and solutions:
-                solution_code = normalize_code_newlines(solutions[0].get("code", ""))[:2000]
+                similar_context.append({
+                    "title": ctx.get("name", ""),
+                    "question": question_text,
+                    "solution_code": solution_code,
+                })
+        else:
+            # Fallback: 기존 similar_problems 사용
+            print(f"[CodeGen] Fallback: Processing {len(similar_problems)} similar problems")
 
-            # 🆕 코드 통계 수집 (생성 시 참고용)
-            if solution_code:
-                code_stats["total_lines"] += solution_code.count("\n") + 1
-                code_stats["total_chars"] += len(solution_code)
-                code_stats["count"] += 1
+            for idx, p in enumerate(similar_problems[:5]):
+                solutions = p.get("solutions", [])
+                solution_code = None
+                preferred_lang = user_request.get("language", "python")
 
-            similar_context.append({
-                "title": p.get("name", ""),
-                "question": p.get("question", ""),  # 전체 question 전달
-                "tags": p.get("tags", []),
-                "difficulty": p.get("difficulty", ""),
-                "solution_code": solution_code,  # 솔루션 코드 추가
-                "solution_language": preferred_lang if solution_code else None,
-            })
+                for sol in solutions:
+                    if sol.get("language") == preferred_lang:
+                        solution_code = normalize_code_newlines(sol.get("code", ""))[:2000]
+                        break
 
-        # 🆕 평균 코드 통계 계산
-        if code_stats["count"] > 0:
-            avg_lines = code_stats["total_lines"] // code_stats["count"]
-            avg_chars = code_stats["total_chars"] // code_stats["count"]
-            user_request["code_length_guide"] = {
-                "avg_lines": avg_lines,
-                "avg_chars": avg_chars,
-                "target_range": f"{max(10, avg_lines - 10)}~{avg_lines + 10}줄"
-            }
-            print(f"[CodeGen] Code stats: avg {avg_lines} lines, {avg_chars} chars")
+                if not solution_code and solutions:
+                    solution_code = normalize_code_newlines(solutions[0].get("code", ""))[:2000]
+
+                if solution_code:
+                    code_stats["total_lines"] += solution_code.count("\n") + 1
+                    code_stats["total_chars"] += len(solution_code)
+                    code_stats["count"] += 1
+
+                similar_context.append({
+                    "title": p.get("name", ""),
+                    "question": p.get("question", ""),
+                    "tags": p.get("tags", []),
+                    "difficulty": p.get("difficulty", ""),
+                    "solution_code": solution_code,
+                    "solution_language": preferred_lang if solution_code else None,
+                })
+
+            print(f"[CodeGen] Fallback RAG context: {code_stats.get('count', 0)} problems with code")
+
+            # 🆕 평균 코드 통계 계산 (fallback 모드에서만 의미 있음)
+            if code_stats["count"] > 0:
+                avg_lines = code_stats["total_lines"] // code_stats["count"]
+                avg_chars = code_stats["total_chars"] // code_stats["count"]
+                user_request["code_length_guide"] = {
+                    "avg_lines": avg_lines,
+                    "avg_chars": avg_chars,
+                    "target_range": f"{max(10, avg_lines - 10)}~{avg_lines + 10}줄"
+                }
+                print(f"[CodeGen] Code stats: avg {avg_lines} lines, {avg_chars} chars")
+
+        # 🔥 디버그: similar_context 내용 확인
+        similar_json = json.dumps(similar_context, ensure_ascii=False)
+        print(f"[CodeGen] 📋 similar_context count: {len(similar_context)}")
+        print(f"[CodeGen] 📋 similar_context JSON length: {len(similar_json)} chars")
+        if similar_context:
+            first_item = similar_context[0]
+            print(f"[CodeGen] 📋 First item keys: {list(first_item.keys())}")
+            if first_item.get("question"):
+                print(f"[CodeGen] 📋 First question (first 200 chars): {first_item['question'][:200]}...")
+            if first_item.get("solution_code"):
+                print(f"[CodeGen] 📋 First solution_code (first 200 chars): {first_item['solution_code'][:200]}...")
+
+        # 랜덤 테마 선택 (매번 다른 배경)
+        random_theme = get_random_theme()
+        print(f"[CodeGen] 🎯 Selected theme: {random_theme}")
 
         system_prompt = CODE_GEN_SYSTEM_PROMPT.format(
+            theme=random_theme,
             user_request=json.dumps(user_request, ensure_ascii=False),
-            similar_problems=json.dumps(similar_context, ensure_ascii=False),
-            user_status=user_context.get("status", "unknown"),
-            user_goal=user_context.get("goal", "unknown"),
+            similar_problems=similar_json,
+            user_goal=user_context.get("goal", "알고리즘 학습"),
             user_level=user_context.get("level", "intermediate"),
-            strong_algorithms=", ".join(
-                user_context.get("strong_algorithms", [])
-            ) or "없음",
         )
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "사용자 요청에 맞는 교육용 코드를 생성해주세요."},
+            {"role": "user", "content": "사용자 요청에 맞는 새로운 알고리즘 문제를 JSON 형식으로 생성해주세요."},
         ]
 
         try:
-            # Note: Claude doesn't support response_format, so we omit it
-            # The prompt already instructs to output pure JSON
+            # Gemini: response_format으로 JSON 응답 강제
             response = await openrouter_service.chat_completion(
                 model=settings.llm_model_code_gen,
                 messages=messages,
-                temperature=0.7,
+                temperature=0.9,  # 다양성 유지하면서 안정적인 JSON 출력
                 max_tokens=8192,
-                # response_format={"type": "json_object"},  # Not supported by Claude
+                response_format={"type": "json_object"},
             )
 
             content = openrouter_service.get_content(response)
@@ -921,6 +987,356 @@ class RAGService:
             import traceback
             traceback.print_exc()
             raise
+
+    async def regenerate_test_cases_only(
+        self,
+        generated_problem: Dict[str, Any],
+        language: str = "python",
+    ) -> Dict[str, Any]:
+        """
+        기존 문제의 테스트 케이스(input_output)만 재생성
+
+        문제 설명과 코드는 유지하고, 테스트 케이스만 새로 생성합니다.
+        검증 실패 시 전체 재생성보다 효율적입니다.
+
+        Args:
+            generated_problem: 이미 생성된 문제 (title, description, code 포함)
+            language: 프로그래밍 언어
+
+        Returns:
+            {"inputs": [...], "outputs": [...]} 형식의 새 테스트 케이스
+        """
+        print(f"[CodeGen:TC] Regenerating test cases for: {generated_problem.get('title', 'unknown')}")
+
+        # 코드 추출
+        code_data = generated_problem.get("code", {})
+        if isinstance(code_data, dict):
+            code = code_data.get(language) or code_data.get("python") or list(code_data.values())[0] if code_data else ""
+        else:
+            code = str(code_data)
+
+        if not code:
+            print(f"[CodeGen:TC] No code found in generated problem")
+            return {}
+
+        # 테스트 케이스 재생성 프롬프트 (stdin/stdout 방식)
+        tc_prompt = f"""다음 코드를 분석하고, 이 코드가 올바르게 작동하는지 검증할 수 있는 테스트 케이스를 생성해주세요.
+
+## 문제 설명
+{generated_problem.get('description', generated_problem.get('title', ''))}
+
+## 코드
+```{language}
+{code}
+```
+
+## 요구사항
+1. 코드가 `input()` 또는 `sys.stdin`으로 입력받는 방식 확인
+2. 3-5개의 테스트 케이스 생성
+3. 각 테스트 케이스의 기대 출력은 코드 로직에 따라 정확히 계산
+
+## 출력 형식 (JSON만) - stdin/stdout 방식
+```json
+{{
+  "inputs": ["5\\n1 2 3 4 5", "3\\n10 20 30"],
+  "outputs": ["15", "60"]
+}}
+```
+
+⚠️ stdin 형식 규칙:
+- inputs의 각 항목은 stdin으로 들어갈 전체 문자열
+- 여러 줄 입력은 \\n으로 구분 (예: "5\\n1 2 3 4 5")
+- outputs는 print()로 출력될 결과 (줄바꿈 제외)
+- 코드의 input() 호출 순서에 맞게 입력 구성
+
+예시:
+- 코드가 n = int(input()), arr = list(map(int, input().split())) 이면
+- input: "3\\n1 2 3" (첫 줄: n=3, 둘째 줄: arr=[1,2,3])
+"""
+
+        messages = [
+            {"role": "system", "content": "당신은 코드 테스트 케이스 생성 전문가입니다. 주어진 코드를 분석하고 정확한 테스트 케이스를 생성합니다. JSON만 출력하세요."},
+            {"role": "user", "content": tc_prompt},
+        ]
+
+        try:
+            response = await openrouter_service.chat_completion(
+                model=settings.llm_model_code_gen,
+                messages=messages,
+                temperature=0.3,  # 낮은 temperature로 정확도 향상
+                max_tokens=1024,
+            )
+
+            content = openrouter_service.get_content(response)
+            print(f"[CodeGen:TC] Response preview: {content[:300]}...")
+
+            result = openrouter_service.parse_json_response(content)
+
+            # 형식 1: {"inputs": [...], "outputs": [...]}
+            if result and result.get("inputs") and result.get("outputs"):
+                print(f"[CodeGen:TC] Generated {len(result['inputs'])} test cases (inputs/outputs format)")
+                return result
+
+            # 형식 2: {"test_cases": [{"input": ..., "output": ...}]}
+            if result and result.get("test_cases"):
+                test_cases = result["test_cases"]
+                inputs = [tc.get("input", "") for tc in test_cases if tc.get("input")]
+                outputs = [tc.get("output", "") for tc in test_cases if tc.get("output")]
+                if inputs and outputs and len(inputs) == len(outputs):
+                    print(f"[CodeGen:TC] Generated {len(inputs)} test cases (test_cases format)")
+                    return {"inputs": inputs, "outputs": outputs}
+
+            print(f"[CodeGen:TC] Invalid response format: {list(result.keys()) if result else 'None'}")
+            return {}
+
+        except Exception as e:
+            print(f"[CodeGen:TC] Error: {e}")
+            return {}
+
+    async def generate_outputs_by_execution(
+        self,
+        code: str,
+        inputs: List[str],
+        language: str = "python",
+    ) -> Dict[str, Any]:
+        """
+        코드를 실제 실행해서 각 입력에 대한 출력을 생성
+
+        LLM이 출력을 "추측"하지 않고, 실제 코드 실행 결과를 TC로 사용합니다.
+        이렇게 하면 코드와 TC가 항상 100% 일치합니다.
+
+        Args:
+            code: 실행할 소스 코드
+            inputs: stdin 입력 리스트
+            language: 프로그래밍 언어
+
+        Returns:
+            {"inputs": [...], "outputs": [...], "valid_count": N}
+        """
+        from .judge0 import judge0_service
+
+        print(f"[CodeGen:Exec] Generating outputs by execution for {len(inputs)} inputs")
+
+        valid_inputs = []
+        valid_outputs = []
+        errors = []
+
+        for i, stdin_input in enumerate(inputs):
+            try:
+                result = await judge0_service.submit_code(
+                    source_code=code,
+                    language=language,
+                    stdin=stdin_input,
+                    cpu_time_limit=5.0,
+                    memory_limit=128000,
+                )
+
+                status_id = result.get("status", {}).get("id", 0)
+                stdout = result.get("stdout", "").strip()
+                stderr = result.get("stderr", "")
+
+                # status_id 3 = Accepted (정상 실행)
+                if status_id == 3 and stdout:
+                    valid_inputs.append(stdin_input)
+                    valid_outputs.append(stdout)
+                    print(f"[CodeGen:Exec] TC{i+1}: OK - output='{stdout[:50]}...'")
+                else:
+                    status_desc = result.get("status", {}).get("description", "Unknown")
+                    errors.append(f"TC{i+1}: {status_desc} - {stderr[:100] if stderr else 'No output'}")
+                    print(f"[CodeGen:Exec] TC{i+1}: FAILED - {status_desc}")
+
+            except Exception as e:
+                errors.append(f"TC{i+1}: Exception - {str(e)[:100]}")
+                print(f"[CodeGen:Exec] TC{i+1}: Exception - {e}")
+
+        print(f"[CodeGen:Exec] Valid: {len(valid_inputs)}/{len(inputs)}")
+
+        return {
+            "inputs": valid_inputs,
+            "outputs": valid_outputs,
+            "valid_count": len(valid_inputs),
+            "total_count": len(inputs),
+            "errors": errors,
+        }
+
+    async def generate_problem_with_validation(
+        self,
+        user_request: Dict[str, Any],
+        user_context: Dict[str, Any] = None,
+        max_retries: int = 5,  # 3 → 5로 증가 (안정성 향상)
+    ) -> Dict[str, Any]:
+        """
+        CodeGen으로 문제 생성 + 테스트 케이스 검증 + 재시도 로직
+
+        검증 실패 시 RAG top_k를 늘려가며 재시도합니다.
+        3회 실패 시 에러 메시지를 반환합니다.
+
+        Args:
+            user_request: 사용자 요청 정보 (topics, difficulty, language 등)
+            user_context: 사용자 컨텍스트
+            max_retries: 최대 재시도 횟수 (기본 3)
+
+        Returns:
+            성공: {"success": True, "problem": {...}, "base_problem_id": "..."}
+            실패: {"success": False, "error": "에러 메시지"}
+        """
+        import random
+        from .code_validator import get_code_validator
+        from .problem_save import get_problem_save_service
+
+        validator = get_code_validator()
+        problem_save = get_problem_save_service()
+
+        base_top_k = 5  # 기본 RAG 문제 수 (3 → 5로 증가)
+        language = user_request.get("language", "python")
+
+        # 대기업 코테 여부 확인
+        is_corporate_test = user_request.get("is_corporate_test", False)
+        generation_details = user_request.get("generation_details", "")
+
+        # 🆕 다양성을 위한 랜덤 시드 추가 (매번 다른 문제 생성)
+        random_seed = random.randint(1, 10000)
+        user_request["_random_seed"] = random_seed
+        print(f"[CodeGen+Validation] Random seed for diversity: {random_seed}")
+
+        for attempt in range(max_retries):
+            current_top_k = base_top_k + (attempt * 2)  # 3, 5, 7로 증가
+            print(f"[CodeGen+Validation] Attempt {attempt + 1}/{max_retries} with top_k={current_top_k}, corporate_test={is_corporate_test}")
+
+            try:
+                # 1. RAG 컨텍스트 검색
+                topics = user_request.get("topics", [])
+                difficulty = user_request.get("difficulty")
+                query = generation_details or (" ".join(topics) if topics else "기초 알고리즘")
+
+                # 대기업 코테 모드: programmers_embeddings만 사용 (절대 섞지 않음!)
+                if is_corporate_test:
+                    print(f"[CodeGen+Validation] 🏢 CORPORATE TEST: programmers_embeddings ONLY")
+                    similar_problems, _, _ = await self.search_problems_for_codegen(
+                        query=query,
+                        topics=topics,
+                        difficulty=difficulty,
+                        language=language,
+                        limit=current_top_k * 2,
+                        use_programmers_only=True,  # programmers만!
+                    )
+                else:
+                    # 일반 검색: problem_embeddings만 사용
+                    similar_problems, _, _ = await self.search_problems_smart(
+                        query=query,
+                        topics=topics,
+                        difficulty=difficulty,
+                        language=language,
+                        limit=current_top_k * 2,
+                        user_context=user_context,
+                    )
+
+                # 🆕 다양성 확보: 결과를 랜덤하게 섞은 후 top_k개만 선택
+                if len(similar_problems) > current_top_k:
+                    random.shuffle(similar_problems)
+                    similar_problems = similar_problems[:current_top_k]
+                    print(f"[CodeGen+Validation] Shuffled and selected {current_top_k} problems for diversity")
+
+                # 2. CodeGen 호출
+                generated = await self.generate_problem_with_rag(
+                    user_request=user_request,
+                    similar_problems=similar_problems,
+                    user_context=user_context,
+                )
+
+                if not generated:
+                    print(f"[CodeGen+Validation] Attempt {attempt + 1}: Generation failed")
+                    continue
+
+                # 3. 테스트 케이스 준비
+                code_data = generated.get("code", {})
+                input_output = generated.get("input_output")
+
+                # input_output이 없으면 examples에서 변환
+                if not input_output:
+                    examples = generated.get("examples", [])
+                    if examples:
+                        inputs = []
+                        outputs = []
+                        for ex in examples:
+                            if isinstance(ex, dict):
+                                if ex.get("input"):
+                                    inputs.append(str(ex["input"]))
+                                if ex.get("output"):
+                                    outputs.append(str(ex["output"]))
+                        if inputs and outputs:
+                            input_output = {"inputs": inputs, "outputs": outputs}
+
+                if not input_output or not input_output.get("inputs"):
+                    print(f"[CodeGen+Validation] Attempt {attempt + 1}: No test cases")
+                    continue
+
+                # 4. code를 dict 형식으로 변환
+                code_dict = {}
+                if isinstance(code_data, dict):
+                    code_dict = code_data
+                elif isinstance(code_data, str):
+                    code_dict = {language: code_data}
+
+                if not code_dict:
+                    print(f"[CodeGen+Validation] Attempt {attempt + 1}: No code")
+                    continue
+
+                # 5. examples 형식으로 변환
+                test_examples = []
+                inputs = input_output.get("inputs", [])
+                outputs = input_output.get("outputs", [])
+                for i in range(min(len(inputs), len(outputs))):
+                    test_examples.append({
+                        "input": inputs[i],
+                        "output": outputs[i],
+                    })
+
+                # 6. 검증 실행 (테스트 2-3개 기준, 2개 통과하면 성공)
+                validation_result = await validator.validate_generated_code(
+                    code=code_dict,
+                    examples=test_examples,
+                    language=language,
+                    min_pass_rate=0.6,  # 0.8 → 0.6 (3개 중 2개 통과 OK)
+                )
+
+                if validation_result.valid:
+                    print(
+                        f"[CodeGen+Validation] ✓ Attempt {attempt + 1} PASSED! "
+                        f"({validation_result.passed_count}/{validation_result.total_count})"
+                    )
+
+                    # 7. base_problems에 저장 (이미 검증됨)
+                    saved_id = await problem_save.save_codegen_to_base_problems(
+                        generated_problem=generated,
+                        collected_info=user_request,
+                        user_id=user_context.get("user_id") if user_context else None,
+                        skip_validation=True,  # 이미 위에서 검증 완료
+                    )
+
+                    return {
+                        "success": True,
+                        "problem": generated,
+                        "base_problem_id": saved_id,
+                        "validation": validation_result.to_dict(),
+                    }
+                else:
+                    print(
+                        f"[CodeGen+Validation] ❌ Attempt {attempt + 1} FAILED - "
+                        f"({validation_result.passed_count}/{validation_result.total_count}). "
+                        f"Errors: {validation_result.errors[:2]}"
+                    )
+
+            except Exception as e:
+                print(f"[CodeGen+Validation] Attempt {attempt + 1} error: {e}")
+                continue
+
+        # 3회 모두 실패
+        print(f"[CodeGen+Validation] All {max_retries} attempts failed")
+        return {
+            "success": False,
+            "error": "문제 생성에 실패했어요. 테스트 케이스 검증을 통과하지 못했습니다. 다른 조건으로 다시 시도해주세요.",
+        }
 
     async def embed_and_store_problem(self, problem: Dict[str, Any]) -> bool:
         """
@@ -1073,28 +1489,37 @@ class RAGService:
             if not problems:
                 return []
 
-            # Step 3: Embedding 유사도 계산
+            # Step 3: Embedding 유사도 계산 (문제당 여러 청크 지원)
             problem_ids = [p["id"] for p in problems]
             embeddings_response = self.db.table("problem_embeddings").select(
                 "problem_id, embedding"
             ).in_("problem_id", problem_ids).execute()
 
+            # problem_id별로 임베딩 그룹화
             embeddings_map = {}
             for e in (embeddings_response.data or []):
                 try:
                     emb = e.get("embedding")
                     if isinstance(emb, str):
                         emb = json.loads(emb.replace("[", "[").replace("]", "]"))
-                    embeddings_map[e["problem_id"]] = emb
+                    pid = e["problem_id"]
+                    if pid not in embeddings_map:
+                        embeddings_map[pid] = []
+                    embeddings_map[pid].append(emb)
                 except Exception:
                     continue
 
-            # Step 4: 유사도 계산 및 정렬
+            # Step 4: 유사도 계산 및 정렬 (각 문제의 최대 유사도 사용)
             results = []
             for p in problems:
-                emb = embeddings_map.get(p["id"])
-                if emb:
-                    similarity = self._cosine_similarity(query_embedding, emb)
+                emb_list = embeddings_map.get(p["id"], [])
+                if emb_list:
+                    # 최대 유사도 계산
+                    max_similarity = max(
+                        self._cosine_similarity(query_embedding, emb)
+                        for emb in emb_list
+                    )
+                    similarity = max_similarity
                 else:
                     similarity = 0.3  # 기본값
 
@@ -1129,7 +1554,7 @@ class RAGService:
     def _mmr_rerank(
         self,
         results: List[Dict[str, Any]],
-        embeddings_map: Dict[str, List[float]],
+        embeddings_map: Dict[str, List[List[float]]],
         query_embedding: List[float],
         limit: int = 5,
         lambda_param: float = 0.7,
@@ -1141,7 +1566,7 @@ class RAGService:
 
         Args:
             results: 원본 검색 결과 (similarity 포함)
-            embeddings_map: 문제 ID -> 임베딩 매핑
+            embeddings_map: 문제 ID -> 임베딩 리스트 매핑 (여러 청크)
             query_embedding: 쿼리 임베딩
             limit: 반환할 결과 수
             lambda_param: 관련성 vs 다양성 가중치 (0.7 = 70% 관련성, 30% 다양성)
@@ -1157,11 +1582,17 @@ class RAGService:
         # 결과 중 임베딩이 있는 것만 필터링
         results_with_emb = [
             r for r in results
-            if r.get("id") in embeddings_map
+            if r.get("id") in embeddings_map and len(embeddings_map.get(r.get("id"), [])) > 0
         ]
 
         if len(results_with_emb) <= limit:
             return results_with_emb
+
+        # 각 문제의 대표 임베딩 생성 (첫 번째 청크 사용)
+        representative_emb = {}
+        for pid, emb_list in embeddings_map.items():
+            if emb_list:
+                representative_emb[pid] = emb_list[0]  # 첫 번째 청크 사용
 
         query_vec = np.array(query_embedding)
         selected: List[Dict[str, Any]] = []
@@ -1173,10 +1604,12 @@ class RAGService:
 
             for i, candidate in enumerate(candidates):
                 cand_id = candidate.get("id")
-                cand_vec = np.array(embeddings_map.get(cand_id, []))
+                cand_emb = representative_emb.get(cand_id)
 
-                if len(cand_vec) == 0:
+                if cand_emb is None:
                     continue
+
+                cand_vec = np.array(cand_emb)
 
                 # 쿼리와의 유사도 (관련성)
                 relevance = candidate.get("similarity", 0.5)
@@ -1186,9 +1619,9 @@ class RAGService:
                 if selected:
                     for s in selected:
                         s_id = s.get("id")
-                        s_vec = embeddings_map.get(s_id)
-                        if s_vec is not None:
-                            sim = self._cosine_similarity(cand_vec.tolist(), s_vec)
+                        s_emb = representative_emb.get(s_id)
+                        if s_emb is not None:
+                            sim = self._cosine_similarity(cand_vec.tolist(), s_emb)
                             max_sim_to_selected = max(max_sim_to_selected, sim)
 
                 # MMR 점수 = λ × 관련성 - (1-λ) × 기존 선택과의 유사도
@@ -1431,6 +1864,11 @@ class RAGService:
         - generate_problem_with_rag()에 전달하여 새 문제 생성용으로만 사용
         - 대기업 기출 스타일의 새 문제를 생성할 때 참고 자료로 활용
 
+        ⚠️ 중요: programmers 문제는 base_problems에 없음 (저작권)
+        - programmers_embeddings 테이블에서 직접 검색
+        - text_content 형식: JSON {"question": "...", "solutions": [...]}
+        - 문제당 1개 임베딩 (청킹 없음)
+
         Args:
             query: 검색 쿼리
             topics: 주제 필터
@@ -1442,70 +1880,89 @@ class RAGService:
             RAG 컨텍스트용 programmers 문제 목록 (내부 사용 전용)
         """
         try:
-            print(f"[RAG:Programmers] Searching programmers problems: query={query}, company={company_filter}")
+            print(f"[RAG:Programmers] Searching programmers_embeddings: query={query}, topics={topics}, company={company_filter}")
 
             # Step 1: Query embedding 생성
             query_embedding = await embedding_service.generate_embedding(query)
 
-            # Step 2: programmers 문제 필터링
-            db_query = self.db.table("base_problems").select("*").eq("source", "programmers")
+            # Step 2: programmers_embeddings에서 모든 임베딩 조회
+            # (문제당 1개 임베딩 - 청킹 없음)
+            embeddings_response = self.db.table("programmers_embeddings").select(
+                "id, problem_id, embedding, text_content"
+            ).limit(500).execute()
 
-            # 회사 필터 (name에 회사명 포함)
-            if company_filter:
-                db_query = db_query.ilike("name", f"%{company_filter}%")
-
-            # 난이도 필터
-            if difficulty:
-                db_query = db_query.eq("difficulty", difficulty)
-
-            # 토픽 필터
-            if topics:
-                expanded_topics = self._expand_topics(topics)
-                db_query = db_query.overlaps("tags", expanded_topics)
-
-            db_query = db_query.limit(100)
-            response = db_query.execute()
-            problems = response.data or []
-
-            if not problems:
-                print(f"[RAG:Programmers] No problems found with filters")
-                # 필터 없이 재시도
-                problems = self.db.table("base_problems").select("*").eq("source", "programmers").limit(50).execute().data or []
-
-            if not problems:
+            embeddings_data = embeddings_response.data or []
+            if not embeddings_data:
+                print(f"[RAG:Programmers] No embeddings found in programmers_embeddings")
                 return []
 
-            # Step 3: programmers_embeddings에서 임베딩 조회
-            problem_ids = [p["id"] for p in problems]
-            embeddings_response = self.db.table("programmers_embeddings").select(
-                "base_problem_id, embedding"
-            ).in_("base_problem_id", problem_ids).execute()
+            print(f"[RAG:Programmers] Found {len(embeddings_data)} embeddings")
 
-            embeddings_map = {}
-            for e in (embeddings_response.data or []):
-                emb = e.get("embedding")
-                if isinstance(emb, str):
-                    emb = json.loads(emb)
-                embeddings_map[e["base_problem_id"]] = emb
-
-            # Step 4: 유사도 계산 및 정렬
+            # Step 3: 유사도 계산
             import numpy as np
             query_vec = np.array(query_embedding)
 
+            scored_problems = []
+
+            for emb_data in embeddings_data:
+                problem_id = emb_data.get("problem_id")  # 원본 programmers ID (예: "389481")
+                text_content = emb_data.get("text_content", "")
+                emb = emb_data.get("embedding")
+
+                if not problem_id or not emb:
+                    continue
+
+                # 임베딩 파싱
+                if isinstance(emb, str):
+                    emb = json.loads(emb)
+
+                # 유사도 계산
+                emb_vec = np.array(emb)
+                similarity = float(np.dot(query_vec, emb_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(emb_vec)))
+
+                # text_content JSON 파싱
+                question = ""
+                solutions = []
+                try:
+                    content_data = json.loads(text_content)
+                    question = content_data.get("question", "")
+                    solutions = content_data.get("solutions", [])
+                except (json.JSONDecodeError, TypeError):
+                    # 이전 형식 호환 (만약을 위해)
+                    question = text_content
+
+                scored_problems.append({
+                    "problem_id": problem_id,
+                    "similarity": similarity,
+                    "question": question,
+                    "solutions": solutions,
+                })
+
+            # Step 4: 유사도 순 정렬
+            scored_problems.sort(key=lambda x: x["similarity"], reverse=True)
+
+            # Step 5: RAG 컨텍스트 형식으로 변환
             results = []
-            for problem in problems:
-                pid = problem["id"]
-                emb = embeddings_map.get(pid)
-                if emb:
-                    prob_vec = np.array(emb)
-                    similarity = float(np.dot(query_vec, prob_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(prob_vec)))
-                    problem["similarity"] = similarity
-                    results.append(problem)
+            for pdata in scored_problems[:limit]:
+                results.append({
+                    "id": f"programmers_{pdata['problem_id']}",
+                    "original_id": pdata["problem_id"],
+                    "name": f"Programmers #{pdata['problem_id']}",
+                    "question": pdata["question"][:3000],
+                    "solutions": pdata["solutions"][:3],  # 최대 3개 솔루션
+                    "tags": [],  # programmers는 태그 정보 없음
+                    "difficulty": difficulty or "medium",
+                    "source": "programmers",
+                    "similarity": pdata["similarity"],
+                    "source_note": "programmers_reference",  # RAG 컨텍스트용임을 표시
+                })
 
-            results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
-            print(f"[RAG:Programmers] Found {len(results)} problems, returning top {limit}")
+            print(f"[RAG:Programmers] Returning {len(results)} problems for RAG context")
+            if results:
+                print(f"[RAG:Programmers] Top result: {results[0]['original_id']}, similarity={results[0]['similarity']:.3f}")
+                print(f"[RAG:Programmers] Question length: {len(results[0]['question'])}, Solutions: {len(results[0]['solutions'])}")
 
-            return results[:limit]
+            return results
 
         except Exception as e:
             print(f"[RAG:Programmers] Error: {e}")
@@ -1520,17 +1977,14 @@ class RAGService:
         difficulty: str = None,
         language: str = None,
         limit: int = 5,
+        use_programmers_only: bool = False,
     ) -> Tuple[List[Dict[str, Any]], bool, str]:
         """
         [내부 전용] Code Generation용 RAG 컨텍스트 검색
 
-        ⚠️ 저작권 주의:
-        - 이 함수의 결과를 사용자에게 직접 제공하면 안 됨
-        - generate_problem_with_rag()에 전달하여 새 문제 생성용으로만 사용
-
-        동작:
-        - 코테/대기업 키워드 감지 시: programmers 기출을 참고하여 유사 문제 생성
-        - 일반 요청 시: 모든 문제를 참고하여 새 문제 생성
+        ⚠️ 완전 분리:
+        - use_programmers_only=True (대기업 코테): programmers_embeddings만 사용
+        - use_programmers_only=False (새 문제 생성): problem_embeddings만 사용 (programmers 절대 안 섞임!)
 
         Args:
             query: 검색 쿼리
@@ -1538,17 +1992,16 @@ class RAGService:
             difficulty: 난이도 필터
             language: 언어 필터
             limit: 최대 결과 수
+            use_programmers_only: True=대기업 코테(programmers만), False=새 문제 생성(일반만)
 
         Returns:
-            Tuple of (rag_context, is_coding_test, search_source)
+            Tuple of (rag_context, is_programmers_search, search_source)
         """
-        # 코테/대기업 키워드 감지
-        is_coding_test = self._detect_coding_test_intent(query)
         company_filter = self._extract_company_filter(query)
 
-        if is_coding_test:
-            # programmers 문제만 검색
-            print(f"[RAG:CodeGen] Using PROGRAMMERS-ONLY search (coding test intent)")
+        if use_programmers_only:
+            # 대기업 코테: programmers_embeddings만 사용 (절대 섞지 않음!)
+            print(f"[RAG:CodeGen] 🏢 CORPORATE TEST: Using programmers_embeddings ONLY")
             results = await self.search_programmers_for_codegen(
                 query=query,
                 topics=topics,
@@ -1556,13 +2009,11 @@ class RAGService:
                 limit=limit,
                 company_filter=company_filter,
             )
-            return results, True, "programmers"
+            return results, True, "programmers_only"
 
         else:
-            # 통합 검색: 두 테이블 모두 사용
-            print(f"[RAG:CodeGen] Using COMBINED search (both embeddings)")
-
-            # 1. 일반 문제 검색 (problem_embeddings)
+            # 새 문제 생성: problem_embeddings만 사용 (programmers 절대 안 섞음!)
+            print(f"[RAG:CodeGen] ✨ NEW PROBLEM: Using problem_embeddings ONLY (NO programmers!)")
             general_results, _ = await self.search_problems_hybrid(
                 query=query,
                 topics=topics,
@@ -1570,36 +2021,7 @@ class RAGService:
                 language=language,
                 limit=limit,
             )
-
-            # 2. programmers 문제 검색 (추가 컨텍스트)
-            programmers_results = await self.search_programmers_for_codegen(
-                query=query,
-                topics=topics,
-                difficulty=difficulty,
-                limit=2,  # 보조 컨텍스트로 2개만
-            )
-
-            # 3. 결과 병합 (중복 제거)
-            seen_ids = set()
-            combined = []
-
-            for r in general_results:
-                if r["id"] not in seen_ids:
-                    seen_ids.add(r["id"])
-                    combined.append(r)
-
-            for r in programmers_results:
-                if r["id"] not in seen_ids and len(combined) < limit:
-                    seen_ids.add(r["id"])
-                    r["source_note"] = "programmers_reference"
-                    combined.append(r)
-
-            # 유사도 순 정렬
-            combined.sort(key=lambda x: x.get("similarity", 0), reverse=True)
-
-            print(f"[RAG:CodeGen] Combined results: {len(combined)} (general: {len(general_results)}, programmers: {len(programmers_results)})")
-
-            return combined[:limit], False, "combined"
+            return general_results, False, "problem_embeddings_only"
 
     # ============================================================
     # 문제 이름 검색 (inquire_problem 인텐트용)
@@ -1677,10 +2099,12 @@ class RAGService:
 
                 embeddings = embeddings_response.data or []
 
-                # 유사도 계산
+                # 문제별로 임베딩 그룹화 (여러 청크 지원)
                 import numpy as np
                 query_vec = np.array(query_embedding)
-                similarities = []
+
+                # {problem_id: max_similarity}
+                problem_similarities = {}
 
                 for emb_data in embeddings:
                     prob_id = emb_data["problem_id"]
@@ -1694,6 +2118,13 @@ class RAGService:
                     norm_product = np.linalg.norm(query_vec) * np.linalg.norm(emb_vec)
                     similarity = dot_product / norm_product if norm_product > 0 else 0
 
+                    # 최대 유사도 업데이트
+                    if prob_id not in problem_similarities or similarity > problem_similarities[prob_id]:
+                        problem_similarities[prob_id] = similarity
+
+                # 결과 생성
+                similarities = []
+                for prob_id, similarity in problem_similarities.items():
                     if similarity >= similarity_threshold:
                         p = problem_map[prob_id]
                         similarities.append({

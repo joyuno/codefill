@@ -202,7 +202,10 @@ def get_initial_state(
     """초기 상태 생성"""
 
     # 현재 단계 결정
-    if not existing_topic:
+    # 대기업 코테 모드: topic/difficulty/language 스킵하고 generation_details로 직행
+    if existing_is_corporate_test and existing_wants_generation and not existing_generation_details:
+        current_step = "generation_details"
+    elif not existing_topic:
         current_step = "topic"
     elif not existing_difficulty:
         current_step = "difficulty"

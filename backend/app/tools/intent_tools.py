@@ -18,6 +18,8 @@ from typing import Dict, List, Optional, Any
 from enum import Enum
 
 from ..services.openrouter import openrouter_service
+from ..config import get_settings
+settings = get_settings()
 from ..services.langsmith_tracker import track_intent_method
 
 
@@ -713,9 +715,9 @@ class IntentTool:
         prompt = UNIFIED_INTENT_PROMPT.format(context=context, message=message)
 
         try:
-            # gpt-4o-mini가 gemini-flash보다 빠름 (타임아웃 방지)
+            # gemini-2.5-lite로 의도 분류
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",
+                model=settings.llm_model_lite,
                 messages=[
                     {"role": "system", "content": "의도 분류 전문가"},
                     {"role": "user", "content": prompt},
@@ -901,9 +903,9 @@ class IntentTool:
         prompt = MULTI_INTENT_PROMPT.format(context=context, message=message)
 
         try:
-            # gpt-4o-mini가 gemini-flash보다 빠름 (타임아웃 방지)
+            # gemini-2.5-lite로 다중 의도 분류
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",
+                model=settings.llm_model_lite,
                 messages=[
                     {"role": "system", "content": "다중 의도 분류 전문가"},
                     {"role": "user", "content": prompt},

@@ -788,8 +788,6 @@ router = APIRouter()
 
 # LangGraph 가져오기
 from ..graphs import (
-    # Legacy
-    ChatGraph,
     ProblemSolvingGraph,
     # Discovery
     DiscoveryGraph,
@@ -1064,6 +1062,10 @@ async def chat_agent(
                 time_available=collected_info_data.get("time_available"),
                 selected_problem=collected_info_data.get("selected_problem"),
                 selected_problem_index=collected_info_data.get("selected_problem_index"),
+                # 대기업 코테 관련
+                is_corporate_test=collected_info_data.get("is_corporate_test"),
+                wants_generation=collected_info_data.get("wants_generation"),
+                generation_details=collected_info_data.get("generation_details"),
             )
 
         # ============================================================
@@ -2363,39 +2365,343 @@ async def generate_code(
     대기업 코테 모드 (is_corporate_test=True):
     - Programmers 임베딩 테이블에서 추가 RAG 컨텍스트 조회
     - 검색 결과 + Programmers 문제를 참고하여 새 문제 생성
+
+    새 문제 생성 버튼 (similar_problems 있을 때):
+    - 프론트엔드에서 전달한 검색 결과를 직접 사용
+    - RAG 재검색 없이 바로 문제 생성 → 더 빠르고 안정적
     """
+    from ..services.code_validator import get_code_validator
+    from ..services.problem_save import get_problem_save_service
+
     try:
-        # RAG 서비스 사용하여 통합 코드 생성 (대기업 코테 모드 지원)
-        result = await rag_service.generate_problem_with_rag(
+        user_id = str(current_user_id) if current_user_id else None
+        user_context = {
+            "status": request.user_status or "unknown",
+            "goal": request.user_goal or "unknown",
+            "level": request.user_level.value,
+            "strong_algorithms": request.strong_algorithms or [],
+            "user_id": user_id,
+        }
+
+        # similar_problems가 있으면 직접 사용 (새 문제 생성 버튼)
+        # 대기업 코테는 programmers_embeddings에서 별도 조회
+        is_corporate_test = request.user_request.get("is_corporate_test", False)
+
+        # 🏢 대기업 코테: programmers_embeddings에서 직접 가져오기 (별도 로직)
+        if is_corporate_test:
+            import random
+            from ..database import get_supabase_client
+            supabase = get_supabase_client()
+
+            print(f"[CodeGen] 🏢 CORPORATE TEST MODE: Fetching from programmers_embeddings...")
+
+            rag_contexts = []
+            try:
+                # programmers_embeddings에서 text_content 조회
+                prog_data = supabase.table("programmers_embeddings") \
+                    .select("id, text_content") \
+                    .limit(10) \
+                    .execute()
+
+                if prog_data.data:
+                    import json
+                    for p in prog_data.data[:5]:
+                        text_content = p.get("text_content", "")
+                        if text_content:
+                            try:
+                                content_data = json.loads(text_content)
+                                name = content_data.get("title", f"Programmers_{p['id'][:8]}")
+                            except:
+                                name = f"Programmers_{p['id'][:8]}"
+                            rag_contexts.append({
+                                "problem_id": p["id"],
+                                "name": name,
+                                "text_content": text_content,
+                            })
+                    print(f"[CodeGen] 🏢 Loaded {len(rag_contexts)} problems from programmers_embeddings")
+            except Exception as e:
+                print(f"[CodeGen] ⚠️ Failed to load from programmers_embeddings: {e}")
+
+            if not rag_contexts:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="대기업 코테 문제를 생성할 수 없습니다. 나중에 다시 시도해주세요."
+                )
+
+            request.user_request["_rag_contexts"] = rag_contexts
+
+            validator = get_code_validator()
+            problem_save = get_problem_save_service()
+            language = request.user_request.get("language", "python")
+
+            # 2회 반복: 문제 생성 → 코드 실행으로 TC 생성
+            for cycle in range(2):
+                try:
+                    print(f"[CodeGen] === Cycle {cycle + 1}/2: Generate corporate problem ===")
+                    generated = await rag_service.generate_problem_with_rag(
+                        user_request=request.user_request,
+                        similar_problems=[],  # programmers는 similar_problems로 전달 안함
+                        user_context=user_context,
+                    )
+
+                    if not generated:
+                        print(f"[CodeGen] Cycle {cycle + 1}: Generation failed")
+                        continue
+
+                    print(f"[CodeGen] Generated: {generated.get('title', 'unknown')}")
+
+                    # 코드 추출
+                    source_code = ""
+                    solutions = generated.get("solutions", {})
+                    if isinstance(solutions, dict) and solutions.get("code"):
+                        source_code = solutions.get("code", "")
+
+                    if not source_code:
+                        code_data = generated.get("code", {})
+                        if isinstance(code_data, dict):
+                            source_code = code_data.get(language) or code_data.get("python") or ""
+                        elif isinstance(code_data, str):
+                            source_code = code_data
+
+                    if not source_code:
+                        print(f"[CodeGen] Cycle {cycle + 1}: No code generated")
+                        continue
+
+                    # 입력 추출
+                    input_output = generated.get("input_output", {})
+                    inputs = input_output.get("inputs", [])
+
+                    if not inputs:
+                        print(f"[CodeGen] Cycle {cycle + 1}: No inputs generated")
+                        continue
+
+                    print(f"[CodeGen] Cycle {cycle + 1}: Got {len(inputs)} inputs, executing code...")
+
+                    # 코드 실행해서 출력 생성
+                    exec_result = await rag_service.generate_outputs_by_execution(
+                        code=source_code,
+                        inputs=inputs,
+                        language=language,
+                    )
+
+                    valid_count = exec_result.get("valid_count", 0)
+                    if valid_count < 3:
+                        print(f"[CodeGen] Cycle {cycle + 1}: Only {valid_count} valid outputs")
+                        continue
+
+                    # 성공!
+                    generated["input_output"] = {
+                        "inputs": exec_result["inputs"],
+                        "outputs": exec_result["outputs"],
+                    }
+                    print(f"[CodeGen] ✓ Cycle {cycle + 1} PASSED! {valid_count} valid test cases")
+
+                    saved_id = await problem_save.save_codegen_to_base_problems(
+                        generated_problem=generated,
+                        collected_info=request.user_request,
+                        user_id=user_id,
+                        skip_validation=True,
+                    )
+                    if saved_id:
+                        print(f"[CodeGen] Saved to base_problems: {saved_id}")
+
+                    return CodeGenerationResponse(**generated)
+
+                except Exception as e:
+                    print(f"[CodeGen] Cycle {cycle + 1} error: {e}")
+                    continue
+
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="대기업 코테 문제 생성에 실패했습니다. 다시 시도해주세요."
+            )
+
+        # ============================================================
+        # 일반 새 문제 생성: similar_problems 사용
+        # ============================================================
+        if request.similar_problems and len(request.similar_problems) > 0:
+            import random
+
+            # programmers 제외 (base_problems에 없으니까)
+            filtered_problems = [
+                p for p in request.similar_problems
+                if p.get("source") != "programmers" and "programmers" not in str(p.get("id", ""))
+            ]
+            print(f"[CodeGen] ✨ NEW PROBLEM: Using {len(filtered_problems)} problems (NO programmers)")
+
+            # ============================================================
+            # 🔥 RAG 컨텍스트 로드 (일반 모드: problem_embeddings 사용)
+            # ============================================================
+            from ..database import get_supabase_client
+            supabase = get_supabase_client()
+            rag_contexts = []
+
+            if not filtered_problems:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="새 문제 생성에 사용할 수 있는 문제가 없습니다. 다른 조건으로 검색해주세요."
+                )
+
+            problem_ids = [p.get("id") for p in filtered_problems if p.get("id")]
+            if problem_ids:
+                try:
+                    embeddings_data = supabase.table("problem_embeddings") \
+                        .select("problem_id, text_content") \
+                        .in_("problem_id", problem_ids) \
+                        .execute()
+
+                    if embeddings_data.data:
+                        text_map = {e["problem_id"]: e["text_content"] for e in embeddings_data.data if e.get("text_content")}
+                        for fp in filtered_problems:
+                            fp_id = fp.get("id")
+                            if fp_id and fp_id in text_map:
+                                rag_contexts.append({
+                                    "problem_id": fp_id,
+                                    "name": fp.get("name", fp.get("title", "Unknown")),
+                                    "text_content": text_map[fp_id],
+                                })
+                        print(f"[CodeGen] ✅ Loaded text_content from problem_embeddings for {len(rag_contexts)} problems")
+                except Exception as e:
+                    print(f"[CodeGen] ⚠️ Failed to load from problem_embeddings: {e}")
+
+            # RAG 컨텍스트를 user_request에 추가
+            if rag_contexts:
+                request.user_request["_rag_contexts"] = rag_contexts
+
+            validator = get_code_validator()
+            problem_save = get_problem_save_service()
+            language = request.user_request.get("language", "python")
+
+            # 🔀 문제 순서 랜덤화
+            random.shuffle(filtered_problems)
+
+            # ============================================================
+            # 2회 반복: 문제 전체 생성 → 코드 실행으로 TC 생성
+            # ============================================================
+            for cycle in range(2):
+                # 1️⃣ 문제 + 코드 생성 (입력만, 출력은 코드 실행으로 생성)
+                try:
+                    print(f"[CodeGen] === Cycle {cycle + 1}/2: Generate problem + code ===")
+                    generated = await rag_service.generate_problem_with_rag(
+                        user_request=request.user_request,
+                        similar_problems=filtered_problems[:5],
+                        user_context=user_context,
+                    )
+
+                    if not generated:
+                        print(f"[CodeGen] Cycle {cycle + 1}: Generation failed")
+                        continue
+
+                    print(f"[CodeGen] Generated: {generated.get('title', 'unknown')}")
+
+                    # 코드 추출 (여러 형식 지원)
+                    source_code = ""
+
+                    # 형식 1: solutions.code (새 프롬프트)
+                    solutions = generated.get("solutions", {})
+                    if isinstance(solutions, dict) and solutions.get("code"):
+                        source_code = solutions.get("code", "")
+                        print(f"[CodeGen] Code from solutions.code: {len(source_code)} chars")
+
+                    # 형식 2: code.python (기존 형식)
+                    if not source_code:
+                        code_data = generated.get("code", {})
+                        if isinstance(code_data, dict):
+                            source_code = code_data.get(language) or code_data.get("python") or ""
+                            if not source_code and code_data:
+                                source_code = list(code_data.values())[0]
+                        elif isinstance(code_data, str):
+                            source_code = code_data
+                        if source_code:
+                            print(f"[CodeGen] Code from code field: {len(source_code)} chars")
+
+                    if not source_code:
+                        print(f"[CodeGen] Cycle {cycle + 1}: No code generated")
+                        continue
+
+                    # 입력 추출 (LLM이 생성한 inputs)
+                    input_output = generated.get("input_output", {})
+                    inputs = input_output.get("inputs", [])
+
+                    if not inputs:
+                        # examples에서 입력 추출 시도
+                        examples = generated.get("examples", [])
+                        inputs = [str(ex.get("input", "")) for ex in examples if ex.get("input")]
+
+                    if not inputs:
+                        print(f"[CodeGen] Cycle {cycle + 1}: No inputs generated")
+                        continue
+
+                    print(f"[CodeGen] Cycle {cycle + 1}: Got {len(inputs)} inputs, executing code...")
+
+                    # 2️⃣ 코드 실행해서 출력 생성 (핵심!)
+                    exec_result = await rag_service.generate_outputs_by_execution(
+                        code=source_code,
+                        inputs=inputs,
+                        language=language,
+                    )
+
+                    valid_count = exec_result.get("valid_count", 0)
+
+                    if valid_count < 3:
+                        print(f"[CodeGen] Cycle {cycle + 1}: Only {valid_count} valid outputs, need at least 3")
+                        if exec_result.get("errors"):
+                            print(f"[CodeGen] Errors: {exec_result['errors'][:3]}")
+                        continue
+
+                    # 3️⃣ 성공! TC 저장
+                    final_tc = {
+                        "inputs": exec_result["inputs"],
+                        "outputs": exec_result["outputs"],
+                    }
+                    generated["input_output"] = final_tc
+
+                    print(f"[CodeGen] ✓ Cycle {cycle + 1} PASSED! {valid_count} valid test cases")
+
+                    saved_id = await problem_save.save_codegen_to_base_problems(
+                        generated_problem=generated,
+                        collected_info=request.user_request,
+                        user_id=user_id,
+                        skip_validation=True,
+                    )
+                    if saved_id:
+                        print(f"[CodeGen] Saved to base_problems: {saved_id}")
+
+                    return CodeGenerationResponse(**generated)
+
+                except Exception as e:
+                    print(f"[CodeGen] Cycle {cycle + 1} error: {e}")
+                    continue
+
+            # 모두 실패
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="문제 생성에 실패했어요. 테스트 케이스 검증을 통과하지 못했습니다. 다시 시도해주세요."
+            )
+
+        # similar_problems가 없으면 기존 로직 (RAG 검색 포함)
+        gen_result = await rag_service.generate_problem_with_validation(
             user_request=request.user_request,
-            similar_problems=request.similar_problems,
-            user_context={
-                "status": request.user_status or "unknown",
-                "goal": request.user_goal or "unknown",
-                "level": request.user_level.value,
-                "strong_algorithms": request.strong_algorithms or [],
-            },
+            user_context=user_context,
+            max_retries=3,
         )
 
-        # base_problems에 저장 (examples → input_output 변환)
-        try:
-            problem_save_service = get_problem_save_service()
-            user_id = str(current_user_id) if current_user_id else None
-            saved_id = await problem_save_service.save_codegen_to_base_problems(
-                generated_problem=result,
-                collected_info=request.user_request,
-                user_id=user_id,
+        if not gen_result.get("success"):
+            # 3회 모두 실패 시 에러 반환
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=gen_result.get("error", "문제 생성에 실패했습니다.")
             )
-            if saved_id:
-                print(f"[CodeGen] Saved to base_problems: {saved_id}")
-            else:
-                print(f"[CodeGen] Failed to save to base_problems (no ID returned)")
-        except Exception as save_error:
-            print(f"[CodeGen] Error saving to base_problems (non-blocking): {save_error}")
-            # 저장 실패해도 문제 생성 결과는 반환
+
+        result = gen_result.get("problem", {})
+        saved_id = gen_result.get("base_problem_id")
+        if saved_id:
+            print(f"[CodeGen] Saved to base_problems: {saved_id}")
 
         return CodeGenerationResponse(**result)
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -3000,21 +3306,32 @@ async def recommend_problems(
                 "fallback_used": False,
             }
 
-        # Step 5: Fallback - generate new problem using Claude Sonnet
+        # Step 5: Fallback - generate new problem with validation (3회 재시도)
         if should_fallback or len(problems) < 3:
             try:
-                generated = await rag_service.generate_problem_with_rag(
+                gen_result = await rag_service.generate_problem_with_validation(
                     user_request=collected_info,
-                    similar_problems=problems,
                     user_context=user_context,
+                    max_retries=3,
                 )
-                return {
-                    "status": "generated",
-                    "problems": problems,
-                    "generated_problem": generated,
-                    "fallback_used": True,
-                    "message": "유사한 문제가 부족하여 새로운 문제를 생성했습니다.",
-                }
+
+                if gen_result.get("success"):
+                    return {
+                        "status": "generated",
+                        "problems": problems,
+                        "generated_problem": gen_result.get("problem"),
+                        "base_problem_id": gen_result.get("base_problem_id"),
+                        "fallback_used": True,
+                        "message": "유사한 문제가 부족하여 새로운 문제를 생성했습니다.",
+                    }
+                else:
+                    # 3회 재시도 모두 실패
+                    return {
+                        "status": "generation_failed",
+                        "problems": problems,
+                        "fallback_used": True,
+                        "message": gen_result.get("error", "문제 생성에 실패했습니다. 다른 조건으로 시도해주세요."),
+                    }
             except Exception as gen_error:
                 print(f"Code generation fallback error: {gen_error}")
                 return {

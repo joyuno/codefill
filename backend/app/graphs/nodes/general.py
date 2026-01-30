@@ -143,6 +143,8 @@ async def handle_general(state: ChatState) -> Dict[str, Any]:
     문제 풀이 중일 때는 현재 상황 정보를 포함하여 관련 질문에 대답할 수 있도록 함
     """
     from ...services.openrouter import OpenRouterService
+    from ...config import get_settings
+    settings = get_settings()
     import json
 
     message = state.get("message", "")
@@ -236,7 +238,7 @@ async def handle_general(state: ChatState) -> Dict[str, Any]:
     try:
         response_data = await openrouter.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model=settings.llm_model_lite,
             max_tokens=180,  # 2-3문장으로 간결하게
         )
         response = openrouter.get_content(response_data)
