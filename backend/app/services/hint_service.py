@@ -432,13 +432,13 @@ class HintService:
 - 한국어 1-2문장으로 핵심만 설명"""
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",  # 빠른 응답을 위해 GPT-4o-mini 사용
+                model=settings.llm_model_hint,  # Gemini 3 Flash Preview
                 messages=[
                     {"role": "system", "content": "You are a helpful coding tutor. Explain WHY this answer is correct in 1-2 sentences. Focus on the code logic and syntax role. Respond in Korean only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=4096,
+                max_tokens=400,
             )
 
             hint = openrouter_service.get_content(response)
@@ -493,13 +493,13 @@ class HintService:
 - 반드시 한국어로 1-2문장만"""
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",
+                model=settings.llm_model_hint,  # Gemini 3 Flash Preview
                 messages=[
                     {"role": "system", "content": "You are a helpful coding tutor. Respond in Korean, 1-2 sentences only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=4096,
+                max_tokens=400,
             )
 
             explanation = openrouter_service.get_content(response)
@@ -693,13 +693,13 @@ class HintService:
 - 한국어 1-2문장으로 간결하게"""
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",  # 빠른 응답을 위해 GPT-4o-mini 사용
+                model=settings.llm_model_hint,  # Gemini 3 Flash Preview
                 messages=[
                     {"role": "system", "content": "You are a helpful coding tutor. Explain what the code block does without revealing its position. Respond in Korean, 1-2 sentences only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=4096,
+                max_tokens=400,
             )
 
             hint = openrouter_service.get_content(response)
@@ -828,13 +828,13 @@ class HintService:
 - 한국어 1-2문장으로 간결하게"""
 
             response = await openrouter_service.chat_completion(
-                model="gpt-4o-mini",  # 빠른 응답을 위해 GPT-4o-mini 사용
+                model=settings.llm_model_hint,  # Gemini 3 Flash Preview
                 messages=[
                     {"role": "system", "content": "You are a Socratic coding tutor. Guide the learner with questions without giving direct answers. Respond in Korean, 1-2 sentences only."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.5,
-                max_tokens=4096,
+                max_tokens=400,
             )
 
             hint = openrouter_service.get_content(response)
@@ -966,7 +966,7 @@ class HintService:
                 model=settings.llm_model_hint,
                 messages=messages,
                 temperature=0.5,  # 힌트는 일관성 있게
-                max_tokens=4096,
+                max_tokens=400,
                 response_format={"type": "json_object"},
                 frequency_penalty=0.3,  # 반복 방지
             )
@@ -1435,7 +1435,7 @@ class HintService:
                 model=settings.llm_model_hint,
                 messages=messages,
                 temperature=0.5,
-                max_tokens=4096,
+                max_tokens=400,
                 response_format={"type": "json_object"},
             )
 
@@ -1649,7 +1649,7 @@ class HintService:
                 model=settings.llm_model_hint,
                 messages=messages,
                 temperature=0.3,
-                max_tokens=4096,
+                max_tokens=400,
                 response_format={"type": "json_object"},
             )
 

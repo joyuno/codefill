@@ -183,7 +183,6 @@ class SolvingAssistTool:
                 model=settings.llm_model_hint,  # 가벼운 모델 사용
                 messages=messages,
                 temperature=0.5,
-                max_tokens=4096,
             )
 
             content = openrouter_service.get_content(response)
