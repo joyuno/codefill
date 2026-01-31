@@ -5,6 +5,7 @@ Hint Generation Node
 """
 from typing import Dict, Any
 from ..state import ChatState
+from ...config import get_settings
 
 
 async def provide_hint(state: ChatState) -> Dict[str, Any]:
@@ -68,9 +69,10 @@ async def provide_hint(state: ChatState) -> Dict[str, Any]:
     ]
 
     try:
+        settings = get_settings()
         response = await openrouter.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model=settings.llm_model_hint,  # Gemini 3 Flash
         )
 
         return {

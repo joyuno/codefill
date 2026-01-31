@@ -810,7 +810,7 @@ async def compare_problems_node(state: DiscoveryState) -> Dict[str, Any]:
 
     try:
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             messages=[
                 {"role": "system", "content": "코딩 학습 도우미"},
                 {"role": "user", "content": prompt},
@@ -873,7 +873,7 @@ async def concept_explain_node(state: DiscoveryState) -> Dict[str, Any]:
 
     try:
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             messages=[
                 {"role": "system", "content": "코딩 학습 도우미"},
                 {"role": "user", "content": prompt},

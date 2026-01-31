@@ -1870,7 +1870,7 @@ class ChatOrchestratorV2:
                 ]
 
                 response = await openrouter_service.chat_completion(
-                    model="gpt-4o-mini",
+                    model="gemini-3-flash-preview",
                     messages=messages,
                     temperature=0.7,
                     response_format={"type": "json_object"},
@@ -1905,7 +1905,7 @@ class ChatOrchestratorV2:
                 ]
 
                 response = await openrouter_service.chat_completion(
-                    model="gpt-4o-mini",
+                    model="gemini-3-flash-preview",
                     messages=messages,
                     temperature=0.7,
                     response_format={"type": "json_object"},
@@ -1940,7 +1940,7 @@ class ChatOrchestratorV2:
                 ]
 
                 response = await openrouter_service.chat_completion(
-                    model="gpt-4o-mini",
+                    model="gemini-3-flash-preview",
                     messages=messages,
                     temperature=0.7,
                     response_format={"type": "json_object"},

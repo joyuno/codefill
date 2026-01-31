@@ -233,7 +233,7 @@ async def run_comparison_test(
     try:
         eval_response = await openrouter_service.chat_completion(
             messages=[{"role": "user", "content": eval_prompt}],
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             response_format={"type": "json_object"},
         )
         eval_content = openrouter_service.get_content(eval_response)

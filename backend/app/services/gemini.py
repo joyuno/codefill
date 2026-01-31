@@ -140,7 +140,7 @@ class GeminiService:
         if not self.api_keys:
             raise ValueError("No Gemini API keys configured")
 
-        model_id = self.MODELS.get(model, "gemini-2.0-flash")
+        model_id = self.MODELS.get(model, "gemini-3-flash-preview")
         logger.info(f"[GeminiService] Using model: {model} -> {model_id}, max_tokens: {max_tokens}")
 
         # 메시지 변환

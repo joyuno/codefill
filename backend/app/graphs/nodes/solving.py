@@ -76,7 +76,7 @@ async def provide_hint(state: SolvingState) -> Dict[str, Any]:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             temperature=0.7,
             max_tokens=180,
         )
@@ -177,7 +177,7 @@ JSON으로 응답:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             response_format={"type": "json_object"},
         )
         content = openrouter_service.get_content(response)
@@ -366,7 +366,7 @@ JSON으로 응답:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             response_format={"type": "json_object"},
         )
         content = openrouter_service.get_content(response)
@@ -506,7 +506,7 @@ async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             temperature=0.3,
             max_tokens=250,  # 2-3문장 요약용
         )
@@ -621,7 +621,7 @@ async def answer_question(state: SolvingState) -> Dict[str, Any]:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             temperature=0.3,
             max_tokens=250,
         )
@@ -802,7 +802,7 @@ JSON으로 응답:
     try:
         response = await openrouter.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="gemini-3-flash-preview",
             response_format={"type": "json_object"},
         )
         content = openrouter.get_content(response)
