@@ -645,7 +645,7 @@ class IntentTool:
         # ============================================================
         return None
 
-    @track_intent_method("_classify_with_llm", tags=["llm", "gpt-4o-mini"])
+    @track_intent_method("_classify_with_llm", tags=["llm", "gemini-3-flash"])
     async def _classify_with_llm(
         self,
         message: str,
@@ -984,7 +984,7 @@ class IntentTool:
 
         return multi_result
 
-    @track_intent_method("_classify_multi_with_llm", tags=["multi-intent", "llm", "gpt-4o-mini"])
+    @track_intent_method("_classify_multi_with_llm", tags=["multi-intent", "llm", "gemini-3-flash"])
     async def _classify_multi_with_llm(
         self,
         message: str,
