@@ -20,9 +20,12 @@ export function checkBlankAnswers(
     return { correct: false, results: [] };
   }
 
+  // 띄어쓰기를 제거하고 비교 (n - 1 == n-1)
+  const normalize = (s: string) => s.trim().replace(/\s+/g, '');
+
   const results = problem.blanks.map((blank, index) => {
-    const userAnswer = userAnswers[index]?.trim() || '';
-    const correctAnswer = blank.answer.trim();
+    const userAnswer = normalize(userAnswers[index] || '');
+    const correctAnswer = normalize(blank.answer);
     return userAnswer === correctAnswer;
   });
 

@@ -67,6 +67,84 @@ from ..services.langsmith_tracker import track_orchestrator_method
 logger = logging.getLogger(__name__)
 
 
+def normalize_code_newlines(code: str) -> str:
+    """DB에 저장된 코드의 이스케이프된 줄바꿈을 실제 줄바꿈으로 변환"""
+    if not code:
+        return code
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    return code
+
+
+def extract_problem_name(inquiry_target: str) -> str:
+    """
+    inquiry_target에서 문제 이름만 추출
+
+    LLM이 파싱을 잘못했을 경우를 대비한 후처리
+    예: "시식코너는 나의 것이라는 문제 찾아줘" → "시식코너는 나의 것"
+
+    Note: 검색 결과에 없는 문제를 찾을 때만 적용됨
+    """
+    import re
+
+    if not inquiry_target:
+        return inquiry_target
+
+    # 이미 깨끗한 경우 (숫자만 또는 짧은 문자열)
+    if inquiry_target.isdigit() or len(inquiry_target) <= 3:
+        return inquiry_target
+
+    # 불필요한 접미사 패턴 제거
+    suffix_patterns = [
+        r'이?라는\s*문제.*$',  # "~이라는 문제 찾아줘"
+        r'\s*문제\s*(찾아줘|알려줘|설명해줘|풀어볼래|있어\??|어때\??).*$',
+        r'\s*(찾아줘|알려줘|설명해줘|풀어볼래|보여줘).*$',
+        r'\s*에\s*대해.*$',  # "~에 대해 알려줘"
+        r'\s*좀\s*(알려줘|찾아줘|설명해줘).*$',
+    ]
+
+    result = inquiry_target.strip()
+    for pattern in suffix_patterns:
+        result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+
+    # 앞뒤 공백 및 따옴표 제거
+    result = result.strip().strip('"\'""''')
+
+    return result if result else inquiry_target
+
+
+def is_target_in_search_results(inquiry_target: str, search_results: list) -> bool:
+    """
+    inquiry_target이 검색 결과 안에 있는지 확인
+
+    - 숫자/숫자+번 패턴이면 인덱스로 확인 (1-based)
+    - 문자열이면 name/title과 부분 매칭
+    """
+    import re
+
+    if not inquiry_target or not search_results:
+        return False
+
+    target = inquiry_target.strip()
+
+    # 숫자 또는 "N번" 패턴 (인덱스)
+    num_match = re.match(r'^(\d+)\s*번?$', target)
+    if num_match:
+        idx = int(num_match.group(1))
+        return 1 <= idx <= len(search_results)
+
+    # 문자열인 경우 (문제 이름)
+    target_lower = target.lower()
+    for result in search_results:
+        name = (result.get("name") or "").lower()
+        title = (result.get("title") or "").lower()
+        # 부분 매칭 허용
+        if target_lower in name or target_lower in title or name in target_lower or title in target_lower:
+            return True
+
+    return False
+
+
 class ChatOrchestratorV2:
     """
     Tool 기반 LangGraph 오케스트레이터
@@ -215,6 +293,7 @@ class ChatOrchestratorV2:
             "완전탐색": "완전탐색", "백트래킹": "백트래킹", "분할정복": "분할정복",
             "시뮬레이션": "시뮬레이션", "기초": "기초", "최단경로": "최단경로",
             "투포인터": "투포인터", "스택": "스택", "큐": "큐", "힙": "힙",
+            "해시": "해시", "hash": "해시",  # 해시 테이블
         }
         CHIP_DIFFICULTY_KEYWORDS = {
             "실버": "easy", "silver": "easy", "easy": "easy", "쉬움": "easy",
@@ -237,6 +316,33 @@ class ChatOrchestratorV2:
 
         chip_matched_value = None
         chip_matched_step = None
+
+        # ============================================================
+        # 🏢 대기업 코테 키워드 탐지 (Intent Classifier 전)
+        # ============================================================
+        CORPORATE_TEST_KEYWORDS = [
+            "대기업 코테", "대기업코테", "대기업 코딩테스트", "대기업코딩테스트",
+            "삼성 코테", "카카오 코테", "네이버 코테", "라인 코테", "쿠팡 코테",
+            "삼성코테", "카카오코테", "네이버코테", "라인코테", "쿠팡코테",
+            "기업 코테", "기업코테", "취업 코테", "취업코테",
+        ]
+
+        is_corporate_test_chip = any(keyword in message_lower or keyword in message_stripped for keyword in CORPORATE_TEST_KEYWORDS)
+
+        if is_corporate_test_chip and not is_question_mark:
+            logger.info(f"[Orchestrator] ⚡ ULTRA FAST-PATH: 대기업 코테 키워드 감지 - 정보 수집으로 라우팅")
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info={},  # 새로 시작
+                intent="corporate_test",
+                session_state=session_state,
+                extracted_values={
+                    "is_corporate_test": True,
+                    "wants_generation": True,
+                },
+            )
 
         # "?"가 없을 때만 키워드 매칭 시도
         if not is_question_mark:
@@ -293,58 +399,69 @@ class ChatOrchestratorV2:
         }
 
         # ============================================================
-        # 🚀 다중 의도 분류 (Multi-Intent Classification)
+        # 🚀 문제 풀이 중 체크 (다중 의도 분류 스킵 여부 결정)
         # ============================================================
-        multi_intent_result = await intent_tool.classify_multi(
-            message=message,
-            session_state=intent_session_state,
-        )
-
-        logger.debug(
-            f"MultiIntent: is_multi={multi_intent_result.is_multi_intent}, "
-            f"count={multi_intent_result.intent_count}, exceeded={multi_intent_result.exceeded_limit}"
+        current_practice_state = session_state.get("current_practice_state", {}) or {}
+        current_problem = user_context.get("current_problem")
+        is_currently_solving = (
+            current_problem is not None or
+            current_practice_state.get("problem_id") is not None
         )
 
         # ============================================================
-        # 다중 의도 제한 초과 시 안내 (가드레일)
+        # 🚀 다중 의도 분류 (문제 풀이 중이면 스킵 → 속도 최적화)
         # ============================================================
-        if multi_intent_result.exceeded_limit:
-            logger.warning(
-                f"[Guardrail] Intent limit exceeded: {multi_intent_result.original_intent_count} > MAX_INTENTS"
-            )
-            # EC-M02: 엣지케이스 로깅
-            await edge_case_logger.log(
-                code="EC-M02",
-                user_id=user_context.get("user_id") if user_context else None,
-                session_id=session_id,
-                current_node="process",
-                user_message=message,
-                state_snapshot={
-                    "original_intent_count": multi_intent_result.original_intent_count,
-                    "processed_count": multi_intent_result.intent_count,
-                },
-                was_recovered=True,  # 제한된 의도만 처리하므로 복구됨
-            )
-            # 제한 초과 안내를 포함하여 처리 계속 (제한된 의도만 처리)
-
-        # 다중 의도인 경우 순차 처리
-        if multi_intent_result.is_multi_intent and multi_intent_result.intent_count > 1:
-            return await self._process_multi_intents(
-                multi_intent_result=multi_intent_result,
-                message=message,
-                conversation_history=conversation_history,
-                user_context=user_context,
-                session_state=session_state,
-                collected_info=collected_info,
-                search_results=search_results,
-                selected_problem=selected_problem,
-            )
-
-        # 단일 의도 처리 (기존 로직)
-        intent_result = multi_intent_result.primary_intent
-        if not intent_result:
-            # fallback: 직접 분류
+        if is_currently_solving:
+            # 문제 풀이 중: 다중 의도 분류 스킵, 바로 단일 분류
+            logger.debug("[Orchestrator] Skipping multi-intent (currently solving)")
             intent_result = await intent_tool.classify(message, intent_session_state)
+        else:
+            # 탐색/수집 단계: 다중 의도 분류 수행
+            multi_intent_result = await intent_tool.classify_multi(
+                message=message,
+                session_state=intent_session_state,
+            )
+
+            logger.debug(
+                f"MultiIntent: is_multi={multi_intent_result.is_multi_intent}, "
+                f"count={multi_intent_result.intent_count}, exceeded={multi_intent_result.exceeded_limit}"
+            )
+
+            # 다중 의도 제한 초과 시 안내 (가드레일)
+            if multi_intent_result.exceeded_limit:
+                logger.warning(
+                    f"[Guardrail] Intent limit exceeded: {multi_intent_result.original_intent_count} > MAX_INTENTS"
+                )
+                await edge_case_logger.log(
+                    code="EC-M02",
+                    user_id=user_context.get("user_id") if user_context else None,
+                    session_id=session_id,
+                    current_node="process",
+                    user_message=message,
+                    state_snapshot={
+                        "original_intent_count": multi_intent_result.original_intent_count,
+                        "processed_count": multi_intent_result.intent_count,
+                    },
+                    was_recovered=True,
+                )
+
+            # 다중 의도인 경우 순차 처리
+            if multi_intent_result.is_multi_intent and multi_intent_result.intent_count > 1:
+                return await self._process_multi_intents(
+                    multi_intent_result=multi_intent_result,
+                    message=message,
+                    conversation_history=conversation_history,
+                    user_context=user_context,
+                    session_state=session_state,
+                    collected_info=collected_info,
+                    search_results=search_results,
+                    selected_problem=selected_problem,
+                )
+
+            # 단일 의도 처리
+            intent_result = multi_intent_result.primary_intent
+            if not intent_result:
+                intent_result = await intent_tool.classify(message, intent_session_state)
 
         logger.debug(f"IntentTool: category={intent_result.category}, action={intent_result.action}, route={intent_result.suggested_route}")
 
@@ -357,6 +474,26 @@ class ChatOrchestratorV2:
                 message=message,
                 user_context=user_context,
                 conversation_history=conversation_history,
+            )
+
+        # ============================================================
+        # 0-0. CORPORATE_TEST 처리 - 검색 결과가 있어도 정보 수집으로
+        # "대기업 코테 준비할래" 같은 메시지는 항상 정보 수집 단계로
+        # ============================================================
+        if intent_result.action == ActionType.CORPORATE_TEST:
+            logger.info("[Orchestrator] CORPORATE_TEST detected - routing to info collection")
+            # extracted_values에 is_corporate_test 설정
+            extracted = intent_result.extracted_values or {}
+            extracted["is_corporate_test"] = True
+            extracted["wants_generation"] = True
+            return await self._process_info_collection(
+                message=message,
+                conversation_history=conversation_history,
+                user_context=user_context,
+                collected_info={},  # 새로 시작
+                intent="corporate_test",
+                session_state=session_state,
+                extracted_values=extracted,
             )
 
         # ============================================================
@@ -387,17 +524,40 @@ class ChatOrchestratorV2:
                 )
 
         # ============================================================
-        # 2. 풀이 중이면 Solving Graph로
+        # 2. 풀이 중이면 Solving Graph로 (위에서 이미 is_currently_solving 계산됨)
         # ============================================================
-        if intent_result.category == IntentCategory.SOLVING:
-            if user_context.get("current_problem"):
+        # 풀이 중이면 solving으로 라우팅 (명시적 새 문제 검색 제외)
+        if is_currently_solving:
+            # 명시적 새 문제 검색 요청은 제외 (새 문제 찾아줘, 다른 문제 등)
+            explicit_search_actions = [
+                ActionType.SHOW_MORE,          # 더 보기
+                ActionType.GENERATE_NEW,       # 새 문제 생성
+                ActionType.CHANGE_FILTER,      # 필터 변경
+                ActionType.SET_TOPIC,          # 주제 변경
+                ActionType.SET_DIFFICULTY,     # 난이도 변경
+                ActionType.ASK_RECOMMENDATION, # 추천 요청
+            ]
+            if intent_result.action not in explicit_search_actions:
+                # problem_context 구성 (current_problem 우선, 없으면 current_practice_state에서)
+                problem_context = current_problem or {
+                    "id": current_practice_state.get("problem_id"),
+                    "title": current_practice_state.get("problem_title"),
+                    "problem_type": current_practice_state.get("problem_type"),
+                }
+                # solving_intent: 의도 분류가 SOLVING이면 그 action 사용, 아니면 hint_general
+                solving_intent = (
+                    intent_result.action.value
+                    if intent_result.category == IntentCategory.SOLVING
+                    else "hint_general"
+                )
+                logger.info(f"[Orchestrator] Forcing solving route: is_solving=True, intent={intent_result.action}, solving_intent={solving_intent}")
                 return await self._process_solving(
                     message=message,
-                    problem_context=user_context.get("current_problem"),
+                    problem_context=problem_context,
                     user_progress=user_context.get("user_progress", {}),
                     conversation_history=conversation_history,
-                    previous_hints=session_state.get("previous_hints", []),
-                    solving_intent=intent_result.action.value,  # LLM이 분류한 의도 전달
+                    previous_hints=session_state.get("previous_hints", []) or current_practice_state.get("previous_hints", []),
+                    solving_intent=solving_intent,
                 )
 
         # ============================================================
@@ -431,20 +591,96 @@ class ChatOrchestratorV2:
             )
 
         # ============================================================
-        # 4-1. 문제 질문 → Discovery Graph (inquire_problem)
-        # 검색 결과 중 특정 문제에 대한 질문 처리
+        # 4. INQUIRE_PROBLEM 처리
+        # - 파싱을 먼저 적용 (LLM이 전체 문장을 넣었을 수 있음)
+        # - 파싱된 결과로 검색 결과 매칭
+        # - 검색 결과에 있으면 → 내용 설명 (4-1)
+        # - 검색 결과에 없으면 → DB에서 검색 (4-2)
         # ============================================================
-        if intent_result.action == ActionType.INQUIRE_PROBLEM and search_results:
-            return await self._process_discovery(
-                message=message,
-                intent="inquire_problem",
-                collected_info=collected_info,
-                conversation_history=conversation_history,
-                user_context=user_context,
-                search_results=search_results,
-                inquiry_target=intent_result.inquiry_target,
-                inquiry_question=message,
-            )
+        if intent_result.action == ActionType.INQUIRE_PROBLEM and intent_result.inquiry_target:
+            # 먼저 파싱 적용 (항상)
+            raw_target = intent_result.inquiry_target
+            parsed_target = extract_problem_name(raw_target)
+            print(f"[Orchestrator] INQUIRE_PROBLEM: parsed='{parsed_target}' (raw='{raw_target}')")
+
+            # 파싱된 결과로 검색 결과 매칭
+            target_in_results = is_target_in_search_results(parsed_target, search_results)
+
+            if search_results and target_in_results:
+                # 4-1. 검색 결과 안에 있음 → 문제 내용 설명
+                print(f"[Orchestrator] Target '{parsed_target}' found in search results → explain content")
+                return await self._process_discovery(
+                    message=message,
+                    intent="inquire_problem",
+                    collected_info=collected_info,
+                    conversation_history=conversation_history,
+                    user_context=user_context,
+                    search_results=search_results,
+                    inquiry_target=parsed_target,  # 파싱된 값 전달
+                    inquiry_question=message,
+                )
+
+            # 4-2. 검색 결과에 없음 → DB에서 새로 검색
+            print(f"[Orchestrator] Target '{parsed_target}' NOT in search results → search DB")
+            from ..services.rag import rag_service
+
+            try:
+                results, found_exact = await rag_service.search_problems_by_name(
+                    problem_name=parsed_target,  # 이미 파싱된 값 사용
+                    similarity_threshold=0.40,
+                    limit=5,
+                )
+
+                if results:
+                    top_result = results[0]
+                    similarity = top_result.get("similarity", 0)
+
+                    if similarity >= 0.92:
+                        response_msg = f"**{top_result['name']}** 문제를 찾았어요!\n\n난이도: {top_result['difficulty']}\n태그: {', '.join(top_result.get('tags', [])[:3])}\n\n이 문제를 풀어볼까요?"
+                        action_trigger = "problem_found"
+                    else:
+                        response_msg = f"'{parsed_target}'과(와) 비슷한 문제를 찾았어요:\n\n"
+                        for i, r in enumerate(results[:3], 1):
+                            response_msg += f"{i}. **{r['name']}** ({r['difficulty']})\n"
+                        response_msg += "\n원하는 문제가 있으면 선택해주세요!"
+                        action_trigger = "problems_searched"
+
+                    return {
+                        "stage": "discovery",
+                        "intent": "inquire_problem",
+                        "collected_info": collected_info,
+                        "search_results": results,
+                        "response_message": response_msg,
+                        "action_trigger": action_trigger,
+                        "action_data": {
+                            "problems": results,
+                            "search_query": parsed_target,
+                            "found_exact_match": found_exact,
+                        },
+                        "next_stage": "respond",
+                        "is_complete": True,
+                    }
+                else:
+                    return {
+                        "stage": "discovery",
+                        "intent": "inquire_problem",
+                        "collected_info": collected_info,
+                        "response_message": f"'{parsed_target}' 문제를 찾지 못했어요. 다른 이름이나 주제로 검색해볼까요?",
+                        "action_trigger": "problem_not_found",
+                        "next_stage": "respond",
+                        "is_complete": True,
+                    }
+            except Exception as e:
+                print(f"[Orchestrator] Problem name search error: {e}")
+                return {
+                    "stage": "discovery",
+                    "intent": "inquire_problem",
+                    "collected_info": collected_info,
+                    "response_message": "문제 검색 중 오류가 발생했어요. 다시 시도해주세요.",
+                    "action_trigger": "error",
+                    "next_stage": "respond",
+                    "is_complete": True,
+                }
 
         # ============================================================
         # 5. 정보 수집 필요
@@ -486,6 +722,26 @@ class ChatOrchestratorV2:
                     collected_info=collected_info,
                     intent=intent_result.action.value,
                     session_state=session_state,
+                )
+
+        # ============================================================
+        # 6-1. 개념 질문 (검색 결과가 있을 때)
+        # 검색 단계에서 알고리즘/자료구조 개념 질문 처리
+        # ============================================================
+        if intent_result.action == ActionType.FREE_CHAT and search_results:
+            # 개념 질문 패턴 감지
+            concept_keywords = ["뭐야", "뭐지", "뭔가", "설명", "알려", "차이", "언제", "어떻게", "왜"]
+            is_concept_question = any(kw in message for kw in concept_keywords)
+
+            if is_concept_question:
+                print(f"[Orchestrator] Concept question detected during discovery: {message}")
+                return await self._process_discovery(
+                    message=message,
+                    intent="concept_explain",
+                    collected_info=collected_info,
+                    conversation_history=conversation_history,
+                    user_context=user_context,
+                    search_results=search_results,
                 )
 
         # ============================================================
@@ -719,8 +975,20 @@ class ChatOrchestratorV2:
         }
         logger.debug(f"Info merge: new={new_collected}, original={collected_info}, merged={merged_info}")
 
-        # 정보 수집 완료 시 Discovery로
+        # 정보 수집 완료 시
         if result.get("is_complete"):
+            # 대기업 코테 모드: Discovery 스킵하고 문제 생성으로 직행
+            if merged_info.get("is_corporate_test"):
+                logger.info(f"[InfoCollection] Corporate test complete! Triggering problem generation...")
+                return {
+                    "stage": "collection",
+                    "intent": intent,
+                    "collected_info": merged_info,
+                    "response_message": result.get("message", "") or "대기업 코테 문제를 생성할게요!",
+                    "is_complete": True,
+                    "action_trigger": "generate_corporate_problem",
+                }
+            # 일반 모드: Discovery로
             return await self._process_discovery(
                 message=message,
                 intent=intent,
@@ -1455,20 +1723,30 @@ class ChatOrchestratorV2:
             except (json.JSONDecodeError, TypeError):
                 topics = []
 
-        # 코드 추출
+        # 코드 추출 (solutions가 배열 또는 객체 형식 모두 지원)
         language = "python"
         code = selected_problem.get("code")
         if not code:
-            solutions = selected_problem.get("solutions", [])
+            solutions = selected_problem.get("solutions")
             if solutions:
-                # python 우선, 없으면 첫 번째
-                python_sol = next((s for s in solutions if s.get("language") == "python"), None)
-                if python_sol:
-                    code = python_sol.get("code", "")
-                    language = "python"
-                elif solutions:
-                    code = solutions[0].get("code", "")
-                    language = solutions[0].get("language", "python")
+                # 객체 형식: {code: "...", language: "python"} (LLM 생성 시)
+                if isinstance(solutions, dict) and "code" in solutions:
+                    code = normalize_code_newlines(solutions.get("code", ""))
+                    language = solutions.get("language", "python")
+                # 배열 형식: [{code: "...", language: "python"}] (DB 조회 시)
+                elif isinstance(solutions, list) and solutions:
+                    # python 우선, 없으면 첫 번째
+                    python_sol = next((s for s in solutions if s.get("language") == "python"), None)
+                    if python_sol:
+                        code = normalize_code_newlines(python_sol.get("code", ""))
+                        language = "python"
+                    else:
+                        code = normalize_code_newlines(solutions[0].get("code", ""))
+                        language = solutions[0].get("language", "python")
+
+        # code 필드에서 직접 가져온 경우도 정규화
+        if code:
+            code = normalize_code_newlines(code)
 
         if not code:
             return {
@@ -1626,7 +1904,7 @@ class ChatOrchestratorV2:
                 ]
 
                 response = await openrouter_service.chat_completion(
-                    model="gpt-4o-mini",
+                    model="deepseek-v3",
                     messages=messages,
                     temperature=0.7,
                     response_format={"type": "json_object"},
@@ -1661,7 +1939,7 @@ class ChatOrchestratorV2:
                 ]
 
                 response = await openrouter_service.chat_completion(
-                    model="gpt-4o-mini",
+                    model="deepseek-v3",
                     messages=messages,
                     temperature=0.7,
                     response_format={"type": "json_object"},
@@ -1696,7 +1974,7 @@ class ChatOrchestratorV2:
                 ]
 
                 response = await openrouter_service.chat_completion(
-                    model="gpt-4o-mini",
+                    model="deepseek-v3",
                     messages=messages,
                     temperature=0.7,
                     response_format={"type": "json_object"},

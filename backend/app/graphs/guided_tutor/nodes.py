@@ -253,7 +253,7 @@ async def grade_context_node(state: AgenticRAGState) -> Dict[str, Any]:
 
     try:
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             messages=[
                 {"role": "system", "content": "Relevance grader. Answer 'relevant' or 'not_relevant'."},
                 {"role": "user", "content": grade_prompt},
@@ -322,7 +322,7 @@ async def assess_understanding_node(state: AgenticRAGState) -> Dict[str, Any]:
 
     try:
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             messages=[
                 {"role": "system", "content": "Educational assessment expert. JSON only."},
                 {"role": "user", "content": assess_prompt},
@@ -482,10 +482,10 @@ async def generate_response_node(state: AgenticRAGState) -> Dict[str, Any]:
             chat_messages.append({"role": role, "content": content})
 
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model="deepseek-v3"
             messages=chat_messages,
             temperature=0.7,
-            max_tokens=1000,  # 대화 응답용
+            max_tokens=600,  # 대화 응답용 (줄임)
             frequency_penalty=0.3,  # 반복 방지
         )
 
@@ -637,13 +637,13 @@ async def generate_initial_guide_node(state: AgenticRAGState) -> Dict[str, Any]:
 
     try:
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model="deepseek-v3"
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "문제를 시작합니다. 초기 가이드를 제공해주세요."},
             ],
             temperature=0.7,
-            max_tokens=1500,  # 초기 가이드용
+            max_tokens=800,  # 초기 가이드용 (줄임)
             response_format={"type": "json_object"},
         )
 

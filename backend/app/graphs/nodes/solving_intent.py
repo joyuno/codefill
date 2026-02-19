@@ -107,8 +107,9 @@ JSON으로 응답: {"intent": "의도", "confidence": 0.0~1.0}"""
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
+            max_tokens=200,  # 의도 분류용
         )
         content = openrouter_service.get_content(response)
         result = openrouter_service.parse_json_response(content)

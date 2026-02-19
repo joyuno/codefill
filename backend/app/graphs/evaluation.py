@@ -186,7 +186,7 @@ async def evaluate_intent_stage(
     try:
         response = await openrouter_service.chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
         )
         content = openrouter_service.get_content(response)
@@ -237,7 +237,7 @@ async def evaluate_discovery_stage(
     try:
         response = await openrouter_service.chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
         )
         content = openrouter_service.get_content(response)
@@ -290,7 +290,7 @@ async def evaluate_solving_stage(
     try:
         response = await openrouter_service.chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
         )
         content = openrouter_service.get_content(response)

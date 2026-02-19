@@ -233,7 +233,7 @@ async def run_comparison_test(
     try:
         eval_response = await openrouter_service.chat_completion(
             messages=[{"role": "user", "content": eval_prompt}],
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
         )
         eval_content = openrouter_service.get_content(eval_response)
@@ -348,43 +348,24 @@ def _generate_recommendation(
 
 
 # ============================================================
-# 간편 실행 함수
+# 간편 실행 함수 (V2 only - Legacy removed)
 # ============================================================
 
-async def quick_comparison(message: str) -> Dict[str, Any]:
+async def quick_test(message: str) -> Dict[str, Any]:
     """
-    단일 메시지에 대한 빠른 비교
+    단일 메시지에 대한 V2 테스트
 
     Usage:
-        result = await quick_comparison("DP 문제 풀고 싶어")
+        result = await quick_test("DP 문제 풀고 싶어")
     """
-    from ..graphs import ChatGraph, ChatOrchestrator
+    from .orchestrator_v2 import ChatOrchestratorV2
 
-    legacy_graph = ChatGraph()
-    v2_orchestrator = ChatOrchestrator()
+    orchestrator = ChatOrchestratorV2()
+    result = await orchestrator.process(message=message)
 
-    async def legacy_func(msg):
-        result = await legacy_graph.invoke(message=msg)
-        return {
-            "response": result.get("response_message", ""),
-            "intent": result.get("intent_result", {}).get("intent", "unknown"),
-            "confidence": result.get("intent_result", {}).get("confidence", 0),
-        }
-
-    async def v2_func(msg):
-        result = await v2_orchestrator.process(message=msg)
-        return {
-            "response": result.get("response_message", ""),
-            "intent": result.get("intent_result", {}).get("intent", "unknown"),
-            "confidence": result.get("intent_result", {}).get("confidence", 0),
-            "stage": result.get("stage", "unknown"),
-        }
-
-    test_case = {
-        "id": "quick_test",
-        "message": message,
-        "expected_intent": "unknown",
-        "expected_behavior": "적절한 응답",
+    return {
+        "response": result.get("response_message", ""),
+        "intent": result.get("intent_result", {}).get("intent", "unknown"),
+        "confidence": result.get("intent_result", {}).get("confidence", 0),
+        "stage": result.get("stage", "unknown"),
     }
-
-    return await run_comparison_test(legacy_func, v2_func, test_case)

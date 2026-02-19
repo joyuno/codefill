@@ -1475,10 +1475,10 @@ export function PracticeChatPanel({
         language: currentProblem.framework || 'python',
       };
 
-      // Blank 문제: code_template, answers 정보 추가
+      // Blank 문제: code_template 정보 추가 (answers는 힌트 누출 방지를 위해 제외)
       if (problemType === 'blank') {
         problemInfo.code_template = currentProblem.codeTemplate || currentProblem.codeSnippet;
-        problemInfo.answers = currentProblem.blanks?.map(b => b.answer) || [];
+        // answers는 채팅 힌트에서 정답 누출 방지를 위해 전달하지 않음
         problemInfo.blank_count = currentProblem.blanks?.length || 0;
       }
 

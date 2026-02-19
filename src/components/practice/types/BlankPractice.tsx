@@ -38,9 +38,10 @@ export function BlankPractice({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [hintLevels, setHintLevels] = useState<Record<string, number>>({});
 
-  // Generate placeholder with underscores matching answer length
+  // Generate placeholder with underscores matching answer length (excluding spaces)
   const getPlaceholder = (answer: string): string => {
-    return '_'.repeat(answer.length);
+    const lengthWithoutSpaces = answer.replace(/\s+/g, '').length;
+    return '_'.repeat(lengthWithoutSpaces);
   };
 
   // Parse code and replace blanks with input fields
@@ -79,8 +80,9 @@ export function BlankPractice({
         const currentHintLevel = hintLevels[blank.id] || 0;
         const placeholder = getPlaceholder(blank.answer);
 
-        // Dynamic width based on answer length (min 60px, max 200px)
-        const inputWidth = Math.min(200, Math.max(60, blank.answer.length * 10 + 20));
+        // Dynamic width based on answer length without spaces (min 60px, max 200px)
+        const answerLengthNoSpaces = blank.answer.replace(/\s+/g, '').length;
+        const inputWidth = Math.min(200, Math.max(60, answerLengthNoSpaces * 10 + 20));
 
         parts.push(
           <span key={`blank-${blank.id}`} className="inline-flex items-center gap-1">

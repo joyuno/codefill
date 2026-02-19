@@ -2,3 +2,14 @@
 node_modules/
 .next/
 data/
+
+/frontend/
+/docs/
+outputs/
+public/
+screenshots/
+logs/
+Modern_Farm_v1.2/
+/src/
+/supabase/
+/website/

@@ -184,14 +184,16 @@ async def _generate_dynamic_topic_suggestions(
     )
 
     try:
+        from ...config import get_settings
+        settings = get_settings()
         response = await openrouter_service.chat_completion(
-            model="gpt-4o-mini",
+            model=settings.llm_model_lite,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "사용자 컨텍스트에 맞는 주제 선택지를 생성해주세요."},
             ],
             temperature=0.7,
-            max_tokens=500,
+            max_tokens=400,
             response_format={"type": "json_object"},
         )
 
@@ -497,10 +499,13 @@ async def collect_info(state: ChatState) -> Dict[str, Any]:
     messages.append({"role": "user", "content": message})
 
     try:
+        from ...config import get_settings
+        settings = get_settings()
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model=settings.llm_model_lite,
             response_format={"type": "json_object"},
+            max_tokens=300,  # 정보 수집용
         )
 
         # API 응답에서 content 추출 및 JSON 파싱
@@ -704,9 +709,12 @@ async def free_chat(state: ChatState) -> Dict[str, Any]:
     messages.append({"role": "user", "content": message})
 
     try:
+        from ...config import get_settings
+        settings = get_settings()
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model=settings.llm_model_lite,
+            max_tokens=300,  # 자유 대화용
         )
         content = openrouter_service.get_content(response)
     except Exception as e:

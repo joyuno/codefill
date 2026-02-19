@@ -13,13 +13,12 @@ from ...services.langsmith_tracker import track_solving_node
 @track_solving_node("provide_hint", tags=["llm", "hint"])
 async def provide_hint(state: SolvingState) -> Dict[str, Any]:
     """
-    점진적 힌트를 제공합니다.
+    채팅 힌트를 제공합니다.
 
-    힌트 레벨:
-    - Level 1: 문제 접근 방향 (어떤 알고리즘/자료구조?)
-    - Level 2: 구체적인 알고리즘 힌트
-    - Level 3: 의사코드 수준의 힌트
-    - Level 4: 핵심 코드 일부 공개
+    역할:
+    - 간접적인 힌트로 정답을 유추할 수 있도록 도움
+    - 문제/코드/함수 설명
+    - 절대 직접적인 정답은 알려주지 않음
     """
     from ...services.openrouter import openrouter_service
 
@@ -28,57 +27,80 @@ async def provide_hint(state: SolvingState) -> Dict[str, Any]:
     intent_result = state.get("intent_result", {})
     previous_hints = state.get("previous_hints", [])
 
+    # 정답 누출 방지: answers, correct_order 등 정답 관련 정보 제거
+    safe_context = {k: v for k, v in problem_context.items()
+                    if k not in ['answers', 'correct_order', 'solution', 'solutions', 'final_code']}
+
     # 힌트 레벨 결정 (이전 힌트 수 + 1)
     hint_level = min(len(previous_hints) + 1, 4)
-
-    # 서브 의도에 따른 힌트 타입 조정
     sub_intent = intent_result.get("sub_intent", "hint_general")
+    problem_type = safe_context.get('problem_type', 'unknown')
 
-    system_prompt = f"""당신은 코딩 교육 전문가입니다. 학생에게 힌트를 제공합니다.
+    system_prompt = f"""당신은 코딩 교육 전문 튜터입니다.
 
-규칙:
-1. 직접적인 정답은 절대 알려주지 마세요
-2. 소크라테스식 질문으로 유도하세요
-3. 힌트 레벨 {hint_level}에 맞게 제공하세요:
-   - Level 1: "이 문제는 어떤 유형일까요?" 수준
-   - Level 2: "~~ 알고리즘/자료구조를 생각해보세요" 수준
-   - Level 3: "1. 먼저 ~~ 2. 그다음 ~~" 의사코드 수준
-   - Level 4: 핵심 부분의 코드 구조 (변수명은 가림)
-4. 격려하는 톤을 유지하세요
+## 역할
+학생이 스스로 정답을 찾을 수 있도록 **간접적인 힌트**와 **설명**을 제공합니다.
 
-힌트 타입: {sub_intent}
+## 금지 사항 (매우 중요!)
+❌ 절대 정답을 직접 알려주지 마세요
+❌ 빈칸에 들어갈 코드/값을 말하지 마세요
+❌ "정답은 ~입니다" 형태의 답변 금지
+❌ 코드 전체를 작성해주지 마세요
+
+## 허용되는 답변
+✅ 문제가 요구하는 것이 무엇인지 설명
+✅ 사용해야 할 함수/메서드의 역할과 기능 설명
+✅ 알고리즘/자료구조 개념 설명
+✅ 코드의 흐름과 로직 설명
+✅ "이 부분에서는 어떤 연산이 필요할까요?" 같은 유도 질문
+✅ 비슷한 예시로 개념 설명 (정답 자체는 아님)
+
+## 힌트 레벨: {hint_level}/4
+- Level 1: 문제 유형과 접근 방향 제시
+- Level 2: 필요한 개념/함수 종류 안내
+- Level 3: 구체적인 로직 흐름 설명
+- Level 4: 핵심 부분의 구조 힌트 (변수명은 가림)
+
+## 응답 형식 (필수! 반드시 이 형식만 사용하세요)
+아래 형식을 **정확히** 따라 응답하세요. 다른 형식은 사용하지 마세요!
+
+💡 **핵심**: [이 문제의 핵심 포인트 1문장]
+📝 **설명**: [필요한 개념이나 함수 설명 1-2문장]
+🔍 **예시**: [간단한 예시 코드나 설명 - 선택사항]
+
+※ 위 3가지 항목만 출력하세요. 추가 설명이나 다른 형식 금지!
 """
 
-    description = problem_context.get('description') or ''
+    description = safe_context.get('description') or ''
+    code_template = safe_context.get('code_template', '')
+
     problem_info = f"""
-문제: {problem_context.get('title', 'Unknown')}
-설명: {description[:500]}
-난이도: {problem_context.get('difficulty', 'medium')}
-주제: {', '.join(problem_context.get('topics') or [])}
-문제 유형: {problem_context.get('problem_type', 'unknown')}
+문제 유형: {problem_type}
+제목: {safe_context.get('title', 'Unknown')}
+설명: {description[:400]}
+난이도: {safe_context.get('difficulty', 'medium')}
+주제: {', '.join(safe_context.get('topics') or [])}
 """
 
-    current_code = user_progress.get('current_code') or '아직 작성 안 함'
-    user_info = f"""
-현재 코드:
-```
-{current_code[:500]}
-```
-시도 횟수: {user_progress.get('attempt_count', 0)}
-이전 힌트들: {previous_hints[-2:] if previous_hints else '없음'}
-"""
+    if code_template and problem_type == 'blank':
+        problem_info += f"\n코드 템플릿 (빈칸은 _N_ 형식):\n```\n{code_template[:600]}\n```"
+
+    current_code = user_progress.get('current_code') or ''
+    user_info = ""
+    if current_code:
+        user_info = f"\n학생의 현재 시도:\n```\n{current_code[:300]}\n```"
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"{problem_info}\n\n{user_info}\n\nLevel {hint_level} 힌트를 주세요."},
+        {"role": "user", "content": f"{problem_info}{user_info}\n\n힌트를 주세요."},
     ]
 
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             temperature=0.7,
-            max_tokens=180,
+            max_tokens=400,
         )
         hint_text = openrouter_service.get_content(response)
 
@@ -177,8 +199,9 @@ JSON으로 응답:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
+            max_tokens=500,  # 코드 리뷰용
         )
         content = openrouter_service.get_content(response)
         review_result = openrouter_service.parse_json_response(content)
@@ -366,8 +389,9 @@ JSON으로 응답:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
+            max_tokens=500,  # 피드백용
         )
         content = openrouter_service.get_content(response)
         feedback = openrouter_service.parse_json_response(content)
@@ -506,9 +530,9 @@ async def summarize_problem(state: SolvingState) -> Dict[str, Any]:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             temperature=0.3,
-            max_tokens=250,  # 2-3문장 요약용
+            max_tokens=350,  # 문제 요약용
         )
         summary = openrouter_service.get_content(response)
 
@@ -621,7 +645,7 @@ async def answer_question(state: SolvingState) -> Dict[str, Any]:
     try:
         response = await openrouter_service.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             temperature=0.3,
             max_tokens=250,
         )
@@ -802,8 +826,9 @@ JSON으로 응답:
     try:
         response = await openrouter.chat_completion(
             messages=messages,
-            model="gpt-4o-mini",
+            model="deepseek-v3",
             response_format={"type": "json_object"},
+            max_tokens=300,  # 정답 체크용
         )
         content = openrouter.get_content(response)
         result = openrouter.parse_json_response(content)

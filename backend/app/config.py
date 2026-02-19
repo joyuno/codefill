@@ -57,14 +57,15 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
 
     # LLM Models per Agent
-    # Available aliases: gpt-4o, gpt-4o-mini, claude-sonnet, gemini-flash, gemini-3-pro, deepseek-v3
-    llm_model_chat: str = "gpt-4o-mini"          # Chat agent, intent handler
-    llm_model_intent: str = "gemini-flash"        # Intent classifier
+    # Available aliases: gpt-4o, gpt-4o-mini, claude-sonnet, gemini-flash, gemini-3-flash-preview, gemini-3-pro, deepseek-v3
+    llm_model_chat: str = "deepseek-v3"           # Chat agent, intent handler (DeepSeek V3.2)
+    llm_model_lite: str = "deepseek-v3"           # Lightweight tasks (intent, collection, general)
+    llm_model_intent: str = "deepseek-v3"         # Intent classifier (DeepSeek V3.2)
     llm_model_blank_gen: str = "gemini-flash"     # Blank problem generation
     llm_model_puzzle_gen: str = "gemini-flash"    # Puzzle problem generation
     llm_model_guided_gen: str = "gemini-flash"    # Guided problem generation
     llm_model_code_gen: str = "gemini-3-pro"      # Code generation (RAG fallback)
-    llm_model_hint: str = "gemini-flash"          # Hint generation
+    llm_model_hint: str = "deepseek-v3"           # Hint generation (DeepSeek V3.2)
     llm_model_analysis: str = "gemini-flash"      # Learning analysis report
 
     # Judge0 (Code Execution)
